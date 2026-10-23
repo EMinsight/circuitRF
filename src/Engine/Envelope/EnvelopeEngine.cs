@@ -9,10 +9,12 @@
 //
 //  Gear-2 (BDF2) with backward Euler on the first step.  For lumped
 //  (affine-in-jw) linear models the s-domain stamp is exact: C is
-//  recovered from two stamps at k w0 +- delta.  A non-affine model
-//  (distributed line, S-parameter block, Z(freq)) gets its tangent at
-//  k w0; the run reports how far that tangent is from the true
-//  admittance at the edge of the envelope band.
+//  recovered from two stamps at k w0 +- delta.  An S-parameter block is
+//  replaced for the run by a rational fit that is affine by construction
+//  (EnvelopeSnpFit).  A non-affine model (distributed line, Z(freq)) gets
+//  its tangent at k w0; the run reports how far that tangent is from the
+//  true stamp at the edge of the envelope band, matrix-wide and per
+//  element (EnvelopeTangentCheck), and warns naming the element.
 //
 //  The sparse factorization of G + (j k w0 + alpha) C is done ONCE per
 //  harmonic per run (alpha is fixed by the step), so a step costs one
@@ -84,6 +86,8 @@ public sealed class EnvelopeRunResult
     public double MeanNewton { get; init; }
     public int JacobianBuilds { get; init; }
     public double WorstTangentError { get; init; }
+    /// <summary>The SnP blocks the run replaced by a rational fit (EnvelopeSnpFit).</summary>
+    public IReadOnlyList<SnpFitReport> SnpFits { get; init; } = [];
     /// <summary>Per carrier (sources in order, then their carriers): index on the harmonic/mix axis whose envelope carries it.</summary>
     public int[] CarrierMix { get; init; } = Array.Empty<int>();
     /// <summary>Per carrier: offset (Hz) of the carrier from that product's frequency.</summary>
@@ -156,6 +160,10 @@ public sealed class EnvelopeEngine
         foreach (var sg in signals)
             if (Math.Abs(sg.RecordSeconds - record) > 1e-12)
                 throw new InvalidOperationException("all MOD_Sources in one envelope run must use the same record length");
+        // Every SnP is its rational fit for the whole run — the DC solve, the HB start and the stepping (EnvelopeSnpFit).
+        using var snpFit = EnvelopeSnpFit.Apply(_nl, K * f0 + 0.5 * rate, [.. Enumerable.Range(1, K).Select(k => k * f0)], 0.5 * rate);
+        // A line (any stamp whose 1 Hz / 2 Hz tangent is not exact) is held at its DC stamp for the baseband product.
+        using var baseband = EnvelopeBaseband.Apply(_nl, Math.PI * need);
 
         var swSetup = Stopwatch.StartNew();
         bool profS = Environment.GetEnvironmentVariable("CRF_ENV_PROFILE") is not null;
@@ -191,6 +199,9 @@ public sealed class EnvelopeEngine
             else if (ec.Model is PnToneModel pn) pn.SetToneContext(fc: f0);
         }
         foreach (var s in sources) { s.SetToneContext(f0); s.EnvelopeDrive = Complex.Zero; }
+        // Before the products are stamped: stamping an element alone re-numbers a source's branch (LastBranchIndex).
+        // Measured out to the signal's own extent (+-need/2: carriers and their ACPR2 bands), where the result is read.
+        EnvelopeTangentCheck.Warn(_nl, EnvelopeTangentCheck.Measure(_nl, Enumerable.Range(1, K).Select(k => k * omega0), Math.PI * need), 0.5 * need);
 
         double hBe = h, aBe = 1.0 / hBe, aG2 = 1.5 / h, b1G2 = -2.0 / h, b2G2 = 0.5 / h;
         double tanErrWorst = 0;
@@ -205,8 +216,10 @@ public sealed class EnvelopeEngine
                 CompressedColumnStorage<Complex> A0, C;
                 if (k == 0)
                 {
+                    baseband.Holding = true;
                     var a1 = Stamp(extractor, mna, dlt);
                     var a2 = Stamp(extractor, mna, 2 * dlt);
+                    baseband.Holding = false;
                     C = Combine(a2, a1, 1.0 / new Complex(0, dlt), -1.0 / new Complex(0, dlt));
                     A0 = Combine(a1, C, 1.0, -new Complex(0, dlt));
                 }
@@ -429,13 +442,11 @@ public sealed class EnvelopeEngine
             Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
             F0Hz = f0, StepS = h, MaxHarm = K, SignalRateHz = rate, Sources = sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newtonIters / Math.Max(1, total - 1),
-            JacobianBuilds = jacBuilds, WorstTangentError = tanErrWorst,
+            JacobianBuilds = jacBuilds, WorstTangentError = tanErrWorst, SnpFits = snpFit.Reports,
             CarrierMix = sources.SelectMany((s, si) => signals[si].Carriers.Select(_ => 1)).ToArray(),
             CarrierOffsetHz = sources.SelectMany((s, si) => signals[si].Carriers.Select(c => s.FcHz + c.OffsetHz - f0)).ToArray(),
             CarrierLabels = sources.SelectMany((s, si) => signals[si].Carriers.Select(c => $"{s.InstanceName}:{c.Spec.Label} @ {(s.FcHz + c.OffsetHz) / 1e9:0.####} GHz")).ToArray(),
         };
-        if (tanErrWorst > 0.01)
-            res.Notes.Add($"a frequency-dependent (non-lumped) linear model departs from its tangent by {100 * tanErrWorst:0.#} % at the envelope band edge; results there are approximate");
         return res;
     }
 

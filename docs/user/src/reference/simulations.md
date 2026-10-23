@@ -160,6 +160,22 @@ Three things make long modulated runs practical:
   where ACPR2 and the bias-node memory are converged on every measured case. *draft* (1×) is about
   0.4 dB pessimistic on ACPR2 and badly off on bias-network ringing. *fine* (8×) is for reference runs.
 
+**Frequency-dependent blocks.** Each step treats the linear network as a straight line in frequency
+around every harmonic. Resistors, capacitors and inductors are exactly that; other blocks are handled
+as follows.
+
+- **S-parameter blocks** ([SnP](components.html#snp)) and the System [Filter](components.html#filter)
+  and [Duplexer](components.html#duplexer) are fitted with a rational model and simulated exactly
+  across the signal band, and at DC and every harmonic. The Messages pane reports each fit's order and
+  error, and, for an SnP, how far the fit is from the file's interpolated values at DC and at any
+  harmonic outside the file's frequency range. A fit that misses its error tolerance, or that is not
+  passive, warns.
+- **Lines and Z(freq) blocks** ([TLIN](components.html#tline), the microstrip, stripline, coplanar and
+  coupled lines, and an [Impedance N-Port](components.html#zport) with a `Z(freq)`) are still
+  approximated by a straight line in frequency around each harmonic. In the baseband envelope (the
+  bias path) they are held at their DC value. A warning names any whose error across the band is
+  large enough to move ACPR by about 0.1 dB.
+
 | Setting | Default | Meaning |
 |---|---|---|
 | Stop | 100e-6 s | Signal time simulated. ACPR settles within ~0.1 dB from 0.5 ms of LTE/NR. |

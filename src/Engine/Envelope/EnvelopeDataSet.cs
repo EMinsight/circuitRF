@@ -15,6 +15,8 @@
 //    AMAM / AMAM_min / AMAM_max / AMPM  [Pin]  binned on instantaneous available input power;
 //               the min/max spread at one Pin is the memory (single fundamental)
 //    Pin_avg_dBm, Pout_avg_dBm, Gt_dB, NMSE_dB, Pdc_W, DE_pct   scalars
+//    __EnvSnpFit [instance, metric]  order, rel_error, sigma_max of each SnP's
+//               rational fit (only when the circuit has one)
 //  Measurements skip the first `SkipS` seconds (settling) when the run
 //  started with no warm-up.
 // ================================================================
@@ -308,6 +310,14 @@ public static class EnvelopeDataSet
         ds.Add("__EnvTangentError", DataCube.Scalar(r.WorstTangentError));
         ds.Add("__EnvMeasureFrom_s", DataCube.Scalar(t0 * r.StepS));
         ds.Add("__EnvFundamentals", DataCube.Scalar(multi ? r.ToneFreqsHz!.Length : 1));
+        if (r.SnpFits.Count > 0)
+        {
+            string[] metrics = ["order", "rel_error", "sigma_max"];
+            ds.Add("__EnvSnpFit", new DataCube([
+                new Axis("instance", Enumerable.Range(0, r.SnpFits.Count).Select(i => (double)i).ToArray(), "", r.SnpFits.Select(f => f.Instance).ToArray()),
+                new Axis("metric", Enumerable.Range(0, metrics.Length).Select(i => (double)i).ToArray(), "", metrics)],
+                r.SnpFits.SelectMany(f => new[] { f.Order, f.RelativeError, f.SigmaMax }).ToArray()));
+        }
         return ds;
     }
 

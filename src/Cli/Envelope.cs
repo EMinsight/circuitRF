@@ -126,6 +126,7 @@ internal static class EnvelopeVerb
             Console.Error.WriteLine($"[circuitRF] envelope {env.Name}: Stop {plan.Params.StopS * 1e6:0.###} us, accuracy x{plan.Params.Oversample}, segments {(plan.Segments == 0 ? "auto" : plan.Segments.ToString(CultureInfo.InvariantCulture))}");
             var ds = EnvelopeRunner.Run(plan, Elab, new AnalysisSettings(), RunHost.Control, n => Console.Error.WriteLine($"[circuitRF] note: {n}"));
             foreach (var w in first.Warnings) Console.Error.WriteLine($"[circuitRF] warning: {w}");
+            foreach (var n in first.Notes) Console.Error.WriteLine($"[circuitRF] note: {n}");
             JsonRun.Analysis = env.Name;
             JsonRun.Data = ds;
             Print(ds, env.Name, input);

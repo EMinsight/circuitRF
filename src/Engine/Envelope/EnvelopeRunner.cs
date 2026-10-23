@@ -211,6 +211,7 @@ public static class EnvelopeRunner
             DriveRe = R.DriveRe, F0Hz = R.F0Hz, StepS = h, MaxHarm = R.MaxHarm, SignalRateHz = R.SignalRateHz, Sources = R.Sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = results.Average(x => x.MeanNewton),
             JacobianBuilds = results.Sum(x => x.JacobianBuilds), WorstTangentError = results.Max(x => x.WorstTangentError),
+            SnpFits = R.SnpFits,
             CarrierMix = R.CarrierMix, CarrierOffsetHz = R.CarrierOffsetHz, CarrierLabels = R.CarrierLabels,
             ToneFreqsHz = R.ToneFreqsHz, MixLabels = R.MixLabels, MixFreqHz = R.MixFreqHz, MixTones = R.MixTones,
         };

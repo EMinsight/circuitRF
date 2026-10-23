@@ -84,8 +84,11 @@ public static class VectorFit
             throw new ArgumentOutOfRangeException(nameof(order), $"{nf} samples determine an order of at most {MaxOrder(nf, settings)}.");
         foreach (var r in responses)
             if (r.Length != nf) throw new ArgumentException("Every response has one value per frequency.");
-        double fMax = frequenciesHz.Max(), fMin = frequenciesHz.Min();
-        if (!(fMin > 0)) throw new ArgumentException("Frequencies are positive.");
+        double fMax = frequenciesHz.Max();
+        if (!(frequenciesHz.Min() >= 0) || !(fMax > 0)) throw new ArgumentException("Frequencies are positive (a DC sample is allowed).");
+        // A DC sample is data like any other (a Touchstone file often starts at 0 Hz); only the starting poles need
+        // the lowest POSITIVE frequency, for their logarithmic spread.
+        double fMin = frequenciesHz.Where(f => f > 0).Min();
 
         double ws = 2 * Math.PI * fMax;                     // the scale every angular frequency is divided by
         var s = frequenciesHz.Select(f => new Complex(0, f / fMax)).ToArray();

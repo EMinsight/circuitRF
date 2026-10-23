@@ -3251,3 +3251,89 @@ a CW source into 50 ohm, run as a real CLI process, delivering 0 dBm.
   held data (and DE only when Pdc > 0), so a sweep whose points differed (a CW drive fills one bin) could not
   be stacked and the whole sweep was refused. The AM-AM grid is fixed, so the shape never changes; an empty
   bin, or a DE with no DC power, is NaN.
+
+## Envelope: S-parameter blocks as a rational fit, and which element the tangent fails (2026-10-22)
+
+brief-env-snp-rational. Code: `src/Engine/Envelope/EnvelopeSnpFit.cs` (fit, realization, run-scoped
+substitution), `EnvelopeTangentCheck.cs` (per-element measure and warning). Gate:
+`tests/Engine.Tests/Envelope/EnvelopeSnpTests.cs`.
+
+**What the tangent cost.** MOD_Source (NR 20 MHz) → 2-port SnP → 50 Ω, against `y = IFFT(X·S21)/2` from the
+source's own record. Fixture (a), a 5th-order 0.5 dB Chebyshev bandpass (ripple band ±11 MHz), at `fine`:
+channel power **1.98 dB** low, ACPR1 off by up to 0.75 dB, ACPR2 by 1.9 dB, output NMSE **−0.6 dB**;
+`__EnvTangentError` read 8e14. Fixture (b), the same with an ideal 1 ns line on port 2: 2.02 dB, NMSE −0.55 dB.
+Fitted: 0.0011 dB and NMSE −66.9 dB (a), 0.0012 dB and −66.6 dB (b), at 16×.
+
+**The gate runs at 16×, because 8× is not converged against an exact reference.** With the fit exact (order
+10, error 8e-15) the residual at `fine` was 0.074 dB on ACPR1 and NMSE −54.8 dB on both fixtures, which is
+Gear-2's own frequency warping at the channel edge (Δω·h ≈ 0.06 rad), not the model: 16× gives 0.003 dB and
+−66.9 dB. The comparison reference is computed by overlap-save over a 4 µs lead (the filter's slowest pole
+decays in 130 ns): the whole 0.5 ms periodic record at 2 GS/s cost 6 s per test for the same y.
+
+**Fit defaults, measured on fixture (b) at 16×.** Tolerance 1e-2: order 14, 0.016 dB, NMSE −51 dB. 1e-3:
+order 16 (error 1.9e-4), 0.0012 dB, NMSE −66.6 dB, σmax 1.0002. 1e-4: order 17, the same accuracy but
+**σmax 1.53** (a non-passive bump below the file). 1e-5: order 18, passive. 1e-3 sits at the discretization
+floor, so it is the default; max order 60. No setup key was needed. `Proportional = false` because S is bounded.
+**Non-rational files often fit non-passively outside their range**: mismatched-line files at 1e-3 gave σmax
+1.003–2.4, always between DC and the file's lower edge. That is reported (and warns above 1.001), not enforced.
+
+**DC and beyond the file.** The run stamps the fit everywhere, the DC solve and HB start included, so the run
+starts at its own equilibrium (gate 3 holds a CW start to 3.4e-6 V on 0.9 V). The interpolator and the fit do
+part there and the note says by how much: fixture (a) 0.057 at DC, 0.053 at 2 GHz, 0.061 at 3 GHz (clamped
+end values against the true filter); fixture (b) 0.66 at DC.
+
+**The realization's scaling matters at k = 0.** The two-stamp C recovery at k = 0 differences stamps at
+dlt = 2π rad/s and 2dlt. In complex-pole form a state row's entry `(jω − a)` would lose ~1e-7 of C to
+cancellation (ω_p ~ 6e9 against dlt); the real 2×2 block keeps `jω` and `−σ` in different parts, so nothing
+cancels. Rows are scaled by 1/|a_p| so every entry is O(1) at RF.
+
+**The per-element tangent measure took three tries, each forced by a measurement.**
+- *Raw stamp entries* (`max|A_edge − tangent| / max|A|`) read exactly 1 for the Chebyshev file whatever its
+  bandwidth: its Z stamp is singular at f0 (S21 = 1 there, so det(I − S) = 0). A line's Y stamp is likewise
+  singular wherever sin θ = 0 at the band edge (E = 1530° read 1593 % and moved ACPR1 by 0.1 dB).
+- *The terminated response* (every node of the element to ground through 50 Ω, compare node impedances) is
+  bounded, but at one band-edge point it saturates near 0.35–0.44 while ACPR keeps growing.
+- *Absolute error, RMS across the band* orders the line scan but not the filter scan: a 22 MHz filter with a
+  moderate absolute error moved ACPR1 4.2 dB, because its skirt is deep in the adjacent channel and ACPR reads
+  the RELATIVE error there.
+- Shipped: **relative** error of each terminated impedance (floored at −60 dB), RMS over 16 offsets out to the
+  signal's own extent (±need/2: carriers plus their ACPR2 bands), worst over products. The baseband envelope is
+  not checked: a line's Y stamp is clamped at DC.
+
+**The threshold, 0.5.** Mismatched 25 Ω line, §1 topology, tangent vs its own fitted Touchstone at the same
+step: E = 810/990/1170/1350/1530/1890/2250/2970° → error 0.20/0.30/0.41/0.50/0.56/0.64/0.67/0.71 → ΔACPR1
+0.028/0.042/0.057/0.076/0.098/0.145/0.203/0.329 dB. The §1 Chebyshev under the tangent, ripple bandwidth
+22/44/88/132/176/264/352 MHz → error 74.5/45.6/1.59/1.08/1.12/0.75/0.93 → ΔACPR1 4.24/1.52/0.24/0.08/0.04/0.01/0.41
+dB (the 352 MHz filter moves channel power 0.97 dB through passband ripple). No single value separates the two
+scans; every case at or above 0.1 dB is above 0.6, so 0.5 warns on all of them, with some false alarms.
+
+**System Filter and Duplexer had the same defect, worse.** Their S(ω) is a prototype's rational response
+stamped as `b = S(ω)·a`. Under the tangent a passive Chebyshev bandpass read **Gt = +7.1 dB** (its own
+Touchstone gave −0.09 dB) and a duplexer **diverged to NaN**. They are now fitted from samples of their own
+stamp, as a node-referenced S in 50 Ω (no Core accessor needed), and match S21 from `SParameterEngine` to
+0.001 dB. Two settings were measured: a 1,903-point grid cost the 3-port duplexer 20 s (order 20); 161–243
+points (a coarse anchor plus 41 per product band) give the same answer in ~2 s. Their tolerance is 1e-9, not
+1e-3: the sampled S is exactly rational, and at 1e-3 the duplexer stopped at order 14 of 20 with σmax 1.0012.
+Constant-S blocks (Atten, Amp with or without IP3, Switch, Circulator, Coupler, Balun) were already exact.
+
+**Nothing else moved.** SHA-256 over every cube, before and after: a lumped envelope run with a diode, an HB
+run with an SnP and an S-parameter sweep of one — all three identical. The substitution swaps
+`ElaboratedNetlist.Components` entries for clones and puts the originals back when the run ends.
+
+## Envelope: a line in the baseband product had no pivot (2026-10-22)
+
+`MOD_Source → TLIN (Z = 25 Ω, E = 90/270/450°) → 50 Ω` failed in `EnvelopeEngine.Prepare` with CSparse's "No pivot
+element found" (pre-existing; no SnP involved). The k = 0 product takes C from stamps at dlt = 2π rad/s and 2·dlt.
+A line's Y stamp goes as 1/(jωL) there (L = τ·Z0), so the recovered slope is ~1/(dlt²·L) ≈ 2e6, and α·C ≈ 1.5e15 at
+the standard step: the 0.02 S terminations sit below that matrix's round-off and the pivot vanished. E ≥ 810° survived
+only because 9× the L put the round-off just under 0.04 S. Its DC equilibrium was wrong too: A0 = a1 − j·dlt·C is
+not the line's DC stamp.
+
+Fix (`EnvelopeBaseband.cs`): an element whose own 1 Hz / 2 Hz tangent is not exact (terminated relative error above
+1e-6; an affine stamp's round-off, extrapolated from 1 Hz to 50 MHz, is estimated at ~5e-9, and the lumped fingerprint confirms none is held) is wrapped and HELD at its DC stamp for
+the baseband product only — exact at DC, and the stamp the DC solve and HB start already use. Lumped elements, sources,
+inductive branches and fitted SnPs are never held, so a lumped run is bit-identical (fingerprint unchanged). Every
+length now runs and passes the line's closed-form gain (−1.93820 dB) to 1e-5 dB; a 1 V bias through a 90° line into
+10 Ω draws 0.1 W to 2e-12. The cost is the line's frequency dependence across the baseband, measured by the same
+terminated measure and warned above `EnvelopeTangentCheck.WarnAbove`: a 90° line at 1 GHz (4.5° at 50 MHz) is not
+named; 810° reads 54 % and 2970° 147 %, and are. Gate: `tests/Engine.Tests/Envelope/EnvelopeBasebandTests.cs`.

@@ -174,6 +174,22 @@ where ACPR2 and the bias-node memory are converged on every measured case. <em>d
 0.4 dB pessimistic on ACPR2 and badly off on bias-network ringing. <em>fine</em> (8×) is for reference runs.</p>
 </li>
 </ul>
+<p><strong>Frequency-dependent blocks.</strong> Each step treats the linear network as a straight line in frequency
+around every harmonic. Resistors, capacitors and inductors are exactly that; other blocks are handled
+as follows.</p>
+<ul>
+<li><strong>S-parameter blocks</strong> (<a href="components.html#snp">SnP</a>) and the System <a href="components.html#filter">Filter</a>
+and <a href="components.html#duplexer">Duplexer</a> are fitted with a rational model and simulated exactly
+across the signal band, and at DC and every harmonic. The Messages pane reports each fit's order and
+error, and, for an SnP, how far the fit is from the file's interpolated values at DC and at any
+harmonic outside the file's frequency range. A fit that misses its error tolerance, or that is not
+passive, warns.</li>
+<li><strong>Lines and Z(freq) blocks</strong> (<a href="components.html#tline">TLIN</a>, the microstrip, stripline, coplanar and
+coupled lines, and an <a href="components.html#zport">Impedance N-Port</a> with a <code>Z(freq)</code>) are still
+approximated by a straight line in frequency around each harmonic. In the baseband envelope (the
+bias path) they are held at their DC value. A warning names any whose error across the band is
+large enough to move ACPR by about 0.1 dB.</li>
+</ul>
 <table>
 <thead>
 <tr>

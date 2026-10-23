@@ -1400,7 +1400,7 @@ src/Design/Modeling/Passive/PassiveTopologies.cs|'{id}' is not a passive topolog
 src/Design/Modeling/Passive/PassiveTopologies.cs|The passive topology '{id}' is missing from this build.
 src/Engine/Modeling/VectorFit.cs|A fit needs at least two samples of one response.
 src/Engine/Modeling/VectorFit.cs|Every response has one value per frequency.
-src/Engine/Modeling/VectorFit.cs|Frequencies are positive.
+src/Engine/Modeling/VectorFit.cs|Frequencies are positive (a DC sample is allowed).
 src/Engine/Modeling/VectorFit.cs|Least squares needs at least as many rows as columns.
 src/Engine/Modeling/VectorFit.cs|No order could be fitted.
 

@@ -18,6 +18,8 @@
 //  the same w >= 0 contract the harmonic-balance engine keeps.  The
 //  device Jacobian is HbNewtonNd.BuildJNd with dg + alpha*dc as the
 //  conductance waveform, which adds exactly the alpha*C triple product.
+//  SnP blocks are rational fits for the run and lines keep their tangent,
+//  checked at each product's band edge, exactly as in EnvelopeEngine.
 // ================================================================
 
 using System.Diagnostics;
@@ -132,6 +134,11 @@ public sealed class EnvelopeEngineMt
                 drv[s, t] = x;
             }
 
+        // Every SnP is its rational fit for the whole run (EnvelopeSnpFit), the multi-tone start included.
+        var stampHz = wMix.Select(w => Math.Abs(w) / (2 * Math.PI)).Where(f => f > 0).Distinct().ToArray();
+        using var snpFit = EnvelopeSnpFit.Apply(_nl, stampHz.DefaultIfEmpty(0).Max() + 0.5 * rate, stampHz, 0.5 * rate);
+        using var baseband = EnvelopeBaseband.Apply(_nl, Math.PI * need);    // as in EnvelopeEngine
+
         var extractor = new HbLinearExtractor(_nl, _settings);
         int N = extractor.InterfaceCount;
         int[] ifNodes = extractor.InterfaceNodes;
@@ -140,6 +147,10 @@ public sealed class EnvelopeEngineMt
             if (ec.Model is P1ToneModel p1) p1.SetToneContext(fc: fc, driveFreqHz: tones[0]);
             else if (ec.Model is PnToneModel pn) pn.SetToneContext(fc: fc);
         foreach (var s in sources) { s.SetToneContext(fc); s.EnvelopeDrive = Complex.Zero; }
+        // Before the products are stamped: stamping an element alone re-numbers a source's branch.
+        // Measured out to the signal's own extent (+-need/2), as in EnvelopeEngine.
+        EnvelopeTangentCheck.Warn(_nl, EnvelopeTangentCheck.Measure(_nl, wMix.Select(Math.Abs), Math.PI * need), 0.5 * need);
+        double tanErrWorst = 0;
 
         double aBe = 1.0 / h, aG2 = 1.5 / h, b1G2 = -2.0 / h, b2G2 = 0.5 / h;
         var prods = new Prod[M];
@@ -153,8 +164,10 @@ public sealed class EnvelopeEngineMt
                 CompressedColumnStorage<Complex> A0, C;
                 if (m == 0)
                 {
+                    baseband.Holding = true;
                     var a1 = EnvelopeEngine.Stamp(extractor, mna, dlt);
                     var a2 = EnvelopeEngine.Stamp(extractor, mna, 2 * dlt);
+                    baseband.Holding = false;
                     C = EnvelopeEngine.Combine(a2, a1, 1.0 / new Complex(0, dlt), -1.0 / new Complex(0, dlt));
                     A0 = EnvelopeEngine.Combine(a1, C, 1.0, -new Complex(0, dlt));
                 }
@@ -164,6 +177,13 @@ public sealed class EnvelopeEngineMt
                     var am = EnvelopeEngine.Stamp(extractor, mna, w - dlt);
                     C = EnvelopeEngine.Combine(ap, am, 1.0 / new Complex(0, 2 * dlt), -1.0 / new Complex(0, 2 * dlt));
                     A0 = EnvelopeEngine.Stamp(extractor, mna, w);
+                    // the band-edge tangent check the single-fundamental engine makes (affine models: ~round-off)
+                    if (w - Math.PI * rate > 0)
+                    {
+                        var aEdge = EnvelopeEngine.Stamp(extractor, mna, w + Math.PI * rate);
+                        var tan = EnvelopeEngine.Combine(A0, C, 1.0, new Complex(0, Math.PI * rate));
+                        tanErrWorst = Math.Max(tanErrWorst, EnvelopeEngine.RelDiff(aEdge, tan));
+                    }
                 }
                 var bStatic = EnvelopeEngine.RhsAt(extractor, mna, w, sources, null);
                 int tone = Array.IndexOf(toneMix, m);
@@ -352,6 +372,7 @@ public sealed class EnvelopeEngineMt
             SupplyVoltage = Array.Empty<double>(), Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
             F0Hz = tones[0], StepS = h, MaxHarm = M - 1, SignalRateHz = rate, Sources = sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newtonIters / Math.Max(1, total - 1), JacobianBuilds = jacBuilds,
+            WorstTangentError = tanErrWorst, SnpFits = snpFit.Reports,
             CarrierMix = carMix.ToArray(), CarrierOffsetHz = carOff.ToArray(), CarrierLabels = carLab.ToArray(),
             ToneFreqsHz = tones, MixLabels = Enumerable.Range(0, M).Select(m => lat.Label(m)).ToArray(),
             MixFreqHz = wMix.Select(w => w / (2 * Math.PI)).ToArray(),
