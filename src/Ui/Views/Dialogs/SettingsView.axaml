@@ -92,6 +92,15 @@
                     <Setter Property="MinHeight" Value="0"/>
                     <Setter Property="VerticalContentAlignment" Value="Center"/>
                 </Style>
+                <!-- Fluent's TabItem draws the selection pipe in the SAME Panel as the header text,
+                     bottom-aligned with a 2 px margin. The theme's MinHeight of 48 leaves room below
+                     the centred text; with MinHeight 0 that Panel is only as tall as the text, so the
+                     pipe of the selected tab crosses its descenders. A bottom margin on the header
+                     keeps a strip below the text for the pipe. Heights only: the widths measured
+                     above are unchanged. -->
+                <Style Selector="TabItem /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Margin" Value="0,0,0,5"/>
+                </Style>
             </TabControl.Styles>
 
             <!-- ── General tab ────────────────────────────────────────────── -->
