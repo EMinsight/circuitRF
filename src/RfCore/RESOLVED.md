@@ -1031,3 +1031,24 @@ everywhere else); a bare number is still Hz. The prefix is applied by re-reading
 `20MHz`, `20000kHz` and `20e6` parse to the same double. The cache key is therefore unchanged, and the generated
 records are identical (S10). `FormatCarrier` writes BW and Off in MHz and SCS in kHz, but only when the text
 reads back as the same double; otherwise it writes plain Hz.
+
+### Custom I/Q: four FILE-carrier defects the Load Custom work exposed (2026-10-22)
+
+A FILE carrier existed before the Signal Designer could load one as the whole signal, and four things were wrong with
+it. Each was silent:
+
+- **Its bandwidth was 20 MHz whatever the file held.** Nothing set `CarrierSpec.BandwidthHz` for a file, and the
+  envelope rate, the preview's span, `RateFor`'s refusal and the ACLR bands all read it. The bandwidth now comes from
+  `# channel_bw_hz`, or is measured: twice the furthest 99 % edge, over 0.9. `CarrierRecord.Spec` carries it, and the
+  cache stores it, since a cache read rebuilds the record from the netlist's spec.
+- **A relative `File=` resolved against the process's working directory.** The elaborator passed carrier strings
+  through verbatim. It now maps the `File=` field alone through the Touchstone rule (`SignalSpec.MapFilePath`, so
+  hand-written fields survive), and the Designer stores and resolves the path with `SnpPathPolicy`.
+- **An edited file was served from the cache**, because the key covered the path and not the content. The key now
+  includes each file's length and write time.
+- **An envelope run refused any record that 1.92 MHz × 2^k does not divide**, and an arbitrary capture's N / fs is
+  usually such a record. `SignalRate.AtLeast` falls back to the file's own rate × 2^k, which always divides it. All
+  three engine sites use it.
+
+Clipping now applies to a file carrier as well (`OfdmGenerator.Clip` works at any length). `Fs=` gives a headerless
+file its rate. Generator `crf-signals-5`.

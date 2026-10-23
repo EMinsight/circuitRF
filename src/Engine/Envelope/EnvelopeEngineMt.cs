@@ -30,6 +30,7 @@ using CircuitRF.Core.Elaboration;
 using CircuitRF.Engine.HarmonicBalance;
 using CSparse.Complex.Factorization;
 using CSparse.Storage;
+using RfCore.Signals;
 
 namespace CircuitRF.Engine.Envelope;
 
@@ -98,8 +99,8 @@ public sealed class EnvelopeEngineMt
                 : "envelope: the multi-fundamental engine needs two carrier groups");
         int T = 2;
         var tones = plan.Select(g => g.centreHz).ToArray();
-        double rate = 1.92e6, need = plan.Max(g => g.needRate);
-        while (rate < need) rate *= 2;
+        double need = plan.Max(g => g.needRate);
+        double rate = SignalRate.AtLeast(need, sources.Select(s => s.Signal).ToArray());
         int osr = Math.Max(1, p.Oversample);
         double h = p.StepS > 0 ? p.StepS : 1.0 / (rate * osr);
         double recordRate = 1.0 / h;

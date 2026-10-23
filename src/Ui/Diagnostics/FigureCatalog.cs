@@ -769,6 +769,12 @@ public static class FigureCatalog
           + "over the ideal 64QAM points, and a few envelope swings of power around the peak with the "
           + "average and peak lines."),
 
+        new("signal-designer-custom", DocSignalFixtures.DesignerCustom, 1199, 800,
+            WindowFrame.Titled("Signal Designer — SRC1"),
+            "A custom I/Q file as the whole signal: the file stored relative to the workspace, the file sample "
+          + "rate entered for a file with no header, clipping still available, and the presets, carriers, record and "
+          + "shaping greyed because they are the file's."),
+
         // ── Match ─────────────────────────────────────────────────────────────────
 
         new("match-designer", DocMatchFixtures.Designer, 1280, 860,

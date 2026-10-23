@@ -2443,8 +2443,10 @@ public sealed class Elaborator
 
     // ── MOD_Source parameter resolution ──────────────────────────────────────
     // Carrier[i] is a carrier DESCRIPTION ("NR;BW=20MHz;SCS=30kHz;..."), never an expression: stored
-    // verbatim with its quotes removed. Shaping may be the word `off`. Everything else (Fc, Pavg, Z,
-    // Record, Clip, Shaping in dBc) is an ordinary numeric expression with its unit.
+    // verbatim with its quotes removed, except that a FILE carrier's File= path resolves against the
+    // workspace root exactly as an SnP's File does (the Signal Designer stores it with SnpPathPolicy).
+    // Shaping may be the word `off`. Everything else (Fc, Pavg, Z, Record, Clip, Shaping in dBc) is an
+    // ordinary numeric expression with its unit.
 
     private static readonly Regex RxModCarrier = new(@"^Carrier\[\d+\]$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -2457,7 +2459,7 @@ public sealed class Elaborator
             string raw = ov.Expression.Trim();
             if (RxModCarrier.IsMatch(ov.Name))
             {
-                result[ov.Name] = new Value(raw.Trim('"'));
+                result[ov.Name] = new Value(RfCore.Signals.SignalSpec.MapFilePath(raw.Trim('"'), ResolveSnpFilePath));
                 continue;
             }
             if (ov.Name.Equals("Shaping", StringComparison.OrdinalIgnoreCase) &&

@@ -34,9 +34,45 @@ public static class DocSignalFixtures
     public static FigureScene DesignerEvm() => Designer(tab: 1, clip: null,
         carriers: "\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\"");
 
+    /// <summary>
+    /// A custom I/Q file (Load Custom): a single-carrier 64QAM capture at 200 MS/s with no header, so its rate is the
+    /// one entered on the Custom I/Q card, stored workspace-relative and clipped to 8 dB. The presets, the carriers,
+    /// the record and the shaping are greyed: they are the file's.
+    /// </summary>
+    public static FigureScene DesignerCustom()
+    {
+        string ws = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "crf-docs-signal-designer");
+        string file = System.IO.Path.Combine(ws, "iq", "sc_64qam_40Msym.txt");
+        WriteSingleCarrierQam(file);
+        return Designer(0, "8", () => ws, "\"FILE;File=iq/sc_64qam_40Msym.txt;Fs=200MHz;Off=0;P=0;Seed=1\"");
+    }
+
+    /// <summary>64QAM at 40 Msym/s through a root-raised-cosine (roll-off 0.22), 200 MS/s, 0.5 ms, periodic, as two
+    /// columns with no header. Fixed seed: the figure is the same on every capture.</summary>
+    private static void WriteSingleCarrierQam(string path)
+    {
+        const int sps = 5, nsym = 20_000, n = nsym * sps;
+        const double fs = 200e6, rs = 40e6, beta = 0.22;
+        var rng = new Random(7);
+        var imp = new System.Numerics.Complex[n];
+        for (int k = 0; k < nsym; k++) imp[k * sps] = new System.Numerics.Complex(2 * rng.Next(8) - 7, 2 * rng.Next(8) - 7);
+        var spec = Fft.Forward(imp);
+        double f1 = (1 - beta) * rs / 2, f2 = (1 + beta) * rs / 2;
+        for (int k = 0; k < n; k++)
+        {
+            double f = Math.Abs((k < n / 2 ? k : k - n) * fs / n);
+            spec[k] *= f <= f1 ? 1 : f >= f2 ? 0 : Math.Sqrt(0.5 * (1 + Math.Cos(Math.PI / (beta * rs) * (f - f1))));
+        }
+        var x = Fft.Inverse(spec);
+        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+        System.IO.File.WriteAllLines(path, x.Select(v => FormattableString.Invariant($"{v.Real:G9} {v.Imaginary:G9}")));
+    }
+
     private static FigureScene Designer(params string[] carriers) => Designer(0, null, carriers);
 
-    private static FigureScene Designer(int tab, string? clip, params string[] carriers)
+    private static FigureScene Designer(int tab, string? clip, params string[] carriers) => Designer(tab, clip, null, carriers);
+
+    private static FigureScene Designer(int tab, string? clip, Func<string?>? workspaceRoot, params string[] carriers)
     {
         var model = new SchematicEditModel();
         var src = new EditableComponent { InstanceName = "SRC1", Symbol = SymbolKind.ModSource };
@@ -50,7 +86,7 @@ public static class DocSignalFixtures
         model.Components.Add(src);
 
         var vm = new SignalDesignerViewModel();
-        vm.SetTarget(new SchematicViewModel(model, messageSink: null), src, preview: false);
+        vm.SetTarget(new SchematicViewModel(model, messageSink: null) { WorkspaceRootProvider = workspaceRoot }, src, preview: false);
         // Generated on the thread pool (the cache's own Task.Run), never on this dispatcher.
         vm.ShowPreview(SignalCache.Get(vm.BuildSpec()));
         vm.PreviewTab = tab;

@@ -40,6 +40,9 @@ namespace RfCore.Signals
         public int Seed { get; init; } = 1;
         /// <summary>I/Q file for <see cref="CarrierStandard.File"/> (Waveform_Generator .txt, or two-column I Q text).</summary>
         public string? FilePath { get; init; }
+        /// <summary>Sample rate (Hz) of a <see cref="CarrierStandard.File"/> carrier's I/Q; null = the file's own
+        /// <c># sample_rate_hz</c> header. Stated, it wins over the header — a file with none needs it.</summary>
+        public double? SampleRateHz { get; init; }
 
         public string Label => Standard switch
         {
@@ -74,7 +77,8 @@ namespace RfCore.Signals
         // -2: clipping meets its target as the PEAK at 4x oversampling (it clipped at the native rate before)
         // -3: peak cancellation instead of clip-and-filter (same PAPR, lower EVM)
         // -4: the clipping target is judged at 8x oversampling (4x let NR 100 peaks through between samples)
-        public const string GeneratorVersion = "crf-signals-4";
+        // -5: a FILE carrier takes its bandwidth from the file (the cache stores it) and is clipped like a generated one
+        public const string GeneratorVersion = "crf-signals-5";
 
         private static readonly JsonSerializerOptions JsonOpts = new()
         {
@@ -96,9 +100,43 @@ namespace RfCore.Signals
             {
                 Converters = { new JsonStringEnumConverter() },
                 DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            }) + "|" + GeneratorVersion;
+            }) + "|" + GeneratorVersion + FileStamps();
             var h = SHA256.HashData(Encoding.UTF8.GetBytes(canon));
             return Convert.ToHexString(h, 0, 12).ToLowerInvariant();
+        }
+
+        /// <summary>Each I/Q file's length and write time, so a file edited in place is read again rather than served
+        /// from the cache under its unchanged path.</summary>
+        private string FileStamps()
+        {
+            var sb = new StringBuilder();
+            foreach (var c in Carriers.Where(c => c.Standard == CarrierStandard.File && !string.IsNullOrEmpty(c.FilePath)))
+            {
+                try
+                {
+                    var fi = new System.IO.FileInfo(c.FilePath!);
+                    sb.Append('|').Append(fi.Exists ? $"{fi.Length}:{fi.LastWriteTimeUtc.Ticks}" : "missing");
+                }
+                catch (Exception) { sb.Append("|unreadable"); }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// <paramref name="carrierText"/> with its <c>File=</c> value passed through <paramref name="map"/> and every
+        /// other field left exactly as written — how a stored (workspace-relative) path is resolved for a run, without
+        /// re-formatting the description and dropping what the formatter does not write.
+        /// </summary>
+        public static string MapFilePath(string carrierText, Func<string, string> map)
+        {
+            var parts = carrierText.Split(';');
+            for (int i = 1; i < parts.Length; i++)
+            {
+                int eq = parts[i].IndexOf('=');
+                if (eq > 0 && parts[i][..eq].Trim().Equals("File", StringComparison.OrdinalIgnoreCase))
+                    parts[i] = parts[i][..(eq + 1)] + map(parts[i][(eq + 1)..].Trim().Trim('"'));
+            }
+            return string.Join(';', parts);
         }
 
         /// <summary>Instantaneous bandwidth: lowest carrier edge to highest carrier edge (Hz).</summary>
@@ -120,7 +158,8 @@ namespace RfCore.Signals
 
         /// <summary>
         /// Parses the compact inline carrier form used in netlists:
-        /// <c>"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=3"</c>. BW, SCS and Off take Hz, kHz, MHz or
+        /// <c>"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=3"</c>, or for an imported I/Q file
+        /// <c>"FILE;File=iq/capture.txt;Fs=122.88MHz;Off=0;P=0"</c>. BW, SCS, Fs and Off take Hz, kHz, MHz or
         /// GHz after the number; a bare number is Hz (<c>BW=20e6</c>).
         /// </summary>
         public static CarrierSpec ParseCarrier(string text)
@@ -152,6 +191,7 @@ namespace RfCore.Signals
                     "P" or "POWER" => c with { PowerDb = Num() },
                     "SEED" => c with { Seed = (int)Num() },
                     "FILE" => c with { FilePath = v.Trim('"') },
+                    "FS" => c with { SampleRateHz = ParseHz(k, v) },
                     "MOD" => c with { Modulation = ParseMod(v) },
                     _ => throw new FormatException($"unknown carrier field '{k}'"),
                 };
@@ -207,7 +247,11 @@ namespace RfCore.Signals
                 if (c.Standard == CarrierStandard.Nr) sb.Append(";SCS=").Append(FormatHz(c.ScsHz, "kHz"));
                 sb.Append(";Mod=").Append(CarrierSpec.ModName(c.Modulation));
             }
-            if (c.Standard == CarrierStandard.File) sb.Append(";File=").Append(c.FilePath);
+            if (c.Standard == CarrierStandard.File)
+            {
+                sb.Append(";File=").Append(c.FilePath);
+                if (c.SampleRateHz is double fs) sb.Append(";Fs=").Append(FormatHz(fs, "MHz"));
+            }
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));
             sb.Append(";P=").Append(c.PowerDb.ToString("R", inv));
             sb.Append(";Seed=").Append(c.Seed.ToString(inv));

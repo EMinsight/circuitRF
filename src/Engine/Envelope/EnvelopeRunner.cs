@@ -104,8 +104,7 @@ public static class EnvelopeRunner
                             need = Math.Max(need, 2 * (Math.Abs(2 * a.f - b.f - f0) + 2.5 * Math.Max(a.bw, b.bw)));
             }
         }
-        double rate = 1.92e6;
-        while (rate < need) rate *= 2;
+        double rate = SignalRate.AtLeast(need, sources.Select(s => s.Signal).ToArray());
         return 1.0 / (rate * Math.Max(1, p.Oversample));
     }
 

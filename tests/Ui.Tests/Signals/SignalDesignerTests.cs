@@ -411,4 +411,75 @@ public class SignalDesignerTests
         Assert.StartsWith("C1 of 1:  CW", d.EvmSignalText);
         Assert.Empty(d.ConstellationPlot.Traces);
     }
+
+    /// <summary>Load Custom: the signal becomes the one file, at the rate its header states; the carriers panel is the
+    /// file's (custom mode); Apply stores the path WORKSPACE-relative with its rate, as an SnP's Touchstone is stored;
+    /// the preview reads the file back through that stored path; and Remove custom file restores the carriers it
+    /// replaced and takes the reference out of the schematic.</summary>
+    [Fact]
+    public async Task LoadCustom_StoresAWorkspaceRelativeFileWithItsRate_AndPreviewsIt()
+    {
+        string ws = System.IO.Directory.CreateTempSubdirectory("crf-loadcustom-").FullName;
+        try
+        {
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(ws, "iq"));
+            string path = System.IO.Path.Combine(ws, "iq", "a.txt");
+            var x = Enumerable.Range(0, 30_720).Select(k => System.Numerics.Complex.FromPolarCoordinates(1, 0.37 * k * k)).ToArray();
+            IqFile.Write(path, x, 30.72e6);
+
+            var (vm, s) = Bench();
+            vm.WorkspaceRootProvider = () => ws;
+            using var d = new SignalDesignerViewModel();
+            d.SetTarget(vm, s, preview: false);
+            Assert.False(d.IsCustom);
+            d.LoadCustomFile(path);
+
+            Assert.True(d.IsCustom);
+            Assert.Same(d.Carriers.Single(), d.CustomCarrier);
+            Assert.Equal(("FILE", "iq/a.txt", 30.72), (d.Carriers[0].Standard, d.Carriers[0].FilePath, d.Carriers[0].SampleRateMHz));
+            Assert.Equal("30.72", d.Carriers[0].SampleRateText);
+
+            // A typed rate: an invalid one is marked and never reaches the signal; a unit is honoured.
+            d.Carriers[0].SampleRateText = "fast";
+            Assert.True(d.Carriers[0].HasSampleRateError);
+            Assert.Equal(30.72, d.Carriers[0].SampleRateMHz);
+            d.Carriers[0].SampleRateText = "0.03072 GHz";
+            Assert.False(d.Carriers[0].HasSampleRateError);
+            Assert.Equal(30.72, d.Carriers[0].SampleRateMHz, 9);
+
+            await d.PreviewAsync();
+            Assert.StartsWith("Ready", d.Status);
+            Assert.StartsWith("30,720 samples at 30.72 MS/s = 1 ms record", d.CustomInfo);
+
+            // Export is at the Source box's rate: the file (30.72 MS/s) is resampled to it.
+            d.SampleRate = SignalDesignerViewModel.SampleRateOptions.Single(o => o.Hz == 61.44e6);
+            string exported = System.IO.Path.Combine(ws, "export.txt");
+            Assert.True(await d.ExportSignalAsync(exported), d.Status);
+            var back = IqFile.Read(exported);
+            Assert.Equal((61.44e6, 61_440), (back.SampleRateHz, back.Samples.Length));
+
+            // File rate: the file's own rate, offered while it is loaded, exports it without resampling.
+            d.SampleRate = d.SampleRates.Single(o => o.IsFile);
+            Assert.Equal("File rate (30.72 MS/s)", d.SampleRate.Label);
+            Assert.True(await d.ExportSignalAsync(exported), d.Status);
+            back = IqFile.Read(exported);
+            Assert.Equal((30.72e6, 30_720), (back.SampleRateHz, back.Samples.Length));
+            for (int i = 0; i < x.Length; i += 997)
+                Assert.True((back.Samples[i] - x[i]).Magnitude < 1e-6, $"sample {i}");     // unit-power chirp, unchanged
+
+            d.ApplyCommand.Execute(null);
+            Assert.DoesNotContain(s.Parameters, p => p.Name == "Carrier[2]");
+            var c1 = SignalSpec.ParseCarrier(s.Parameters.Single(p => p.Name == "Carrier[1]").Expression.Trim('"'));
+            Assert.Equal((CarrierStandard.File, "iq/a.txt", (double?)30.72e6), (c1.Standard, c1.FilePath, c1.SampleRateHz));
+
+            d.RemoveCustomCommand.Execute(null);
+            Assert.False(d.IsCustom);
+            Assert.DoesNotContain(d.SampleRates, o => o.IsFile);
+            Assert.Equal(0, d.SampleRate.Hz);                                       // a selected File rate falls back to Auto
+            Assert.Equal(["NR", "LTE"], d.Carriers.Select(c => c.Standard));      // the carriers it had before
+            d.ApplyCommand.Execute(null);
+            Assert.DoesNotContain(s.Parameters, p => p.Expression.Contains("File="));
+        }
+        finally { System.IO.Directory.Delete(ws, recursive: true); }
+    }
 }

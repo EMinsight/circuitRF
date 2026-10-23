@@ -43,7 +43,7 @@
                      ToolTip.Tip="Used when carriers are far apart and each gets its own fundamental. 7 converges IM5; at 5, IM5 sits on the truncation edge."/>
 
             <TextBlock Grid.Row="3" Classes="lbl" Text="Probes"/>
-            <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Probes}" Watermark="node names, comma-separated — the LAST is the output (gain, AM-AM/AM-PM, DE)"/>
+            <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Probes}" PlaceholderText="node names, comma-separated — the LAST is the output (gain, AM-AM/AM-PM, DE)"/>
 
             <TextBlock Grid.Row="4" Classes="lbl" Text="Segments"/>
             <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Segments}"

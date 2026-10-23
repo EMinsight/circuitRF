@@ -140,7 +140,6 @@ public sealed class EnvelopeEngine
         int K = p.MaxHarm;
         double omega0 = 2 * Math.PI * f0;
         var signals = sources.Select(s => s.Signal).ToArray();
-        double rate = 1.92e6;
         double need = 0;
         for (int s = 0; s < sources.Length; s++)
             foreach (var c in signals[s].Carriers)
@@ -149,7 +148,7 @@ public sealed class EnvelopeEngine
                 need = Math.Max(need, 2 * (Math.Abs(off) + 2.5 * c.Spec.BandwidthHz));
                 need = Math.Max(need, c.NativeRateHz);
             }
-        while (rate < need) rate *= 2;
+        double rate = SignalRate.AtLeast(need, signals);
         int osr = Math.Max(1, p.Oversample);
         double h = p.StepS > 0 ? p.StepS : 1.0 / (rate * osr);
         double recordRate = 1.0 / h;

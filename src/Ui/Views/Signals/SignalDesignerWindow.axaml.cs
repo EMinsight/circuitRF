@@ -47,6 +47,8 @@ public partial class SignalDesignerWindow : Window
         };
     }
 
+    private void OnHelpClick(object? sender, RoutedEventArgs e) => DocLauncher.Open("reference/signal-designer.html");
+
     private void OnCarrierCardPressed(object? sender, PointerPressedEventArgs e)
     {
         if (e.Source is not Avalonia.Visual v) return;

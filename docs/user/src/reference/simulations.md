@@ -125,7 +125,8 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
 ## Circuit Envelope (modulated signals) {#envelope}
 
 **Computes:** the circuit's response to a **modulated** signal — LTE, NR, several carriers, or an
-imported I/Q waveform from a [MOD_Source](components.html#modsource) — as a time series of
+imported I/Q waveform from a [MOD_Source](components.html#modsource), designed in the
+[Signal Designer](signal-designer.html) — as a time series of
 harmonic-balance spectra, and from it the modulated measurements: **ACLR / ACPR1 / ACPR2** per carrier,
 channel power, **PAPR and CCDF**, **AM-AM and AM-PM** (with the memory spread), gain, error (NMSE)
 against the input, **drain efficiency** from the DC supply currents, and for two widely spaced

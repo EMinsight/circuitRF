@@ -33,8 +33,8 @@ connected. Almost every early surprise is one of those two.</p>
 </div>
 
 <div class="callout note">
-<span class="label">Six chapters that are easy to miss</span>
-<p>Five of these are tools in their own right rather than components with a dialog, and the sixth
+<span class="label">Seven chapters that are easy to miss</span>
+<p>Six of these are tools in their own right rather than components with a dialog, and the seventh
 is a whole class of parts.</p>
 <p><b><a href="match.html">The Match Component</a></b> synthesises a bandpass matching network that
 absorbs both terminations — closed-form, no optimiser, and <i>broadband</i>.
@@ -44,7 +44,9 @@ and instead draws one curve per component so you can drag the network into place
 runs harmonic load-pull on one device while you drag a marker. <b><a href="wbond.html">wBond</a></b>
 models bondwire arrays as geometry rather than as a number you looked up.
 <b><a href="model-composer.html">The Model Composer</a></b> builds a nonlinear FET model from measured or
-simulated data, and places it in a schematic as a ComposedFET. And
+simulated data, and places it in a schematic as a ComposedFET.
+<b><a href="signal-designer.html">The Signal Designer</a></b> defines the modulated signal an envelope run
+plays — LTE, NR, CW, or an I/Q file of your own — and shows its spectrum, CCDF and EVM first. And
 <b><a href="system-components.html">System Components</a></b> covers the ideal blocks a system block
 diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifier, attenuator, filter,
 duplexer and mixer — including where passive intermodulation comes from and what "ideal" costs

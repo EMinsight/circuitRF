@@ -27,6 +27,7 @@ using System.Numerics;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using CircuitRF.Design.Matching;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.Commands.Schematic;
@@ -54,6 +55,50 @@ public sealed partial class CarrierRowViewModel : ObservableObject
     [ObservableProperty] private double _powerDb;
     [ObservableProperty] private int _seed = 1;
     [ObservableProperty] private string _filePath = "";
+    /// <summary>A FILE carrier's sample rate (MHz); 0 = the file's own <c># sample_rate_hz</c> header.</summary>
+    [ObservableProperty] private double _sampleRateMHz;
+
+    /// <summary>
+    /// The FILE sample rate as typed on the Custom I/Q card (the rate the samples were recorded at — not the Source
+    /// box's preview / export rate, which a custom file is resampled to): a number in MHz, or a number with its own frequency unit, read by
+    /// the parser every typed value-with-unit field uses (<see cref="MatchValueFormat.TryParseWithUnit"/>). A valid entry
+    /// sets <see cref="SampleRateMHz"/>; an invalid or empty one marks the field (<see cref="SampleRateError"/>) and goes
+    /// no further, so the signal keeps the last valid rate and nothing is generated from a half-typed one.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SampleRateError), nameof(HasSampleRateError), nameof(SampleRateTip))]
+    private string _sampleRateText = "";
+
+    /// <summary>Why <see cref="SampleRateText"/> is not a sample rate, or null.</summary>
+    public string? SampleRateError => TryParseRateMHz(SampleRateText, out _);
+    public bool HasSampleRateError => SampleRateError is not null;
+    public string SampleRateTip => SampleRateError
+        ?? "The rate the file's samples were taken at: a number in MHz, or with its unit (1.5 GHz, 30720000 Hz). "
+         + "Filled from the file's # sample_rate_hz header when it has one; a file without one needs it entered.";
+
+    partial void OnSampleRateTextChanged(string value)
+    {
+        if (TryParseRateMHz(value, out double mhz) is null && mhz != SampleRateMHz) SampleRateMHz = mhz;
+    }
+
+    // Set from code (loading a source, a file's header): the field shows it, unless it already reads that value.
+    partial void OnSampleRateMHzChanged(double value)
+    {
+        if (TryParseRateMHz(SampleRateText, out double shown) is null && shown == value) return;
+        SampleRateText = value > 0 ? value.ToString("0.#########", CultureInfo.InvariantCulture) : "";
+    }
+
+    /// <summary>Null and the rate in MHz, or the reason <paramref name="text"/> is not a sample rate.</summary>
+    public static string? TryParseRateMHz(string? text, out double mhz)
+    {
+        mhz = 0;
+        if (string.IsNullOrWhiteSpace(text)) return "Enter the rate the samples were taken at, in MHz (e.g. 122.88).";
+        if (!MatchValueFormat.TryParseWithUnit(text, MatchQuantity.Frequency, "MHz", out double hz, out _))
+            return "Not a sample rate: a number in MHz (122.88), or with its unit (1.5 GHz, 30720000 Hz).";
+        if (hz <= 0) return "The sample rate must be greater than zero.";
+        mhz = hz / 1e6;
+        return null;
+    }
 
     /// <summary>The card picked on the left; the EVM tab shows this carrier.</summary>
     [ObservableProperty] private bool _isSelected;
@@ -92,6 +137,7 @@ public sealed partial class CarrierRowViewModel : ObservableObject
         PowerDb = PowerDb,
         Seed = Seed,
         FilePath = Standard == "FILE" ? FilePath : null,
+        SampleRateHz = Standard == "FILE" && SampleRateMHz > 0 ? SampleRateMHz * 1e6 : null,
     };
 
     public static CarrierRowViewModel FromSpec(CarrierSpec c, int index) => new()
@@ -105,11 +151,13 @@ public sealed partial class CarrierRowViewModel : ObservableObject
         PowerDb = c.PowerDb,
         Seed = c.Seed,
         FilePath = c.FilePath ?? "",
+        SampleRateMHz = c.SampleRateHz is double fs ? fs / 1e6 : 0,
     };
 }
 
-/// <summary>A sample-rate choice: <see cref="Hz"/> = 0 is Auto (the signal's recommended rate).</summary>
-public sealed record SampleRateOption(double Hz, string Label)
+/// <summary>A sample-rate choice: <see cref="Hz"/> = 0 is Auto (the signal's recommended rate); <see cref="IsFile"/>
+/// is a custom I/Q file's own rate, offered while one is loaded.</summary>
+public sealed record SampleRateOption(double Hz, string Label, bool IsFile = false)
 {
     public override string ToString() => Label;
 }
@@ -137,6 +185,26 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     /// <summary>More than one carrier. With one, its Power (dB) means nothing (it is relative to the others, and Pavg
     /// is its power) and it cannot be removed (a source needs a carrier), so both controls are disabled.</summary>
     public bool HasSeveralCarriers => Carriers.Count > 1;
+
+    /// <summary>
+    /// The signal is ONE imported I/Q file (Load Custom). The presets, the carriers panel, the record length and the
+    /// spectral shaping are then the file's and are disabled; Fc, Pavg, clipping and the sample rate still apply.
+    /// Remove custom file is the way back.
+    /// </summary>
+    public bool IsCustom => Carriers.Count == 1 && Carriers[0].IsFile;
+    public bool IsNotCustom => !IsCustom;
+
+    /// <summary>The custom file's carrier, which the Custom I/Q card edits (its sample rate); null otherwise.</summary>
+    public CarrierRowViewModel? CustomCarrier => IsCustom ? Carriers[0] : null;
+
+    /// <summary>What the custom file holds, as read from it: samples, rate, record, bandwidth.</summary>
+    [ObservableProperty] private string _customInfo = "";
+
+    private void RaiseCustom()
+    {
+        OnPropertyChanged(nameof(IsCustom)); OnPropertyChanged(nameof(IsNotCustom)); OnPropertyChanged(nameof(CustomCarrier));
+        SyncFileRateOption();
+    }
 
     /// <summary>Fc and Pavg as the user's own TEXT — a number (GHz / dBm) or an expression such as
     /// <c>RFfreq</c> or <c>Pin</c>, which is written back verbatim. A swept source must stay swept.</summary>
@@ -209,10 +277,41 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     /// </summary>
     [ObservableProperty] private SampleRateOption _sampleRate = SampleRateOptions[0];
 
+    /// <summary>
+    /// What the Sample rate list offers: <see cref="SampleRateOptions"/>, plus — while a custom I/Q file is loaded —
+    /// <b>File rate</b>, the file's own sample rate, second, so the file can be previewed and exported without being
+    /// resampled. A stable collection, changed in place (<see cref="SyncFileRateOption"/>).
+    /// </summary>
+    public ObservableCollection<SampleRateOption> SampleRates { get; } = new(SampleRateOptions);
+
     /// <summary>The rate in effect, its sample period and the samples per record, after the last preview.</summary>
     [ObservableProperty] private string _sampleRateInfo = "";
 
-    partial void OnSampleRateChanged(SampleRateOption value) => SchedulePreview();
+    partial void OnSampleRateChanged(SampleRateOption value)
+    {
+        // The list drops a File rate entry the moment its file goes, and a ComboBox clears a selection its items no
+        // longer hold, writing null back here: the choice falls back to Auto rather than to nothing.
+        if (value is null) { SampleRate = SampleRateOptions[0]; return; }
+        SchedulePreview();
+    }
+
+    /// <summary>
+    /// Keeps the File rate entry in step with the custom file: added when one is loaded with a rate, replaced when the
+    /// rate changes, removed with the file. A selected File rate follows its replacement, or falls back to Auto.
+    /// </summary>
+    private void SyncFileRateOption()
+    {
+        double mhz = IsCustom ? Carriers[0].SampleRateMHz : 0;
+        var want = mhz > 0
+            ? new SampleRateOption(mhz * 1e6, "File rate (" + mhz.ToString("0.######", CultureInfo.InvariantCulture) + " MS/s)", IsFile: true)
+            : null;
+        var have = SampleRates.FirstOrDefault(o => o.IsFile);
+        if (have == want) return;
+        bool selected = SampleRate?.IsFile == true;
+        if (have is not null) SampleRates.Remove(have);
+        if (want is not null) SampleRates.Insert(1, want);
+        if (selected) SampleRate = want ?? SampleRateOptions[0];
+    }
 
     /// <summary>
     /// The rate <paramref name="choice"/> gives for <paramref name="sig"/>. Refuses a rate that cannot hold the
@@ -299,6 +398,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
                 foreach (CarrierRowViewModel r in e.OldItems) r.PropertyChanged -= OnRowChanged;
             if (SelectedCarrier is null || !Carriers.Contains(SelectedCarrier)) SelectedCarrier = Carriers.FirstOrDefault();
             OnPropertyChanged(nameof(HasSeveralCarriers));
+            RaiseCustom();
             SchedulePreview();
         };
         PropertyChanged += (_, e) =>
@@ -312,6 +412,8 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     private void OnRowChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(CarrierRowViewModel.Index) or nameof(CarrierRowViewModel.IsSelected)) return;
+        if (e.PropertyName == nameof(CarrierRowViewModel.Standard)) RaiseCustom();
+        if (e.PropertyName == nameof(CarrierRowViewModel.SampleRateMHz)) SyncFileRateOption();
         SchedulePreview();
     }
 
@@ -399,6 +501,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         _evmSig = sig;
         ShowEvm(AnalyseEvm(sig));
         Stats = text;
+        CustomInfo = DescribeCustom(sig);
         Status = "Ready. Generated in the background and cached — the simulation reuses it.";
     }
 
@@ -415,7 +518,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
 
     public SignalSpec BuildSpec() => new()
     {
-        Carriers = Carriers.Select(c => c.ToSpec()).ToList(),
+        Carriers = Carriers.Select(c => c.ToSpec()).Select(c => c.FilePath is { Length: > 0 } f ? c with { FilePath = ResolveIqPath(f) } : c).ToList(),
         RecordSeconds = Math.Max(0.5, RecordMs) * 1e-3,
         ClipPaprDb = ClipEnabled ? ClipPaprDb : null,
         ShapingFloorDbc = ShapingEnabled ? ShapingFloorDbc : null,
@@ -477,6 +580,15 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         Name = p.Name, Expression = p.Expression, Unit = p.Unit, ShowOnSchematic = p.ShowOnSchematic, Dimension = p.Dimension,
     };
 
+    /// <summary>The absolute path a stored I/Q reference names — the rule the elaborator resolves it by at Run
+    /// (<see cref="SnpPathPolicy"/>), so the preview and the simulation read the same file and share one cache entry.</summary>
+    private string ResolveIqPath(string stored)
+        => SnpPathPolicy.Resolve(stored, _schematicVm?.WorkspaceRoot, _schematicVm?.EditModel.SchematicDirectory) ?? stored;
+
+    /// <summary>How a picked I/Q file is stored in the <c>.csch</c>: workspace-relative when it can be, as an SnP's
+    /// Touchstone is, so the design stays portable.</summary>
+    private string StoreIqPath(string absolute) => SnpPathPolicy.ToStored(absolute, _schematicVm?.WorkspaceRoot);
+
     // ── carriers and presets ──────────────────────────────────────────────
 
     [RelayCommand]
@@ -521,6 +633,49 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         double half = PresetSpacingMHz * 1e6 / 2;
         Preset(new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 20e6, ScsHz = 30e3, OffsetHz = -half, Seed = 1 },
                new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 20e6, ScsHz = 30e3, OffsetHz = +half, Seed = 2 });
+    }
+
+    /// <summary>
+    /// Load Custom: the signal becomes one I/Q file, at Fc, with the sample rate from its header when it has one.
+    /// A file without one previews only once the rate is entered on the Custom I/Q card.
+    /// </summary>
+    [RelayCommand]
+    private async Task LoadCustom()
+    {
+        if (PickIqFileAsync is null) return;
+        var path = await PickIqFileAsync();
+        if (path is not null) LoadCustomFile(path);
+    }
+
+    /// <summary>The carriers on the left before Load Custom replaced them: Remove custom file puts them back.</summary>
+    private List<CarrierSpec>? _beforeCustom;
+
+    public void LoadCustomFile(string path)
+    {
+        double fs;
+        try { fs = IqFile.ReadHeader(path).SampleRateHz; }
+        catch (Exception ex) { Status = "Cannot read the file: " + ex.Message; return; }
+        if (!IsCustom) _beforeCustom = Carriers.Select(c => c.ToSpec()).ToList();
+        Preset(new CarrierSpec
+        {
+            Standard = CarrierStandard.File, FilePath = StoreIqPath(path), SampleRateHz = fs > 0 ? fs : null,
+        });
+        if (fs <= 0) Status = "The file states no sample rate: enter it on the Custom I/Q card.";
+    }
+
+    /// <summary>
+    /// Drops the custom file: the signal goes back to the carriers it had before Load Custom (one LTE 20 MHz carrier
+    /// when the source was opened on a file), and every control the file disabled is enabled again. Apply writes
+    /// it, removing the file's reference from the schematic.
+    /// </summary>
+    [RelayCommand]
+    private void RemoveCustom()
+    {
+        if (!IsCustom) return;
+        var back = _beforeCustom is { Count: > 0 } b ? b.ToArray()
+            : [new CarrierSpec { Standard = CarrierStandard.Lte, BandwidthHz = 20e6, Modulation = QamOrder.Qam64 }];
+        _beforeCustom = null;
+        Preset(back);
     }
 
     [RelayCommand]
@@ -599,7 +754,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     {
         if (row is null || PickIqFileAsync is null) return;
         var path = await PickIqFileAsync();
-        if (path is not null) row.FilePath = path;
+        if (path is not null) row.FilePath = StoreIqPath(path);
     }
 
     // ── preview ───────────────────────────────────────────────────────────
@@ -646,6 +801,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             _evmSig = sig;
             ShowEvm(evm);
             Stats = text;
+            CustomInfo = DescribeCustom(sig);
             Status = $"Ready ({sw.Elapsed.TotalSeconds:0.0} s). Generated in the background and cached — the simulation reuses it.";
             live?.Finish(Messages.MessageLevel.Success, $"ready in {sw.Elapsed.TotalSeconds:0.0} s", keepBar: false);
         }
@@ -664,6 +820,16 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         _pending?.Cancel();
         _cts?.Cancel();
         Status = "Cancelled.";
+    }
+
+    /// <summary>The Custom I/Q card's reading of a one-file signal: samples, rate, record and bandwidth.</summary>
+    public static string DescribeCustom(ModulatedSignal sig)
+    {
+        if (sig.Carriers.Count != 1 || sig.Carriers[0].Spec.Standard != CarrierStandard.File) return "";
+        var c = sig.Carriers[0];
+        return string.Format(CultureInfo.InvariantCulture,
+            "{0:N0} samples at {1:0.######} MS/s = {2:0.######} ms record   ·   channel bandwidth {3:0.###} MHz",
+            c.Native.Length, c.NativeRateHz / 1e6, sig.RecordSeconds * 1e3, c.Spec.BandwidthHz / 1e6);
     }
 
     /// <summary>Composite spectrum, CCDF and per-carrier ideal ACLR of a signal (pure computation, any thread).</summary>
@@ -719,7 +885,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         sb.AppendLine(string.Format(inv, "PAPR {0:0.00} dB at 0.01 %   peak {1:0.00} dB", SignalMeasure.PaprDb(x, 1e-4), SignalMeasure.PaprDb(x, 0)));
         foreach (var c in sig.Carriers)
         {
-            if (c.Spec.Standard is not (CarrierStandard.Lte or CarrierStandard.Nr)) continue;
+            if (c.Spec.Standard == CarrierStandard.Cw) continue;
             var (mb, sp) = SignalMeasure.AclrBands(c.Spec);
             var a = SignalMeasure.Aclr(f, p, rate, c.OffsetHz, mb, sp);
             sb.AppendLine(string.Format(inv, "{0,-24} {1,6:+0.##;-0.##} MHz  ACPR1 {2:0.0}/{3:0.0}  ACPR2 {4:0.0}/{5:0.0} dBc",

@@ -96,6 +96,11 @@
             <Setter Property="FontSize"          Value="11"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
+        <!-- An entry that does not parse, as every typed field in the application marks one. -->
+        <Style Selector="TextBox.error">
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
         <Style Selector="Button.small">
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Padding"  Value="10,4"/>
@@ -111,10 +116,16 @@
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Classes="panelhdr" Text="Signal" VerticalAlignment="Center"/>
                             <!-- Icon-only, as the schematic toolbar's buttons are: the name is in the tooltip. -->
-                            <Button Grid.Column="1" Padding="6,3" Margin="0,2,0,8" Command="{Binding ExportSignalCommand}"
-                                    ToolTip.Tip="Export signal: save it as a two-column I Q text file (sample-rate header), the format a FILE carrier imports">
-                                <mi:MaterialIcon Kind="ExportVariant" Width="16" Height="16"/>
-                            </Button>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,2,0,8">
+                                <Button Padding="6,3" Command="{Binding ExportSignalCommand}"
+                                        ToolTip.Tip="Export signal: save it as a two-column I Q text file (sample-rate header), the format a FILE carrier imports">
+                                    <mi:MaterialIcon Kind="ExportVariant" Width="16" Height="16"/>
+                                </Button>
+                                <Button Name="HelpButton" Padding="6,3" Click="OnHelpClick"
+                                        ToolTip.Tip="Help — the Signal Designer page of the circuitRF reference">
+                                    <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
+                                </Button>
+                            </StackPanel>
                         </Grid>
 
                         <Border Classes="card">
@@ -129,17 +140,18 @@
                                              ToolTip.Tip="A number in dBm, or an expression / variable (e.g. Pin, so a power sweep still sweeps it)"/>
                                     <TextBlock Grid.Row="1" Classes="lbl" Text="Record (ms)" Margin="0,6,6,0"/>
                                     <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Value="{Binding RecordMs}" Increment="0.5" Minimum="0.5" FormatString="0.#"
+                                                   IsEnabled="{Binding IsNotCustom}"
                                                    ToolTip.Tip="Periodic record length, whole 0.5 ms slots. ACPR settles within ~0.1 dB from 0.5 ms; longer records tighten the statistics."/>
                                     <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="Sample rate" Margin="12,6,6,0"/>
                                     <ComboBox Grid.Row="1" Grid.Column="3" Margin="0,6,0,0" HorizontalAlignment="Stretch"
-                                              ItemsSource="{x:Static vm:SignalDesignerViewModel.SampleRateOptions}" SelectedItem="{Binding SampleRate}"
-                                              ToolTip.Tip="Sample rate of the preview and of Export signal. Auto = the recommended rate for these carriers. Not written to the source; the simulation picks its own time step."/>
+                                              ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}"
+                                              ToolTip.Tip="Sample rate of the preview and of Export signal (a custom file is resampled to it; File rate keeps the file's own). Auto = the recommended rate for this signal. Not written to the source; the simulation picks its own time step."/>
                                     <TextBlock Grid.Row="2" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding SampleRateInfo}"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
 
-                        <Border Classes="card" Margin="0,4,0,6">
+                        <Border Classes="card" Margin="0,4,0,6" IsEnabled="{Binding IsNotCustom}">
                             <StackPanel Spacing="6">
                                 <TextBlock Classes="cardhdr" Text="Presets"/>
                                 <WrapPanel>
@@ -156,16 +168,59 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Custom I/Q: an I/Q file as the whole signal. Always shown, so Load custom is always within
+                             reach; empty while the carriers below make the signal. With a file loaded, the presets,
+                             carriers, record and shaping are the file's and are disabled, and the X gives them back. -->
+                        <Border Classes="card" Margin="0,0,0,6" Tag="custom-card">
+                            <StackPanel Spacing="6" DataContext="{Binding CustomCarrier}" x:DataType="vm:CarrierRowViewModel">
+                                <TextBlock Classes="cardhdr" Text="Custom I/Q"/>
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <Button Padding="6,3" Margin="0,0,6,0" VerticalAlignment="Top"
+                                            Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).LoadCustomCommand}"
+                                            ToolTip.Tip="Load custom: use an I/Q file as the whole signal (two columns I Q, optionally a # sample_rate_hz header: the format Export signal writes)">
+                                        <mi:MaterialIcon Kind="FileImport" Width="16" Height="16"/>
+                                    </Button>
+                                    <!-- Wrapped, not scrolled: a long path keeps its file name - the part that matters - in view. -->
+                                    <TextBox Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" TextWrapping="Wrap"
+                                             PlaceholderText="No file: the carriers below make the signal"
+                                             ToolTip.Tip="Stored in the schematic relative to the workspace when it can be, as a Touchstone file is"/>
+                                    <Button Grid.Column="2" Padding="6,3" Margin="4,0,0,0" VerticalAlignment="Top"
+                                            Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).RemoveCustomCommand}"
+                                            IsEnabled="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).IsCustom}"
+                                            ToolTip.Tip="Remove custom file: back to the carriers this signal had before, with the presets and carriers enabled again">
+                                        <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                    </Button>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).IsCustom}">
+                                    <TextBlock Classes="lbl" Text="File sample rate (MHz)" Margin="0,0,6,0" VerticalAlignment="Top" Padding="0,6,0,0"/>
+                                    <!-- Validated as typed: an invalid entry is marked on the field and never reaches the signal. -->
+                                    <TextBox Grid.Column="1" Text="{Binding SampleRateText}" Width="160" HorizontalAlignment="Left"
+                                             PlaceholderText="e.g. 122.88"
+                                             Classes.error="{Binding HasSampleRateError}" ToolTip.Tip="{Binding SampleRateTip}"/>
+                                </Grid>
+                                <TextBlock Classes="note" Text="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).CustomInfo}"
+                                           IsVisible="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).IsCustom}"/>
+                            </StackPanel>
+                        </Border>
+
                         <Border Classes="card" Margin="0,0,0,6">
                             <StackPanel>
                                 <TextBlock Classes="cardhdr" Text="Waveform"/>
                                 <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto">
                                     <CheckBox Content="Clip to PAPR (dB)" IsChecked="{Binding ClipEnabled}"
-                                              ToolTip.Tip="Off = unclipped (natural OFDM PAPR, ~11-12 dB). On = iterative clip-and-filter to the target."/>
+                                              ToolTip.Tip="Off = unclipped (natural OFDM PAPR, ~11-12 dB; a custom file as it is). On = iterative clip-and-filter to the target."/>
                                     <NumericUpDown Grid.Column="1" Margin="6,0" Value="{Binding ClipPaprDb}" Increment="0.5" FormatString="0.#" IsEnabled="{Binding ClipEnabled}"/>
                                     <CheckBox Grid.Row="1" Margin="0,4,0,0" Content="Spectral shaping floor (dBc)" IsChecked="{Binding ShapingEnabled}"
+                                              IsEnabled="{Binding IsNotCustom}"
                                               ToolTip.Tip="A per-bin ceiling outside the occupied band, so the source's own ACLR sits far below the amplifier's"/>
-                                    <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="6,4,6,0" Value="{Binding ShapingFloorDbc}" Increment="5" FormatString="0" IsEnabled="{Binding ShapingEnabled}"/>
+                                    <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="6,4,6,0" Value="{Binding ShapingFloorDbc}" Increment="5" FormatString="0">
+                                        <NumericUpDown.IsEnabled>
+                                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                                <Binding Path="ShapingEnabled"/>
+                                                <Binding Path="IsNotCustom"/>
+                                            </MultiBinding>
+                                        </NumericUpDown.IsEnabled>
+                                    </NumericUpDown>
                                 </Grid>
                                 <TextBlock Classes="note" Margin="0,6,0,0"
                                            Text="Every edit previews by itself. The signal is generated in the background and cached; a simulation of this source reuses it."/>
@@ -175,11 +230,12 @@
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,6">
                             <TextBlock Classes="cardhdr" Text="Carriers" VerticalAlignment="Center"/>
                             <Button Padding="6,3" Margin="8,0,0,0" VerticalAlignment="Center" Command="{Binding AddCarrierCommand}"
+                                    IsEnabled="{Binding IsNotCustom}"
                                     ToolTip.Tip="Add carrier: a new one next to the last">
                                 <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
                             </Button>
                         </StackPanel>
-                        <ItemsControl ItemsSource="{Binding Carriers}">
+                        <ItemsControl ItemsSource="{Binding Carriers}" IsEnabled="{Binding IsNotCustom}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:CarrierRowViewModel">
                                     <Border Classes="card" Classes.selected="{Binding IsSelected}" Tag="carrier-card" Background="Transparent"
@@ -215,7 +271,7 @@
                                                           IsVisible="{Binding IsOfdm}" ToolTip.Tip="Subcarrier modulation"/>
                                             </StackPanel>
                                             <Grid Grid.Row="2" Grid.ColumnSpan="4" ColumnDefinitions="*,Auto" Margin="0,6,0,0" IsVisible="{Binding IsFile}">
-                                                <TextBox Text="{Binding FilePath}" PlaceholderText="I/Q text file (# sample_rate_hz header, I Q columns)"/>
+                                                <TextBox Text="{Binding FilePath}" TextWrapping="Wrap" PlaceholderText="I/Q text file (# sample_rate_hz header, I Q columns)"/>
                                                 <Button Grid.Column="1" Classes="small" Margin="4,0,0,0" Content="Browse…"
                                                         Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).BrowseFileCommand}"
                                                         CommandParameter="{Binding}"/>

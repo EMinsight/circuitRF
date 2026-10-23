@@ -165,7 +165,8 @@ namespace RfCore.Signals
             return sum;
         }
 
-        /// <summary>Smallest 1.92 MHz x 2^k rate holding the composite plus +-2 channel bandwidths of regrowth.</summary>
+        /// <summary>Smallest 1.92 MHz x 2^k rate holding the composite plus +-2 channel bandwidths of regrowth (an
+        /// imported file's own rate x 2^k when that ladder does not divide its record — <see cref="SignalRate"/>).</summary>
         public double SuggestedCompositeRateHz()
         {
             double lo = Carriers.Min(c => c.OffsetHz - 2.5 * c.Spec.BandwidthHz);
@@ -173,7 +174,49 @@ namespace RfCore.Signals
             double need = 2 * Math.Max(Math.Abs(lo), Math.Abs(hi));
             double r = 1.92e6;
             while (r < need) r *= 2;
-            return Math.Max(r, Carriers.Max(c => c.NativeRateHz));
+            r = Math.Max(r, Carriers.Max(c => c.NativeRateHz));
+            return SignalRate.Divides(this, r) ? r : SignalRate.AtLeast(r, [this]);
+        }
+    }
+
+    /// <summary>
+    /// The rate a periodic record is stepped at. Every generated record lasts whole 0.5 ms slots, which the LTE / NR
+    /// ladder (1.92 MHz x 2^k) always divides. An imported I/Q file lasts N / fs, which that ladder need not divide
+    /// (12,345 samples at 100 MS/s); its own rate x 2^k always does, giving N x 2^k whole samples.
+    /// </summary>
+    public static class SignalRate
+    {
+        public const double LadderBaseHz = 1.92e6;
+
+        /// <summary>The smallest ladder rate at or above <paramref name="needHz"/> that gives every signal a whole number
+        /// of samples per record; failing that, the smallest imported file rate x 2^k that does; failing both (two files
+        /// at unrelated rates), the ladder rate, which the caller refuses as it always has.</summary>
+        public static double AtLeast(double needHz, IReadOnlyCollection<ModulatedSignal> signals)
+        {
+            double ladder = Climb(LadderBaseHz, needHz);
+            if (signals.All(s => Divides(s, ladder))) return ladder;
+            var fileRates = signals.SelectMany(s => s.Carriers)
+                                   .Where(c => c.Spec.Standard == CarrierStandard.File)
+                                   .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r);
+            foreach (double fs in fileRates)
+            {
+                double r = Climb(fs, needHz);
+                if (signals.All(s => Divides(s, r))) return r;
+            }
+            return ladder;
+        }
+
+        /// <summary>True when <paramref name="rateHz"/> gives <paramref name="signal"/> a whole number of samples per record.</summary>
+        public static bool Divides(ModulatedSignal signal, double rateHz)
+        {
+            double n = signal.RecordSeconds * rateHz;
+            return Math.Abs(n - Math.Round(n)) <= 1e-6 * Math.Max(1, n);
+        }
+
+        private static double Climb(double r, double needHz)
+        {
+            while (r < needHz) r *= 2;
+            return r;
         }
     }
 
@@ -183,7 +226,7 @@ namespace RfCore.Signals
         {
             if (spec.Carriers.Count == 0) throw new ArgumentException("a signal needs at least one carrier");
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
-            IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!);
+            IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
             double record = iq?.DurationSeconds ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
             int halfMs = (int)Math.Round(record / 0.5e-3);
 
@@ -215,10 +258,16 @@ namespace RfCore.Signals
                     }
                     default:
                     {
-                        var f = IqFile.Read(c.FilePath ?? throw new ArgumentException("a FILE carrier needs File=<path>"));
+                        var f = IqFile.Read(c.FilePath ?? throw new ArgumentException("a FILE carrier needs File=<path>"), c.SampleRateHz);
                         var x = (Complex[])f.Samples.Clone();
                         OfdmGenerator.Normalise(x);
-                        raw.Add((c, x, f.SampleRateHz, f.ChannelBandwidthHz > 0 ? f.ChannelBandwidthHz * 0.9 : f.SampleRateHz / 2));
+                        // The carrier's bandwidth is the FILE's, never the 20 MHz a CarrierSpec defaults to: the envelope
+                        // rate, the preview's span and the ACLR bands are all read off it.
+                        double bw = f.ChannelBandwidthHz > 0 ? f.ChannelBandwidthHz : f.EstimateChannelBandwidthHz();
+                        double occ = 0.9 * bw;
+                        if (spec.ClipPaprDb is double t)
+                            OfdmGenerator.Clip(x, f.SampleRateHz, occ, t);
+                        raw.Add((c with { BandwidthHz = bw }, x, f.SampleRateHz, occ));
                         break;
                     }
                 }
@@ -255,6 +304,24 @@ namespace RfCore.Signals
         public double DurationSeconds => Samples.Length / SampleRateHz;
 
         /// <summary>
+        /// A channel bandwidth for a file that does not state one (<c># channel_bw_hz</c>): twice the furthest edge of
+        /// the band holding 99 % of the power, over 0.9 — the occupied fraction every FILE carrier is measured with.
+        /// Twice the furthest edge rather than the band's width, because the carrier sits at its offset from Fc and an
+        /// off-centre file still has to fit in offset +- bandwidth / 2. At most the sample rate.
+        /// </summary>
+        public double EstimateChannelBandwidthHz()
+        {
+            var (f, psd) = SignalMeasure.Welch(Samples, SampleRateHz, 4096);
+            double tot = psd.Sum(), tail = 0.005 * tot, acc = 0;
+            int a = 0, b = psd.Length - 1;
+            for (int i = 0; i < psd.Length; i++) { acc += psd[i]; if (acc >= tail) { a = i; break; } }
+            acc = 0;
+            for (int i = psd.Length - 1; i >= 0; i--) { acc += psd[i]; if (acc >= tail) { b = i; break; } }
+            double edge = Math.Max(Math.Abs(f[a]), Math.Abs(f[b])) + SampleRateHz / psd.Length;
+            return Math.Min(2 * edge / 0.9, SampleRateHz);
+        }
+
+        /// <summary>
         /// Writes <paramref name="samples"/> in the format <see cref="Read"/> takes: <paramref name="comments"/> as
         /// <c>#</c> lines, <c># sample_rate_hz</c>, optional <c># channel_bw_hz</c>, <c># samples</c>, <c># columns I Q</c>,
         /// then one <c>I Q</c> line per sample
@@ -286,7 +353,34 @@ namespace RfCore.Signals
             progress?.Report(1);
         }
 
-        public static IqFile Read(string path)
+        /// <summary>The <c># sample_rate_hz</c> and <c># channel_bw_hz</c> headers (0 when absent) and the number of
+        /// samples, without keeping the samples: what the Signal Designer shows when a file is loaded.</summary>
+        public static (double SampleRateHz, double ChannelBandwidthHz, int Samples) ReadHeader(string path)
+        {
+            if (!File.Exists(path)) throw new FileNotFoundException($"I/Q file not found: {path}", path);
+            double fs = 0, bw = 0;
+            int n = 0;
+            foreach (var line in File.ReadLines(path))
+            {
+                var t = line.Trim();
+                if (t.Length == 0) continue;
+                if (t[0] == '#' || t[0] == '%')
+                {
+                    var p = t.TrimStart('#', '%').Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                    if (p.Length >= 2 && p[0].Equals("sample_rate_hz", StringComparison.OrdinalIgnoreCase))
+                        double.TryParse(p[1], NumberStyles.Float, CultureInfo.InvariantCulture, out fs);
+                    else if (p.Length >= 2 && p[0].Equals("channel_bw_hz", StringComparison.OrdinalIgnoreCase))
+                        double.TryParse(p[1], NumberStyles.Float, CultureInfo.InvariantCulture, out bw);
+                    continue;
+                }
+                if (t.Split(new[] { ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries).Length >= 2) n++;
+            }
+            return (fs, bw, n);
+        }
+
+        /// <summary>Reads <paramref name="path"/>; <paramref name="sampleRateHz"/>, when given, is the rate the samples
+        /// were taken at and wins over the file's header. Without either the file is refused, never given a rate.</summary>
+        public static IqFile Read(string path, double? sampleRateHz = null)
         {
             if (!File.Exists(path)) throw new FileNotFoundException($"I/Q file not found: {path}", path);
             double fs = 0, bw = 0;
@@ -308,7 +402,12 @@ namespace RfCore.Signals
                 if (q.Length < 2) continue;
                 list.Add(new Complex(double.Parse(q[0], CultureInfo.InvariantCulture), double.Parse(q[1], CultureInfo.InvariantCulture)));
             }
-            if (fs <= 0) throw new FormatException($"{Path.GetFileName(path)}: no '# sample_rate_hz' header line");
+            if (sampleRateHz is double given)
+            {
+                if (!(given > 0)) throw new FormatException($"{Path.GetFileName(path)}: the sample rate must be positive");
+                fs = given;
+            }
+            if (fs <= 0) throw new FormatException($"{Path.GetFileName(path)}: no '# sample_rate_hz' header line, and no sample rate given (Fs=)");
             if (list.Count == 0) throw new FormatException($"{Path.GetFileName(path)}: no I Q samples");
             return new IqFile { Samples = list.ToArray(), SampleRateHz = fs, ChannelBandwidthHz = bw };
         }

@@ -90,6 +90,7 @@ namespace RfCore.Signals
             foreach (var c in s.Carriers)
             {
                 bw.Write(c.NativeRateHz); bw.Write(c.OccupiedBwHz); bw.Write(c.OffsetHz); bw.Write(c.RelativePower);
+                bw.Write(c.Spec.BandwidthHz);
                 bw.Write(c.Native.Length);
                 foreach (var v in c.Native) { bw.Write(v.Real); bw.Write(v.Imaginary); }
             }
@@ -105,10 +106,11 @@ namespace RfCore.Signals
             for (int i = 0; i < nc; i++)
             {
                 double rate = br.ReadDouble(), occ = br.ReadDouble(), off = br.ReadDouble(), rel = br.ReadDouble();
+                double chBw = br.ReadDouble();                  // a FILE carrier's bandwidth comes from the file, not the spec
                 int n = br.ReadInt32();
                 var x = new Complex[n];
                 for (int k = 0; k < n; k++) x[k] = new Complex(br.ReadDouble(), br.ReadDouble());
-                list.Add(new CarrierRecord { Spec = spec.Carriers[i], Native = x, NativeRateHz = rate, OccupiedBwHz = occ, OffsetHz = off, RelativePower = rel });
+                list.Add(new CarrierRecord { Spec = spec.Carriers[i] with { BandwidthHz = chBw }, Native = x, NativeRateHz = rate, OccupiedBwHz = occ, OffsetHz = off, RelativePower = rel });
             }
             return new ModulatedSignal(spec, list, rec);
         }
