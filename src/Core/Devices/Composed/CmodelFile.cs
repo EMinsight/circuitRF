@@ -136,9 +136,20 @@ public static class CmodelFile
             foreach (var p in gxe.EnumerateObject())
                 gx[p.Name] = Num(gxe, p.Name, $"Extrapolation.Gx.{p.Name}");
             foreach (var p in ex.EnumerateObject())
-                if (p.Name != "Gx")
-                    throw new CmodelFormatException($"Extrapolation.{p.Name}", "it is not a field of Extrapolation; the field is Gx.");
-            extrapolation = new ModelExtrapolation(gx);
+                if (p.Name is not ("Gx" or "Mode"))
+                    throw new CmodelFormatException($"Extrapolation.{p.Name}", "it is not a field of Extrapolation; the fields are Gx and Mode.");
+            var exMode = ExtrapolationMode.Global;
+            if (ex.TryGetProperty("Mode", out _))
+            {
+                string m = Str(ex, "Mode", "Extrapolation.Mode");
+                exMode = m switch
+                {
+                    "Global" => ExtrapolationMode.Global,
+                    "Local" => ExtrapolationMode.Local,
+                    _ => throw new CmodelFormatException("Extrapolation.Mode", $"'{m}' is not a law; it is Global or Local."),
+                };
+            }
+            extrapolation = new ModelExtrapolation(gx) { Mode = exMode };
         }
 
         ModelTraps? traps = root.TryGetProperty("Traps", out var tr) ? ParseTraps(tr) : null;
@@ -964,6 +975,8 @@ public static class CmodelFile
             if (m.Extrapolation is { } ex)
             {
                 w.WriteStartObject("Extrapolation");
+                // A global-law model is written as every model before the local law was (brief-modelcomposer-29).
+                if (ex.Mode == ExtrapolationMode.Local) w.WriteString("Mode", "Local");
                 w.WriteStartObject("Gx");
                 foreach (string key in ModelExtrapolation.Keys)
                     if (ex.Gx.TryGetValue(key, out double gx)) w.WriteNumber(key, gx);

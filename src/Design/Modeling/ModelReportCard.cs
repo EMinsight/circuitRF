@@ -278,7 +278,10 @@ public static class ReportGrades
             : "No large-signal measurement was compared: the PA sections' power, efficiency and convergence are the model's predictions, not comparisons.");
         if (model.Extrapolation is { Gx.Count: > 0 } ex)
             validity.Add("Outside the training range, a table or network continues from the nearest edge of its domain with an added " +
-                         $"conductance ({string.Join(", ", ex.Gx.Select(kv => $"Gx {kv.Key} {G(kv.Value)} S"))}): the model stays smooth and convergent there, " +
+                         (ex.Mode == ExtrapolationMode.Local
+                             ? "conductance of ten times its own at that edge, at most "
+                             : "conductance ") +
+                         $"({string.Join(", ", ex.Gx.Select(kv => $"Gx {kv.Key} {G(kv.Value)} S"))}): the model stays smooth and convergent there, " +
                          "but its values are an extrapolation, not a prediction backed by data.");
         validity.Add($"Base periphery {model.BasePeriphery.Fingers} × {model.BasePeriphery.UnitWidth}; other sizes scale through the extrinsic network's periphery rules.");
 

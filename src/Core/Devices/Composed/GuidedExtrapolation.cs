@@ -178,6 +178,11 @@ internal sealed class DomainGeometry
 /// distance and vanishes, with its derivative, at the boundary — the steeply rising conductance of
 /// [P1] Fig. 6.12b, which pulls a Newton iterate back instead of letting it wander.</para>
 ///
+/// <para><b>Local law</b> (<see cref="ExtrapolationMode.Local"/>, R-mc29-1): <c>G_x</c> in the added term is replaced by
+/// <c>G_loc(p_b) = min(√((K·g_own)² + G_floor²), G_x)</c>, <c>g_own = ∇f(p_b)·own</c> the constituent's own-branch
+/// conductance at the nearest domain point, so a current leaving an edge where the data is flat (a gate below pinch-off)
+/// continues flat instead of picking up the forward diode's conductance. <c>G_x</c> stays the cap.</para>
+///
 /// <para><b>The gradient is exact, not the boundary's.</b> <c>p_b</c> moves with <c>p</c>, so the
 /// derivative of the linear continuation is <c>∇f(p_b) + Pᵀ H(p_b)(p − p_b)</c>, with <c>P</c> the
 /// projection's Jacobian — which is why the evaluators also return the Hessian along a direction.
@@ -190,23 +195,44 @@ public sealed class GuidedExtrapolation
     /// fraction of the domain's extent.</summary>
     public const double BoundaryFraction = 0.05;
 
+    /// <summary>The factor <c>K</c> on a conductance: MC-2's, applied to the largest in the training data for <c>G_x</c> and
+    /// to the edge's own for the local law.</summary>
+    public const double ConductanceFactor = 10.0;
+
+    /// <summary><c>G_floor</c> as a fraction of <c>G_x</c>: 1e-6 of the largest own-branch conductance in the training data.
+    /// A guide that small no longer moves a Newton iterate (a gate at −9 V draws ~0.1 mA through it on a 5 S device), and it
+    /// keeps <c>G_loc</c> smooth through <c>g_own = 0</c>.</summary>
+    public const double FloorFraction = 1e-6 / ConductanceFactor;
+
     /// <summary>The default <c>G_x</c>: ten times the largest conductance in the training data.</summary>
-    public static double DefaultGx(double largestTrainingConductance) => 10.0 * largestTrainingConductance;
+    public static double DefaultGx(double largestTrainingConductance) => ConductanceFactor * largestTrainingConductance;
+
+    /// <summary>The local law's added conductance at an edge whose own-branch conductance is <paramref name="gOwn"/>:
+    /// <c>min(√((K·g_own)² + G_floor²), G_x)</c> — the soft maximum of <c>K|g_own|</c> and the floor, capped by
+    /// <paramref name="gx"/>.</summary>
+    public static double LocalConductance(double gOwn, double gx)
+    {
+        double a = ConductanceFactor * gOwn, floor = FloorFraction * gx;
+        return Math.Min(Math.Sqrt(a * a + floor * floor), gx);
+    }
 
     private readonly RuntimeEvaluator _f;
     private readonly DomainGeometry _domain;
     private readonly double _gx;
     private readonly double[]? _own;
+    private readonly bool _local;
 
     /// <param name="ownBranch">The constituent's own branch voltage as a combination of its inputs
     /// (<c>vds</c> for Id, <c>vgs</c> for IgGs, <c>vgs − vds</c> for IgGd), or null for a charge.</param>
+    /// <param name="mode">The added conductance's law: <c>G_x</c> everywhere, or local to the edge and capped by it.</param>
     public GuidedExtrapolation(RuntimeEvaluator f, TrainingDomain domain, IReadOnlyList<string> inputs,
-                               double gx, double[]? ownBranch)
+                               double gx, double[]? ownBranch, ExtrapolationMode mode = ExtrapolationMode.Global)
     {
         _f = f;
         _domain = new DomainGeometry(domain, inputs);
         _gx = gx;
         _own = ownBranch;
+        _local = mode == ExtrapolationMode.Local;
     }
 
     public int InputCount => _domain.InputCount;
@@ -273,7 +299,31 @@ public sealed class GuidedExtrapolation
             // G_x · s · d/d₀ with s = own·(p − p_b): ∇_u s = (I − P)(D own), ∇_u d = (u − u_b)/d.
             double s = 0.0;
             for (int k = 0; k < d; k++) s += own[k] * wp[k];
-            double k0 = _gx / BoundaryFraction;
+            double gx = _gx;
+            if (_local)
+            {
+                // G_loc(p_b): the soft maximum √(a² + floor²) of a = K·g_own and the floor, capped by G_x. It moves with
+                // p_b, so its gradient is ∂G/∂a · K · P (D H own) below the cap and zero at it.
+                double a = 0.0;
+                for (int k = 0; k < d; k++) a += gb[k] * own[k];
+                a *= ConductanceFactor;
+                double floor = FloorFraction * _gx, soft = Math.Sqrt(a * a + floor * floor);
+                if (soft < _gx)
+                {
+                    gx = soft;
+                    Span<double> g2 = stackalloc double[RuntimeEvaluator.MaxInputs];
+                    Span<double> ho = stackalloc double[RuntimeEvaluator.MaxInputs];
+                    _f.Evaluate(pb, g2[..d], own, ho);
+                    double c = ConductanceFactor * a / soft * s * dist / BoundaryFraction;
+                    for (int k = 0; k < d; k++)
+                    {
+                        double dg = 0.0;
+                        for (int m = 0; m < d; m++) dg += jac[k * d + m] * ext[m] * ho[m];
+                        gu[k] += c * dg;
+                    }
+                }
+            }
+            double k0 = gx / BoundaryFraction;
             value += k0 * s * dist;
             for (int k = 0; k < d; k++)
             {

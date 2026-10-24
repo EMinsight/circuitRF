@@ -277,7 +277,7 @@ by name, and inside a constituent an unknown field is read as a payload key and 
 </tr>
 <tr>
 <td><code>Extrapolation</code></td>
-<td><code>Gx</code>: for each table or ANN current (<code>Id</code>, <code>IgGs</code>, <code>IgGd</code>, <code>IdRF</code>), the conductance in S that current gains outside its domain.</td>
+<td><code>Gx</code>: for each table or ANN current (<code>Id</code>, <code>IgGs</code>, <code>IgGd</code>, <code>IdRF</code>), the conductance in S that current gains outside its domain. <code>Mode</code>: <code>Local</code> makes that conductance ten times the current's own conductance at the edge it leaves, with <code>Gx</code> its cap; absent or <code>Global</code>, it is <code>Gx</code> at every edge.</td>
 </tr>
 <tr>
 <td><code>Symbol</code></td>
@@ -673,6 +673,9 @@ and must have one for every such input.</li>
 <li><strong><code>Extrapolation.Gx</code></strong> gives, for each Table or ANN <em>current</em> payload (<code>Id</code>, <code>IgGs</code>, <code>IgGd</code>, <code>IdRF</code>), the conductance
 in S that current gains in proportion to the distance outside the domain. Each such current needs one, and an
 <code>Equation</code> current must not have one. Charges have none.</li>
+<li><strong><code>Extrapolation.Mode</code></strong> is <code>Local</code> or <code>Global</code>, and absent means <code>Global</code>. Under <code>Local</code> the added conductance is ten
+times the current's own conductance at the edge it leaves (never less than 1e-7 × <code>Gx</code>, never more than <code>Gx</code>), so a
+gate current that is flat where the data stops stays flat beyond it. The Model Composer writes <code>Local</code>.</li>
 <li><strong><code>Transform</code></strong> on a Table or ANN current, <code>{&quot;Kind&quot;: &quot;Asinh&quot;, &quot;Scale&quot;: I0}</code>, says the arrays hold <code>u</code> and the current
 is <code>I0·sinh(u)</code>. Fit a gate current that spans many decades in <code>u = asinh(I/I0)</code>.</li>
 </ul>

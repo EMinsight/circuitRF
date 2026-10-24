@@ -91,7 +91,8 @@ public sealed class ComposedCoreProgram
             var evaluator = RuntimePayload.Build(model, c, key, $"Core.Constituents.{name}.{key}");
             double gx = ownBranch is null ? 0.0 : model.Extrapolation!.Gx[GxKey(name, key)];
             return new RuntimeFunction(
-                new GuidedExtrapolation(evaluator, c.Domain!, c.Inputs, gx, ownBranch), c.Inputs, seeds);
+                new GuidedExtrapolation(evaluator, c.Domain!, c.Inputs, gx, ownBranch, model.Extrapolation?.Mode ?? ExtrapolationMode.Global),
+                c.Inputs, seeds);
         }
 
         var k = model.Core;

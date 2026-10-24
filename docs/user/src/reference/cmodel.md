@@ -201,7 +201,7 @@ Numbers are in base SI units — volts, amps, coulombs, siemens, seconds, ohms �
 | `Core.Dispersion` | `{ "Tau": τ }`, in seconds, present exactly when `IdRF` is: the drain current follows `Id` at DC and `IdRF` well above 1/(2πτ), moving between them as one pole. |
 | `Domain` (Table, ANN) | Where the constituent was trained: `Polygon`, a convex list of `[vgs, vds]` vertices, and `Box`, an interval per other input. Outside it the constituent is continued in a straight line from the nearest point of the domain; a current also gains a conductance that grows with the distance. |
 | `Core.Symmetry` | `Exchange`: the constituents describe `vds ≥ 0`, and a negative `vds` is the same device with drain and source exchanged. Absent for an asymmetric device. |
-| `Extrapolation` | `Gx`: for each table or ANN current (`Id`, `IgGs`, `IgGd`, `IdRF`), the conductance in S that current gains outside its domain. |
+| `Extrapolation` | `Gx`: for each table or ANN current (`Id`, `IgGs`, `IgGd`, `IdRF`), the conductance in S that current gains outside its domain. `Mode`: `Local` makes that conductance ten times the current's own conductance at the edge it leaves, with `Gx` its cap; absent or `Global`, it is `Gx` at every edge. |
 | `Symbol` | A library symbol's name, or a `.csym` path relative to the `.cmodel`. Absent: the standard FET symbol. |
 | `Provenance` | Optional, and not read by the simulator: `Created`, `CircuitRfVersion`, `Sources` (`Path`, `Sha256`) and `SettingsDigest`; with linear charges, `Charges` (`Qg, Qd: Linear from 1 bias point(s)`, or with typed ones `Qg, Qd: typed (Cgs 300 fF, Cgd 50 fF, Cds 80 fF, Cm 0 F)`). A script that records where its model came from here makes it traceable. |
 
@@ -546,6 +546,9 @@ it in a straight line outside it.
 - **`Extrapolation.Gx`** gives, for each Table or ANN *current* payload (`Id`, `IgGs`, `IgGd`, `IdRF`), the conductance
   in S that current gains in proportion to the distance outside the domain. Each such current needs one, and an
   `Equation` current must not have one. Charges have none.
+- **`Extrapolation.Mode`** is `Local` or `Global`, and absent means `Global`. Under `Local` the added conductance is ten
+  times the current's own conductance at the edge it leaves (never less than 1e-7 × `Gx`, never more than `Gx`), so a
+  gate current that is flat where the data stops stays flat beyond it. The Model Composer writes `Local`.
 - **`Transform`** on a Table or ANN current, `{"Kind": "Asinh", "Scale": I0}`, says the arrays hold `u` and the current
   is `I0·sinh(u)`. Fit a gate current that spans many decades in `u = asinh(I/I0)`.
 

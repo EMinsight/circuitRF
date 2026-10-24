@@ -35,6 +35,10 @@ public sealed class CurrentFitAnnTests(ITestOutputHelper output)
         foreach (var (k, e) in fit.Record.Errors)
             output.WriteLine($"{k}: train {e.TrainRelative:P3} held-out {e.HeldOutRelative:P3} ({e.HeldOutCount} points)");
         foreach (string line in fit.Record.Report) output.WriteLine(line);
+        // R-mc29-4: the extrapolation line names the law and each current's conductance at its lowest and highest vgs edge.
+        string edges = Assert.Single(fit.Record.Report, l => l.StartsWith("Extrapolation (local", StringComparison.Ordinal));
+        foreach (string key in (string[])["Id", "IgGs", "IgGd"])
+            Assert.Matches($@"\b{key} \S+ S at \S+ V, \S+ S at \S+ V", edges);
 
         var model = SyntheticFetData.Core(fit);
         var truth = SyntheticFetData.TruthCore();

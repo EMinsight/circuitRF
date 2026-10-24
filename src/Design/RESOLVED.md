@@ -22970,3 +22970,37 @@ a finite Z stamps exactly as before. With it the load reads 0 V. Recorded in `sr
 end 26 s, the openEMS + EMerge Compare 27 s, the no-Gmsh openEMS run 25 s (all `Category=Benchmark`); EMerge end to end
 4.1 s (routine). `testdata/em3d/dc-row/gap-capacitor.s2p` is the openEMS test's file (`CRF_EMDC2_WRITE_FIXTURE` writes it
 again).
+
+## MC-29: guided extrapolation's added conductance follows the edge it leaves (2026-10-24)
+
+**The law.** `Extrapolation.Mode: "Local"` replaces `G_x` in the added term by
+`G_loc(p_b) = min(√((10·g_own)² + (1e-7·G_x)²), G_x)` — the soft maximum of ten times the edge's own-branch conductance and
+a floor, capped by the stored `G_x` (`GuidedExtrapolation.LocalConductance`). A file without `Mode` is the global law and
+evaluates bit for bit as before (the writer omits `Mode` for it); the composer exports `Local` (`ModelExtrapolation.Local`).
+The floor is 1e-6 of the largest own-branch conductance in the data. A `√(a² + floor²)` rather than `max` keeps `G_loc`
+smooth through `g_own = 0`, so the only kink is the cap's, outside the domain. Its gradient is exact: one more
+`Evaluate(p_b, g, own, H·own)` per outside sample, added below the cap; the FD-oracle test covers both laws.
+
+**The radar device refitted from grids stopping at −6 V** (`LocalExtrapolationRadarTests`, opt-in, ~8 min of fitting):
+gate current at −7/−8/−9 V is 0.09/0.36/0.80 mA at N = 48 under the local law, against 4.8/9.9/15.6 A under the global
+one, with the truth at 5e-11 A. That residual is the FLOOR term (5.2 µS at N0), not the data. On the CW bench (traps off,
+isothermal at 70 °C) Pout follows the truth within 0.044 dB from 29 to 34 dBm.
+
+**The global law was also wrong at the FORWARD drive, through `Id`.** Gate 3 as written ("local within 0.05 dB of global at
+34.5–36 dBm") failed on both the refit and the shipped device, and the truth showed the global law was the one off:
+- On the shipped device (grids to −10 V) at 34.5–36 dBm: local 0.04–0.06 dB from the truth, global 0.35–0.48 dB low.
+- Removing ONE current's `G_x` at a time: removing `Id`'s puts the global law on the local one to 0.007 dB; removing
+  `IgGs`'s or `IgGd`'s changes nothing. The intrinsic point leaves `Id`'s hull through its oblique high-`vgs` edge
+  (+0.85 V at 0 V to +0.41 V at 98.6 V) and its 100 V top, where `Id`'s own conductance is small and the global
+  11.4 S clamped the drain.
+- So the forward GATE edge is unchanged (the gate currents' law alone moves Pout ≤ 0.005 dB, `Id`'s term held out of both),
+  and that is what gate 3 now asserts, with the whole local model held to the truth at gate 2's 0.2 dB.
+
+**MC-25's convergence test pins the global law.** Its ampere-norm baseline wanders outside the domain, so its stalls
+depend on the guide it meets there. Under the local law the 18 dBm stall moves from the thermal row to the trap row, and
+the `Charge=false` point no longer converges under the ampere norm at all. The scaled norm, which ships, converges at every
+point of that bench under both laws, in as many iterations or fewer (26 dBm: 30 against 51). `TrapThermalHbConvergenceTests`
+writes a global-law copy of the example model, since its claims are about the line search, not the law.
+
+**Examples.** The two shipped `.cmodel`s were re-written through `CmodelFile` with `Mode: "Local"` and nothing else (each
+round-tripped byte for byte first), and `gan_4x125.va` was regenerated from it.

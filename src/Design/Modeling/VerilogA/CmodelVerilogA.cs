@@ -241,6 +241,8 @@ public static class CmodelVerilogA
         private readonly bool _exchange = model.Core.Symmetry == DrainSourceSymmetry.Exchange;
         private readonly bool _drift = model.Core.Qg.Method == Constituent.DriftMethod;
         private readonly bool _dispersive = model.Core.IdRF is not null;
+        /// <summary>The continuation's added conductance follows the edge (brief-modelcomposer-29).</summary>
+        private bool Local => model.Extrapolation?.Mode == ExtrapolationMode.Local;
         private readonly ModelThermal? _thermal = model.Thermal;
         private readonly ModelTraps? _traps = model.Traps;
         private readonly TrapDynamics? _dynamics = model.Traps is { } t ? TrapModels.Build(t, "Verilog-A") : null;
@@ -356,8 +358,9 @@ public static class CmodelVerilogA
                     {
                         string mp = $"Gx_{key}";
                         if (!names.Claim($"Extrapolation.Gx.{key}", mp, "the extrapolation conductance", parameter: true)) continue;
-                        Parameter(mp, "real", Num(gx), "from (0:inf)", "S",
-                                  $"guided extrapolation's added conductance on {key}'s own branch, at the base periphery");
+                        Parameter(mp, "real", Num(gx), "from (0:inf)", "S", x.Mode == ExtrapolationMode.Local
+                                  ? $"the cap on guided extrapolation's added conductance on {key}'s own branch (ten times the edge's own), at the base periphery"
+                                  : $"guided extrapolation's added conductance on {key}'s own branch, at the base periphery");
                     }
 
             TrapParameters();
@@ -517,7 +520,7 @@ public static class CmodelVerilogA
             string gx = $"Gx_{payload}";
             _functions.Add(VaDomain.Function($"x_{payload}",
                 $"{field} continued outside Core.Constituents.{name}.Domain (guided extrapolation)",
-                $"f_{payload}", inputs, c.Domain!, own is null ? null : gx, own));
+                $"f_{payload}", inputs, c.Domain!, own is null ? null : gx, own, Local));
             _calls.Add((variable, $"x_{payload}({args})", payload));
         }
 
@@ -611,7 +614,7 @@ public static class CmodelVerilogA
                 _functions.Add(VaAnn.HessianFunction($"fh_{payload}", $"{field} with its Hessian along a direction", inputs, net, c.Transform));
                 _functions.Add(VaDomain.GradientFunction($"xg_{payload}",
                     $"{field} continued outside its domain, with the continuation's exact gradient",
-                    $"f_{payload}", $"fh_{payload}", inputs, c.Domain!, own is null ? null : $"Gx_{payload}", own));
+                    $"f_{payload}", $"fh_{payload}", inputs, c.Domain!, own is null ? null : $"Gx_{payload}", own, Local));
             }
             return $"xg_{payload}({args}, {outs})";
         }

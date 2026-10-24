@@ -38,6 +38,9 @@ public static class VaTestModels
         yield return new VaCase("AnnTanh", AnnModel(AnnActivation.Tanh));
         yield return new VaCase("AnnSigmoid", AnnModel(AnnActivation.Sigmoid));
         yield return new VaCase("AsinhGate", AsinhGate());
+        // brief-modelcomposer-29: the continuation's added conductance local to the edge it leaves, capped by G_x.
+        yield return new VaCase("AnnLocal", AnnModel(AnnActivation.Tanh) is var local
+            ? local with { Extrapolation = ModelExtrapolation.Local(local.Extrapolation!.Gx) } : null!);
         // The equation model is continuous through vds = 0 (Id ∝ tanh(α·vds), the gate branches each other's image), so
         // the sweep can cross it exactly; the image of a point with vds < 0 is what is evaluated.
         yield return new VaCase("Exchange", ComposedTestModels.Model() with

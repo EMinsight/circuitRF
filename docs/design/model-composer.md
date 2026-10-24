@@ -133,7 +133,7 @@ they were trained over. `Core.Symmetry` and the top-level `Extrapolation` appear
     "Qd": { … }
   }
 },
-"Extrapolation": { "Gx": { "Id": 2.0, "IgGs": 0.1, "IgGd": 0.1 } }
+"Extrapolation": { "Mode": "Local", "Gx": { "Id": 2.0, "IgGs": 0.1, "IgGd": 0.1 } }
 ```
 
 - A **table** `name` is `arrays/name.values.npy` (the grid, one axis per input, named for it and carrying
@@ -186,7 +186,7 @@ Every refusal is a `CmodelFormatException` whose message begins with the field: 
   `RthSlope` that makes the thermal resistance non-positive inside `[Tmin, Tmax]`; a network element named `Rth`,
   `Cth` (`Rth1` … for a ladder) or a net named `t` (`t_1` …), the names the synthesised cell gives the thermal network.
 - `Extrapolation.Gx`: missing for a table or ANN current, present for an equation current or an unknown
-  key, or not a positive number. `Core.Symmetry`: anything but `None`/`Exchange`.
+  key, or not a positive number. `Extrapolation.Mode`: anything but `Global`/`Local` (absent is `Global`). `Core.Symmetry`: anything but `None`/`Exchange`.
 - `Transform`: on an equation or a charge; a `Kind` other than `Asinh`; a `Scale` that is not a positive current.
 - `Traps`: an unknown `Model`, by name, listing the known ones; an unknown field; no state enabled, a state listed twice,
   out of the model's order or not the model's; an undeclared or non-finite parameter (a `Custom` model's parameters are
@@ -349,6 +349,23 @@ f(p) = f(p_b) + ∇f(p_b)·(p − p_b)                     charges stop here
 the constituent's own branch that grows with distance and vanishes, with its derivative, at the boundary
 ([P1] Fig. 6.12b). `G_x` is stored per current in `Extrapolation.Gx`; `GuidedExtrapolation.DefaultGx` is
 ten times the largest training conductance, for the phases that write models.
+
+**The local law (MC-29, `Extrapolation.Mode: "Local"`).** Under the global law above the same `G_x` applies at every
+edge, and for a gate current that is ten times the FORWARD diode's conductance — so where the data stops on the reverse
+side, with the measured current zero, the continuation conducts tens of siemens. The local law replaces `G_x` in the
+added term by
+
+```
+G_loc(p_b) = min( √((K·g_own(p_b))² + G_floor²), G_x )        g_own = ∇f(p_b)·own,  K = 10,  G_floor = 1e-7·G_x
+```
+
+the soft maximum of ten times the edge's own conductance and a floor, capped by `G_x`. At a quiet edge the
+continuation is the linear one; at the forward edge it is the edge's own steep conductance, still bounded by the cap.
+`G_floor` is 1e-6 of the largest own-branch conductance in the data (`G_x` is ten times that): small enough that a gate
+three volts past the data draws ~0.1 mA through it on a 5 S device, and it keeps `G_loc` smooth through `g_own = 0`, so
+the only kink is the cap's, outside the domain. `G_loc` moves with `p_b`, so its gradient enters too:
+`(s·d/d₀)·∂G/∂a·K·P(D H own)` below the cap, one more Hessian-along-a-direction evaluation per outside sample. A file
+without `Mode` is the global law, so every model written before MC-29 evaluates unchanged; the composer exports `Local`.
 
 **The gradient is exact.** `p_b` moves with `p`, so the derivative of the linear continuation is
 `∇f(p_b) + Pᵀ H(p_b)(p − p_b)`, `P` being the projection's Jacobian — `ê êᵀ` beyond an edge, zero in a
@@ -1642,11 +1659,10 @@ Each departure from the briefs, with its reason. The detail of each is in the `R
   temperature inside the chuck range, so a second effect is in play that has not been isolated. With drain lag modelled,
   Rth is typed. An extraction through the trapped current, each pulsed point at its own trap state, would remove the
   first limit; the second needs a gate of its own.
-- **The extrapolation conductance near a data edge.** `G_x` is ten times the largest own-branch conductance anywhere in
-  the data; for a gate current that is the forward diode's, so a millivolt past the lowest measured `Vgs` the gate already
-  conducts tens of millisiemens. The example's data therefore spans the swing its benches reach. A `G_x` scaled to the
-  local conductance at the edge would make data a few volts short of the swing far less punishing. Measured on the Pulsed
-  Radar device (1 A of reverse gate current 1 V past the data, an early saturation): brief MC-29.
+- **The extrapolation conductance near a data edge** — closed by MC-29's local law (§4.9). Under the global law `G_x`
+  was ten times the forward diode's conductance at every edge, and the Pulsed Radar device with grids stopping at −6 V
+  drew ~1 A of reverse gate current at −7 V and saturated early. The composer's Current step names the conductance at
+  each current's lowest and highest `vgs` edge, so an edge the data stops short at is visible.
 - **`ValidationBench` on a self-heating model at the intrinsic plane** writes a `ComposedCore` with three nets, which a
   thermal core refuses (it takes four). Only intrinsic-plane data sets of self-heating models reach it.
 
@@ -1897,7 +1913,9 @@ squared lengths are formed the same way. The inside test, the edge-by-edge neare
 the box clamp all read the same numbers in the same order. Inside the domain `p_b` is `p` itself, because a
 round trip through normalised coordinates would move it by a rounding. Outside, every axis comes back through
 `centre + extent·u_b`, as in circuitRF. The value is `f(p_b) + ∇f(p_b)·(p − p_b)`, and for a current it adds
-`(G_x/0.05)·s·√d²` when `d² > 0`. The guard keeps the compiler from differentiating `√0`.
+`(G_x/0.05)·s·√d²` when `d² > 0`. The guard keeps the compiler from differentiating `√0`. Under the local law `G_x` there
+is `gl = min(sqrt(ga*ga + (1e-7*Gx)^2), Gx)` with `ga = 10·g_own` from the payload's gradient at `p_b`, and `Gx_<payload>`
+is its cap; the gradient function adds `gl`'s own gradient through one more call of the Hessian function along `own`.
 
 ### 25.5 The core
 

@@ -130,7 +130,7 @@ public static class CmodelExport
                 Symmetry = current.Settings.Symmetry,
                 Dispersion = r.Tau is { } tau ? new ModelDispersion(tau) : null,
             },
-            Extrapolation = r.Gx.Count > 0 ? new ModelExtrapolation(r.Gx) : null,
+            Extrapolation = r.Gx.Count > 0 ? ModelExtrapolation.Local(r.Gx) : null,
             Symbol = SymbolFor(symbol ?? Settings(doc).Symbol, cmcDir, outDir, thermal is not null),
             Provenance = Provenance(cmcPath, doc, created) with
             {

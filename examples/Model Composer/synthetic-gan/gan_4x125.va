@@ -1,5 +1,5 @@
-// gan_4x125: a composed FET written as Verilog-A by circuitRF 1.1.0, from gan_4x125.cmodel.
-// Model created 2026-10-20T00:00:00Z by circuitRF 1.0.14; model.json SHA-256 778a5dce144b12754091680665fe36a1d79e0920939a2c1b88d4f9bc20cee9ec.
+// gan_4x125: a composed FET written as Verilog-A by circuitRF 1.5.0, from gan_4x125.cmodel.
+// Model created 2026-10-20T00:00:00Z by circuitRF 1.0.14; model.json SHA-256 a03a7c198155c45045d664860a1681ff81cad19865f683bbf044f43420a24d3d.
 //
 // Terminals: g (gate), d (drain), s (source), t (thermal: its temperature is the channel's rise above the
 // ambient, K). Leave t unconnected and the model heats on its own network; wire it and whatever is attached
@@ -38,9 +38,9 @@
 //   rg           Ohm     5.2                     network variable, scaled x N0/N (perFingerInverse)
 //   rd           Ohm     9.2                     network variable, scaled x N0/N (perFingerInverse)
 //   rs           Ohm     6.6                     network variable, scaled x N0/N (perFingerInverse)
-//   Gx_Id        S       5.152940819955758       guided extrapolation's added conductance on Id's own branch, at the base periphery
-//   Gx_IgGs      S       16.536007846158178      guided extrapolation's added conductance on IgGs's own branch, at the base periphery
-//   Gx_IgGd      S       2.020491003112437e-09   guided extrapolation's added conductance on IgGd's own branch, at the base periphery
+//   Gx_Id        S       5.152940819955758       the cap on guided extrapolation's added conductance on Id's own branch (ten times the edge's own), at the base periphery
+//   Gx_IgGs      S       16.536007846158178      the cap on guided extrapolation's added conductance on IgGs's own branch (ten times the edge's own), at the base periphery
+//   Gx_IgGd      S       2.020491003112437e-09   the cap on guided extrapolation's added conductance on IgGd's own branch (ten times the edge's own), at the base periphery
 //   TauCapt2     s       1e-08                   drain-lag capture time at the reference gap
 //   TauEmit2     s       0.001                   drain-lag emission time (at Tref when thermally activated)
 //   Xref         V       1.0                     the reference gap at which capture takes TauCapt
@@ -362,7 +362,7 @@ module gan_4x125(g, d, s, t);
     real vgs, vds, T, phi2;
     real u_vgs, u_vds, u_T, u_phi2, b_vgs, b_vds, b_T, b_phi2, p_vgs, p_vds, p_T, p_phi2;
     real g_vgs, g_vds, g_T, g_phi2, t, cx, cy, e, best, cr, fb, s;
-    real dist2;
+    real dist2, gl, ga;
     integer inside, inbox;
     begin
       // normalised by the domain's centre and extent
@@ -616,10 +616,12 @@ module gan_4x125(g, d, s, t);
       end
       fb = f_Id(p_vgs, p_vds, p_T, p_phi2, g_vgs, g_vds, g_T, g_phi2);
       x_Id = fb + g_vgs*(vgs - p_vgs) + g_vds*(vds - p_vds) + g_T*(T - p_T) + g_phi2*(phi2 - p_phi2);
-      // the added conductance on the constituent's own branch, G_x at 5 % of the extent
       dist2 = (u_vgs - b_vgs)*(u_vgs - b_vgs) + (u_vds - b_vds)*(u_vds - b_vds) + (u_T - b_T)*(u_T - b_T) + (u_phi2 - b_phi2)*(u_phi2 - b_phi2);
       s = (vds - p_vds);
-      if (dist2 > 0.0) x_Id = x_Id + (Gx_Id/0.05)*s*sqrt(dist2);
+      // the added conductance on the constituent's own branch: ten times the edge's own, floored, capped by G_x
+      ga = 10.0*(g_vds*1.0);
+      gl = min(sqrt(ga*ga + (1e-07*Gx_Id)*(1e-07*Gx_Id)), Gx_Id);
+      if (dist2 > 0.0) x_Id = x_Id + (gl/0.05)*s*sqrt(dist2);
     end
   endfunction
 
@@ -742,7 +744,7 @@ module gan_4x125(g, d, s, t);
     input vgs, vds, T;
     real vgs, vds, T;
     real u_vgs, u_vds, u_T, b_vgs, b_vds, b_T, p_vgs, p_vds, p_T, g_vgs, g_vds, g_T;
-    real t, cx, cy, e, best, cr, fb, s, dist2;
+    real t, cx, cy, e, best, cr, fb, s, dist2, gl, ga;
     integer inside, inbox;
     begin
       // normalised by the domain's centre and extent
@@ -989,10 +991,12 @@ module gan_4x125(g, d, s, t);
       end
       fb = f_IgGs(p_vgs, p_vds, p_T, g_vgs, g_vds, g_T);
       x_IgGs = fb + g_vgs*(vgs - p_vgs) + g_vds*(vds - p_vds) + g_T*(T - p_T);
-      // the added conductance on the constituent's own branch, G_x at 5 % of the extent
       dist2 = (u_vgs - b_vgs)*(u_vgs - b_vgs) + (u_vds - b_vds)*(u_vds - b_vds) + (u_T - b_T)*(u_T - b_T);
       s = (vgs - p_vgs);
-      if (dist2 > 0.0) x_IgGs = x_IgGs + (Gx_IgGs/0.05)*s*sqrt(dist2);
+      // the added conductance on the constituent's own branch: ten times the edge's own, floored, capped by G_x
+      ga = 10.0*(g_vgs*1.0);
+      gl = min(sqrt(ga*ga + (1e-07*Gx_IgGs)*(1e-07*Gx_IgGs)), Gx_IgGs);
+      if (dist2 > 0.0) x_IgGs = x_IgGs + (gl/0.05)*s*sqrt(dist2);
     end
   endfunction
 
@@ -1115,7 +1119,7 @@ module gan_4x125(g, d, s, t);
     input vgs, vds, T;
     real vgs, vds, T;
     real u_vgs, u_vds, u_T, b_vgs, b_vds, b_T, p_vgs, p_vds, p_T, g_vgs, g_vds, g_T;
-    real t, cx, cy, e, best, cr, fb, s, dist2;
+    real t, cx, cy, e, best, cr, fb, s, dist2, gl, ga;
     integer inside, inbox;
     begin
       // normalised by the domain's centre and extent
@@ -1362,10 +1366,12 @@ module gan_4x125(g, d, s, t);
       end
       fb = f_IgGd(p_vgs, p_vds, p_T, g_vgs, g_vds, g_T);
       x_IgGd = fb + g_vgs*(vgs - p_vgs) + g_vds*(vds - p_vds) + g_T*(T - p_T);
-      // the added conductance on the constituent's own branch, G_x at 5 % of the extent
       dist2 = (u_vgs - b_vgs)*(u_vgs - b_vgs) + (u_vds - b_vds)*(u_vds - b_vds) + (u_T - b_T)*(u_T - b_T);
       s = (vgs - p_vgs) - (vds - p_vds);
-      if (dist2 > 0.0) x_IgGd = x_IgGd + (Gx_IgGd/0.05)*s*sqrt(dist2);
+      // the added conductance on the constituent's own branch: ten times the edge's own, floored, capped by G_x
+      ga = 10.0*(g_vgs*1.0 + g_vds*(-1.0));
+      gl = min(sqrt(ga*ga + (1e-07*Gx_IgGd)*(1e-07*Gx_IgGd)), Gx_IgGd);
+      if (dist2 > 0.0) x_IgGd = x_IgGd + (gl/0.05)*s*sqrt(dist2);
     end
   endfunction
 
@@ -1484,7 +1490,7 @@ module gan_4x125(g, d, s, t);
     input vgs, vds, T;
     real vgs, vds, T;
     real u_vgs, u_vds, u_T, b_vgs, b_vds, b_T, p_vgs, p_vds, p_T, g_vgs, g_vds, g_T;
-    real t, cx, cy, e, best, cr, fb, s, dist2;
+    real t, cx, cy, e, best, cr, fb, s, dist2, gl, ga;
     integer inside, inbox;
     begin
       // normalised by the domain's centre and extent
@@ -1713,7 +1719,7 @@ module gan_4x125(g, d, s, t);
     input vgs, vds, T;
     real vgs, vds, T;
     real u_vgs, u_vds, u_T, b_vgs, b_vds, b_T, p_vgs, p_vds, p_T, g_vgs, g_vds, g_T;
-    real t, cx, cy, e, best, cr, fb, s, dist2;
+    real t, cx, cy, e, best, cr, fb, s, dist2, gl, ga;
     integer inside, inbox;
     begin
       // normalised by the domain's centre and extent
@@ -2204,7 +2210,8 @@ module gan_4x125(g, d, s, t);
     real u_vgs, u_vds, u_T, b_vgs, b_vds, b_T, p_vgs, p_vds, p_T, g_vgs, g_vds, g_T;
     real w_vgs, w_vds, w_T, h_vgs, h_vds, h_T, q_vgs, q_vds, q_T, j_vgs, j_vds, j_T;
     real jgg, jgd, jdd, ex, ey, bx, by, t, cx, cy, e, best;
-    real cr, fb, s, dist2, dist, k0, ds;
+    real cr, fb, s, dist2, dist, k0, ds, o_vgs, o_vds, o_T, y_vgs, y_vds;
+    real y_T, gl, ga, fo, cg;
     integer inside, inbox, onedge, interior;
     begin
       // normalised by the domain's centre and extent
@@ -2701,7 +2708,8 @@ module gan_4x125(g, d, s, t);
     real u_vgs, u_vds, u_T, b_vgs, b_vds, b_T, p_vgs, p_vds, p_T, g_vgs, g_vds, g_T;
     real w_vgs, w_vds, w_T, h_vgs, h_vds, h_T, q_vgs, q_vds, q_T, j_vgs, j_vds, j_T;
     real jgg, jgd, jdd, ex, ey, bx, by, t, cx, cy, e, best;
-    real cr, fb, s, dist2, dist, k0, ds;
+    real cr, fb, s, dist2, dist, k0, ds, o_vgs, o_vds, o_T, y_vgs, y_vds;
+    real y_T, gl, ga, fo, cg;
     integer inside, inbox, onedge, interior;
     begin
       // normalised by the domain's centre and extent

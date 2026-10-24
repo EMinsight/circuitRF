@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Engine.HarmonicBalance;
@@ -17,8 +18,26 @@ namespace CircuitRF.Ui.Tests.ModelComposer;
 /// </summary>
 public sealed class TrapThermalHbConvergenceTests(ITestOutputHelper output)
 {
-    private static readonly string ModelPath =
-        Path.Combine(ModelCliFixture.RepoRoot(), "examples", ModelComposerExampleAuthoring.Folder, ModelComposerExampleAuthoring.GanModel);
+    /// <summary>
+    /// The example's model under the GLOBAL extrapolation law it carried when these were measured. The ampere-norm baseline
+    /// wanders outside the domain, so its stalls depend on the guide it meets there: under the local law (brief-modelcomposer-29)
+    /// its 18 dBm stall moves to the trap row and its <c>Charge=false</c> point no longer converges at all, while the scaled
+    /// norm converges at every point under both laws, in as many iterations or fewer (measured, 2026-10-24).
+    /// </summary>
+    private static readonly string ModelPath = GlobalLaw();
+
+    private static string GlobalLaw()
+    {
+        string shipped = Path.Combine(ModelCliFixture.RepoRoot(), "examples", ModelComposerExampleAuthoring.Folder, ModelComposerExampleAuthoring.GanModel);
+        ComposedModel m;
+        using (var r = File.OpenRead(shipped)) m = CmodelFile.Read(r);
+        string dir = Directory.CreateTempSubdirectory("crf-mc25-global-").FullName;
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { Directory.Delete(dir, true); } catch (IOException) { } };
+        string path = Path.Combine(dir, Path.GetFileName(shipped));
+        using (var f = File.Create(path))
+            CmodelFile.Write(m with { Extrapolation = m.Extrapolation! with { Mode = ExtrapolationMode.Global } }, f);
+        return path.Replace('\\', '/');
+    }
 
     /// <summary>R-mc25-1/2: one cold point at 18 dBm. The ampere norm stalls with the thermal row carrying most of ‖F‖; the
     /// scaled one converges inside the brief's 30 iterations.</summary>

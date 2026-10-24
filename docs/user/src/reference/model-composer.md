@@ -281,9 +281,12 @@ marked with the partner it is correlated with.
 | Network fit | Multi-bias |
 
 A model never extrapolates freely. Outside its training domain each constituent is continued linearly from the domain's
-edge. A current also gains a conductance on its own branch, which grows with distance from the edge. Keep the data wider
-than the voltages the circuit will reach: a gate swinging past the last measured `Vgs` meets that conductance, and its
-current is not the device's.
+edge. A current also gains a conductance on its own branch, which grows with distance from the edge: ten times the
+current's own conductance at the edge it leaves, capped at ten times its largest in the data. Where the data is flat, as
+a gate current below pinch-off, the continuation stays flat; where it is steep, as the forward gate diode, it stays steep.
+The Current step reports that conductance at each current's lowest and highest `Vgs`, as
+`IgGs 2e-09 S at −6 V, 4.9 S at 1 V`. The data is still the better answer: keep it wider than the voltages the circuit
+will reach, because beyond it the current is a continuation, not the device's.
 
 ## How an ANN is trained {#ann-training}
 

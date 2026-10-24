@@ -919,7 +919,7 @@ public static class ChargeFit
             var r = current.Record;
             (id, ig, idRf) = (r.Id, r.Ig, r.IdRF);
             foreach (var (k, v) in current.Arrays) all[k] = v;
-            extrapolation = r.Gx.Count > 0 ? new ModelExtrapolation(r.Gx) : null;
+            extrapolation = r.Gx.Count > 0 ? ModelExtrapolation.Local(r.Gx) : null;
             dispersion = r.Tau is { } tau ? new ModelDispersion(tau) : null;
         }
         return new ComposedModel

@@ -78,6 +78,55 @@ public sealed class CmodelFormatTests
         Assert.Contains("'quadratic'", ex.Message);
     }
 
+    /// <summary>brief-modelcomposer-29 R-mc29-2: the local law is <c>Extrapolation.Mode: "Local"</c> and round-trips; a
+    /// global-law model writes no <c>Mode</c>, as every model before it; an unknown law is refused by name.</summary>
+    [Fact]
+    public void TheExtrapolationMode_RoundTrips_AndAnUnknownOneIsRefusedByName()
+    {
+        double[] vgs = [-2, -1, 0, 1], vds = [0, 1, 2, 3, 4];
+        var grid = Enumerable.Range(0, 20).Select(i => 0.01 * i).ToArray();
+        Axis[] axes = [new("axis1", [0, 1, 2, 3]), new("axis2", [0, 1, 2, 3, 4])];
+        var global = ComposedTestModels.Model() with
+        {
+            Core = ComposedTestModels.Model().Core with
+            {
+                Id = Constituent.Table("Id", ["vgs", "vds"], new TrainingDomain([(-2, 0), (1, 0), (1, 4), (-2, 4)], [])),
+            },
+            Extrapolation = new ModelExtrapolation(new Dictionary<string, double> { ["Id"] = 1e-3 }),
+            Arrays = new Dictionary<string, DataCube>
+            {
+                ["Id.values"] = new(axes, grid), ["Id.coefficients"] = new(axes, grid),
+                ["Id.vgs"] = new([new Axis("axis1", [0, 1, 2, 3])], vgs), ["Id.vds"] = new([new Axis("axis1", [0, 1, 2, 3, 4])], vds),
+            },
+        };
+        var local = global with { Extrapolation = ModelExtrapolation.Local(global.Extrapolation!.Gx) };
+
+        Assert.DoesNotContain("\"Mode\": \"Local\"", Encoding.UTF8.GetString(CmodelFile.ModelJson(global)));
+        Assert.Contains("\"Mode\": \"Local\"", Encoding.UTF8.GetString(CmodelFile.ModelJson(local)));
+        byte[] first = Bytes(local);
+        var read = CmodelFile.Read(new MemoryStream(first));
+        Assert.Equal(ExtrapolationMode.Local, read.Extrapolation!.Mode);
+        Assert.Equal(first, Bytes(read));
+        Assert.Equal(ExtrapolationMode.Global, CmodelFile.Read(new MemoryStream(Bytes(global))).Extrapolation!.Mode);
+
+        // the same file with an unknown law in its place
+        using var s = new MemoryStream();
+        s.Write(first);
+        using (var zip = new ZipArchive(s, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = zip.GetEntry(CmodelFile.ModelEntry)!;
+            string json;
+            using (var r = new StreamReader(entry.Open())) json = r.ReadToEnd();
+            entry.Delete();
+            using var w = zip.CreateEntry(CmodelFile.ModelEntry).Open();
+            w.Write(Encoding.UTF8.GetBytes(json.Replace("\"Mode\": \"Local\"", "\"Mode\": \"Nearest\"", StringComparison.Ordinal)));
+        }
+        s.Position = 0;
+        var ex = Assert.Throws<CmodelFormatException>(() => CmodelFile.Read(s));
+        Assert.Equal("Extrapolation.Mode", ex.Field);
+        Assert.Contains("'Nearest'", ex.Message);
+    }
+
     private static byte[] Bytes(ComposedModel m)
     {
         using var s = new MemoryStream();

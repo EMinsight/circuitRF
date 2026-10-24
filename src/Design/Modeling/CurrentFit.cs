@@ -266,11 +266,13 @@ public static class CurrentFit
             igConstituent = igFit.Constituent;
         }
 
+        var edges = new List<string>();
         foreach (var f in igFit is null ? [idFit] : new[] { idFit, igFit })
             foreach (var p in f.Payloads)
             {
                 foreach (var (k, v) in p.Arrays) arrays[k] = v;
                 if (p.Gx is { } g) gx[p.Name] = g;
+                if (p.Edges is { } e) edges.Add($"{p.Name} {e}");
                 errors[p.Name] = p.Error;
             }
 
@@ -302,10 +304,15 @@ public static class CurrentFit
             idRf = dsp.Constituent;
             foreach (var (k, v) in dsp.Payload.Arrays) arrays[k] = v;
             gx["IdRF"] = dsp.Payload.Gx!.Value;
+            if (dsp.Payload.Edges is { } e) edges.Add($"IdRF {e}");
             errors["IdRF"] = dsp.Payload.Error;
             eq649 = dsp.Eq649;
             reference = dsp.Reference;
         }
+
+        // R-mc29-4: the law, and where each current's data stops — a quiet edge is one the model continues flat.
+        if (edges.Count > 0)
+            report.Add($"Extrapolation (local, ten times the edge's own conductance, capped at G_x): {string.Join("; ", edges)}.");
 
         string key = arrays.Count > 0 ? ArraysKey(arrays, out _) : "";
         var record = new CurrentFitRecord
@@ -681,7 +688,8 @@ public static class CurrentFit
     /// <summary>A fitted payload: its function of a point of the fit's inputs (value and gradient by vgs and vds, extrapolated
     /// as the runtime will), arrays, G_x, error.</summary>
     private sealed record Payload(string Name, Func<double[], (double F, double Dg, double Dd)> Eval,
-                                  IReadOnlyList<KeyValuePair<string, DataCube>> Arrays, double? Gx, FitErrorRecord Error);
+                                  IReadOnlyList<KeyValuePair<string, DataCube>> Arrays, double? Gx, FitErrorRecord Error,
+                                  string? Edges = null);
 
     private sealed record PayloadFit(Constituent Constituent, IReadOnlyList<Payload> Payloads);
 
@@ -735,7 +743,7 @@ public static class CurrentFit
         var own = OwnOver(t.Own, iv.Inputs.Count);
         double gx = Gx(f, iv.X, own);
         var eval = Guided(f, iv.Domain, iv.Inputs, gx, own);
-        return new Payload(t.Name, eval, [.. trained.Arrays(t.Name)], gx, Error(eval, iv.X, t.Y, held));
+        return new Payload(t.Name, eval, [.. trained.Arrays(t.Name)], gx, Error(eval, iv.X, t.Y, held), Edges(f, iv.X, own, gx));
     }
 
     /// <summary>The held-out split, and the training points' coordinates, targets (in the payload's own domain) and weights.
@@ -810,7 +818,7 @@ public static class CurrentFit
         var own = OwnOver(t.Own, d);
         double gx = Gx(f, iv.X, own);
         var eval = Guided(f, iv.Domain, iv.Inputs, gx, own);
-        return new Payload(t.Name, eval, arrays, gx, Error(eval, iv.X, t.Y, held));
+        return new Payload(t.Name, eval, arrays, gx, Error(eval, iv.X, t.Y, held), Edges(f, iv.X, own, gx));
     }
 
     /// <summary><paramref name="f"/> at every site of the grid, row-major, the last axis fastest.</summary>
@@ -1025,10 +1033,35 @@ public static class CurrentFit
         return GuidedExtrapolation.DefaultGx(Math.Max(largest, 1e-12));
     }
 
+    /// <summary>
+    /// The local law's added conductance at the data's lowest and highest <c>vgs</c> (R-mc29-4): the largest over the
+    /// points on each edge, as <c>2e-09 S at −6 V, 4.9 S at 1 V</c>.
+    /// </summary>
+    private static string Edges(RuntimeEvaluator f, IReadOnlyList<double[]> x, double[] own, double gx)
+    {
+        double lo = x.Min(p => p[0]), hi = x.Max(p => p[0]), tol = 1e-9 * Math.Max(hi - lo, 1);
+        double At(double vgs)
+        {
+            Span<double> g = stackalloc double[RuntimeEvaluator.MaxInputs];
+            double worst = 0;
+            foreach (var p in x)
+            {
+                if (Math.Abs(p[0] - vgs) > tol) continue;
+                f.Evaluate(p, g[..p.Length]);
+                double gOwn = 0;
+                for (int k = 0; k < p.Length; k++) gOwn += g[k] * own[k];
+                worst = Math.Max(worst, GuidedExtrapolation.LocalConductance(gOwn, gx));
+            }
+            return worst;
+        }
+        static string V(double v) => G(v).Replace("-", "−", StringComparison.Ordinal);
+        return $"{G(At(lo))} S at {V(lo)} V, {G(At(hi))} S at {V(hi)} V";
+    }
+
     private static Func<double[], (double F, double Dg, double Dd)> Guided(RuntimeEvaluator f, TrainingDomain domain,
                                                                            IReadOnlyList<string> inputs, double gx, double[] own)
     {
-        var guided = new GuidedExtrapolation(f, domain, inputs, gx, own);
+        var guided = new GuidedExtrapolation(f, domain, inputs, gx, own, ExtrapolationMode.Local);
         return p =>
         {
             Span<double> g = stackalloc double[RuntimeEvaluator.MaxInputs];
@@ -1155,7 +1188,8 @@ public static class CurrentFit
         var e = trained.Derivatives!;
         var rfEval = Guided(trained.Network, domain, Inputs, gx, Own(0, 1));
         var payload = new Payload("IdRF", p => rfEval([p[0], p[1]]), [.. trained.Arrays("IdRF")], gx,
-                                  new FitErrorRecord(e.TrainCount, e.TrainRms, e.TrainRelative, e.HeldOutCount, e.HeldOutRms, e.HeldOutRelative));
+                                  new FitErrorRecord(e.TrainCount, e.TrainRms, e.TrainRelative, e.HeldOutCount, e.HeldOutRms, e.HeldOutRelative),
+                                  Edges(trained.Network, x, Own(0, 1), gx));
 
         // [P1] eq. 6.49: RF conductances come from one current only if ∂Gm/∂vds = ∂Gds/∂vgs. Differencing measured
         // conductances to test that directly is too noisy on any realistic grid (it reported 86 % on exactly

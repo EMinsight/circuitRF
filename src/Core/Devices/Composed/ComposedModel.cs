@@ -146,13 +146,26 @@ public enum DrainSourceSymmetry { None, Exchange }
 /// <summary>
 /// <c>Extrapolation</c>: the added conductance <c>G_x</c> of each current payload that is a table or
 /// an ANN, by payload — <c>Id</c>, <c>IgGs</c>, <c>IgGd</c> (and <c>IdRF</c>). In siemens, at the
-/// base periphery.
+/// base periphery. <see cref="Mode"/> is the law it is added by (<c>Extrapolation.Mode</c>; absent is
+/// <see cref="ExtrapolationMode.Global"/>).
 /// </summary>
 public sealed record ModelExtrapolation(IReadOnlyDictionary<string, double> Gx)
 {
     /// <summary>The order the writer puts them in.</summary>
     public static readonly IReadOnlyList<string> Keys = ["Id", "IgGs", "IgGd", "IdRF"];
+
+    public ExtrapolationMode Mode { get; init; } = ExtrapolationMode.Global;
+
+    /// <summary>The local law (brief-modelcomposer-29), each <c>G_x</c> its cap: what the composer exports.</summary>
+    public static ModelExtrapolation Local(IReadOnlyDictionary<string, double> gx) => new(gx) { Mode = ExtrapolationMode.Local };
 }
+
+/// <summary>
+/// The law guided extrapolation adds its conductance by (<see cref="GuidedExtrapolation"/>). <see cref="Global"/>: <c>G_x</c>
+/// at every edge (MC-2). <see cref="Local"/>: ten times the constituent's own-branch conductance at the edge it leaves, with
+/// a floor, capped by <c>G_x</c> (brief-modelcomposer-29).
+/// </summary>
+public enum ExtrapolationMode { Global, Local }
 
 /// <summary>
 /// One constituent: its method, the inputs it may read, and the method's payload, held in

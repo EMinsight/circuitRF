@@ -15,6 +15,11 @@ public sealed class GuidedExtrapolationTests(ITestOutputHelper output)
 {
     private static readonly ComposedCoreModel Mixed = RuntimeTestModels.Core(RuntimeTestModels.MixedModel());
 
+    /// <summary>The same model under the local law (brief-modelcomposer-29): each added conductance ten times the edge's
+    /// own, which the gradient must follow as p_b moves.</summary>
+    private static readonly ComposedCoreModel MixedLocal = RuntimeTestModels.Core(RuntimeTestModels.MixedModel() is var m
+        ? m with { Extrapolation = ModelExtrapolation.Local(m.Extrapolation!.Gx) } : null!);
+
     private static (double[] I, double[] Q, double[,] Dg, double[,] Dc) At(ComposedCoreModel core, double vgs, double vds)
     {
         var r = core.Evaluate(new PortVoltages([vgs, vds]));
@@ -52,16 +57,22 @@ public sealed class GuidedExtrapolationTests(ITestOutputHelper output)
     [InlineData(1.25, 11.34)]    // beyond the oblique edge: the projection's Jacobian is not axis-aligned
     [InlineData(2.2, -3.0)]      // in a vertex's normal cone
     [InlineData(-4.2, 13.0)]
+    [InlineData(-4.0, 5.0)]      // beyond the low-vgs edge, where the gate's own conductance is all but zero
     public void OutsideTheDomain_TheJacobian_IsTheExactDerivative(double vgs, double vds)
     {
-        var at = At(Mixed, vgs, vds);
+        foreach (var core in (ComposedCoreModel[])[Mixed, MixedLocal]) Jacobian(core, vgs, vds);
+    }
+
+    private static void Jacobian(ComposedCoreModel core, double vgs, double vds)
+    {
+        var at = At(core, vgs, vds);
         const double h = 1e-6;
         for (int col = 0; col < 2; col++)
         {
             double[] p = [vgs, vds], m = [vgs, vds];
             p[col] += h; m[col] -= h;
-            var up = At(Mixed, p[0], p[1]);
-            var dn = At(Mixed, m[0], m[1]);
+            var up = At(core, p[0], p[1]);
+            var dn = At(core, m[0], m[1]);
             for (int row = 0; row < 2; row++)
             {
                 double fdG = (up.I[row] - dn.I[row]) / (2 * h), fdC = (up.Q[row] - dn.Q[row]) / (2 * h);
@@ -71,6 +82,20 @@ public sealed class GuidedExtrapolationTests(ITestOutputHelper output)
                 Assert.True(Math.Abs(fdC - at.Dc[row, col]) <= 1e-6 * sC, $"dc[{row},{col}]: {at.Dc[row, col]:R} vs {fdC:R}");
             }
         }
+    }
+
+    /// <summary>
+    /// R-mc29-1: a volt beyond the edge where the gate current is flat (IgGs is 1e-4·σ(5·vgs − 4), ~3e-12 S at −3 V), the
+    /// local law continues it as the data says — the linear continuation plus a floor-sized guide — where the global law
+    /// adds G_x = 0.1 S.
+    /// </summary>
+    [Fact]
+    public void BeyondAQuietEdge_TheLocalLawAddsAlmostNothing()
+    {
+        double local = At(MixedLocal, -4.0, 5.0).I[0], global = At(Mixed, -4.0, 5.0).I[0];
+        output.WriteLine($"Ig at (−4, 5): local {local:E3} A, global {global:E3} A");
+        Assert.True(Math.Abs(local) < 1e-6, $"local {local:E3} A");
+        Assert.True(Math.Abs(global) > 1e-3, $"global {global:E3} A");
     }
 
     [Fact]

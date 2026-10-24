@@ -20,6 +20,10 @@ namespace CircuitRF.Design.Modeling.VerilogA;
 /// normalised distance. Inside the domain <c>p_b</c> is <c>p</c> itself (not <c>p</c> normalised and back, which would move
 /// it by a rounding), so the continuation's step is zero and the value is the evaluator's. The compiler differentiates this
 /// code itself and so forms <c>∇f(p_b) + Pᵀ H (p − p_b)</c> without being told, because <c>p_b</c> moves with <c>p</c>.</para>
+///
+/// <para><b>The local law</b> (brief-modelcomposer-29) replaces <c>G_x</c> by <c>min(√((10·g_own)² + (1e-7·G_x)²), G_x)</c>,
+/// <c>g_own</c> the payload's gradient at <c>p_b</c> along the own branch — <c>GuidedExtrapolation.LocalConductance</c>, in
+/// the same order of operations.</para>
 /// </summary>
 internal static class VaDomain
 {
@@ -30,8 +34,9 @@ internal static class VaDomain
     /// <param name="gx">The module parameter holding <c>G_x</c>, or null for a charge.</param>
     /// <param name="own">The constituent's own branch voltage over <paramref name="inputs"/> (<c>vds</c> for Id, <c>vgs</c>
     /// for IgGs, <c>vgs − vds</c> for IgGd), or null for a charge.</param>
+    /// <param name="local">The added conductance follows the edge (<c>Extrapolation.Mode: "Local"</c>).</param>
     public static string Function(string name, string comment, string payload, IReadOnlyList<string> inputs,
-                                  TrainingDomain domain, string? gx, double[]? own)
+                                  TrainingDomain domain, string? gx, double[]? own, bool local = false)
     {
         int d = inputs.Count;
         int iG = IndexOf(inputs, ComposedCoreProgram.Vgs), iD = IndexOf(inputs, ComposedCoreProgram.Vds);
@@ -69,6 +74,7 @@ internal static class VaDomain
         var pb = inputs.Select(x => "p_" + x).ToArray();
         var gb = inputs.Select(x => "g_" + x).ToArray();
         var locals = new List<string>([.. u, .. ub, .. pb, .. gb, "inside", "inbox", "t", "cx", "cy", "e", "best", "cr", "fb", "s", "dist2"]);
+        if (local) locals.AddRange(["gl", "ga"]);
 
         var b = new StringBuilder();
         b.Append("      // normalised by the domain's centre and extent\n");
@@ -137,10 +143,19 @@ internal static class VaDomain
             for (int k = 0; k < d; k++)
                 if (own[k] == 1) step.Add($"({inputs[k]} - {pb[k]})");
                 else if (own[k] == -1) step.Add($"-({inputs[k]} - {pb[k]})");
-            b.Append($"      // the added conductance on the constituent's own branch, G_x at 5 % of the extent\n");
             b.Append($"      dist2 = {dist};\n");
             b.Append($"      s = {string.Join(" + ", step).Replace("+ -", "- ")};\n");
-            b.Append($"      if (dist2 > 0.0) {name} = {name} + ({gx}/{Num(GuidedExtrapolation.BoundaryFraction)})*s*sqrt(dist2);\n");
+            if (local)
+            {
+                b.Append("      // the added conductance on the constituent's own branch: ten times the edge's own, floored, capped by G_x\n");
+                b.Append(LocalConductance("      ", gb, own, gx));
+                b.Append($"      if (dist2 > 0.0) {name} = {name} + (gl/{Num(GuidedExtrapolation.BoundaryFraction)})*s*sqrt(dist2);\n");
+            }
+            else
+            {
+                b.Append("      // the added conductance on the constituent's own branch, G_x at 5 % of the extent\n");
+                b.Append($"      if (dist2 > 0.0) {name} = {name} + ({gx}/{Num(GuidedExtrapolation.BoundaryFraction)})*s*sqrt(dist2);\n");
+            }
         }
 
         var sb = new StringBuilder();
@@ -193,7 +208,8 @@ internal static class VaDomain
     /// reads, at points the circuit is not at.
     /// </summary>
     public static string GradientFunction(string name, string comment, string payload, string hessian,
-                                          IReadOnlyList<string> inputs, TrainingDomain domain, string? gx, double[]? own)
+                                          IReadOnlyList<string> inputs, TrainingDomain domain, string? gx, double[]? own,
+                                          bool local = false)
     {
         int d = inputs.Count;
         int iG = IndexOf(inputs, ComposedCoreProgram.Vgs), iD = IndexOf(inputs, ComposedCoreProgram.Vds);
@@ -236,6 +252,9 @@ internal static class VaDomain
         var reals = new List<string>([.. u, .. ub, .. pb, .. gb, .. wp, .. hw, .. gu, .. jb,
                                       "jgg", "jgd", "jdd", "ex", "ey", "bx", "by", "t", "cx", "cy", "e", "best", "cr", "fb",
                                       "s", "dist2", "dist", "k0", "ds"]);
+        var og = inputs.Select(x => "o_" + x).ToArray();
+        var oh = inputs.Select(x => "y_" + x).ToArray();
+        if (local) reals.AddRange([.. og, .. oh, "gl", "ga", "fo", "cg"]);
         string G = u[iG], D = u[iD];
 
         var b = new StringBuilder();
@@ -325,7 +344,25 @@ internal static class VaDomain
             b.Append("          s = 0.0;\n");
             for (int k = 0; k < d; k++)
                 if (own[k] != 0) b.Append($"          s = s + {Operand(own[k])}*{wp[k]};\n");
-            b.Append($"          k0 = {gx}/{Num(GuidedExtrapolation.BoundaryFraction)};\n");
+            if (local)
+            {
+                // G_loc moves with p_b: below the cap its gradient is ∂G/∂a · K · P (D H own), H own from the Hessian.
+                b.Append(LocalConductance("          ", gb, own, gx));
+                b.Append($"          if (gl < {gx}) begin\n");
+                string ownArgs = string.Join(", ", own.Select(Operand));
+                b.Append($"            fo = {hessian}({string.Join(", ", pb)}, {ownArgs}, {string.Join(", ", og)}, {string.Join(", ", oh)});\n");
+                b.Append($"            cg = {Num(GuidedExtrapolation.ConductanceFactor)}*ga/sqrt(ga*ga + ({Operand(GuidedExtrapolation.FloorFraction)}*{gx})*({Operand(GuidedExtrapolation.FloorFraction)}*{gx}))*s*dist/{Num(GuidedExtrapolation.BoundaryFraction)};\n");
+                for (int k = 0; k < d; k++)
+                {
+                    var dg = new StringBuilder();
+                    for (int m = 0; m < d; m++)
+                        if (Jac(k, m) is { Length: > 0 } j) dg.Append(dg.Length == 0 ? "" : " + ").Append($"{j}*{Operand(extent[m])}*{oh[m]}");
+                    if (dg.Length > 0) b.Append($"            {gu[k]} = {gu[k]} + cg*({dg});\n");
+                }
+                b.Append("          end\n");
+                b.Append($"          k0 = gl/{Num(GuidedExtrapolation.BoundaryFraction)};\n");
+            }
+            else b.Append($"          k0 = {gx}/{Num(GuidedExtrapolation.BoundaryFraction)};\n");
             b.Append($"          {name} = {name} + k0*s*dist;\n");
             for (int k = 0; k < d; k++)
             {
@@ -387,6 +424,18 @@ internal static class VaDomain
         sb.Append("    begin\n").Append(b).Append("    end\n");
         sb.Append("  endfunction\n");
         return sb.ToString();
+    }
+
+    /// <summary><c>gl</c> = <c>GuidedExtrapolation.LocalConductance(g_own, G_x)</c> from the payload's gradient
+    /// <paramref name="gb"/> at <c>p_b</c>, its <c>a = K·g_own</c> left in <c>ga</c>.</summary>
+    private static string LocalConductance(string indent, string[] gb, double[] own, string gx)
+    {
+        var a = new StringBuilder();
+        for (int k = 0; k < own.Length; k++)
+            if (own[k] != 0) a.Append(a.Length == 0 ? "" : " + ").Append($"{gb[k]}*{Operand(own[k])}");
+        string floor = $"{Operand(GuidedExtrapolation.FloorFraction)}*{gx}";
+        return $"{indent}ga = {Num(GuidedExtrapolation.ConductanceFactor)}*({a});\n" +
+               $"{indent}gl = min(sqrt(ga*ga + ({floor})*({floor})), {gx});\n";
     }
 
     private static int IndexOf(IReadOnlyList<string> inputs, string name)
