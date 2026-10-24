@@ -78,6 +78,19 @@ public sealed record GmshThermalInput(IReadOnlyList<Em3dSolid> Solids, IReadOnly
     /// <summary>brief-em3d-77 R-em3d77-3 — each bond wire's centreline as points, and the element size wanted round it
     /// (metres): a Distance field refines the solid a wire runs through. The wire itself is not geometry here.</summary>
     public IReadOnlyList<(IReadOnlyList<Point3> Points, double SizeM)> WireLines { get; init; } = [];
+
+    /// <summary>brief-emdc-1 — the input may hold sheets and no solid: a DC conduction mesh of a structure drawn as sheets (a
+    /// microstrip whose trace and ground are both sheets) is a surface mesh. A thermal run never sets it, so a thermal problem
+    /// with no solid is still refused.</summary>
+    public bool SheetsAlone { get; init; }
+
+    /// <summary>brief-emdc-1 — when set, a box or an extrusion is sized by its SECOND-smallest side over this many elements
+    /// (never finer than the thermal rule would size it), not by MinThroughThickness through its thinnest. A DC conduction
+    /// field in a flat conductor varies across its width and barely through its thickness, while two elements through a
+    /// 35 µm foil gave a 10 mm trace 412,086 tetrahedra for a resistance one element through gets exactly. Heat crossing a
+    /// thin layer is the field a thermal run solves, so a thermal run never sets it. Other primitives keep the thermal rule:
+    /// a bond wire sized from its box lost 0.8%.</summary>
+    public double? InPlaneElements { get; init; }
 }
 
 public static partial class GmshGeoWriter
@@ -91,7 +104,7 @@ public static partial class GmshGeoWriter
     /// <summary>The largest element of a thermal mesh, metres, before <see cref="GmshThermalSizing.Scale"/>.</summary>
     public static double ThermalMaxElementM(GmshThermalInput input)
     {
-        var (x0, y0, z0, x1, y1, z1) = Extent(input.Solids);
+        var (x0, y0, z0, x1, y1, z1) = input.Solids.Count > 0 ? Extent(input.Solids) : SheetExtent(input.Sheets);
         return input.Sizing.MaxFraction * Math.Max(x1 - x0, Math.Max(y1 - y0, z1 - z0));
     }
 
@@ -100,7 +113,7 @@ public static partial class GmshGeoWriter
     public static double ThermalSolidSizeM(GmshThermalInput input, Em3dSolid s)
     {
         var (x0, y0, z0, x1, y1, z1) = Em3dProblem.Bounds(s.Primitive);
-        double thin = Math.Min(x1 - x0, Math.Min(y1 - y0, z1 - z0));
+        double thin = Math.Min(x1 - x0, Math.Min(y1 - y0, z1 - z0)), wall = double.PositiveInfinity;
         // A solid something cuts a hole in is only as thick as the wall the hole leaves: a plated via's barrel, bored by its
         // air cylinder, is a tube whose box is the via's whole diameter — sized from the box it got about one element through
         // its plating. An outranking AIR solid (a bore — never meshed, so nothing else sizes the wall it leaves) lying strictly
@@ -119,11 +132,17 @@ public static partial class GmshGeoWriter
             for (int a = 0; a < 3; a++)
             {
                 if (!(clo[a] > lo[a] && chi[a] < hi[a]) || chi[a] - clo[a] < 0.5 * (hi[a] - lo[a])) continue;
-                thin = Math.Min(thin, Math.Min(clo[a] - lo[a], hi[a] - chi[a]));
+                wall = Math.Min(wall, Math.Min(clo[a] - lo[a], hi[a] - chi[a]));
             }
         }
+        thin = Math.Min(thin, wall);
         double max = ThermalMaxElementM(input);
-        return thin > 0 ? Math.Min(max, thin / Math.Max(1, input.Sizing.MinThroughThickness)) : max;
+        double size = thin > 0 ? Math.Min(max, thin / Math.Max(1, input.Sizing.MinThroughThickness)) : max;
+        if (input.InPlaneElements is not { } across || s.Primitive is not (Em3dBox or Em3dExtrudedPolygon)) return size;
+        double[] sides = [x1 - x0, y1 - y0, z1 - z0];
+        Array.Sort(sides);
+        double inPlane = Math.Min(sides[1], wall);
+        return inPlane > 0 ? Math.Max(size, Math.Min(max, inPlane / Math.Max(1, across))) : size;
     }
 
     /// <summary>The element size at a heat-source sheet, metres (before the scale): its smaller side / SizeFromSources (or
@@ -144,7 +163,8 @@ public static partial class GmshGeoWriter
     public static GmshLowering WriteThermal(GmshThermalInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
-        if (input.Solids.Count == 0) return No("The thermal problem holds no solid with a material, so there is nothing to mesh.");
+        if (input.Solids.Count == 0 && !(input.SheetsAlone && input.Sheets.Count > 0))
+            return No("The thermal problem holds no solid with a material, so there is nothing to mesh.");
         if (ImportedOpenEmsOnly(input.Solids, "the thermal solver") is { } imported) return No(imported);
         if (input.Sizing.Order is not (1 or 2)) return No($"A thermal mesh is order 1 or 2, not {input.Sizing.Order}.");
         if (!(input.Sizing.Grading > 1)) return No("A thermal mesh's Grading must be above 1.");
@@ -250,8 +270,11 @@ public static partial class GmshGeoWriter
 
         L("// ---- one fragment: imprints the shared faces and the sheets, splits no volume -------------");
         string volumes = string.Join(", ", Enumerable.Range(0, input.Solids.Count).Select(i => $"s{i}[]"));
-        L($"frag[] = BooleanFragments{{ Volume{{{volumes}}}; Delete; }}" +
-          (input.Sheets.Count == 0 ? "{ };" : $"{{ Surface{{{string.Join(", ", Enumerable.Range(0, input.Sheets.Count).Select(k => $"h{k}[]"))}}}; Delete; }};"));
+        string sheetList = string.Join(", ", Enumerable.Range(0, input.Sheets.Count).Select(k => $"h{k}[]"));
+        if (input.Solids.Count == 0) L($"frag[] = BooleanFragments{{ Surface{{{sheetList}}}; Delete; }}{{ }};");
+        else
+            L($"frag[] = BooleanFragments{{ Volume{{{volumes}}}; Delete; }}" +
+              (input.Sheets.Count == 0 ? "{ };" : $"{{ Surface{{{sheetList}}}; Delete; }};"));
         L("allV[] = Volume{:};");
         L("allS[] = Surface{:};");
         L("single[] = CombinedBoundary{ Volume{allV[]}; };");
@@ -362,7 +385,7 @@ public static partial class GmshGeoWriter
             if (input.Solids[i].Primitive is Em3dShapeSolid)
                 L($"If (ns{i} != 1) Printf(\"kernel_import_count {solidGroups[i].Attribute} %g\", ns{i}) >> \"{EntitiesFile}\"; EndIf");
         L($"Printf(\"all_volumes %g\", #allV[]) >> \"{EntitiesFile}\";");
-        L($"Printf(\"classified_volumes %g\", {string.Join(" + ", Enumerable.Range(0, input.Solids.Count).Select(i => $"#s{i}[]"))}) >> \"{EntitiesFile}\";");
+        L($"Printf(\"classified_volumes %g\", {(input.Solids.Count == 0 ? "0" : string.Join(" + ", Enumerable.Range(0, input.Solids.Count).Select(i => $"#s{i}[]")))}) >> \"{EntitiesFile}\";");
         L($"Printf(\"all_surfaces %g\", #allS[]) >> \"{EntitiesFile}\";");
         L($"Printf(\"single_sided %g\", #single[]) >> \"{EntitiesFile}\";");
         L("// an unnamed single-sided surface is insulated in a thermal run, by definition");
@@ -376,6 +399,8 @@ public static partial class GmshGeoWriter
         L($"// Largest element {Num(z.MaxFraction)} of the problem's largest side; at least {z.MinThroughThickness} element(s) " +
           $"through each solid; {Num(z.SizeFromSources)} across each heat source's smaller side; growing by {Num(z.Grading)}" +
           (z.Scale != 1 ? $"; every size x {Num(z.Scale)} (the convergence check)." : "."));
+        if (input.InPlaneElements is { } inPlane)
+            L($"// A box or an extrusion is sized by its second-smallest side / {Num(inPlane)} instead (a DC conduction mesh).");
         L($"Mesh.MeshSizeMax = {Num(sizeMax)};");
         L("Mesh.MeshSizeFromPoints = 0;");
         L("Mesh.MeshSizeExtendFromBoundary = 0;");
@@ -423,6 +448,18 @@ public static partial class GmshGeoWriter
         L("Mesh.Binary = 1;");
 
         return new GmshLowering(g.ToString(), groups, GroupsJson(groups), null, kernelFiles);
+    }
+
+    private static (double X0, double Y0, double Z0, double X1, double Y1, double Z1) SheetExtent(IReadOnlyList<GmshThermalSheet> sheets)
+    {
+        double x0 = double.PositiveInfinity, y0 = x0, z0 = x0, x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
+        foreach (var s in sheets)
+        {
+            var b = s.Sheet.WorldBounds();
+            x0 = Math.Min(x0, b.X0); y0 = Math.Min(y0, b.Y0); z0 = Math.Min(z0, b.Z0);
+            x1 = Math.Max(x1, b.X1); y1 = Math.Max(y1, b.Y1); z1 = Math.Max(z1, b.Z1);
+        }
+        return (x0, y0, z0, x1, y1, z1);
     }
 
     private static (double X0, double Y0, double Z0, double X1, double Y1, double Z1) Extent(IReadOnlyList<Em3dSolid> solids)

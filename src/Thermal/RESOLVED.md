@@ -316,3 +316,28 @@ the residual against J·v on the output stage, block by block: 5.4e-6 of the dif
 port's; each group is referenced at its own contact (the lowest port's), and Assemble refuses a point whose currents into a group
 do not sum to zero within 0.1 % of the largest, naming the ports. A same-group port keeps exactly the old reference, and a lone
 split port the old refusal word for word.
+
+## brief-emdc-1 — the DC conduction solve of a 3D problem (2026-10-24)
+
+`Conduction/DcConduction.cs`: the σ-weighted Laplacian on the tetrahedra and the σt-weighted surface Laplacian on sheet
+triangles, ties merged before assembly, and each port a terminal pair (PlanarDcSolve's model). Gates:
+`tests/Thermal.Tests/DcConductionTests.cs`.
+
+**The result type could not live where the brief put it and be seen from here.** `CircuitRF.Thermal` references nothing of
+ours (its .csproj says why), so it cannot see `src/Engine/Em3d`. `Em3dDcResult` is in `src/Engine/Em3d` as asked — `src/Design`
+sees it — and the solve returns its own `DcConductionResult`, which `Em3dDcSolve` copies across.
+
+**Stamping each port's branch into the sparse matrix is not exact where a DC row has to be.** The brief's form — every port a
+1/Z₀ branch in the one sparse matrix, N right-hand sides on one factorisation — was built first and measured: an open came back
+S₁₁ = 1 − 1.8e-7 (two bars each to a ground body they do not touch, where S = I exactly), a copper through's S₂₁ 4.7e-8 off
+2Z₀/(2Z₀ + R), and σ_max(S) = 1.00000008, which the passivity check then refused. A conductor joined to the rest by one 1/Z₀
+alone is a near-null block beside copper's kilosiemens (condition ~1e9), and Cholesky's error lands exactly in the mode the
+answer is made of. What ships is the same network solved in two levels: each CONDUCTION group (elements, ties, resistors — not
+the port branches) is grounded at one of its contacts, the sparse solve gives its resistances between contacts (one
+factorisation, one solve per contact, so up to 2N rather than N), and the port branches are closed on the contacts in a small
+dense system of the ports' currents and one potential offset per group. A group joined by one branch alone has that port's
+current as its own balance, so an open is an open by topology; every case above is now exact to round-off and the 3D gap
+capacitor reads |S₂₁| ≈ 1e-16. Nothing is a penalty term and nothing inverts a Y or Z at a singular point.
+
+**Tie, resistor or nothing is decided here** (`DcConduction.LumpedAtDc`), so the classification the lowering applies is the one
+the solver's test holds.

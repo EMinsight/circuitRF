@@ -22797,3 +22797,124 @@ to |ΔS| 8.8e-8 over 801 points.
 
 **The tested list is inside problem.json** (`testedEmerge`), so adding a version changes the provenance geometry hash
 every EMerge result carries; the five lowering goldens and `emerge-run/driven/cavity.s2p` were rewritten for it.
+
+## brief-emdc-1 — a 3D problem's DC row: the lowering, the mesh, and the budget it misses (2026-10-24)
+
+`Em3d/Em3dDcLowering.cs` (an `Em3dProblem` to a conductor-only Gmsh mesh and its contacts), `Em3d/Em3dDcSolve.cs` (the one
+entry point), `src/Thermal/Conduction/DcConduction.cs` (the solve; its own findings are in `src/Thermal/RESOLVED.md`). Nothing
+reaches it from a run yet: that is EMDC-2. Gates: `tests/Ui.Tests/Em3d/Em3dDcLoweringTests.cs`.
+
+### How a contact's surface is known at mesh level
+
+Gmsh writes a triangle only where a physical group names it, so the lowering adds one face group per conductor solid holding
+its WHOLE boundary (the solid's box as the query, intersected with the solid's own boundary, as every face group is). Each of
+those triangles comes back with its Gmsh surface tag (`MshMesh.TriangleEntity`) — the fragment's own classification — and a
+contact is chosen among those surfaces by ThermalCurrents' rule: the smallest one that holds every probe point of the port's
+edge. A sheet's contact is its nodes along the edge (or inside a wave port's rectangle), a line of nodes.
+
+### The thermal writer refused every structure drawn as sheets alone
+
+`GmshGeoWriter.WriteThermal` refused an input with no solid, so every sheet-only 3D example (the Coupled Microstrip, the Pair,
+the Loop Coil, the System Check) was refused with the thermal sentence "holds no solid with a material". `GmshThermalInput`
+gained `SheetsAlone` (init, default false): with it the input may be sheets alone, the fragment is of the sheets, the largest
+element is sized from the sheets' extent and `classified_volumes` is written as 0. Every change applies only when there is no
+solid, which was a refusal before, so every thermal script with a solid is byte-identical.
+
+### Sheets with no thickness are PEC at DC
+
+Every sheet of the shipped sheet-only examples states σ and no thickness. Palace reads that as a thick conductor's surface
+impedance; at DC σ with no t gives no sheet conductance, so the lowering ties such a sheet as a perfect conductor and says so in
+a note per sheet.
+
+### Contacts that resolved in a way worth knowing
+
+- **A port's negative end on a PEC floor that no conductor touches** (the .clay route's microstrip: `airbox/zmin`) is the ground
+  item, which is a node of its own with no element. DcConduction carries it as a virtual node.
+- **A port both of whose objects are one PEC body** is not refused for being the same tie: the two contacts' SURFACES are
+  compared, so two faces of one PEC body are a short (S₁₁ = −1) and only the same face twice — the hollow waveguide's wave port
+  — is refused.
+- **The Thermal Output Wires example's port 1 runs from `U1/Pad Metal/1` to `U1/Die Attach/1`**, and port 2 from `lead` to
+  `flange`: the die attach and the flange are one conduction group, so the DC two-port is the wires' through,
+  S₂₁ = 0.999905.
+- **The Cavity examples' line is a PEC sheet**, so their DC row is an ideal through: S₂₁ = 1, S₁₁ = −2e-16.
+- **A port at the board's edge takes its ground contact on the ground plane's END face, not its top.** A microstrip-style
+  lumped port runs from the ground's top up to the trace at x = 0, where the ground also ends. Its negative edge (z = 0, x = 0,
+  across the port's width) lies on two of the ground's surfaces: the top (2 mm × 1 mm in test 8's gap capacitor) and the
+  x = 0 end face (1 mm × 0.1 mm). The smallest-surface rule takes the end face, so the DC current enters the ground through
+  its side, and test 8 asserts that. The full-wave port's current enters along the top's edge instead. At DC the difference
+  is a spreading resistance in a plane far wider than the trace, which is negligible beside the trace's own resistance, so the
+  rule was kept rather than given a ground-specific exception. A port set in from the board edge has one surface on its
+  negative edge, the top, and is unaffected.
+
+### The budget: NOT MET, and not coarsened to meet it
+
+§6 asks that the DC solve cost a small fraction of one full-wave point, and to stop and report rather than coarsen the mesh.
+Measured on a 10-core laptop, the DC solve in Release from a scratch harness, the full-wave figures the examples' READMEs
+record for their whole sweeps:
+
+| Problem | DC mesh | DC solve, meshing included | Full-wave, whole sweep |
+|---|---|---|---|
+| Test 9's gap capacitor (open / filled, Debug) | 13,646 / 13,900 tets | 1.65 / 1.69 s | — |
+| Cavity, Driven (801 points) | 70,193 tets | 8.9 s | Palace 34 s; EMerge 3 s |
+| Cavity with post, Driven | 70,837 tets | 9.2 s | Palace 41 s; EMerge 3 s |
+| Thermal Output Wires, EM (101 points) | 268,520 tets | 45 s (27 s of it Gmsh) | Palace 1 min 37 s |
+| 3D Package, Driven (1,121 points) — the largest | did not finish | Gmsh's 2D pass 30.8 s, 1,089,634 surface nodes; the 3D pass killed after ~12 min | Palace 4 min 46 s |
+| Coupled Microstrip, Pair, Loop Coil, System Check | 742–2,136 sheet triangles | 0.25–0.31 s | — |
+
+The two 3D Connector / 3D Wave Ports Launch setups were not measured: their housings are kernel solids, and this tree has no
+geometry kernel.
+
+**The cause is the thermal sizing, not the solve.** `GmshThermalSizing`'s defaults put at least two elements through each
+solid's thinnest dimension, isotropically, so a 5.08 µm gold lead 4.3 mm long gets 2.54 µm tetrahedra along its whole
+length — about a million per lead — and a 35 µm trace 17.5 µm ones (412,086 tetrahedra and 110 s for a 10 mm × 1.1 mm
+1 oz trace, against 4.48 mΩ to six digits). The solve itself is cheap where the mesh is small. Remedies that are NOT
+coarsening are modelling decisions and are left to the owner: a conductor thinner than some fraction of its other sides could
+be meshed as a sheet of conductance σ·t (its through-thickness drop is not what a DC row asks), or the conductor mesh could be
+sized anisotropically, through the thickness only.
+
+### The remedy: a flat conductor is sized across its width, not through its thickness (2026-10-24)
+
+The owner chose this over both candidates above. `GmshThermalInput.InPlaneElements` (init, null by default, so every thermal
+script is byte-identical) sizes a box or an extrusion by its SECOND-smallest side / n — never finer than the thermal rule, and
+never coarser than a wall a void leaves — and `Em3dDcLowering` sets n = 8. Every other primitive keeps the thermal rule.
+
+- **Why not a sheet of σ·t.** The 3D Package's 12.7 µm die-attach pad sits on four vias that end on its BOTTOM face, with the
+  die on its top: a sheet lies in one plane, so one side stops touching it and the bias path reads as an open — the one failure
+  a DC row must not have. It would also be a second geometry beside the one the full-wave solve meshed.
+- **Why not anisotropic sizing.** Gmsh's tetrahedral meshers are isotropic; an anisotropic metric needs the experimental
+  MMG3D path, and extruded prism layers are an element the solver does not have.
+- **Why it is safe.** A DC field in a flat conductor varies across the width and barely through the thickness. A box whose
+  contacts are its end faces carries an exactly linear field, so a 10 mm trace one element through matches L/(σA) to every
+  digit, and the filled gap capacitor's resistance is unchanged to 16 digits. Refining across the width converges: Output Wires
+  9.4849 / 9.4975 / 9.5025 mΩ at n = 4 / 8 / 16 against 9.5061 at the thermal sizing; the Package 448.133 / 448.272 /
+  448.356 mΩ. **Applying it to every solid cost 0.8%** on Output Wires — a bond wire sized from its bounding box — which is
+  why cylinders and wires keep the thermal rule.
+
+The budget re-measured through `Em3dDcSolve.Solve`, same machine:
+
+| Problem | DC mesh | DC solve, meshing included | Full-wave, whole sweep |
+|---|---|---|---|
+| Cavity / with post, Driven | 31,796 / 32,131 tets | 3.0–3.4 s | Palace 34 / 41 s; EMerge 3 s |
+| Thermal Output Wires, EM | 22,072 tets | 2.1 s | Palace 1 min 37 s |
+| 3D Package, Driven | 55,257 tets | 4.1 s | Palace 4 min 46 s |
+| Sheet-only examples | 742–2,136 sheet triangles | 0.22–0.28 s | — |
+
+§6's "a small fraction of one full-wave point" cannot hold as written on a small problem: Gmsh's own start-up and 2D pass are
+most of the Cavity's 3 s, which is EMerge's whole 801-point interpolated sweep, where one point costs milliseconds. Against
+the run, it is about 1.5% of the Package's and 2% of Output Wires'. The remedy was approved with the budget read against the run.
+
+### Review: a wave port on a PEC face grounded its own conductor (2026-10-24)
+
+The PEC-face tie took every conductor surface lying on a PEC face of the air box, including the cross-section of a line
+ending inside a wave port's rectangle on that face. The full-wave mesh claims a wave port's rectangle before the air-box
+faces (`GmshGeoWriter.ClaimPorts`), so that cross-section is the port there, never PEC. On a shielded box with wave ports on
+PEC end walls, the port's positive contact became the ground item: S₁₁ = −1 and the line read as shorted at both ends. The
+tie now leaves out a solid's boundary triangle or a sheet node lying in a wave port's rectangle on that face. Gate:
+`Em3dDcLoweringTests.AWavePortOnAPecFace_DoesNotGroundTheConductorEndingInIt`. The shipped 3D Wave Ports Launch is this case:
+its wave port P1 lies on a PEC x-min face. It was not in the budget table because its housing is a kernel solid, so the
+defect went unseen there.
+
+**A lumped element with no R, L or C is refused by the lowering.** `Problem.Validate` already refuses it, but
+`Em3dDcSolve.Solve` takes any problem and does not validate, and `DcConduction.LumpedAtDc` reads a series element with no
+value as a short. The lowering now refuses it by name, beside its existing refusal of a negative value. Gate:
+`Em3dDcLoweringTests.Refusals_AWaveguidePort_AZeroZ0_AndANonDrivenProblem`.
