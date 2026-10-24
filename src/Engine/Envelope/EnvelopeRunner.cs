@@ -9,8 +9,11 @@
 //  warm-up.  With the warm-up past the network's memory the stitched
 //  result is identical to one sequential run (measured: 5 us on a
 //  7 MHz-resonant drain feed -> bit-identical at float precision).
-//  Each segment also runs a short tail into the next one, and the
-//  disagreement on that overlap is reported as the seam error.
+//  Auto warm-up is 5 time constants of the circuit's slowest memory
+//  (EnvelopeMemory), at least 5 us; a run too short to hold two
+//  segments that long runs as one.  Each segment also runs a short
+//  tail into the next one, and the disagreement on that overlap,
+//  relative to each probe's RMS there, is reported as the seam error.
 // ================================================================
 
 using System.Diagnostics;
@@ -115,7 +118,7 @@ public static class EnvelopeRunner
     public static DataSet Run(Plan plan, Func<ElaboratedNetlist> elaborate, AnalysisSettings? settings = null,
                               RunControl? control = null, Action<string>? note = null)
     {
-        using var prepared = Prepare(plan, elaborate, note: note);
+        using var prepared = Prepare(plan, elaborate, note: note, settings: settings);
         return Execute(prepared, settings, control, note);
     }
 
@@ -146,7 +149,7 @@ public static class EnvelopeRunner
     /// <param name="maxSegments">The most time segments this run may take when <c>Segments</c> is auto; 0 = one per
     /// core. A sweep running points side by side shares the cores between them this way.</param>
     internal static Prepared Prepare(Plan plan, Func<ElaboratedNetlist> elaborate, int maxSegments = 0,
-                                   Action<string>? note = null)
+                                   Action<string>? note = null, AnalysisSettings? settings = null)
     {
         var p = plan.Params;
         var first = elaborate();
@@ -164,10 +167,24 @@ public static class EnvelopeRunner
 
         int cores = Math.Max(1, Environment.ProcessorCount);
         double warm = double.IsNaN(plan.WarmupS) ? 5e-6 : plan.WarmupS;
-        int segs = plan.Segments > 0 ? plan.Segments : maxSegments > 0 ? Math.Min(maxSegments, cores) : cores;
+        int most = plan.Segments > 0 ? plan.Segments : maxSegments > 0 ? Math.Min(maxSegments, cores) : cores;
         // never cut a segment shorter than 4x its warm-up or 20 us — the warm-up would dominate
-        segs = (int)Math.Clamp(Math.Floor(p.StopS / Math.Max(4 * warm, 20e-6)), 1, segs);
+        int SegmentsFor(double w) => (int)Math.Clamp(Math.Floor(p.StopS / Math.Max(4 * w, 20e-6)), 1, most);
+        int segs = SegmentsFor(warm);
         if (plan.Segments == 1) segs = 1;
+        // Both auto and about to split: the warm-up must outlast the circuit's memory, 5 time constants of the slowest.
+        // An explicit Segments or Warmup is obeyed as written (the seam warning reports what it costs), and a run that
+        // stays one segment anyway is not asked.
+        if (segs > 1 && plan.Segments == 0 && double.IsNaN(plan.WarmupS) &&
+            Memory(first, allSrc, elaborate, settings ?? new AnalysisSettings(), p.StopS) is { } memory &&
+            5 * memory.Seconds > warm)
+        {
+            warm = 5 * memory.Seconds;
+            segs = SegmentsFor(warm);
+            if (segs == 1)
+                note?.Invoke($"Envelope ran as one segment: {memory.What} remembers {EnvelopeMemory.Time(memory.Seconds)}. " +
+                             "Set Segments in the Envelope analysis setup to run in parallel.");
+        }
         if (segs > 1 && warm <= 0)
             note?.Invoke($"envelope: Warmup=0 with {segs} parallel segments - each segment starts cold, so the seams are not settled (see EnvSeamError); leave Warmup auto or use Segments=1");
         // segment boundaries on WHOLE steps (a non-integer split drifts the stitched record by samples)
@@ -192,6 +209,75 @@ public static class EnvelopeRunner
             throw;
         }
         return prepared;
+    }
+
+    /// <summary>The seam error (a probe's worst overlap mismatch over its RMS) above which a run warns; measured in
+    /// src/Engine/RESOLVED.md (brief ENV-SEG) as where Pout_avg moves by 0.01 dB or ACLR by 0.1 dB.</summary>
+    internal const double SeamWarnAbove = 0.01;
+
+    /// <summary>
+    /// One seam: each probe's worst harmonic-<paramref name="kk"/> mismatch on the <paramref name="ov"/>-step overlap
+    /// (<paramref name="prev"/> from step <paramref name="pseg"/>, <paramref name="cur"/> from 0), relative to its own RMS
+    /// there — the value at a step would let one sample near zero inflate it. A probe with next to no harmonic is
+    /// measured against the largest probe's RMS. Returns the worst over every probe, and over the probes that are not
+    /// <paramref name="state"/>, with that probe's index (−1 when there is none).
+    /// </summary>
+    internal static (double All, double External, int Probe) Seam(Complex[][][] prev, int pseg, Complex[][][] cur, int ov, int kk, bool[] state)
+    {
+        int np = state.Length;
+        var rms = new double[np];
+        for (int pi = 0; pi < np; pi++)
+        {
+            double sum = 0;
+            for (int i = 0; i < ov; i++) { var a = prev[pseg + i][pi][kk]; sum += a.Real * a.Real + a.Imaginary * a.Imaginary; }
+            rms[pi] = ov > 0 ? Math.Sqrt(sum / ov) : 0;
+        }
+        double floor = Math.Max(1e-6 * (np > 0 ? rms.Max() : 0), 1e-12);
+        double all = 0, external = 0;
+        int probe = -1;
+        for (int pi = 0; pi < np; pi++)
+        {
+            double worst = 0;
+            for (int i = 0; i < ov; i++) worst = Math.Max(worst, (prev[pseg + i][pi][kk] - cur[i][pi][kk]).Magnitude);
+            double e = worst / Math.Max(rms[pi], floor);
+            all = Math.Max(all, e);
+            if (!state[pi] && (probe < 0 || e > external)) { external = e; probe = pi; }
+        }
+        return (all, external, probe);
+    }
+
+    /// <summary>Which probes are a model's internal state — a trap, dispersion or thermal node — whose harmonic 1 means
+    /// little: measured in the seam error, left out of the warning.</summary>
+    private static bool[] StateProbes(ElaboratedNetlist nl, string[] probes)
+    {
+        var state = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var ec in nl.Components)
+            foreach (int port in ec.Model.StatePorts)
+                if (2 * port < ec.Nodes.Length && ec.Nodes[2 * port] > 0)
+                    state.Add(nl.Nodes.NameOf(ec.Nodes[2 * port]));
+        return [.. probes.Select(n => state.Contains(n) || n.StartsWith("__", StringComparison.Ordinal))];
+    }
+
+    /// <summary>The slowest memory of the circuit: what its models declare, or its linear network's slowest pole, measured
+    /// on a netlist of its own so the run's netlists are never stamped by it.</summary>
+    private static EnvelopeMemory.Slowest? Memory(ElaboratedNetlist first, Core.Devices.ModSourceModel[] sources,
+                                                  Func<ElaboratedNetlist> elaborate, AnalysisSettings settings, double stopS)
+    {
+        var declared = EnvelopeMemory.Declared(first);
+        double f0 = sources[0].FcHz, need = 0;
+        foreach (var s in sources)
+            foreach (var c in s.Signal.Carriers)
+            {
+                need = Math.Max(need, 2 * (Math.Abs(s.FcHz + c.OffsetHz - f0) + 2.5 * c.Spec.BandwidthHz));
+                need = Math.Max(need, c.NativeRateHz);
+            }
+        EnvelopeMemory.Slowest? pole = null;
+        var own = elaborate();
+        if (!ReferenceEquals(own, first))
+            using (own)
+                try { pole = EnvelopeMemory.LinearPole(own, settings, Math.PI * need, stopS); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { pole = null; }
+        return pole is null ? declared : declared is null || pole.Seconds > declared.Seconds ? pole : declared;
     }
 
     /// <summary>Simulates a prepared run. Touches no testbench and elaborates nothing, so prepared runs of different
@@ -240,7 +326,9 @@ public static class EnvelopeRunner
         var time = new List<double>(); var probe = new List<Complex[][]>(); var sup = new List<double[]>();
         var drv = new List<Complex>[results[0].Drive.Length];
         for (int i = 0; i < drv.Length; i++) drv[i] = new List<Complex>();
-        double seam = 0;
+        double seam = 0, seamExternal = 0;
+        string? seamProbe = null;
+        var stateProbe = StateProbes(nets[0], results[0].ProbeNames);
         for (int s = 0; s < segs; s++)
         {
             var r = results[s];
@@ -258,13 +346,9 @@ public static class EnvelopeRunner
                 int pseg = bound[s] - bound[s - 1];
                 int ov = Math.Min(prev.Time.Length - pseg, r.Time.Length);
                 int kk = Math.Min(1, r.Probe[0][0].Length - 1);
-                for (int i = 0; i < ov; i++)
-                    for (int pi = 0; pi < r.ProbeNames.Length; pi++)
-                    {
-                        var a = prev.Probe[pseg + i][pi][kk]; var b = r.Probe[i][pi][kk];
-                        double m = Math.Max(a.Magnitude, 1e-12);
-                        seam = Math.Max(seam, (a - b).Magnitude / m);
-                    }
+                var (all, external, worstProbe) = Seam(prev.Probe, pseg, r.Probe, ov, kk, stateProbe);
+                seam = Math.Max(seam, all);
+                if (worstProbe >= 0 && external > seamExternal) { seamExternal = external; seamProbe = r.ProbeNames[worstProbe]; }
             }
         }
         var R = results[0];
@@ -280,6 +364,9 @@ public static class EnvelopeRunner
             ToneFreqsHz = R.ToneFreqsHz, MixLabels = R.MixLabels, MixFreqHz = R.MixFreqHz, MixTones = R.MixTones,
         };
         foreach (var n in results.SelectMany(x => x.Notes).Distinct()) { merged.Notes.Add(n); note?.Invoke(n); }
+        if (seamExternal > SeamWarnAbove)
+            note?.Invoke($"Envelope segments disagree at their seams on probe '{seamProbe}'. " +
+                         "Set Warm-up and Segments to auto in the Envelope analysis setup.");
         // a run that started cold (no warm-up on its first segment) is measured after a short settle
         double firstWarm = segs > 1 ? warm : (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS);
         double skip = firstWarm > 0 ? 0 : Math.Min(5e-6, 0.1 * p.StopS);

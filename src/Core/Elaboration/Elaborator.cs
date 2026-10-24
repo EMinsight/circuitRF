@@ -2192,6 +2192,9 @@ public sealed class Elaborator
         };
         if (deviceC != _ambientC) coreParams.Add(new(TempParam, deviceC.ToString("R", CultureInfo.InvariantCulture)));
         if (m != 1.0) coreParams.Add(new(MultiplierParamName, ComposedNetworkTemplate.Literal(m)));
+        // The cell's R and C stamp the thermal network; the core is told an instance's own values only to report its pole.
+        if (double.IsFinite(rth)) coreParams.Add(new(RthParam, ComposedNetworkTemplate.Literal(rth)));
+        if (double.IsFinite(cth)) coreParams.Add(new(CthParam, ComposedNetworkTemplate.Literal(cth)));
         // The core carries the switches, so each core instance is built with them.
         foreach (var (name, value) in switches.Write()) coreParams.Add(new(name, value));
         var thermal = loaded.Model.Thermal;

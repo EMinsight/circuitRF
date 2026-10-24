@@ -3379,3 +3379,69 @@ unfinished; each point disposes its models when it ends, and warnings are merged
 example's 5 × 200 µs sweep: 11.0 s → 7.9 s at 2 segments per point instead of 10, the table unchanged to the printed
 digit. Gate: `tests/Engine.Tests/Parametric/SweptEnvelopeConcurrentPointsTests.cs` (each point bit for bit against
 its own run alone, and a concurrency counter rather than a timing).
+
+## Envelope segments ignored the circuit's memory (brief ENV-SEG, 2026-10-23)
+
+`Segments=auto` warmed every segment up for a constant 5 µs; the schema said the warm-up came from the network's
+slowest pole, which no code computed. On the composed GaN example (drain-lag emission 1 ms) the 10 stitched segments
+restarted the trap state at every seam and reported a seam error of 125: RF figures within 0.06 dB of sequential, the
+state trajectory wrong.
+
+**What auto does now.** Only when both `Segments` and `Warmup` are auto and today's rule would split the run, Prepare
+asks the circuit for its slowest time constant τ (`EnvelopeMemory`): the largest a model declares
+(`ComponentModel.SlowestTimeConstant`; `ComposedCoreModel` reports each kept trap state's emission time, the
+dispersion τ and each thermal pole's `R·C` with the instance's own `Rth`/`Cth`) or the linear network's slowest pole.
+The warm-up becomes `max(5 µs, 5τ)` and the existing segment rule (none shorter than 4× the warm-up or 20 µs) is
+applied to it. A run that cannot hold two segments runs as one and posts a note naming the part and τ. Both
+quantities explicit, either one explicit, or a run that is one segment anyway: the plan is exactly today's and nothing
+is computed. So every short-memory and every explicit run plans, steps and stitches as before; only the seam metric's
+value differs (below).
+
+**The pole estimate** is the largest |eigenvalue| of G⁻¹C of the baseband product: the same two stamps (1 Hz, 2 Hz,
+lines held at DC) the engine uses for k = 0, power iteration on `(G + σC)⁻¹C` with σ = 1e-3/Stop so a gmin-only node or
+an inductor across an ideal source still factors, |μ| from two successive gains so a dominant complex pair still gives
+a magnitude. It runs on a netlist of its own (one extra elaboration, disposed), so the run's own netlists are never
+stamped by it. **Cost: 0.84 ms on the composed-FET fixture** (0.2 ms elaboration besides), against ~33 s for a 20 µs
+run of it (a 2 µs run measured 3.35 s), so it is kept. It also finds the fixture's thermal pole (25 °C/W × 0.4 µJ/°C
+= 10 µs at node `X1.t`) independently of the core's declaration. Limits: devices are open in the linear partition, so a
+node with a capacitor whose only DC path runs through a device reads as a gmin-limited (very slow) pole and the run
+goes to one segment, which is slower but not wrong; and for a high-Q resonance 1/|s| understates the ring-down time
+(Q/π cycles), which a 5 µs floor covers at RF but not for a resonance near the baseband band.
+
+**Fixture plan (§3, 10 cores):** before, 10 segments of 20 µs with 5 µs warm-up; after, 1 segment, warm-up reported
+5 ms, warning "Envelope ran as one segment: X1's drain-lag state remembers 1 ms. Set Segments in the Envelope analysis
+setup to run in parallel.", seam error 0 by construction. Both messages are one line naming the setup field that
+answers them; they reach the Messages pane as warnings through the runner's note callback (`AddWarningOnce`). With `DrainLag=false GateLag=false Cth=1e-8` (thermal 0.25 µs) the plan is today's.
+
+**Seam metric.** Each probe's worst harmonic-1 mismatch on the overlap divided by that probe's RMS there (a probe with
+almost no harmonic 1 by 1e-6 of the largest probe's RMS), worst over probes, still `__EnvSeamError`. The value at each
+step was the normaliser before, so one sample near zero (or a trap/thermal probe) set it. The warning ignores probes
+on a model's state ports (`StatePorts`, plus `__` nodes) and names the worst other probe in the note.
+
+**Threshold, measured** on the test's bias-feed circuit (an SDD whose conductance follows a node charged by the
+rectified drive through 1 kΩ ∥ 2 nF, τ = 2 µs; LTE 5 MHz QPSK, 400 µs, draft), `Segments=4` at warm-ups 0.25-20 µs
+against a settled sequential run (`Segments=1 Warmup=50e-6`):
+
+| seam error | ΔPout_avg | ΔACLR1 | ΔACLR2 (at −102 dBc) |
+|---|---|---|---|
+| 0.11-0.12 | ≤ 0.009 dB | 0.37-0.60 dB | 33 dB |
+| 0.072 | 0.0005 dB | 0.12 dB | 29 dB |
+| 0.0185 | 0.0004 dB | 0.027 dB | 17 dB |
+| 0.005-0.013 | ≤ 0.0007 dB | ≤ 0.005 dB | 7-14 dB |
+| 0.001 | 0.00002 dB | 0.0016 dB | 0.8 dB |
+| ~1e-4 | ~0 | ≤ 0.0014 dB | 0.1-0.2 dB |
+
+Pout moves 0.01 dB and ACLR1 0.1 dB near a seam error of 0.07, so the warning is at **0.01**. A band 100 dB down is a
+different matter: a seam's step splatters broadband, so ACLR2 at −102 dBc moves by dB at 1e-3 and by 0.1 dB only at
+~1e-4, which is the overlap's own disagreement with a fully settled warm-up (the HB start versus the propagated state),
+so a run read that deep wants one segment. The seam error is not monotonic in the warm-up: it samples the signal at
+three seams. Also measured: the cold `Segments=1` run (no warm-up, 5 µs skipped) is 0.005 dB from the settled one in
+Pout, its own start transient.
+
+**Parareal** (segments re-run from the previous one's end state) would keep the speed with long memory; not worth a
+brief yet. The cases that need it are composed-FET runs of a few hundred µs with traps on, which a single segment
+runs at 3.8× the wall clock of the split.
+
+Gate: `tests/Engine.Tests/Envelope/EnvelopeSegmentMemoryTests.cs` (plan only for the composed FET; the bias-feed run
+is ~0.1 s). The brief's test 2 asked for a *linear* bias feed: a linear circuit cannot show a seam, since its DC does
+not follow the envelope and its harmonics do not couple, so the test uses the smallest nonlinear one.

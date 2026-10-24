@@ -85,6 +85,7 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
     private readonly bool   _dcGradient;  // the dynamics supply DcValue's gradient overload
     private readonly ChargeBranches _branches;   // the branches held at the bias point, none under LinearC
     private Frozen? _frozen;
+    private readonly double _rth, _cth;   // the instance's thermal overrides, NaN for the model's own
 
     /// <summary>The model this core evaluates.</summary>
     public LoadedComposedModel Loaded { get; }
@@ -105,8 +106,13 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
     /// <summary>The temperature this device was asked to run at, °C, before the model's range held it.</summary>
     public double RequestedC { get; }
 
-    public ComposedCoreModel(LoadedComposedModel loaded, int n, double ambientC, ComposedSwitches? switches = null)
+    /// <param name="rth">The instance's own <c>Rth</c>, °C/W, or NaN for the model's; with <paramref name="cth"/>, only what
+    /// <see cref="SlowestTimeConstant"/> reports, since the cell's thermal network is stamped by the cell's R and C.</param>
+    public ComposedCoreModel(LoadedComposedModel loaded, int n, double ambientC, ComposedSwitches? switches = null,
+                             double rth = double.NaN, double cth = double.NaN)
     {
+        _rth = rth;
+        _cth = cth;
         Loaded   = loaded;
         N        = n;
         Switches = switches ?? ComposedSwitches.Default;
@@ -163,6 +169,35 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
           .. _kept.SelectMany(k => (string[])[_traps!.States[k], "0"]), .. (_thermal ? (string[])["t", "0"] : []) ];
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega) { }
+
+    /// <summary>The slowest of the states this instance keeps: each trap state's emission time at its temperature, the
+    /// dispersion τ, and each thermal pole's <c>R·C</c> as the cell stamps it (<see cref="ComposedNetworkTemplate"/>'s
+    /// factors; the periphery scalings cancel). A switched-off lag, dispersion or self-heating holds nothing.</summary>
+    public override (double Seconds, string State)? SlowestTimeConstant()
+    {
+        (double Seconds, string State)? slowest = null;
+        void Take(double tau, string state)
+        {
+            if (double.IsFinite(tau) && tau > 0 && (slowest is null || tau > slowest.Value.Seconds)) slowest = (tau, state);
+        }
+        for (int j = 0; j < _trapCount; j++)
+            if (_traps!.EmissionTime(_kept[j], _temperatureC) is { } emit)
+                Take(emit, _traps.CaptureSign(_kept[j]) < 0 ? "gate-lag state" : "drain-lag state");
+        if (_dispersive) Take(_tau, "dispersion");
+        if (_heats && Loaded.Model.Thermal is { } th)
+        {
+            double ambient = _hasT ? _temperatureC : RequestedC;
+            double rFactor = double.IsFinite(_rth) ? _rth / th.Rth : th.RthAt(ambient) / th.Rth;
+            double cTotal = th.Poles.Sum(p => p.Cth);
+            double cFactor = double.IsFinite(_cth) ? (cTotal > 0 ? _cth / cTotal : 0) : 1.0;
+            foreach (var pole in th.Poles)
+            {
+                double c = double.IsFinite(_cth) && cTotal <= 0 ? _cth * pole.Rth / th.Rth : pole.Cth * cFactor;
+                Take(pole.Rth * rFactor * c, "thermal pole");
+            }
+        }
+        return slowest;
+    }
 
     /// <summary>The channel current's <c>gm</c> is a dependent source circuitRF can switch off exactly,
     /// as for the built-in FETs.</summary>

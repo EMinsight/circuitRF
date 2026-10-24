@@ -203,9 +203,11 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
     public string Probes        { get; init; } = "";
     /// <summary>Reference impedance (ohm) for power at a probe node.</summary>
     public string ZmeasExpr     { get; init; } = "50";
-    /// <summary>Parallel-in-time segments: <c>auto</c> (one per core), or a count (1 = sequential).</summary>
+    /// <summary>Parallel-in-time segments: <c>auto</c> (one per core, or one when the circuit's memory is too long to warm up
+    /// in parallel), or a count (1 = sequential).</summary>
     public string SegmentsExpr  { get; init; } = "auto";
-    /// <summary>Warm-up before each segment (s) or <c>auto</c> (from the network's slowest pole, at least 2 us).</summary>
+    /// <summary>Warm-up before each segment (s) or <c>auto</c>: 5 us, or with <c>Segments</c> auto five of the circuit's slowest
+    /// time constants when longer.</summary>
     public string WarmupExpr    { get; init; } = "auto";
     /// <summary>Signal-record time of t = 0 (s).</summary>
     public string StartExpr     { get; init; } = "0";

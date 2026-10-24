@@ -654,7 +654,9 @@ public static class ComponentModelFactory
             n = ComposedFingerCount(nv);
         // Temp is the device's own temperature (a ComposedFET passes its instance's); Dtemp is deliberately not read.
         double deviceC = parameters.TryGetValue(Temperature.AbsoluteParamName, out var tv) && tv.Kind == ValueKind.Real ? tv.AsReal() : ambientC;
-        return new Composed.ComposedCoreModel(loaded, n, deviceC, Composed.ComposedSwitches.Read(parameters));
+        double Thermal(string name) => parameters.TryGetValue(name, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : double.NaN;
+        return new Composed.ComposedCoreModel(loaded, n, deviceC, Composed.ComposedSwitches.Read(parameters),
+                                              Thermal(Elaboration.Elaborator.RthParam), Thermal(Elaboration.Elaborator.CthParam));
     }
 
     /// <summary>

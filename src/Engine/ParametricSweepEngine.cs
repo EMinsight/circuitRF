@@ -324,7 +324,7 @@ public static class ParametricSweepEngine
                         {
                             if (first) { first = false; return netlist; }
                             return new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
-                        }, segmentBudget, m => netlist.AddWarningOnce("env-note:" + at + m, at + m));
+                        }, segmentBudget, m => netlist.AddWarningOnce("env-note:" + at + m, at + m), settings);
                     }
                     catch (Exception ex) when (!IsCancellation(ex))
                     {

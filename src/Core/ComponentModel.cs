@@ -371,6 +371,15 @@ public abstract class ComponentModel
     public virtual IReadOnlyList<int> StatePorts => [];
 
     /// <summary>
+    /// The longest time constant of a state this model holds that is slower than its own RF behaviour — a trap's
+    /// emission, a thermal pole — in seconds at the model's operating temperature, with what holds it ("drain-lag
+    /// state"). An envelope run's parallel segments must warm up past it. Declared rather than linearised: at an
+    /// operating point where a trap is capturing, the linearisation reports the nanosecond capture rate, not the
+    /// emission that sets how long the state remembers. Null, the default, for a model that holds no such state.
+    /// </summary>
+    public virtual (double Seconds, string State)? SlowestTimeConstant() => null;
+
+    /// <summary>
     /// Whether <see cref="PassivateBlock"/> should also remove the ANTISYMMETRIC part of the charge
     /// Jacobian <c>∂Q_p/∂V_q</c> — the transcapacitance.
     ///

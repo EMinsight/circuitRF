@@ -47,9 +47,9 @@
 
             <TextBlock Grid.Row="4" Classes="lbl" Text="Segments"/>
             <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Segments}"
-                     ToolTip.Tip="Parallel-in-time: auto = one per core. Each segment starts early by the warm-up, so the result is identical to one sequential run."/>
+                     ToolTip.Tip="Parallel-in-time: auto = one per core, or one segment when the circuit remembers too long to warm up in parallel. Each segment starts early by the warm-up."/>
             <TextBlock Grid.Row="4" Grid.Column="2" Classes="lbl" Text="Warm-up (s)" Margin="12,0,8,0"/>
-            <TextBox Grid.Row="4" Grid.Column="3" Text="{Binding Warmup}" ToolTip.Tip="auto = 5 us; raise it for bias networks with memory longer than ~1 us"/>
+            <TextBox Grid.Row="4" Grid.Column="3" Text="{Binding Warmup}" ToolTip.Tip="auto = 5 us, or five of the circuit's slowest time constants (traps, thermal, bias network) when Segments is auto"/>
         </Grid>
         <StackPanel Orientation="Horizontal" Spacing="12">
             <StackPanel Orientation="Horizontal" Spacing="6">

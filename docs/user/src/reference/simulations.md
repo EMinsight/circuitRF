@@ -157,10 +157,16 @@ Three things make long modulated runs practical:
   the lattice is the reference. Both modes write the same `IMD` cube. The spectrum is one continuous
   `PSD` either way, and shows every product of the baseband and fundamental zones.
 - **Parallel in time.** The record is split into segments that run on all cores at once. Each segment
-  starts a warm-up early from its own harmonic-balance point, so the stitched result is identical to
-  one sequential run (measured to round-off), and the overlap disagreement is reported as the seam
-  error. In a parametric sweep the points also run at the same time, up to one per core, and share the
-  cores with their segments.
+  starts a warm-up early from its own harmonic-balance point and discards it. The warm-up follows the
+  circuit's slowest memory: five time constants of the slowest of a [ComposedFET](components.html#composedfet)'s
+  trap and thermal states and the linear network's slowest pole (a bias feed, a large decoupling
+  capacitor), and never less than 5 µs. When that memory is too long to warm up in parallel, the run
+  is one segment and the Messages pane says which part remembers how long; `Segments=N` splits it
+  anyway. Once the warm-up is past the circuit's memory, the stitched result matches one sequential
+  run. Where the segments overlap, their disagreement relative to each probe's own level is reported
+  as the seam error (`__EnvSeamError`), and a run warns, naming the probe, when it is above 0.01 on a
+  circuit node. In a parametric sweep the points also run at the same time, up to one per core, and
+  share the cores with their segments.
 - **The step follows an accuracy preset.** *standard* (default) steps at 4× the signal's sample rate,
   where ACPR2 and the bias-node memory are converged on every measured case. *draft* (1×) is about
   0.4 dB pessimistic on ACPR2 and badly off on bias-network ringing. *fine* (8×) is for reference runs.
@@ -189,8 +195,8 @@ as follows.
 | Envelope | auto | *auto* / *lattice*: carriers more than 3× their bandwidth apart get their own fundamentals. *single*: one envelope around Fc spans every carrier and their IM3 (smaller step, slower). |
 | MaxMixOrder | 7 | Lattice order when carriers get their own fundamentals; 7 converges IM5. |
 | Probes | MOD_Source node | Nodes kept and measured; the **last** probe is the output for gain, AM-AM/PM and DE. |
-| Segments | auto | Parallel-in-time segments; 1 runs sequentially. |
-| Warmup | auto (5 µs) | Simulated before each segment and discarded; raise it for bias networks with longer memory. |
+| Segments | auto | Parallel-in-time segments, one per core and none shorter than 4× the warm-up; one when the circuit's memory is too long to warm up in parallel. 1 runs sequentially. |
+| Warmup | auto | Simulated before each segment and discarded. *auto* is 5 µs, or, with Segments auto, five of the circuit's slowest time constants when that is longer. A number is used as written. |
 | Zmeas | 50 Ω | Reference impedance for power at a probe node. |
 | SaveWaveforms | yes | Keep the probe envelopes (`V[time, node, harmonic]`); `no` keeps the measurements only. |
 
