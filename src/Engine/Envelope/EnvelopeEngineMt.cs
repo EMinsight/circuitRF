@@ -166,12 +166,11 @@ public sealed class EnvelopeEngineMt
                 double w = Math.Abs(wMix[m]);
                 double dlt = Math.Max(1e-6 * Math.Max(w, 2 * Math.PI * 1e6), 2 * Math.PI * 1.0);
                 CompressedColumnStorage<Complex> A0, C;
+                baseband.Holding = m == 0;            // the whole baseband product, its right-hand side included
                 if (m == 0)
                 {
-                    baseband.Holding = true;
                     var a1 = EnvelopeEngine.Stamp(extractor, mna, dlt);
                     var a2 = EnvelopeEngine.Stamp(extractor, mna, 2 * dlt);
-                    baseband.Holding = false;
                     C = EnvelopeEngine.Combine(a2, a1, 1.0 / new Complex(0, dlt), -1.0 / new Complex(0, dlt));
                     A0 = EnvelopeEngine.Combine(a1, C, 1.0, -new Complex(0, dlt));
                 }
@@ -200,15 +199,16 @@ public sealed class EnvelopeEngineMt
                     bUnit[s] = b;
                 }
                 var pr = new Prod { W = wMix[m], Neg = wMix[m] < 0, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
+                baseband.Holding = false;
                 pr.Be = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit));
                 pr.G2 = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit));
                 prods[m] = pr;
             }
         }
-        finally { foreach (var s in sources) s.EnvelopeDrive = null; }
+        finally { baseband.Holding = false; foreach (var s in sources) s.EnvelopeDrive = null; }
 
         // ── start: multi-tone HB with the t0 drives ─────────────────────────
-        var (V, X0, q0) = Start(extractor, sources, apft, tones, wMix, toneMix, N, ifNodes, p, (s, t) => drv[s, t][0]);
+        var (V, X0, q0) = Start(extractor, baseband, sources, apft, tones, wMix, toneMix, N, ifNodes, p, (s, t) => drv[s, t][0]);
         for (int m = 0; m < M; m++) { prods[m].Xm1 = X0[m]; prods[m].Xm2 = X0[m]; }
         var qm1 = q0; var qm2 = q0;
 
@@ -442,7 +442,8 @@ public sealed class EnvelopeEngineMt
         return list.ToArray();
     }
 
-    private (Complex[,] V, Complex[][] X, Complex[,] q) Start(HbLinearExtractor ex, ModSourceModel[] srcs, HbApft apft, double[] tones,
+    /// <remarks>The DC solve and the baseband extraction see the held elements, as in <see cref="EnvelopeEngine"/>.</remarks>
+    private (Complex[,] V, Complex[][] X, Complex[,] q) Start(HbLinearExtractor ex, EnvelopeBaseband.Hold baseband, ModSourceModel[] srcs, HbApft apft, double[] tones,
         double[] wMix, int[] toneMix, int N, int[] ifNodes, EnvelopeParams p, Func<int, int, Complex> drive0)
     {
         int M = wMix.Length;
@@ -455,15 +456,19 @@ public sealed class EnvelopeEngineMt
                 for (int s = 0; s < srcs.Length; s++) srcs[s].EnvelopeDrive = t >= 0 ? drive0(s, t) * scale : Complex.Zero;
                 double w = Math.Abs(wMix[m]);
                 Complex[,] y; Complex[] isr;
+                baseband.Holding = m == 0;
                 if (m == 0) (y, isr) = ex.ExtractDC(); else (y, isr) = ex.Extract(w);
                 bSrc[m] = ex.BuildSourceRhs(m == 0 ? 0.0 : w);
+                baseband.Holding = false;
                 if (wMix[m] < 0) { y = Conj(y); isr = isr.Select(Complex.Conjugate).ToArray(); }
                 yNN[m] = y; iSrc[m] = isr;
             }
         }
         try
         {
+            baseband.Holding = true;
             var dc = NonlinearDcEngine.Run(_nl, _settings);
+            baseband.Holding = false;
             // A linearised-charge model (a composed FET with LinearC) evaluates its charge at the quiescent point:
             // freeze it there before the first HB solve reads charge, as HbEngine does.
             BiasFreeze.Apply(_nl, dc.Converged ? dc.NodeVoltages : null, dc.NodeVoltages);
@@ -488,11 +493,13 @@ public sealed class EnvelopeEngineMt
             {
                 var inl = new Complex[N];
                 for (int a = 0; a < N; a++) inl[a] = wMix[m] < 0 ? Complex.Conjugate(sol.INl[a, m]) : sol.INl[a, m];
+                baseband.Holding = m == 0;
                 X[m] = ex.SolveFullNetwork(m == 0 ? 0.0 : Math.Abs(wMix[m]), inl, bSrc[m]);  // canonical |w| state
+                baseband.Holding = false;
             }
             var (_, qNl, _, _) = HbNewtonNd.EvaluateNonlinearNd(V, apft, N, _nl, ifNodes);
             return (V, X, qNl);
         }
-        finally { foreach (var s in srcs) s.EnvelopeDrive = null; }
+        finally { baseband.Holding = false; foreach (var s in srcs) s.EnvelopeDrive = null; }
     }
 }

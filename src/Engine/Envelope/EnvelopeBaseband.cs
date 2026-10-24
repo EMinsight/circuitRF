@@ -16,24 +16,68 @@
 //  An element is held only when its own baseband tangent is not exact, so
 //  R/L/C, the sources and a fitted SnP never are, and a lumped circuit's
 //  run is unchanged bit for bit.
+//
+//  A LINE is not held at its w = 0 stamp: that is the resonance clamp of
+//  its 1/(jw L) pole, a ~2e7 S purely IMAGINARY admittance, and the k = 0
+//  envelope is real everywhere else (the interface currents and the
+//  injections are projected to their real part), so a complex baseband
+//  matrix behind a real projection is not passive and grew x4.8 a step
+//  (src/Engine/RESOLVED.md, brief ENV-TLIN).  A line is held at what it is
+//  at DC instead (IDcShortedTerminals): its terminal pairs shorted, by a
+//  branch V_a = V_b exactly as an inductor is at DC.  The branch exists in
+//  every product — I = 0 while not holding — so every product and the
+//  harmonic-balance start have the same unknowns.
 // ================================================================
 
 using System.Globalization;
+using System.Numerics;
 using CircuitRF.Core;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Engine.Envelope;
 
-/// <summary>An element whose stamp is its own at every frequency except while <see cref="Holding"/>, when it is its DC stamp.</summary>
-public sealed class BasebandHeldModel(ComponentModel inner) : ComponentModel, IReportsWarnings
+/// <summary>An element whose stamp is its own at every frequency except while <see cref="Holding"/>, when it is its DC stamp
+/// — or, for a line (<see cref="Shorts"/>), its terminal pairs shorted.</summary>
+public sealed class BasebandHeldModel : ComponentModel, IReportsWarnings
 {
-    public ComponentModel Inner { get; } = inner;
+    private readonly ElaboratedComponent _original;
+
+    public BasebandHeldModel(ComponentModel inner, ElaboratedComponent original)
+    {
+        Inner = inner;
+        _original = original;
+        Shorts = (inner as IDcShortedTerminals)?.DcShortedTerminals;
+    }
+
+    public ComponentModel Inner { get; }
     public bool Holding { get; set; }
+    /// <summary>The terminal pairs a line is held shorted on, one branch each; null for an element held at its own ω = 0 stamp.</summary>
+    public IReadOnlyList<(int A, int B)>? Shorts { get; }
     public override int PortCount => Inner.PortCount;
     public override ModelKind Kind => Inner.Kind;
     public override string[] TerminalNames => Inner.TerminalNames;
-    public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega) => Inner.Stamp(mna, c, Holding ? 0.0 : omega);
+
+    public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
+    {
+        if (Shorts is null) { Inner.Stamp(mna, c, Holding ? 0.0 : omega); return; }
+        foreach (var (a, b) in Shorts)
+        {
+            int br = mna.AddBranch();
+            int na = c.Nodes[a], nb = c.Nodes[b];
+            if (Holding && na != nb)
+            {
+                mna.AddBranchCurrent(br, na, nb);           // V_a - V_b = 0, the current a free unknown
+                mna.AddConstraint(br, na, Complex.One);
+                mna.AddConstraint(br, nb, -Complex.One);
+            }
+            else mna.AddBranchConstraint(br, br, Complex.One);   // I = 0: no branch
+        }
+        // The line itself, multiplier and all (its replacement carries none: a branch cannot be multiplied, and m shorts
+        // in parallel are one short).
+        if (!Holding) _original.Stamp(mna, omega);
+    }
+
     public IReadOnlyList<(string Key, string Message)> DrainWarnings() => Inner is IReportsWarnings rw ? rw.DrainWarnings() : [];
 }
 
@@ -79,16 +123,28 @@ public static class EnvelopeBaseband
             if (ec.IsNonlinear || ec.Model is ModSourceModel or IInductiveBranch or MutualInductanceModel or PortModel or TermModel
                     or VdcModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel)
                 continue;
-            double tangent, held;
-            try { (tangent, held) = EnvelopeTangentCheck.BasebandErrors(ec, bandRad); }
-            catch (Exception) { continue; }     // an element that cannot be stamped alone is the run's to refuse
-            if (tangent <= ExactBelow) continue;
-            var model = new BasebandHeldModel(ec.Model);
-            hold.Add(i, ec, model, new ElaboratedComponent(ec.ComponentType, ec.InstancePath, ec.Nodes, ec.Parameters, model)
+            var model = new BasebandHeldModel(ec.Model, ec);
+            var replacement = new ElaboratedComponent(ec.ComponentType, ec.InstancePath, ec.Nodes, ec.Parameters, model)
             {
                 ReferenceNode = ec.ReferenceNode,
-                Multiplicity = ec.Multiplicity,
-            });
+                Multiplicity = model.Shorts is null ? ec.Multiplicity : 1.0,
+            };
+            double held;
+            if (model.Shorts is not null)
+            {
+                // A line's baseband tangent is never exact (its Y has a pole at w = 0), so it is not measured: stamping it at
+                // 1 Hz only reaches the resonance clamp. What it costs is measured against the short it is held at.
+                try { held = EnvelopeTangentCheck.HeldError(replacement, model, bandRad); }
+                catch (Exception) { continue; }
+            }
+            else
+            {
+                double tangent;
+                try { (tangent, held) = EnvelopeTangentCheck.BasebandErrors(ec, bandRad); }
+                catch (Exception) { continue; }     // an element that cannot be stamped alone is the run's to refuse
+                if (tangent <= ExactBelow) continue;
+            }
+            hold.Add(i, ec, model, replacement);
             if (held > EnvelopeTangentCheck.WarnAbove) costly.Add((ec.InstancePath, held));
         }
         if (costly.Count > 0)

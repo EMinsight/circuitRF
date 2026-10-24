@@ -25,8 +25,11 @@ namespace CircuitRF.Core.Devices;
 /// optional <c>Ta</c>/<c>Tb</c> per strip, default T), <c>Er</c>, <c>Sigma</c>, <c>TanD</c>, optional
 /// <c>Roughness</c>.</para>
 /// </summary>
-public sealed class StriplineBroadsideCoupledModel : ComponentModel, IReportsWarnings
+public sealed class StriplineBroadsideCoupledModel : ComponentModel, IReportsWarnings, IDcShortedTerminals
 {
+    /// <summary>Lossless at DC (both modes' γ are zero there): each strip a short end to end (1-2, 3-4).</summary>
+    public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1), (2, 3)];
+
     public override int PortCount => 4;
     public override ModelKind Kind => ModelKind.Linear;
 
@@ -110,8 +113,11 @@ public sealed class StriplineBroadsideCoupledModel : ComponentModel, IReportsWar
 /// A's top — a covered (shielded) line; with <c>Hd</c> reaching it the pair is BCLIN's stripline, solved
 /// the general way (C and C₀ separately), which is how the two parts are held to each other.</para>
 /// </summary>
-public sealed class MicrostripBroadsideCoupledModel : ComponentModel, IReportsWarnings
+public sealed class MicrostripBroadsideCoupledModel : ComponentModel, IReportsWarnings, IDcShortedTerminals
 {
+    /// <summary>Lossless at DC (both modes' γ are zero there): each strip a short end to end (1-2, 3-4).</summary>
+    public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1), (2, 3)];
+
     public override int PortCount => 4;
     public override ModelKind Kind => ModelKind.Linear;
 

@@ -184,8 +184,9 @@ as follows.
 - **Lines and Z(freq) blocks** ([TLIN](components.html#tline), the microstrip, stripline, coplanar and
   coupled lines, and an [Impedance N-Port](components.html#zport) with a `Z(freq)`) are still
   approximated by a straight line in frequency around each harmonic. In the baseband envelope (the
-  bias path) they are held at their DC value. A warning names any whose error across the band is
-  large enough to move ACPR by about 0.1 dB.
+  bias path) a line is held at what it is at DC, a short from end to end (each strip of a coupled
+  pair its own short), and a Z(freq) block at its DC value. A warning names any whose error across
+  the band is large enough to move ACPR by about 0.1 dB.
 
 | Setting | Default | Meaning |
 |---|---|---|

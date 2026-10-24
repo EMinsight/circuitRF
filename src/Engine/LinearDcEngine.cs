@@ -144,7 +144,7 @@ public static class LinearDcEngine
             }
 
             int before = mna.BranchCount;
-            try { ec.Stamp(mna, omega: 0.0); }
+            try { if (!DcLineShorts.TryStamp(mna, ec)) ec.Stamp(mna, omega: 0.0); }
             catch (NotImplementedException) { }
             if (mna.BranchCount > before) componentBranches[i] = before;
 

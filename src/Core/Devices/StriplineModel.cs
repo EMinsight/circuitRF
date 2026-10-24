@@ -17,8 +17,11 @@ namespace CircuitRF.Core.Devices;
 /// <para>TEM: ε_eff = Er at every frequency and Z₀ = <see cref="Stripline.Z0Air"/>/√Er. Conductor loss by
 /// Wheeler's incremental-inductance rule; dielectric loss tanδ only, α_d = π·f·√εr·tanδ/c.</para>
 /// </summary>
-public sealed class StriplineModel : ComponentModel, IPlanarLineModel
+public sealed class StriplineModel : ComponentModel, IPlanarLineModel, IDcShortedTerminals
 {
+    /// <summary>Lossless at DC (every loss term here vanishes at 0 Hz): a short from port 1 to port 2.</summary>
+    public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1)];
+
     public override int PortCount => 2;
     public override ModelKind Kind => ModelKind.Linear;
     public string LineKind => Stripline.ModelName;

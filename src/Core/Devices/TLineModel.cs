@@ -56,8 +56,11 @@ namespace CircuitRF.Core.Devices;
 /// frequency exactly as before. DC (ω = 0 → θ = 0) is the same degeneracy and is clamped
 /// identically.
 /// </summary>
-public sealed class TLineModel : ComponentModel
+public sealed class TLineModel : ComponentModel, IDcShortedTerminals
 {
+    /// <summary>Lossless at DC (every loss term here vanishes at 0 Hz): a short from port 1 to port 2.</summary>
+    public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1)];
+
     public override int       PortCount => 2;
     public override ModelKind Kind      => ModelKind.Linear;
 

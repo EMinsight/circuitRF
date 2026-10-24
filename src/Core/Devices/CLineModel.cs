@@ -34,8 +34,12 @@ namespace CircuitRF.Core.Devices;
 /// <see cref="TLineModel.StampUniformLine"/> clamps a single line (same floor), and DC (θ = 0) is
 /// the same degeneracy.
 /// </summary>
-public sealed class CLineModel : ComponentModel
+public sealed class CLineModel : ComponentModel, IDcShortedTerminals
 {
+    /// <summary>Lossless at DC: each line of the pair a short end to end (line A 1-2, line B 3-4), the coupling
+    /// (an inductance and a capacitance) vanishing there.</summary>
+    public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1), (2, 3)];
+
     public override int       PortCount => 4;
     public override ModelKind Kind      => ModelKind.Linear;
 

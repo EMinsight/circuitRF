@@ -3445,3 +3445,75 @@ runs at 3.8× the wall clock of the split.
 Gate: `tests/Engine.Tests/Envelope/EnvelopeSegmentMemoryTests.cs` (plan only for the composed FET; the bias-feed run
 is ~0.1 s). The brief's test 2 asked for a *linear* bias feed: a linear circuit cannot show a seam, since its DC does
 not follow the envelope and its harmonics do not couple, so the test uses the smallest nonlinear one.
+
+## Envelope: a line in series behind a DC block diverged at any length (brief ENV-TLIN, 2026-10-23)
+
+A small PA's envelope run (`TLIN` between the output DC block and the 50 Ω load, MaxHarm 5, standard) failed at step
+22-26 (~50 ns) for every length (3-300 mm), loss, form and drive (−10 and 14 dBm), and ran with the line replaced by
+1 mΩ.
+
+**What was measured (§2a, in order).**
+1. Harmonic balance on the same circuit (P1Tone at 2.14 GHz, MaxHarm 5) converges at −10 and 14 dBm. Not upstream.
+2. Bisection on the reproduction: MaxHarm 1 fails at the same step; draft runs, fine fails (step 64); the line on the
+   input side fails (step 58); 10 kΩ from n10 to ground fails; removing `Cout` (line straight from Vd) runs. Harmonics
+   and drive are not involved.
+3. The 1 Hz evaluation is `EnvelopeBaseband.Apply`'s classification probe (`BasebandErrors` stamps the unwrapped line
+   at 1 Hz and 2 Hz, where a 3 mm line's θ is 3.6e-9° and clamps). It never reached the run: the run's k = 0 product
+   stamped the HELD line, at ω = 0, which is the same clamp — and that clamped value was the baseband stamp.
+4. Per step, the baseband state (k = 0) grew ×4.76 a step from step 8 (|x0| 96 → 3.8e13 by step 25), in n10 = Vout
+   with Vd dragged along; its imaginary part grew from 1e-12 at the same rate. Harmonics 1-5 stayed bounded.
+
+**Cause.** A lossless line's admittance has a pole at ω = 0 (Y ≈ 1/(jω·Z0·τ), its series inductance), so its ω = 0
+stamp is `StampUniformLine`'s resonance clamp: |sinh γl| floored at 1e-9, Y = ∓j/(Z0·1e-9) ≈ ∓j·2e7 S — a purely
+IMAGINARY admittance, which no DC stamp can be. The baseband product held the line at exactly that. Every lumped
+element's k = 0 product is real by construction (A0 = a1 − j·dlt·C cancels jωC exactly), and the engine projects the
+k = 0 interface currents and injections to their real part on that assumption. A complex baseband matrix behind a real
+projection is not passive (j·B maps the real part of the state into the imaginary part and back), and Gear-2 grew it.
+Removing `Cout` changes the topology enough that the mode did not form; a larger (draft) step damped it. The plain DC
+solve takes the real part of the same stamp, so it saw the line as OPEN, while the HB start (complex `ExtractDC`) saw a
+j·2e7 S "short": three different lines in one run. Checked: making the held stamp real (same magnitude) alone made the
+reproduction run, with Pout_avg −1.1897 dBm, equal to the 1 mΩ circuit's.
+
+**Fix.** `IDcShortedTerminals` (Core) states what a line is at DC — its terminal pairs shorted — on TLIN (both forms),
+MLIN, SLIN, CPWG, CLIN, MCLIN, BCLIN and MBCLIN (each is lossless at 0 Hz: every loss term vanishes there).
+`BasebandHeldModel` holds such a line as a branch with V_a = V_b, exactly as an inductor is at DC, rather than at its
+clamp. The branch is stamped in every product (I = 0 when not holding), so every product and the HB start have the
+same unknowns; the replacement carries no multiplier (a branch cannot be multiplied; the original's `Stamp` applies
+it). Both engines hold the whole k = 0 product (its RHS too), the start's DC solve, its k = 0 extraction and its k = 0
+back-solve, so the DC solve, the HB start and the stepping see one line. A line is no longer classified by its 1 Hz
+tangent (never exact, and stamping it there only reaches the clamp — the clamp message no longer prints in an envelope
+run); its held error is measured against the short. A non-line held element (Z(freq), an SnP the fit could not take)
+stamps exactly as before in every one of those places. Not changed: TLineModel's stamp, so DC, S-parameter, HB and
+loadpull runs, and every envelope run without a line, are identical by construction.
+
+**Results.** Every row of the brief's table runs at 1 µs, as do MLIN (20 mm), CPWG (20 mm), CLIN (90°), MCLIN (20 mm),
+MBCLIN (20 mm), SLIN and BCLIN (5 mm). The reproduction at 20 µs, L = 3 mm against `R:Rz n10 Vout R=0.001 Ohm`:
+Pout_avg −2.0424 / −2.0424 dBm, Gt 7.67 / 7.67 dB, ACPR1 −67.11 / −68.00 dBc on both, ACPR2 −102.19 / −102.80 against
+−102.23 / −102.79 dBc. At 14 dBm, 1 µs, the TLIN tangent error is 0.002 % (3 mm), 12.8 % (300 mm), 55.4 % (1 m),
+75.3 % (2 m), 94.8 % (3 m), so 300 mm is correctly NOT named (the threshold is 50 %) and posts no warning at all. 3 mm
+posts none. 1 m posts, verbatim:
+- `envelope: 'TL3' (64.1 %) is held at its DC value across the ±50 MHz baseband envelope, off by that much (RMS) across it; the bias-path and baseband results through it are approximate`
+- `envelope: 'TL3' (55.4 %) is approximated by a straight line in frequency around each harmonic, off by that much (RMS) across the ±50 MHz signal band; results across the band are approximate`
+
+The coupled lines post the held warning at 94-100 % even when short: the short drops the A-B coupling, which is small
+but compared relatively above the measure's −60 dB floor. That is the measure working as designed, not this defect.
+
+**Found, not fixed — a lossy line at a harmonic resonance (a different defect).** SLIN 20 mm (−10 and 14 dBm) and BCLIN
+20 mm still fail, and so does a lightly lossy TLIN placed at a 5th-harmonic resonance (L = 42.03 mm = 3λ/2 at
+10.7 GHz, Ac = Ad = 2 dB/m at 2 GHz: step 18); the lossless 42.03 mm line runs, and so do heavily lossy ones
+(Ac = Ad = 20). Here the baseband stays exactly real and harmonic 5 grows ×7.4 a step. Near θ = nπ,
+Y11 ≈ 1/(Z0(αl + jδ)), so dB/dδ = −1/(Z0·α²l²) < 0 at the resonance: the tangent's C is a negative capacitance
+(anomalous dispersion; Foster's theorem keeps dB/dω > 0 only for a lossless element), G + (jkω0 + α)C gets a
+right-half-plane pole, and Gear-2 grows it. A rational fit of the line closes it, and is its own brief (ENV-FIT); nothing
+is done here.
+
+**The DC analysis treated an ideal line as OPEN (fixed).** `NonlinearDcEngine` takes the real part of every stamp, and
+a lossless line's ω = 0 stamp is purely imaginary, so `Vdc 1 V → TLIN 3 mm → 50 Ω` solved to 0 V at the load — in a DC
+analysis and in the DC pre-pass of every S-parameter, HB and loadpull run with a line in its bias path (an S-parameter
+run of a nonlinear circuit linearised about that wrong point). Both DC engines now stamp a line's declared shorts
+(`DcLineShorts`, from `IDcShortedTerminals`) instead of its clamp: 1 V at the load, through TLIN, MLIN and CLIN's
+strip A, with no current in strip B. `LinearDcEngine` solved complex and saw the clamp as a 2e7 S reactance, a short
+to ~1e-9; it is exact now. No hero, example or HB fixture has a line, so no gated result moved. Gate:
+`tests/Engine.Tests/Devices/DcLineShortTests.cs`.
+
+Gate: `tests/Engine.Tests/Envelope/EnvelopeLineInSeriesTests.cs`.

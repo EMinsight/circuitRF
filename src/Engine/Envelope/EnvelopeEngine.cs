@@ -234,12 +234,11 @@ public sealed class EnvelopeEngine
                 double w = k * omega0;
                 double dlt = Math.Max(1e-6 * Math.Max(w, 2 * Math.PI * 1e6), 2 * Math.PI * 1.0);
                 CompressedColumnStorage<Complex> A0, C;
+                baseband.Holding = k == 0;            // the whole baseband product, its right-hand side included
                 if (k == 0)
                 {
-                    baseband.Holding = true;
                     var a1 = Stamp(extractor, mna, dlt);
                     var a2 = Stamp(extractor, mna, 2 * dlt);
-                    baseband.Holding = false;
                     C = Combine(a2, a1, 1.0 / new Complex(0, dlt), -1.0 / new Complex(0, dlt));
                     A0 = Combine(a1, C, 1.0, -new Complex(0, dlt));
                 }
@@ -269,6 +268,7 @@ public sealed class EnvelopeEngine
                     bUnit[s] = b;
                 }
                 var pr = new Product { Omega = w, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
+                baseband.Holding = false;
                 pr.Be = Stage.Of(Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit));
                 pr.G2 = Stage.Of(Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit));
                 products[k] = pr;
@@ -276,12 +276,13 @@ public sealed class EnvelopeEngine
         }
         finally
         {
+            baseband.Holding = false;
             foreach (var s in sources) s.EnvelopeDrive = null;
         }
 
         Mark("linear products");
         // ── start: harmonic balance at the first stimulus sample ─────────
-        var (V, hbX, qPrev) = SteadyStart(extractor, sources, f0, K, N, ifNodes, gridN, p, s => Drv(s, 0));
+        var (V, hbX, qPrev) = SteadyStart(extractor, baseband, sources, f0, K, N, ifNodes, gridN, p, s => Drv(s, 0));
         for (int k = 0; k <= K; k++) { products[k].Xm1 = hbX[k]; products[k].Xm2 = hbX[k]; }
         var qm1 = qPrev; var qm2 = qPrev;
         Mark("HB start");
@@ -626,7 +627,9 @@ public sealed class EnvelopeEngine
     }
 
     /// <summary>Harmonic balance with each MOD_Source fixed at its t0 envelope value; returns V, full states, q.</summary>
-    private (Complex[,] V, Complex[][] X, Complex[,] q) SteadyStart(HbLinearExtractor ex, ModSourceModel[] srcs, double f0, int K,
+    /// <remarks>The DC solve and the k = 0 extraction see the baseband product's held elements (a line shorted), so the run
+    /// starts at the equilibrium it steps from.</remarks>
+    private (Complex[,] V, Complex[][] X, Complex[,] q) SteadyStart(HbLinearExtractor ex, EnvelopeBaseband.Hold baseband, ModSourceModel[] srcs, double f0, int K,
         int N, int[] ifNodes, int gridN, EnvelopeParams p, Func<int, Complex> drive0)
     {
         double w0 = 2 * Math.PI * f0;
@@ -638,14 +641,18 @@ public sealed class EnvelopeEngine
             for (int k = 0; k <= K; k++)
             {
                 for (int s = 0; s < srcs.Length; s++) srcs[s].EnvelopeDrive = k == 1 ? drive0(s) * scale : Complex.Zero;
+                baseband.Holding = k == 0;
                 if (k == 0) (yNN[0], iSrc[0]) = ex.ExtractDC();
                 else (yNN[k], iSrc[k]) = ex.Extract(k * w0);
                 bSrc[k] = ex.BuildSourceRhs(k == 0 ? 0.0 : k * w0);
+                baseband.Holding = false;
             }
         }
         try
         {
+            baseband.Holding = true;
             var dc = NonlinearDcEngine.Run(_nl, _settings);
+            baseband.Holding = false;
             // A linearised-charge model (a composed FET with LinearC) evaluates its charge at the quiescent point:
             // freeze it there before the first HB solve reads charge, as HbEngine does.
             BiasFreeze.Apply(_nl, dc.Converged ? dc.NodeVoltages : null, dc.NodeVoltages);
@@ -677,13 +684,16 @@ public sealed class EnvelopeEngine
             {
                 var inl = new Complex[N];
                 for (int a = 0; a < N; a++) inl[a] = sol.INl[a, k];
+                baseband.Holding = k == 0;
                 X[k] = ex.SolveFullNetwork(k == 0 ? 0.0 : k * w0, inl, bSrc[k]);
+                baseband.Holding = false;
             }
             var (_, qNl, _, _, _) = HbNewton.EvaluateNonlinear(V, N, K, gridN, _nl, ifNodes);
             return (V, X, qNl);
         }
         finally
         {
+            baseband.Holding = false;
             foreach (var s in srcs) s.EnvelopeDrive = null;
         }
     }

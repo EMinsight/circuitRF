@@ -100,6 +100,26 @@ public static class EnvelopeTangentCheck
         return (Math.Sqrt(st / Offsets), Math.Sqrt(sh / Offsets));
     }
 
+    /// <summary>
+    /// The baseband error of a line held shorted (<see cref="BasebandHeldModel.Shorts"/>): how far the short is from the
+    /// line's true stamp, by <see cref="BasebandErrors"/>' measure. Both are stamped through the held element, so the
+    /// short's branch is an unknown of both.
+    /// </summary>
+    internal static double HeldError(ElaboratedComponent held, BasebandHeldModel model, double bandRad)
+    {
+        Dictionary<long, Complex> dc;
+        model.Holding = true;
+        try { dc = Stamped(held, 0); }
+        finally { model.Holding = false; }
+        double sh = 0;
+        for (int i = 1; i <= Offsets; i++)
+        {
+            double h = TerminatedDiff(Stamped(held, bandRad * i / Offsets), dc);
+            sh += h * h;
+        }
+        return Math.Sqrt(sh / Offsets);
+    }
+
     /// <summary>Offsets per side of the harmonic at which the tangent is compared, evenly out to the band edge.</summary>
     private const int Offsets = 8;
 

@@ -26,8 +26,11 @@ namespace CircuitRF.Core.Devices;
 /// R-pc-16/microstrip-models.md R4: out-of-range parameters are reported once per distinct
 /// violation via <see cref="MicrostripValidityReporter"/>, never silently extrapolated.
 /// </summary>
-public sealed class MicrostripLineModel : ComponentModel, IPlanarLineModel
+public sealed class MicrostripLineModel : ComponentModel, IPlanarLineModel, IDcShortedTerminals
 {
+    /// <summary>Lossless at DC (every loss term here vanishes at 0 Hz): a short from port 1 to port 2.</summary>
+    public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1)];
+
     public override int PortCount => 2;
     public override ModelKind Kind => ModelKind.Linear;
     public string LineKind => "MLIN";

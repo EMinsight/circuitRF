@@ -24,8 +24,11 @@ namespace CircuitRF.Core.Devices;
 /// <c>W</c> strip width, <c>S</c> edge-to-edge gap, <c>L</c> length (m); <c>H</c>, <c>T</c>,
 /// <c>Er</c>, <c>Sigma</c>, <c>TanD</c>, optional <c>Roughness</c> — exactly MLIN's.</para>
 /// </summary>
-public sealed class MicrostripCoupledLineModel : ComponentModel, IReportsWarnings
+public sealed class MicrostripCoupledLineModel : ComponentModel, IReportsWarnings, IDcShortedTerminals
 {
+    /// <summary>Lossless at DC (both modes' γ are zero there): each strip a short end to end (1-2, 3-4).</summary>
+    public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1), (2, 3)];
+
     public override int PortCount => 4;
     public override ModelKind Kind => ModelKind.Linear;
 
