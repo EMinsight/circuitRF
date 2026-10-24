@@ -1336,6 +1336,13 @@ and the <code>.sNp</code>'s header records the same (<code>circuitRF-EM 3D run:<
 Palace runs one MPI process per <strong>physical</strong> core by default; a <em>Cores</em> setting above the physical count
 is refused rather than oversubscribed. On a GPU it runs one process per GPU instead
 (<a href="#palace-gpu">Palace on a GPU</a>).</p>
+<p><strong>The DC point.</strong> Start the sweep at 0 Hz and the file's first row is a DC conduction solve of the conductors, by
+circuitRF rather than by the 3D solver, the same rule as the <a href="mom-engine.html#adaptive">planar solver</a> follows. It
+models each conductor's resistance, a perfect conductor as a short and a lumped R, L or C as a resistor, a short or an
+open; it does not model leakage through a dielectric. A series DC block is therefore an open at 0 Hz and a choke a
+short, which is what a circuit's bias point needs. It meshes the conductors with Gmsh, so it needs Gmsh even for an
+openEMS run. Without Gmsh the run still succeeds, the file has no 0 Hz row and the run's warning says why: a circuit's
+DC solve through that file then uses its lowest frequency. The <code>.sNp</code>'s header says which it was (<code>circuitRF-EM 3D DC row:</code>), including what each lumped element became.</p>
 <h3 id="openems-grid">The openEMS grid</h3>
 <p>openEMS solves on a rectilinear grid — three lists of grid lines, one per axis — and circuitRF writes
 that grid itself. Its accuracy is decided almost entirely by where the lines fall, so the rules are

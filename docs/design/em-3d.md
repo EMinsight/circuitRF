@@ -422,6 +422,14 @@ The comparison is a first-class result: a comparison produces each solver's Touc
 difference `DataSet` (`<name>.compare_em.npy`) the Data Display can plot like any other. An eigenmode
 comparison has no S to difference, so each solver's modes are its own result.
 
+**The 0 Hz row is circuitRF's, not a solver's** (brief-emdc-0…2). No full-wave solver has a DC answer, so a driven
+sweep's 0 Hz point is cut from the problem (`Em3dGenerationResult.WantsDc` records that it was asked for) and answered
+once per run by `Em3dDcSolve` (`src/Design/Em3d`): steady conduction on a conductor-only Gmsh mesh, every port a
+terminal pair as in EMDC-0 §3, S taken straight from the terminated solve. `Em3dDcRow.Prepend` puts that row at the
+front of every leg's S group before its `.npy` and `.sNp` are written, so every solver's file carries the same row and
+a comparison leaves 0 Hz out of its statistics. A refused solve (no Gmsh, a port with no DC meaning) is a warning,
+never a refusal of the run.
+
 ### 4.5 Where results land
 
 `EmRunService.ResolveSnpPath` is predictable so that a schematic's SnP reference survives a re-run.

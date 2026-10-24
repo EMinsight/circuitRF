@@ -244,7 +244,7 @@ public static class EmergeResults
     /// </summary>
     public static string? WriteSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem, EmergeLowering lowering,
                                    EmergeSettings settings, EmergeRunFacts facts, string solverVersion, TimeSpan wall, long? peakBytes,
-                                   DateTimeOffset when)
+                                   DateTimeOffset when, IReadOnlyList<string>? dcLines = null)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -273,6 +273,7 @@ public static class EmergeResults
                 : $"{N(facts.Samples)} frequency sample(s)"));
         lines.Add(Em3dRunService.CostProvenancePrefix + $"wall {wall.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} s; EMerge peak memory " +
                   (peakBytes is { } m ? Ascii(MachineMemory.Format(m)) : "unreported"));
+        lines.AddRange(dcLines ?? []);                        // brief-emdc-2 R-emdc2-4
 
         double z0 = problem.Ports.OrderBy(p => p.Number).First().Z0.Real;
         var opts = new TouchstoneExportOptions(

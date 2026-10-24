@@ -3764,3 +3764,12 @@ shipped workspace could name a `.va` at all. `ResolveExtDeviceParameters` now re
 by the same rule, and the parameter editor describes the file by it too. An `ExtDevice`'s parameters are untouched:
 they belong to its provider. Gate: the example's `GanVerilogA` bench (`File=synthetic-gan/gan_4x125.va`), run by
 `ModelComposerVerilogABenchTests` and checked by `ExampleWorkspaceLoadsTests`.
+
+## `SnpModel`: a Touchstone block with no Z is stamped as its S (brief-emdc-2, 2026-10-24)
+
+`SnpModel.Stamp` converts S to Z and stamps the Z(ω) branch form. An ideal open (S = I) has no Z: a 3D EM result's 0 Hz
+row through a DC block is exactly that, and a circuit's DC solve through it went NaN. When the converted Z is not
+finite, the block is now stamped through `IdealSBlockModel.StampWaveConstraints` (each port's node against the block's
+reference node), whose rows have no singular case. A block with a finite Z stamps exactly as before, so no existing
+result moves. Gate: `Em3dDcRowTests.ACircuitsDcSolve_ThroughTheSolvedGapCapacitor_PutsTheLoadAtZero`, a 5 V source, the
+gap capacitor's `.s2p` and a 50 Ω load: 0 V at the load.

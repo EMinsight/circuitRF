@@ -33,10 +33,21 @@ internal static class ExplainEm3d
     {
         var r = BuildCore(src, device);
         if (Device(src.Setup, device, r.Solvers) is { } d) r = r with { Device = d };
+        if (src.Generated is { WantsDc: true }) r = r with { DcRow = DcRow() };
         if (!src.Setup.Solver3D.IsNone && !src.Setup.IsThermal)
             r = r with { Limits = Em3dMemoryLimit.Describe(MachineMemory.PhysicalBytes, memoryLimitBytes,
                                                            System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(src.Path)) ?? ".") };
         return Compare(src.Setup, r.Solvers) is { } c ? r with { Compare = c } : r;
+    }
+
+    /// <summary>brief-emdc-2 R-emdc2-5 — how a run answers the sweep's 0 Hz point (Em3dDcRow's sentence, the generator's own
+    /// note), and the Gmsh the conduction solve would mesh with, or why a run would write no 0 Hz row.</summary>
+    private static string DcRow()
+    {
+        var gmsh = SolverDiscovery.Gmsh.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Gmsh));
+        return gmsh.Proceeds
+            ? $"{Em3dDcRow.ZeroHzNote} It meshes the conductors with Gmsh {gmsh.Installation!.DescribeVersion()}, found at {gmsh.Installation.Path}."
+            : $"{Em3dDcRow.ZeroHzNote} Gmsh was not found, so a run would write no 0 Hz row: {gmsh.Refusal}";
     }
 
     /// <summary>brief-emi-6 R-emi6-5 — a comparison's reference and, per solver, whether a run would start it: its own refusal of
@@ -608,6 +619,7 @@ internal static class ExplainEm3d
             foreach (var c in compare.Solvers)
                 Console.WriteLine($"  {"",-12} {c.Solver}: " + (c.Runnable ? "would run" : $"would not run — {c.Refusal}"));
         }
+        if (r.DcRow is { } dcRow) Console.WriteLine($"  {"",-12} 0 Hz: {dcRow}");
         if (r.Refusal is { } refusal)
         {
             Console.WriteLine($"  {"",-12} the 3D problem could not be built: {refusal}");

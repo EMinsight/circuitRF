@@ -109,6 +109,12 @@ public static class Em3dComparison
         "This comparison is a cross-check, not a reference: every solver reads the same generated 3D problem, " +
         "so an error in generating it appears in every result and their agreement cannot reveal it (em-3d.md §4.4).";
 
+    /// <summary>brief-emdc-2 R-emdc2-5 — said once when the results carry a 0 Hz row: it is not the solvers' answer, so the
+    /// agreement statistics leave it out.</summary>
+    public const string DcRowSentence =
+        "The 0 Hz row is circuitRF's own conduction solve of the conductors, identical in every solver's result, so the " +
+        "differences above leave it out.";
+
     private const string PalaceToken = "palace", OpenEmsToken = "openems";
 
     /// <summary>A solver's S cube in a comparison file: <c>S_&lt;token&gt;</c>.</summary>
@@ -170,7 +176,9 @@ public static class Em3dComparison
 
         // R-emi6-4b — the line a user reads first names the pair that differs most (largest |ΔS| anywhere); with one pair it
         // is that pair's summary, as Both's has always been.
-        var worst = pairs.MaxBy(p => p.Vec.RealValues.Where(v => !double.IsNaN(v)).DefaultIfEmpty(0).Max())!;
+        // brief-emdc-2 R-emdc2-5 — a 0 Hz row is circuitRF's own and the same in every result: no statistic reads it.
+        int skip = DcRows(axes[0].Values) * axes[1].Length * axes[2].Length;
+        var worst = pairs.MaxBy(p => p.Vec.RealValues.Skip(skip).Where(v => !double.IsNaN(v)).DefaultIfEmpty(0).Max())!;
         string summary = pairs.Count == 1 ? Summary(worst) : $"The largest difference is {Summary(worst)}";
 
         var legs = new List<Em3dComparisonLeg> { reference };
@@ -179,6 +187,7 @@ public static class Em3dComparison
         var notes = new List<string>();
         if (pairs.Count > 1) notes.AddRange(pairs.Where(p => p != worst).Select(Summary));
         notes.Add(legs.Count == 2 ? CrossCheckSentence : CrossCheckSentenceMany);
+        if (skip > 0) notes.Add(DcRowSentence);
         notes.Add(ReferencePlanes(problem, legs.Count));
         notes.AddRange(Expectations(problem, legs));
         foreach (var leg in legs)
@@ -266,6 +275,9 @@ public static class Em3dComparison
                          new DataCube(axes, vec)), null);
     }
 
+    /// <summary>1 when the frequency axis starts at 0 Hz (circuitRF's DC row, brief-emdc-2), else 0: the rows a statistic skips.</summary>
+    private static int DcRows(double[] f) => f.Length > 0 && f[0] == 0 ? 1 : 0;
+
     /// <summary>arg(a) − arg(b) in degrees, wrapped to (−180, 180].</summary>
     public static double PhaseDifferenceDeg(Complex a, Complex b)
     {
@@ -302,7 +314,7 @@ public static class Em3dComparison
         (double Value, double AtHz) Largest(double[] v, int i, int j)
         {
             double best = double.NaN, at = double.NaN;
-            for (int k = 0; k < f.Length; k++)
+            for (int k = DcRows(f); k < f.Length; k++)
             {
                 double x = Math.Abs(v[k * n * n + i * n + j]);
                 if (double.IsNaN(x)) continue;

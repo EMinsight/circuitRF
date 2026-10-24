@@ -143,7 +143,7 @@ public static partial class Em3dRunService
 
         public override Leg Execute(Em3dProblem problem, string snpBase, RunContext run)
             => ExecutePalace(_plan!, problem, run.Setup, run.ResultsRoot, snpBase, run.Ct, run.Control, run.MaxCores, run.Log, run.Memory,
-                             run.Limits(_memory?.Bytes ?? MachineMemory.PhysicalBytes));
+                             run.Limits(_memory?.Bytes ?? MachineMemory.PhysicalBytes), run.Dc);
     }
 
     // ── Palace (brief-em3d-7) ─────────────────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ public static partial class Em3dRunService
 
     private static Leg ExecutePalace(PalacePlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
                                      CancellationToken ct, RunControl? control, int? maxCores, RunLog log, MemoryGate memory,
-                                     ProcessLimits limits)
+                                     ProcessLimits limits, Em3dDcResult? dc = null)
     {
         const Em3dSolverId Me = PalaceSolver.Id;
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
@@ -420,11 +420,13 @@ public static partial class Em3dRunService
         var summary = tracker.Summary;
         var quality = setup.Palace?.Quality ?? PalaceQuality.Standard;
 
+        // brief-emdc-2 R-emdc2-3 — the run's 0 Hz row, before either file is written
+        var dcLines = SpliceDc(data, problem, dc);
         string? snpPath = snpBase + $".s{ports.Count}p";
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
 
         string? snpError;
-        try { snpError = WriteSnp(data, snpBase, setup, problem, lowering, settings, palace, facts, summary, quality, wall.Elapsed); }
+        try { snpError = WriteSnp(data, snpBase, setup, problem, lowering, settings, palace, facts, summary, quality, wall.Elapsed, dcLines); }
         catch (Exception e) { snpError = e.Message; }
         if (snpError is not null)
         {
@@ -729,7 +731,8 @@ public static partial class Em3dRunService
     /// when written; otherwise why not.</summary>
     private static string? WriteSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem,
                                  GmshLowering lowering, PalaceSettings settings, SolverInstallation palace,
-                                 PalaceRunFacts facts, PalaceRunSummary summary, PalaceQuality quality, TimeSpan wall)
+                                 PalaceRunFacts facts, PalaceRunSummary summary, PalaceQuality quality, TimeSpan wall,
+                                 IReadOnlyList<string> dcLines)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -763,6 +766,7 @@ public static partial class Em3dRunService
         // exactly as the write stamp does.
         lines.Add(RunProvenancePrefix + RunProvenance(summary, quality));
         lines.Add(CostProvenancePrefix + CostProvenance(summary, wall));
+        lines.AddRange(dcLines);                              // brief-emdc-2 R-emdc2-4
 
         double z0 = problem.Ports.OrderBy(p => p.Number).First().Z0.Real;
         var opts = new TouchstoneExportOptions(

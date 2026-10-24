@@ -103,7 +103,13 @@ public sealed record EmRunResult(
     /// subsystem's <c>.wslconfig</c>. The Messages panel shows it as a reveal link beside the sentence; the
     /// CLI prints it after the sentence. Null when no sentence names one.
     /// </summary>
-    IReadOnlyDictionary<string, string>? MessageFiles = null);
+    IReadOnlyDictionary<string, string>? MessageFiles = null,
+    /// <summary>
+    /// brief-emdc-2 R-emdc2-2 — the tool a sentence in <see cref="Warnings"/> offers to install, keyed by that sentence: a 3D
+    /// run's DC row refused for want of Gmsh. The Messages panel puts <i>Install …</i> on that row, as on a solver's refusal
+    /// (<see cref="CircuitRF.Design.Em3d.Install.SolverInstaller.OfferFor"/>'s rule). Null when no sentence offers one.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? MessageInstalls = null);
 
 /// <summary>One file a run wrote: what it is (<c>touchstone</c>, <c>npy</c>) and where.</summary>
 public sealed record EmRunOutput(string Kind, string Path);

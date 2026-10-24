@@ -502,6 +502,7 @@ src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': Cport[{n}]={port} is out of ran
 src/Engine/NonlinearDcEngine.cs|SDD '{sddName}': Cport[{n}]={port} — {kind} is a two-terminal device; 
 src/Engine/ParametricSweepEngine.cs|Parametric sweep '{sweep.Name}': inner analysis 
 src/Engine/ParametricSweepEngine.cs|ParametricSweepEngine: inner analysis type 
+src/Engine/ParametricSweepEngine.cs|envelope '{inner.Name}': no point of sweep '{sweep.Name}' completed — {string.Join(
 src/Engine/SParameterEngine.cs|S-parameter analysis requires at least one Port, Term, or P1Tone component at the testbench top level. 
 src/Engine/SParameterEngine.cs|SDD '{sdd.Name}': C[{n}]={refInst} — no sibling component named '{refInst}' 
 src/Engine/SParameterEngine.cs|SDD '{sddName}': C[{n}]={target.InstancePath} is an ideal current source (I_1Tone/I_nTone): 
@@ -990,6 +991,11 @@ src/Design/Em3d/Wsl/WslSession.cs|refusing to remove '{linuxPath}': not a path c
 # Moved, not authored: openEMS's VTK file decoder moved from src/Render (not scanned) to src/Design, so the
 # radiation pattern could read openEMS's surface dumps there. Format invariants of a file openEMS writes;
 # src/Render's VtrReader still rethrows them as its own FieldReadException for the 3D view.
+src/Design/Em3d/Em3dDcRow.cs|Group '{group}' holds no S cube over frequency, so it has no row to put 0 Hz in.
+src/Design/Em3d/Em3dDcRow.cs|Group '{group}''s frequency axis already starts at {f.Values[0].ToString(
+src/Design/Em3d/Em3dDcRow.cs|The DC matrix does not fit the S cube's layout.
+src/Design/Em3d/Em3dDcRow.cs|The DC result was refused and has no S to splice.
+src/Design/Em3d/Em3dDcRow.cs|The DC row is {dcS.GetLength(0)}×{dcS.GetLength(1)} and group '{group}''s S is {n}×{n}.
 src/Design/Em3d/VtrFile.cs|'{path}' does not hold three coordinate arrays and a field.
 src/Design/Em3d/VtrFile.cs|'{path}' has no point data or no coordinates.
 src/Design/Em3d/VtrFile.cs|'{path}' holds {values.Length:N0} values for a {x.Length} × {y.Length} × {z.Length} grid of {comps}.
@@ -1445,14 +1451,12 @@ src/Engine/Envelope/EnvelopeEngine.cs|Envelope analysis needs at least one MOD_S
 src/Engine/Envelope/EnvelopeEngine.cs|all MOD_Sources in one envelope run must use the same record length
 src/Engine/Envelope/EnvelopeEngine.cs|envelope probe '{nm}' is not a node of the circuit
 src/Engine/Envelope/EnvelopeEngine.cs|envelope step {h:G4} s does not divide the {record * 1e3:0.###} ms signal record; leave Step automatic or pick a divisor
-src/Engine/Envelope/EnvelopeEngine.cs|envelope step {step} (t = {(step - nWarm) * h:G4} s) did not converge
-src/Engine/Envelope/EnvelopeEngine.cs|envelope step {step}: singular Jacobian
+src/Engine/Envelope/EnvelopeEngine.cs|envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {MaxStepSplit} sub-steps
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: singular port impedance matrix
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: the harmonic-balance start point did not converge
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: the linear network's size changes with frequency (a model adds unknowns only at some frequencies)
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope probe '{nm}' is not a node of the circuit
-src/Engine/Envelope/EnvelopeEngineMt.cs|envelope step {step} (t = {(step - nWarm) * h:G4} s) did not converge
-src/Engine/Envelope/EnvelopeEngineMt.cs|envelope step {step}: singular Jacobian
+src/Engine/Envelope/EnvelopeEngineMt.cs|envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {EnvelopeEngine.MaxStepSplit} sub-steps
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: mixing products {lat.Label(a)} and {lat.Label(b)} fall on the same frequency 
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: the multi-tone harmonic-balance start point did not converge
 src/Engine/Envelope/EnvelopeRunner.cs|Envelope analysis needs at least one MOD_Source (the modulated signal).
@@ -1466,7 +1470,8 @@ src/RfCore/Signals/ModulatedSignal.cs|a FILE carrier needs File=<path>
 src/RfCore/Signals/ModulatedSignal.cs|a signal needs at least one carrier
 src/RfCore/Signals/ModulatedSignal.cs|an imported I/Q file mixed with generated carriers must last a whole number of 0.5 ms slots
 src/RfCore/Signals/ModulatedSignal.cs|rate {rateHz / 1e6:0.###} MHz does not give a whole number of samples over the {RecordSeconds * 1e3:0.###} ms record
-src/RfCore/Signals/ModulatedSignal.cs|{Path.GetFileName(path)}: no '# sample_rate_hz' header line
+src/RfCore/Signals/ModulatedSignal.cs|{Path.GetFileName(path)}: no '# sample_rate_hz' header line, and no sample rate given (Fs=)
+src/RfCore/Signals/ModulatedSignal.cs|{Path.GetFileName(path)}: the sample rate must be positive
 src/RfCore/Signals/ModulatedSignal.cs|{Path.GetFileName(path)}: no I Q samples
 src/RfCore/Signals/OfdmGenerator.cs|LTE channel bandwidth {c.BandwidthHz / 1e6:0.###} MHz is not one of 1.4, 3, 5, 10, 15, 20 MHz
 src/RfCore/Signals/OfdmGenerator.cs|NR subcarrier spacing {scsK} kHz is not one of 15, 30, 60 kHz

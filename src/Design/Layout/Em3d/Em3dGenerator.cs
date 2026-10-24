@@ -42,6 +42,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// the run's input manifest hashes. Empty for a layout's.</summary>
     public IReadOnlyList<string> FilesRead { get; init; } = [];
 
+    /// <summary>brief-emdc-2 R-emdc2-1 — the setup's driven sweep held 0 Hz, which the problem does not: the run answers it
+    /// with circuitRF's conduction solve (Em3dDcSolve). Kept BESIDE the problem, so no lowering and no provenance hash sees it.</summary>
+    public bool WantsDc { get; init; }
+
     /// <summary>Findings a user should act on that do not stop the problem being built — a foot that
     /// overhangs its pad, a metal the technology and the <c>.wBond</c> define differently.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
@@ -202,6 +206,7 @@ public static class Em3dGenerator
         private List<string> _notes = [];
         private double _tempC;
         private string? _portRefusal;
+        private bool _wantsDc;
 
         public Em3dGenerationResult Go()
         {
@@ -212,9 +217,9 @@ public static class Em3dGenerator
             var positive = freqs.Where(f => f > 0).ToArray();
             if (positive.Length == 0) return No(EmDiagnostics.FrequencySweepEmpty().Render());
             double fMin = positive.Min(), fMax = positive.Max();
-            if (positive.Length < freqs.Length)
-                _notes.Add("The sweep's 0 Hz point is not in the 3D problem: a full-wave solver has no DC " +
-                           "solution to give it.");
+            // brief-emdc-2 R-emdc2-1 — a driven sweep's 0 Hz point is circuitRF's conduction solve (Em3dDcRow), not the solver's.
+            _wantsDc = positive.Length < freqs.Length && setup.Problem3D == Em3dProblemType.Driven;
+            if (_wantsDc) _notes.Add(CircuitRF.Design.Em3d.Em3dDcRow.ZeroHzNote);
             var frequency = new Em3dFrequency(fMin, fMax, positive.Length,
                 setup.Frequency.Kind == CircuitRF.Core.Design.SweepKind.Log ? Em3dSweepKind.Log : Em3dSweepKind.Linear);
 
@@ -332,6 +337,7 @@ public static class Em3dGenerator
                 UnknownTemperature = _g.UnknownTemperatureList,
                 PortRefusal = _portRefusal,
                 PadRefusal = _g.PadRefusal,
+                WantsDc = _wantsDc,
             };
         }
 

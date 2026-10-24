@@ -351,8 +351,9 @@ public static class C3dProblemAssembly
         var positive = freqs.Where(f => f > 0).ToArray();
         if (positive.Length == 0) return No(EmDiagnostics.FrequencySweepEmpty().Render());
         double fMin = positive.Min(), fMax = positive.Max();
-        if (positive.Length < freqs.Length)
-            notes.Add("The sweep's 0 Hz point is not in the 3D problem: a full-wave solver has no DC solution to give it.");
+        // brief-emdc-2 R-emdc2-1 — a driven sweep's 0 Hz point is circuitRF's conduction solve (Em3dDcRow), not the solver's.
+        bool wantsDc = positive.Length < freqs.Length && setup.Problem3D == Em3dProblemType.Driven;
+        if (wantsDc) notes.Add(CircuitRF.Design.Em3d.Em3dDcRow.ZeroHzNote);
         var frequency = new Em3dFrequency(fMin, fMax, positive.Length,
             setup.Frequency.Kind == CircuitRF.Core.Design.SweepKind.Log ? Em3dSweepKind.Log : Em3dSweepKind.Linear);
         double tempC = setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC;
@@ -485,6 +486,7 @@ public static class C3dProblemAssembly
         };
         return new Em3dGenerationResult(problem, null, notes)
         {
+            WantsDc = wantsDc,
             Warnings = e.Warnings,
             Wires = e.Wires,
             Origins = e.Origins,

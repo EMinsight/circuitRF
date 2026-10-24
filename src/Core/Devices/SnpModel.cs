@@ -194,10 +194,28 @@ public sealed class SnpModel : ComponentModel
 
         // Interpolate the stored S-parameters to this frequency, then convert to Z.
         // The splines were fitted once (see LoadInterpolator); this is the evaluation only.
-        var zMat = RFNetwork.SToZ(interp.Evaluate(hz), snp.Z0);
+        var sMat = interp.Evaluate(hz);
+        var zMat = RFNetwork.SToZ(sMat, snp.Z0);
 
         int n       = _portCount;
         int refNode = c.ReferenceNode;
+
+        // brief-emdc-2 — a block with no Z (an ideal open, S = I: a 3D EM result's 0 Hz row through a DC block) is stamped as
+        // its S, the wave definition IdealSBlockModel stamps, which has no singular case. Only then: every block that HAS a Z
+        // stamps exactly as before.
+        if (!AllFinite(zMat))
+        {
+            var nodes = new int[2 * n];
+            var sArr  = new Complex[n, n];
+            for (int k = 0; k < n; k++)
+            {
+                nodes[2 * k] = c.Nodes[k];
+                nodes[2 * k + 1] = refNode;
+                for (int j = 0; j < n; j++) sArr[k, j] = sMat[k, j];
+            }
+            IdealSBlockModel.StampWaveConstraints(mna, nodes, sArr, Enumerable.Repeat(snp.Z0, n).ToArray(), PortBranchIndices);
+            return;
+        }
 
         // Allocate one branch-current unknown per port.
         var branches = new int[n];
@@ -220,5 +238,13 @@ public sealed class SnpModel : ComponentModel
             for (int j = 0; j < n; j++)
                 mna.AddBranchConstraint(branches[k], branches[j], -zMat[k, j]);
         }
+    }
+
+    private static bool AllFinite(NumFlat.Mat<Complex> m)
+    {
+        for (int i = 0; i < m.RowCount; i++)
+            for (int j = 0; j < m.ColCount; j++)
+                if (!double.IsFinite(m[i, j].Real) || !double.IsFinite(m[i, j].Imaginary)) return false;
+        return true;
     }
 }

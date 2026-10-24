@@ -97,7 +97,7 @@ public static partial class Em3dRunService
 
         public override Leg Execute(Em3dProblem problem, string snpBase, RunContext run)
             => ExecuteOpenEms(_plan!, problem, run.Setup, run.ResultsRoot, snpBase, run.Ct, run.Control, run.MaxCores, run.Log,
-                              run.Limits(MachineMemory.PhysicalBytes));
+                              run.Limits(MachineMemory.PhysicalBytes), run.Dc);
     }
 
     // ── openEMS (brief-em3d-9) ────────────────────────────────────────────────────────────────
@@ -164,7 +164,7 @@ public static partial class Em3dRunService
 
     private static Leg ExecuteOpenEms(OpenEmsPlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
                                       CancellationToken ct, RunControl? control, int? maxCores, RunLog log,
-                                      ProcessLimits? limits = null)
+                                      ProcessLimits? limits = null, Em3dDcResult? dc = null)
     {
         const Em3dSolverId Me = OpenEmsSolver.Id;
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
@@ -297,11 +297,13 @@ public static partial class Em3dRunService
                           $"{MachineMemory.Format(manifest.TotalBytes)}; a schematic's fields analysis recombines them with no new EM run.");
         }
 
+        // brief-emdc-2 R-emdc2-3 — the run's 0 Hz row, before either file is written
+        var dcLines = SpliceDc(data, problem, dc);
         string? snpPath = snpBase + $".s{ports.Count}p";
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
 
         string? snpError;
-        try { snpError = WriteOpenEmsSnp(data, snpBase, setup, problem, grid, plan.GridSettings, runSettings, lowering, openEms, runs, fieldsLine); }
+        try { snpError = WriteOpenEmsSnp(data, snpBase, setup, problem, grid, plan.GridSettings, runSettings, lowering, openEms, runs, fieldsLine, dcLines); }
         catch (Exception e) { snpError = e.Message; }
         if (snpError is not null)
         {
@@ -465,7 +467,8 @@ public static partial class Em3dRunService
     /// <summary>R-em3d9-5b — the planar exporter with the 3D stamp and openEMS's provenance lines.</summary>
     private static string? WriteOpenEmsSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem, FdtdGridResult grid,
                                            OpenEmsGridSettings gridSettings, OpenEmsRunSettings runSettings, CsxcadLowering lowering,
-                                           SolverInstallation openEms, IReadOnlyList<OpenEmsPortRun> runs, string? fieldsLine = null)
+                                           SolverInstallation openEms, IReadOnlyList<OpenEmsPortRun> runs, string? fieldsLine = null,
+                                           IReadOnlyList<string>? dcLines = null)
     {
         string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
         if (group is null) return "the solved DataSet carries no S cube";
@@ -508,6 +511,7 @@ public static partial class Em3dRunService
             lines.Add("circuitRF-EM 3D sub-cell wires: " + string.Join(", ", lowering.SubCellWires.Select(Ascii)));
         lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");
         if (fieldsLine is not null) lines.Add(Ascii(fieldsLine));     // brief-sar-9 R-sar9-1 — the fields move and stale with this file
+        lines.AddRange(dcLines ?? []);                                // brief-emdc-2 R-emdc2-4
 
         double z0 = problem.Ports.OrderBy(p => p.Number).First().Z0.Real;
         var opts = new TouchstoneExportOptions(

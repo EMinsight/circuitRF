@@ -8851,7 +8851,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                                         Func<Task> raiseMemory)
     {
         string? file = EmMessageFile(result, sentence);
-        if (CircuitRF.Design.Em3d.Wsl.WslMemory.IsWslConfig(file))
+        // brief-emdc-2 R-emdc2-2 — a DC row refused for want of Gmsh offers Install … on its own row, as a solver's refusal does.
+        if (result.MessageInstalls?.GetValueOrDefault(sentence) is { } installId
+            && CircuitRF.Design.Em3d.Install.SolverHomes.ToolFromId(installId) is { } installTool)
+            sink.PostAction(level, sentence, $"Install {CircuitRF.Design.Em3d.SolverDiscovery.For(installTool).Name}…",
+                            () => CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.InstallAsync(installTool, owner: null, sink));
+        else if (CircuitRF.Design.Em3d.Wsl.WslMemory.IsWslConfig(file))
             sink.PostAction(level, sentence, CircuitRF.Ui.Layout.Em.WslMemoryDialogModel.RowAction, raiseMemory, file);
         else
             sink.Post(level, sentence, file);
@@ -9516,6 +9521,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// finished line still says which setup ran and how many points it got through.</summary>
     internal static string EmRunSummary(EmRunResult result, bool adaptive, int requestedPoints)
     {
+        // brief-emdc-2 R-emdc2-5 — a result counts the points it carries: a 3D result's 0 Hz row among them when the conduction
+        // solve gave one, and not when it refused (the requested grid still holds 0 Hz, which the file then does not).
+        if (!adaptive && result.Data?.Cubes.TryGetValue("S", out var s) == true && s.Rank == 3)
+            requestedPoints = s.Axes[0].Length;
         string points = requestedPoints > 0
             ? $"{requestedPoints.ToString("N0", CultureInfo.CurrentCulture)} frequency point(s)"
             : "the frequency sweep";

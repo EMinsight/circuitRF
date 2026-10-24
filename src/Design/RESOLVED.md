@@ -22918,3 +22918,55 @@ defect went unseen there.
 `Em3dDcSolve.Solve` takes any problem and does not validate, and `DcConduction.LumpedAtDc` reads a series element with no
 value as a short. The lowering now refuses it by name, beside its existing refusal of a negative value. Gate:
 `Em3dDcLoweringTests.Refusals_AWaveguidePort_AZeroZ0_AndANonDrivenProblem`.
+
+## brief-emdc-2 — the 0 Hz row in every 3D result (2026-10-24)
+
+`Em3d/Em3dDcRow.cs` (the sentence, the splice, the header lines), the DC stage in `Em3d/Em3dRunService.cs`, one call per
+solver before its `.npy` and `.sNp` are written. Gates: `tests/Ui.Tests/Em3d/Em3dDcRowTests.cs`.
+
+### What each solver's S is referred to, and why the DC row needs no second rule
+
+All three build their DataSet the same way: S `[freq, i, j]` and a `Z0` cube (each port's own Z₀, in port-number order)
+in the default group, and the solver's record in a group of its own (`palace`, `openems`, `emerge`). Palace's lumped
+ports and its renormalised wave ports, openEMS's probed ports and EMerge's renormalised ports all leave S referred to that
+`Z0` cube; the Touchstone exporter then renormalises the whole group from it to the header's one R (port 1's). The DC row
+from `Em3dDcSolve` is referred to each port's Re Z₀, which is the `Z0` cube wherever Z₀ is real, so it is spliced as it
+is and the exporter treats it like every other row. Only a complex Z₀ needs a conversion, and the splice does it with
+`RFNetwork.SToS`, the function the exporter itself uses.
+
+### Decisions worth knowing
+
+- **`WantsDc` is a DRIVEN sweep holding 0 Hz.** An eigenmode or static setup gets no `.sNp` and no DC row, so it says
+  nothing about its 0 Hz point (the old note had said a full-wave solver has no DC answer, which was true of every type).
+- **The DC mesh lives in `results/<key>.dc/`**, one per setup beside the solvers' run directories, because a Compare run
+  solves once for every leg.
+- **The header lines are ASCII**: `DC row: none - <refusal>`, not the brief's em dash, because the encoding a Touchstone
+  file is written in turns a dash or an Ω into `?` (the same reason as the stamp's first line).
+- **The install offer on a warning is `EmRunResult.MessageInstalls`** (sentence → tool id), beside `MessageFiles`. Until
+  now only the top-level refusal could carry one (the `install` argument of `em.solver-3d.unavailable`); the Messages
+  panel puts *Install …* on the row the same way. The CLI prints the warning only: the refusal text already names the
+  install command.
+- **`explain --analysis` has no 3D-setup form** (on a `.cem` it is not applicable, on a `.c3d` it reports thermal setups),
+  so the 0 Hz line is in the 3D report every `explain` of a 3D setup prints (`dcRow` in `--json`), with the Gmsh it would
+  use or the refusal a run would warn with.
+- **The Simulate row counts what the result carries**: the S cube's frequency axis, so a refused DC row is not counted
+  as a point solved.
+
+### The circuit side could not read an ideal open
+
+The first circuit through the solved gap capacitor's file did not converge (residual NaN): `SnpModel` stamps Z = Z₀(I + S)(I − S)⁻¹,
+and the DC row of a DC block is S = I exactly, which has no Z. That was worse than the defect the series set out to fix
+(the file without the row read 0.686 V at the load, a wrong but finite answer). `SnpModel` now stamps a block whose Z is not
+finite through `IdealSBlockModel.StampWaveConstraints`, the wave definition, which has no singular case; every block with
+a finite Z stamps exactly as before. With it the load reads 0 V. Recorded in `src/Core/RESOLVED.md` too.
+
+### What was run
+
+`Em3dDcRowTests` (all but Palace's end-to-end, which skips: no Palace on the machine it was written on), and, for test 2's
+"no 0 Hz, no change": `EmergeRunTests` (the Touchstone byte-for-byte golden), `Em3dGeneratorTests`, `Em3dDcLoweringTests`,
+`CompareChoiceTests`, `SolverSeamTests`, `OpenEmsBackendTests`, `Em3dRenderExplainTests`, `EmCliVerbTests`,
+`EmRunProgressTests`, `RunBothTests` (skips without Palace), and in `Engine.Tests` `Em3dComparisonTests`, `SnpStampTests`,
+`SnpCacheTests`, `EnvelopeSnpTests`, `SnpRelativePathEngineTests`. No expected value was touched. Run times: openEMS end to
+end 26 s, the openEMS + EMerge Compare 27 s, the no-Gmsh openEMS run 25 s (all `Category=Benchmark`); EMerge end to end
+4.1 s (routine). `testdata/em3d/dc-row/gap-capacitor.s2p` is the openEMS test's file (`CRF_EMDC2_WRITE_FIXTURE` writes it
+again).

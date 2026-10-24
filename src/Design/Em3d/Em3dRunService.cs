@@ -320,6 +320,9 @@ public static partial class Em3dRunService
         if (legs.FirstOrDefault(l => l.Stop is not null)?.Stop is { } refused)
             return compare ? CompareRefused(legs, log) : log.Result(refused.Status, refused.Diagnostic);
 
+        // ── brief-emdc-2 R-emdc2-2 — the 0 Hz row: ONE conduction solve, before any leg executes, which every leg splices ───
+        if (generated.WantsDc) run.Dc = SolveDc(problem, setup, resultsRoot, run);
+
         // ── execution ─────────────────────────────────────────────────────────────────────────
         if (!compare)
         {
@@ -328,6 +331,50 @@ public static partial class Em3dRunService
                 only.Execute(problem, SnpBasePath(resultsRoot, setup, only.Solver.Id), run)), log);
         }
         return RunCompare(legs, choice.Reference, problem, setup, resultsRoot, run, keepRecord);
+    }
+
+    /// <summary>brief-emdc-2 — test seam: discovery's answer for the DC row's Gmsh, in place of the real one.</summary>
+    internal static Func<SolverReadiness>? DcGmsh;
+
+    /// <summary>How many DC conduction solves runs in this process have made: one per run, however many solvers it runs.</summary>
+    public static long DcSolves => Interlocked.Read(ref _dcSolves);
+    private static long _dcSolves;
+
+    /// <summary>The DC row's mesh and its script, beside the solvers' run directories: one per setup, shared by every leg.</summary>
+    public static string DcDirectory(string resultsRoot, EmSetup setup)
+        => Path.Combine(resultsRoot, EmRunService.ResolveResultKey(setup) + ".dc");
+
+    /// <summary>
+    /// R-emdc2-2 — the run's one DC conduction solve (Em3dDcSolve), as its own stage. Its notes join the run's; a refusal does
+    /// not stop the run (the RF answer is still right) and becomes a warning saying what it costs, with the install offer a
+    /// solver's refusal carries when the cause is Gmsh missing.
+    /// </summary>
+    private static Em3dDcResult SolveDc(Em3dProblem problem, EmSetup setup, string resultsRoot, RunContext run)
+    {
+        run.Control?.BeginStage("DC conduction solve");
+        Interlocked.Increment(ref _dcSolves);
+        var gmsh = DcGmsh?.Invoke() ?? SolverDiscovery.Gmsh.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Gmsh));
+        var dc = Em3dDcSolve.Solve(problem, DcDirectory(resultsRoot, setup), run.Ct, gmsh);
+        run.Log.Notes.AddRange(dc.Notes);
+        if (dc.Refusal is { } refusal)
+        {
+            string warning = Em3dDcRow.RefusedWarning(refusal);
+            run.Log.Warnings.Add(warning);
+            if (!gmsh.Proceeds && Install.SolverInstaller.OfferFor(gmsh) is { } tool) run.Log.Installs[warning] = tool;
+        }
+        return dc;
+    }
+
+    /// <summary>
+    /// R-emdc2-3 — a leg's DataSet with the run's 0 Hz row at the front of its S group, before either of its files is written;
+    /// and the header lines its <c>.sNp</c> says it with (R-emdc2-4). Nothing, and no line, when the sweep asked for no 0 Hz.
+    /// </summary>
+    internal static IReadOnlyList<string> SpliceDc(DataSet data, Em3dProblem problem, Em3dDcResult? dc)
+    {
+        if (dc is null) return [];
+        if (dc.S is not null && data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S")) is { } group)
+            Em3dDcRow.Prepend(data, group, dc);
+        return Em3dDcRow.HeaderLines(dc, problem);
     }
 
     /// <summary>
@@ -437,7 +484,7 @@ public static partial class Em3dRunService
                 ? log.Result(bad[0].Status, EmDiagnostics.SomeSolversFailed(Failures(bad), Names(ok), string.Join("; ", ok.Select(Where)), ""), outputs)
                 : new EmRunResult(EmRunStatus.Ok, against!.Data, null, null, null, null, null, log.Warnings,
                                   KernelName: string.Join(" and ", ok.Select(l => l.KernelName)), Notes: log.Notes, Errors: log.Errors,
-                                  Outputs: outputs, MessageFiles: log.FilesOrNull);
+                                  Outputs: outputs, MessageFiles: log.FilesOrNull, MessageInstalls: log.InstallsOrNull);
         }
 
         var compared = Em3dComparison.Compare(ComparisonLeg(against!), [.. others.Select(ComparisonLeg)], problem);
@@ -469,7 +516,7 @@ public static partial class Em3dRunService
                                 : $"{Names(ok)} were compared: {written}."), outputs);
         return new EmRunResult(EmRunStatus.Ok, data, null, null, written, null, null, log.Warnings,
                                KernelName: string.Join(" and ", ok.Select(l => l.KernelName)), Notes: log.Notes, Errors: log.Errors,
-                               Outputs: outputs, MessageFiles: log.FilesOrNull);
+                               Outputs: outputs, MessageFiles: log.FilesOrNull, MessageInstalls: log.InstallsOrNull);
 
         static string Failures(IEnumerable<Leg> failed) => string.Join("; ", failed.Select(l => $"{Name(l.Solver)} failed: {l.Stop!.Render()}"));
     }
@@ -531,7 +578,8 @@ public static partial class Em3dRunService
     private static EmRunResult Single(Leg leg, RunLog log)
         => leg.Ok
             ? new EmRunResult(EmRunStatus.Ok, leg.Data, null, null, leg.NpyPath, leg.SnpPath, null, log.Warnings,
-                              Notes: log.Notes, Errors: log.Errors, KernelName: leg.KernelName, MessageFiles: log.FilesOrNull)
+                              Notes: log.Notes, Errors: log.Errors, KernelName: leg.KernelName, MessageFiles: log.FilesOrNull,
+                              MessageInstalls: log.InstallsOrNull)
             : log.Result(leg.Status, leg.Stop!);
 
     /// <summary>Why a phase did not go on, and which status says so.</summary>
@@ -590,6 +638,10 @@ public static partial class Em3dRunService
                                       IReadOnlyList<SolverReadiness> Readiness, RunLog Log, MemoryGate Memory,
                                       long? MemoryCeilingBytes = null, EmergeDevice EmergeDevice = EmergeDevice.Auto)
     {
+        /// <summary>brief-emdc-2 R-emdc2-2 — the run's one DC conduction solve, which every leg splices; null when the sweep
+        /// asked for no 0 Hz point. A refused one has no S, and its leg's file says so.</summary>
+        public Em3dDcResult? Dc { get; set; }
+
         /// <summary>brief-emi-10 R-emi10-2 — what this run's processes are held to: the ceiling (this machine's memory, or the
         /// user's lower limit), lifted once the user forces the run past its size check.</summary>
         public ProcessLimits Limits(long physicalBytes)
@@ -623,10 +675,16 @@ public static partial class Em3dRunService
 
         public IReadOnlyDictionary<string, string>? FilesOrNull => Files.Count > 0 ? Files : null;
 
+        /// <summary>brief-emdc-2 — the tool a sentence in the three lists offers to install, keyed by the sentence (see
+        /// <see cref="EmRunResult.MessageInstalls"/>).</summary>
+        public Dictionary<string, string> Installs { get; } = [];
+
+        public IReadOnlyDictionary<string, string>? InstallsOrNull => Installs.Count > 0 ? Installs : null;
+
         public EmRunResult Result(EmRunStatus status, Diagnostic d, IReadOnlyList<EmRunOutput>? outputs = null)
             => new(status, null, null, null, null, null, d.Render(), Warnings,
                    Notes: Notes, Errors: Errors, Diagnostic: d, Outputs: outputs is { Count: > 0 } ? outputs : null,
-                   MessageFiles: FilesOrNull);
+                   MessageFiles: FilesOrNull, MessageInstalls: InstallsOrNull);
     }
 
     /// <summary>Several holds released together.</summary>

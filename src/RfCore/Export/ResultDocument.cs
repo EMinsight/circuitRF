@@ -2582,6 +2582,11 @@ namespace RfCore.Export
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dStaticJson? Static { get; init; }
 
+        /// <summary>brief-emdc-2 R-emdc2-5 — how a sweep's 0 Hz point is answered, and whether Gmsh was found for it; null when
+        /// the sweep holds no 0 Hz point, so every earlier report is unchanged.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? DcRow { get; init; }
+
         /// <summary>brief-em3d-136 R-em3d136-4c — where a run's Palace would solve, and why; null when the setup runs no
         /// Palace.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

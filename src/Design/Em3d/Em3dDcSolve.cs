@@ -18,12 +18,13 @@ public static class Em3dDcSolve
     /// <summary>
     /// R-emdc1-4 — the DC row of <paramref name="problem"/>, meshed in <paramref name="workDir"/> (a mesh whose script is
     /// unchanged is reused). A non-driven problem, one with no ports, or a port with no DC meaning is a refusal; cancellation
-    /// throws.
+    /// throws. <paramref name="gmsh"/> is discovery's answer for Gmsh when the caller already has it (the run's, or a test's);
+    /// null asks discovery.
     /// </summary>
-    public static Em3dDcResult Solve(Em3dProblem problem, string workDir, CancellationToken ct)
+    public static Em3dDcResult Solve(Em3dProblem problem, string workDir, CancellationToken ct, SolverReadiness? gmsh = null)
     {
         var clock = Stopwatch.StartNew();
-        var prep = Prepare(problem, workDir, ct);
+        var prep = Prepare(problem, workDir, ct, gmsh);
         var notes = new List<string>(prep.Notes);
         if (prep.Meshed is not { } meshed) return new Em3dDcResult(null, prep.Refusal, notes, 0, clock.Elapsed.TotalMilliseconds);
         var r = DcConduction.Solve(meshed.Problem, ct);
@@ -34,7 +35,7 @@ public static class Em3dDcSolve
     }
 
     /// <summary>The lowering and the mesh read back, without the solve: what the tests of the contacts read.</summary>
-    public static Em3dDcPrepared Prepare(Em3dProblem problem, string workDir, CancellationToken ct)
+    public static Em3dDcPrepared Prepare(Em3dProblem problem, string workDir, CancellationToken ct, SolverReadiness? gmsh = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(workDir);
@@ -42,7 +43,7 @@ public static class Em3dDcSolve
         var low = Em3dDcLowering.Build(problem, out string? refusal);
         if (low is null) return new(null, null, refusal, notes);
         notes.AddRange(low.Notes);
-        var gmsh = SolverDiscovery.Gmsh.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Gmsh));
+        gmsh ??= SolverDiscovery.Gmsh.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Gmsh));
         if (!gmsh.Proceeds) return new(low, null, gmsh.Refusal, notes);
         if (gmsh.Warning is { } untested) notes.Add(untested);
         var clock = Stopwatch.StartNew();

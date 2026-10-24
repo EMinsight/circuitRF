@@ -167,12 +167,12 @@ public static partial class Em3dRunService
         return eigen
             ? FinishEmergeEigen(problem, setup, run.ResultsRoot, dir, facts, tier, version, peak, wall.Elapsed, log)
             : FinishEmergeDriven(problem, setup, run.ResultsRoot, snpBase, dir, settings, lowering, facts, tier, version,
-                                 peak, wall, log);
+                                 peak, wall, log, run.Dc);
     }
 
     private static Leg FinishEmergeDriven(Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase, string dir,
                                           EmergeSettings settings, EmergeLowering lowering, EmergeRunFacts facts, EmergeSpeedTier tier,
-                                          string version, long? peak, Stopwatch wall, RunLog log)
+                                          string version, long? peak, Stopwatch wall, RunLog log, Em3dDcResult? dc = null)
     {
         const Em3dSolverId Me = EmergeSolver.Id;
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
@@ -279,13 +279,15 @@ public static partial class Em3dRunService
         if (setup.RadiationPattern && File.Exists(Path.Combine(dir, EmergeFields.FarFieldFile)) &&
             EmergeFields.PublishPattern(dir, fields, ports, setup, data, log.Notes) is { } patternError)
             log.Warnings.Add($"No radiation pattern from EMerge: {patternError}");
+        // brief-emdc-2 R-emdc2-3 — the run's 0 Hz row, before either file is written
+        var dcLines = SpliceDc(data, problem, dc);
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
         string? snpPath = snpBase + $".s{ports.Count}p";
         string? snpError;
         try
         {
             snpError = EmergeResults.WriteSnp(data, snpBase, setup, problem, lowering, settings, facts, version, wall.Elapsed, peak,
-                                              DateTimeOffset.Now);
+                                              DateTimeOffset.Now, dcLines);
         }
         catch (Exception e) { snpError = e.Message; }
         if (snpError is not null)

@@ -576,6 +576,15 @@ Palace runs one MPI process per **physical** core by default; a *Cores* setting 
 is refused rather than oversubscribed. On a GPU it runs one process per GPU instead
 ([Palace on a GPU](#palace-gpu)).
 
+**The DC point.** Start the sweep at 0 Hz and the file's first row is a DC conduction solve of the conductors, by
+circuitRF rather than by the 3D solver, the same rule as the [planar solver](mom-engine.html#adaptive) follows. It
+models each conductor's resistance, a perfect conductor as a short and a lumped R, L or C as a resistor, a short or an
+open; it does not model leakage through a dielectric. A series DC block is therefore an open at 0 Hz and a choke a
+short, which is what a circuit's bias point needs. It meshes the conductors with Gmsh, so it needs Gmsh even for an
+openEMS run. Without Gmsh the run still succeeds, the file has no 0 Hz row and the run's warning says why: a circuit's
+DC solve through that file then uses its lowest frequency. The `.sNp`'s header says which it was (`circuitRF-EM 3D DC
+row:`), including what each lumped element became.
+
 ### The openEMS grid {#openems-grid}
 
 openEMS solves on a rectilinear grid — three lists of grid lines, one per axis — and circuitRF writes
