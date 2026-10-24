@@ -136,13 +136,15 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
     <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
 <h2 id="envelope">Circuit Envelope (modulated signals)</h2>
-<p><strong>Computes:</strong> the circuit's response to a <strong>modulated</strong> signal — LTE, NR, several carriers, or an
-imported I/Q waveform from a <a href="components.html#modsource">MOD_Source</a>, designed in the
+<p><strong>Computes:</strong> the circuit's response to a <strong>modulated</strong> signal — LTE, NR, several carriers, a pulsed-CW
+train, or an imported I/Q waveform from a <a href="components.html#modsource">MOD_Source</a>, designed in the
 <a href="signal-designer.html">Signal Designer</a> — as a time series of
 harmonic-balance spectra, and from it the modulated measurements: <strong>ACLR / ACPR1 / ACPR2</strong> per carrier,
 channel power, <strong>PAPR and CCDF</strong>, <strong>AM-AM and AM-PM</strong> (with the memory spread), gain, error (NMSE)
 against the input, <strong>drain efficiency</strong> from the DC supply currents, and for two widely spaced
-carriers the <strong>IM2 / IM3 / IM5</strong> products.</p>
+carriers the <strong>IM2 / IM3 / IM5</strong> products. For a pulsed-CW source it measures inside the pulses instead:
+<strong>pulse droop</strong>, <strong>pulse-to-pulse</strong> spread, phase droop, rise and fall (see
+<a href="#envelope-pulse">Pulsed CW: what is measured</a>).</p>
 <p><strong>Method.</strong> Every envelope time step is one harmonic-balance solve with a time derivative added to
 each charge (Gear-2, backward Euler on the first step). The linear network is factored once per
 harmonic for the whole run, and each step costs one back-substitution per harmonic plus a small
@@ -333,7 +335,79 @@ dissipation, which lowers <code>DE_pct</code>.</li>
 available power.</li>
 <li><strong>With two fundamentals</strong> (carriers on the mixing lattice), <code>Pdc_W</code> and <code>DE_pct</code> are not produced.</li>
 </ul>
-<p>From the command line: <code>circuitrf env design.cnl [--stop 0.5e-3] [--accuracy standard] [-o out.npy]</code>.</p>
+<h3 id="envelope-pulse">Pulsed CW: what is measured</h3>
+<p>A <a href="signal-designer.html#pulse">pulsed-CW</a> source turns the run into a pulse measurement. Harmonic
+balance cannot see what happens inside a pulse: it solves one steady state, so the device sits at one
+temperature and one trap state. An envelope run steps a <a href="model-composer.html">ComposedFET</a>'s thermal
+and trap states, and the bias network's storage, as real memory over time, so the output falls across
+the top of each pulse as the channel heats and the drain supply sags.</p>
+<p>The run starts from harmonic balance at the first sample of the record, which for a pulse is the
+off-time, so the first pulse starts from the quiescent point. A record that started on the pulse top
+would start with the device already at its CW temperature, and the first pulse would show no droop at
+all; that is why a pulse's <code>Delay</code> must be greater than zero.</p>
+<p>On the <strong>last probe</strong> (the one <code>Pout_avg_dBm</code> is read at), it adds:</p>
+<table>
+<thead>
+<tr>
+<th>Cube</th>
+<th>Axes</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pout_t_dBm</code></td>
+<td>time</td>
+<td>output power at every step, floored at −100 dBm in the off-time, so it plots with no arithmetic</td>
+</tr>
+<tr>
+<td><code>PulseTop_dBm</code></td>
+<td>pulse</td>
+<td>Pout at the droop window's start</td>
+</tr>
+<tr>
+<td><code>PulseDroop_dB</code></td>
+<td>pulse</td>
+<td>Pout at the window's start minus at its end: positive is drooping</td>
+</tr>
+<tr>
+<td><code>PulsePhaseDroop_deg</code></td>
+<td>pulse</td>
+<td>the output phase (relative to the input) at the window's start minus at its end</td>
+</tr>
+<tr>
+<td><code>PulseRise_s</code>, <code>PulseFall_s</code></td>
+<td>pulse</td>
+<td>the 10–90 % times of the output envelope</td>
+</tr>
+<tr>
+<td><code>PulseToPulse_dB</code>, <code>PulseToPulse_deg</code></td>
+<td>—</td>
+<td>the peak-to-peak spread over the pulses of <code>PulseTop_dBm</code>, and of the output phase at the window's start; the first pulse counts</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>droop window</strong> is the flat top from <code>MeasureStart</code> to <code>MeasureEnd</code> (10–90 % of the top by
+default; set them on the carrier). A pulse only partly inside <code>Stop</code> is not measured, and the Messages
+pane says how many were and over which window. <code>ACLR</code>, <code>CCDF</code>, <code>PAPR</code>, <code>AM-AM</code> / <code>AM-PM</code> and <code>NMSE</code>
+are not reported for a pulse: they are defined for a modulated signal, and on a pulse train they print
+numbers that look like results. <code>Pin_avg_dBm</code>, <code>Pout_avg_dBm</code>, <code>Gt_dB</code>, <code>Pdc_W</code> and <code>DE_pct</code> are
+averages over the whole run, off-time included, with no settling skipped (the train starts at
+quiescent and has nothing to settle), so they depend on how many pulses <code>Stop</code> holds. <code>Pdc_W</code> is
+what the DC sources deliver, so a drain fed from a storage capacitor draws most of each pulse's energy
+from the capacitor and repays the supply after the pulse: end <code>Stop</code> once the last pulse's recharge is
+over (about five of the supply resistance × storage capacitance time constants after its fall), or
+<code>DE_pct</code> reads high — above 100 % on a run that stops at the end of a pulse.</p>
+<p><strong>Before the run starts</strong>, the Messages pane states how many pulses <code>Stop</code> holds and the circuit's
+slowest memory — a thermal pole, a trap's emission, the bias network — against it: a run shorter than
+about five of those time constants shows <strong>the first pulse from cold</strong>, not a settled train. A drain-lag
+trap that captures at the pulse peak in nanoseconds and emits over a millisecond lowers the quiescent
+current after the first pulse, so pulse 1 differs from pulse 2: that is current collapse, the effect a
+pulse-to-pulse figure exists to report. A thermal train settles only after several of its slowest time
+constants, which on a package pole means milliseconds of record at a step of a few nanoseconds.</p>
+<p>From the command line: <code>circuitrf env design.cnl [--stop 0.5e-3] [--accuracy standard] [-o out.npy]</code>.
+For a pulsed-CW source the table prints each pulse's top power, droop, phase droop, rise and fall, then
+the pulse-to-pulse spread.</p>
 <h2 id="parametric-sweep">Parametric Sweep</h2>
 <p><strong>Computes:</strong> nothing new on its own — it <em>wraps</em> another analysis and re-runs it across one or
 more variables (drive power, a bias voltage, frequency, any user variable). Nest sweeps to cover

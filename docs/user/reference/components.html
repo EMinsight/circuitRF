@@ -716,7 +716,7 @@ owns the mixing grid, and the source just supplies power at those frequencies.</
 			MOD_Source
 	</text></svg></span>
 </span><figcaption>MOD_Source</figcaption></figure>
-<p>A <strong>modulated</strong> RF source — LTE, NR, CW or an imported I/Q waveform — for the
+<p>A <strong>modulated</strong> RF source — LTE, NR, CW, a pulsed-CW train or an imported I/Q waveform — for the
 <a href="simulations.html#envelope">Envelope analysis</a>: ACLR/ACPR, EVM-style error, CCDF, AM-AM/AM-PM and
 two-carrier intermodulation with real signals rather than tones. One MOD_Source holds any number of
 <strong>carriers</strong> around its centre frequency <code>Fc</code>; <code>Pavg</code> is the total average available power behind the
@@ -727,7 +727,12 @@ source impedance <code>Z</code>.</p>
 channel bandwidth, NR subcarrier spacing, modulation, offset from <code>Fc</code>, relative power (dB) and the
 random-data seed. <code>BW</code>, <code>SCS</code> and <code>Off</code> take <code>Hz</code>, <code>kHz</code>, <code>MHz</code> or <code>GHz</code>; a bare number is in Hz. A
 <code>FILE</code> carrier plays a two-column I/Q text file, <code>File=</code> its path and <code>Fs=</code> its sample rate (taken from
-the file's <code># sample_rate_hz</code> header when absent).</li>
+the file's <code># sample_rate_hz</code> header when absent). A <code>PCW</code> carrier is a pulse train,
+<code>&quot;PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0&quot;</code>: the pulse repetition interval,
+the width (50 % to 50 %), the 10–90 % edge times and the off-time before the rising edge (centred in
+the PRI when absent). Its time fields take <code>s</code>, <code>ms</code>, <code>us</code> (or <code>µs</code>) or <code>ns</code>; a bare number is in
+seconds. A <code>PCW</code> carrier must be the source's only carrier, and <strong><code>Pavg</code> is then the pulse-top power</strong>,
+not the record average: see <a href="signal-designer.html#pulse">Pulsed CW</a>.</li>
 <li><code>Record</code> — periodic record length (s), whole 0.5 ms slots. <code>Clip</code> — target PAPR (dB) for
 clip-and-filter; absent means <strong>unclipped</strong> (the natural OFDM PAPR, about 11–12 dB).
 <code>Shaping</code> — out-of-channel spectral floor (dBc), or <code>off</code>.</li>
@@ -735,8 +740,9 @@ clip-and-filter; absent means <strong>unclipped</strong> (the natural OFDM PAPR,
 <p>Select the source and press <strong>Design signal…</strong> in the inspector to open the
 <a href="signal-designer.html">Signal Designer</a>: the carriers and presets, or a custom I/Q file of your own, with
 the spectrum, the CCDF and the EVM of the signal before you simulate it.</p>
-<p>In a harmonic-balance or loadpull run a MOD_Source is a CW tone at <code>Fc</code> carrying the signal's average
-power; in an S-parameter run it is the passive impedance <code>Z</code>.</p>
+<p>In a harmonic-balance or loadpull run a MOD_Source is a CW tone at <code>Fc</code> carrying <code>Pavg</code> — the signal's
+average power, or for a pulsed-CW source the pulse-top power, the steady state of a pulse that never ends;
+in an S-parameter run it is the passive impedance <code>Z</code>.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>+</td></tr>

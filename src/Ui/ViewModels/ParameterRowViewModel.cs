@@ -611,6 +611,10 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         // by the editor because it is a fact about the type, not about what the user has chosen.
         _structurallyFixed = ComponentTypeRegistry.IsStructuralParameter(ownerSymbol, param.Name);
         Description     = ComponentTypeRegistry.ParameterDescription(ownerSymbol, param.Name);
+        if (ownerSymbol == SymbolKind.ModSource && param.Name.Equals("Pavg", StringComparison.OrdinalIgnoreCase)
+            && ownerComp is not null && ParameterEditorViewModel.IsPulsedSource(ownerComp))
+            Description = "Pulse-top power (dBm): the source plays a pulsed-CW carrier, whose record is normalised to the "
+                        + "flat top, so this is the power on the top. The record average is lower by the power duty.";
         FixedUnit       = ComponentTypeRegistry.FixedUnitLabel(ownerSymbol, param.Name);
         CanRemove       = ownerComp is not null
                        && ComponentTypeRegistry.IsRemovableParameter(ownerSymbol, param.Name);

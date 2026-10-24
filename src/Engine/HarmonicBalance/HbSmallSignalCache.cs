@@ -521,7 +521,8 @@ public sealed class HbSmallSignalCache
                     voc![n, p] = Inject(y, g, p);
         }
 
-        var yNN = InvertNN(zNN, nInt);
+        // a port the network pins takes the extractor's series R, so this Y_NN is the Newton's own
+        var yNN = InvertNN(extractor.RegularizePinned(zNN), nInt);
 
         Entry entry = new() { Omega = omega, YNN = yNN, Cert = cert };
         if (geom is not { } gm) return entry;

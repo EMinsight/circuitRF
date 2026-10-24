@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, MOD_Source, modulated, LTE, NR, OFDM
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -356,7 +356,7 @@ owns the mixing grid, and the source just supplies power at those frequencies.
 
 {{symbol: modsource}}
 
-A **modulated** RF source — LTE, NR, CW or an imported I/Q waveform — for the
+A **modulated** RF source — LTE, NR, CW, a pulsed-CW train or an imported I/Q waveform — for the
 [Envelope analysis](simulations.html#envelope): ACLR/ACPR, EVM-style error, CCDF, AM-AM/AM-PM and
 two-carrier intermodulation with real signals rather than tones. One MOD_Source holds any number of
 **carriers** around its centre frequency `Fc`; `Pavg` is the total average available power behind the
@@ -367,7 +367,12 @@ source impedance `Z`.
   channel bandwidth, NR subcarrier spacing, modulation, offset from `Fc`, relative power (dB) and the
   random-data seed. `BW`, `SCS` and `Off` take `Hz`, `kHz`, `MHz` or `GHz`; a bare number is in Hz. A
   `FILE` carrier plays a two-column I/Q text file, `File=` its path and `Fs=` its sample rate (taken from
-  the file's `# sample_rate_hz` header when absent).
+  the file's `# sample_rate_hz` header when absent). A `PCW` carrier is a pulse train,
+  `"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"`: the pulse repetition interval,
+  the width (50 % to 50 %), the 10–90 % edge times and the off-time before the rising edge (centred in
+  the PRI when absent). Its time fields take `s`, `ms`, `us` (or `µs`) or `ns`; a bare number is in
+  seconds. A `PCW` carrier must be the source's only carrier, and **`Pavg` is then the pulse-top power**,
+  not the record average: see [Pulsed CW](signal-designer.html#pulse).
 - `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
   clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
   `Shaping` — out-of-channel spectral floor (dBc), or `off`.
@@ -376,8 +381,9 @@ Select the source and press **Design signal…** in the inspector to open the
 [Signal Designer](signal-designer.html): the carriers and presets, or a custom I/Q file of your own, with
 the spectrum, the CCDF and the EVM of the signal before you simulate it.
 
-In a harmonic-balance or loadpull run a MOD_Source is a CW tone at `Fc` carrying the signal's average
-power; in an S-parameter run it is the passive impedance `Z`.
+In a harmonic-balance or loadpull run a MOD_Source is a CW tone at `Fc` carrying `Pavg` — the signal's
+average power, or for a pulsed-CW source the pulse-top power, the steady state of a pulse that never ends;
+in an S-parameter run it is the passive impedance `Z`.
 
 {{table: components/ModSource}}
 

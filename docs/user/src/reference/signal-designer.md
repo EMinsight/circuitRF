@@ -3,8 +3,8 @@ title: The Signal Designer
 slug: reference/signal-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Signal Designer
-lede: The modulated signal a MOD_Source plays - LTE, NR, CW or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
-keywords: Signal Designer, MOD_Source, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
+lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
+keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
 ---
 
 <nav class="toc">
@@ -16,6 +16,7 @@ keywords: Signal Designer, MOD_Source, modulated source, LTE, NR, OFDM, I/Q, IQ 
 <li><a href="#custom">A custom I/Q file</a></li>
 <li><a href="#waveform">Clipping and spectral shaping</a></li>
 <li><a href="#carriers">Carriers</a></li>
+<li><a href="#pulse">Pulsed CW</a></li>
 <li><a href="#preview">The spectrum and the CCDF</a></li>
 <li><a href="#evm">The EVM tab</a></li>
 <li><a href="#export">Export signal</a></li>
@@ -41,7 +42,9 @@ opens this page.
 
 - **Centre Fc** and **Pavg (dBm)** — the centre frequency the carriers sit around, and the total average
   available power behind the source impedance. Both accept a number or an expression (`RFfreq`, `Pin`),
-  which the Designer writes back exactly as typed, so a swept source stays swept.
+  which the Designer writes back exactly as typed, so a swept source stays swept. For a
+  [pulsed-CW](#pulse) source the field reads **Pulse-top power (dBm)**: the power on the flat top of the
+  pulse, with the record average and the power duty shown beneath it.
 - **Record (ms)** — the periodic record length, in whole 0.5 ms slots. ACPR settles within about 0.1 dB
   from 0.5 ms; a longer record tightens the statistics.
 - **Sample rate** — the rate of the preview and of the export. **Auto** picks the recommended rate for the
@@ -135,7 +138,7 @@ which always gives a whole number of samples per record.
 
 ## Carriers {#carriers}
 
-Each card is one carrier: its standard (**LTE**, **NR**, **CW** or **FILE**), channel bandwidth, NR
+Each card is one carrier: its standard (**LTE**, **NR**, **CW**, **PCW** or **FILE**), channel bandwidth, NR
 subcarrier spacing, modulation, offset from `Fc`, relative power and random-data seed. **+** adds a
 carrier beside the last; **×** removes one. With a single carrier, **Power** is disabled — it is relative
 to the others, and `Pavg` is the total. Carriers more than three channel bandwidths apart get their own
@@ -146,12 +149,64 @@ with LTE or NR carriers, the file must last a whole number of 0.5 ms slots.
 
 {{ui: signal-designer-2c}}
 
+## Pulsed CW {#pulse}
+
+A **PCW** card is a pulse train: a CW carrier switched on and off, the stimulus a pulsed-radar amplifier is
+specified with. The **Pulsed CW** preset replaces the carriers with one, or choose **PCW** in a card's standard
+list. The record is one pulse repetition interval, which repeats, so the Envelope analysis's
+**Stop** sets how many pulses are simulated. Its fields take a number in µs, or a number with its unit
+(`50 us`, `0.5 ms`, `500 ns`):
+
+| Field | Meaning | Default |
+|---|---|---|
+| **PRI** | pulse repetition interval. **PRF** is shown beside it | 100 µs |
+| **Width** | pulse width, from the 50 % point of the rising edge to the 50 % point of the falling edge. The duty is shown beside it | 10 µs |
+| **Rise**, **Fall** | the 10–90 % times of the raised-cosine edges | 100 ns |
+| **Delay** | the off-time before the rising edge leaves zero. Empty centres the pulse in the PRI, with equal off-time either side | centred |
+
+The envelope is exactly zero in the off-time and exactly one on the flat top. A pulse that cannot be
+generated is refused on the field it names: a width as long as the PRI, an edge longer than half the width,
+a pulse that ends past the PRI, a zero Delay, or a PRI that no 1.92 MHz × 2ᵏ sample rate divides into
+whole samples. Delay must be greater than zero because an envelope run starts from harmonic balance at
+the first sample of the record: in the off-time that is the quiescent point, so the first pulse starts
+cold.
+
+**Power is the pulse top.** A pulsed-CW record is normalised to unit power on the flat top, so the
+source's `Pavg` is the pulse-top available power — the number a radar specification states — and
+`Pin_avg_dBm` and `Pout_avg_dBm` in the results stay averages over the whole run, off-time included. Harmonic balance
+and loadpull play a MOD_Source as a CW tone at `Pavg`, which for a pulse is the top: the steady state of
+a pulse that never ends.
+
+**Its bandwidth is its edges'.** The faster edge sets the carrier's bandwidth (twice the band holding
+99 % of a raised-cosine edge's power, over 0.9, as an I/Q file's is measured), and the envelope rate, the
+preview's span and the sample rate follow from it. The native rate is the smallest 1.92 MHz × 2ᵏ that
+puts at least ten samples in the faster edge and a whole number in the PRI.
+
+A pulsed carrier is the source's only carrier: a pulse beside a modulated carrier has no clear power or
+record. With one on the card, **Record**, **Clip to PAPR**, **Spectral shaping** and **+** are disabled:
+the record is the PRI, and a pulse is neither clipped nor spectrally shaped. A pulse draws no random data,
+so its card has no **Seed**.
+
+In the netlist the card is
+
+```
+Carrier[1]="PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"
+```
+
+and two keys the card does not show set the [droop window](simulations.html#envelope-pulse):
+`MeasureStart` and `MeasureEnd`, fractions of the flat top (0.1 and 0.9 by default).
+
+Not modelled: modulation inside the pulse (linear FM chirps and phase codes, which real radar pulses
+usually carry — the natural next addition), and pulsing the gate or drain bias with the RF, which is a
+pulsed bias source rather than a signal.
+
 ## The spectrum and the CCDF {#preview}
 
 The **Spectrum** is the composite power spectral density against the offset from `Fc`, framed on the
-occupied channels. The **CCDF** is the probability that the instantaneous power exceeds the average by
+occupied channels; for a pulsed-CW source it is the train's. The **CCDF** is the probability that the instantaneous power exceeds the average by
 more than a given margin, against the Gaussian-noise reference (dashed). A clipped signal's curve bends
-down well inside the reference. Below the plots: the carrier count and instantaneous bandwidth, the record
+down well inside the reference. A pulse train's is a step: flat at about its duty, then nothing past its peak-to-average,
+which is 1 / its power duty (10 dB at 10 %). Below the plots: the carrier count and instantaneous bandwidth, the record
 and the rate, the PAPR at 0.01 % and the peak, and each carrier's ideal ACPR.
 
 ## The EVM tab {#evm}
@@ -170,7 +225,9 @@ record, with no per-subcarrier equaliser. The tab shows:
   shown (2 µs by default). It only redraws the plot, and Apply never writes it to the source.
 
 An unclipped signal reads close to 0 %. Clipping is what moves it. CW and I/Q-file carriers carry no
-reference symbols, so they have no EVM.
+reference symbols, so they have no EVM. A pulsed-CW signal has none either: for one, this tab reads
+**Pulse** and holds the pulse itself, |envelope| against time over one PRI, which zooms onto an edge like
+any plot.
 
 {{ui: signal-designer-evm}}
 

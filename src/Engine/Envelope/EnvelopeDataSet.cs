@@ -17,6 +17,10 @@
 //    Pin_avg_dBm, Pout_avg_dBm, Gt_dB, NMSE_dB, Pdc_W, DE_pct   scalars
 //    __EnvSnpFit [instance, metric]  order, rel_error, sigma_max of each SnP's
 //               rational fit (only when the circuit has one)
+//    A pulsed-CW source adds the pulse cubes of EnvelopePulse and drops
+//    ACLR, CCDF, PAPR, AM-AM / AM-PM, NMSE and Delay_s: they are defined
+//    for a modulated signal, and on a pulse train they print numbers that
+//    look like results.
 //  Measurements skip the first `SkipS` seconds (settling) when the run
 //  started with no warm-up.
 // ================================================================
@@ -35,9 +39,10 @@ public static class EnvelopeDataSet
     public const double AmGridLoDbm = -40, AmGridHiDbm = 60;
     public const int AmMinSamples = 16;
 
-    public static DataSet Build(EnvelopeRunResult r, EnvelopeRunner.Plan plan, double skipS = 0)
+    public static DataSet Build(EnvelopeRunResult r, EnvelopeRunner.Plan plan, double skipS = 0, Action<string>? note = null)
     {
         var ds = new DataSet();
+        var pulse = EnvelopePulse.Of(r);
         int nt = r.Time.Length, np = r.ProbeNames.Length, nk = r.Probe[0][0].Length;
         double zm = plan.Zmeas, fs = 1.0 / r.StepS;
         bool multi = r.MixTones is not null;
@@ -182,7 +187,7 @@ public static class EnvelopeDataSet
                 }
             }
             foreach (double v in tot) psdV[p].Add(10 * Math.Log10(Math.Max(v, 1e-300) / (2 * zm) * 1e3));
-            for (int c = 0; c < nc; c++)
+            for (int c = 0; c < nc && pulse is null; c++)
             {
                 int k = r.CarrierMix.Length > c ? r.CarrierMix[c] : 1;
                 var y = Env(p, k);
@@ -200,6 +205,7 @@ public static class EnvelopeDataSet
             foreach (int k in ks) { var y = Env(p, k); foreach (var v in y) ptot += v.Real * v.Real + v.Imaginary * v.Imaginary; }
             ptot /= nm;
             pavg[p] = 10 * Math.Log10(ptot / (2 * zm) * 1e3);
+            if (pulse is not null) continue;
             var y1 = Env(p, ks[0]);
             papr[p] = SignalMeasure.PaprDb(y1, 1e-4);
             var (db, pr) = SignalMeasure.Ccdf(y1, 200);
@@ -208,13 +214,17 @@ public static class EnvelopeDataSet
         }
         int nf = psdF.Count;
         ds.Add("PSD", new DataCube([probeAxis, new Axis("freq", psdF.ToArray(), "Hz")], psdV.SelectMany(x => x).ToArray()));
-        ds.Add("ACLR", new DataCube([probeAxis,
-            new Axis("carrier", Enumerable.Range(0, nc).Select(i => (double)i).ToArray(), "",
-                     r.CarrierLabels.Length == nc ? r.CarrierLabels : carSpecs.Select(c => c.Label).ToArray()),
-            new Axis("metric", Enumerable.Range(0, AclrLabels.Length).Select(i => (double)i).ToArray(), "", AclrLabels)], aclr));
+        if (pulse is null)
+            ds.Add("ACLR", new DataCube([probeAxis,
+                new Axis("carrier", Enumerable.Range(0, nc).Select(i => (double)i).ToArray(), "",
+                         r.CarrierLabels.Length == nc ? r.CarrierLabels : carSpecs.Select(c => c.Label).ToArray()),
+                new Axis("metric", Enumerable.Range(0, AclrLabels.Length).Select(i => (double)i).ToArray(), "", AclrLabels)], aclr));
         ds.Add("Pavg_dBm", new DataCube([probeAxis], pavg));
-        ds.Add("PAPR_dB", new DataCube([probeAxis], papr));
-        ds.Add("CCDF", new DataCube([probeAxis, new Axis("prob", probAxis!)], ccdf));
+        if (pulse is null)
+        {
+            ds.Add("PAPR_dB", new DataCube([probeAxis], papr));
+            ds.Add("CCDF", new DataCube([probeAxis, new Axis("prob", probAxis!)], ccdf));
+        }
         if (imd.Count > 0)
         {
             var im = new double[np * imd.Count];
@@ -249,7 +259,8 @@ public static class EnvelopeDataSet
             ds.Add("Pin_avg_dBm", DataCube.Scalar(10 * Math.Log10(pinW * 1e3)));
             ds.Add("Pout_avg_dBm", DataCube.Scalar(pavg[np - 1]));
             ds.Add("Gt_dB", DataCube.Scalar(10 * Math.Log10(poutW / pinW)));
-            if (!multi)
+            if (pulse is not null) note?.Invoke(EnvelopePulse.Add(ds, r, pulse, plan.Params.StartS, zm));
+            else if (!multi)
             {
                 var y = Env(np - 1, 1);
                 var (g, lag, nmse) = SignalMeasure.Align(drive, y, 16);

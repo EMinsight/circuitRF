@@ -225,9 +225,10 @@ namespace RfCore.Signals
         public static ModulatedSignal Generate(SignalSpec spec, IProgress<double>? progress = null, CancellationToken ct = default)
         {
             if (spec.Carriers.Count == 0) throw new ArgumentException("a signal needs at least one carrier");
+            var pulse = PulseOf(spec);
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
-            double record = iq?.DurationSeconds ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
+            double record = pulse?.Pri ?? iq?.DurationSeconds ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
             int halfMs = (int)Math.Round(record / 0.5e-3);
 
             var raw = new List<(CarrierSpec s, Complex[] x, double rate, double occ)>();
@@ -254,6 +255,14 @@ namespace RfCore.Signals
                         double rate = 1.92e6;
                         int n = (int)Math.Round(record * rate);
                         raw.Add((c, Enumerable.Repeat(Complex.One, n).ToArray(), rate, 0));
+                        break;
+                    }
+                    case CarrierStandard.Pcw:
+                    {
+                        // Unit power on the flat top, never normalised to unit mean: Pavg states the pulse-top power.
+                        var shape = pulse!;
+                        double rate = PulsedCw.NativeRateHz(shape), bw = PulsedCw.BandwidthHz(shape);
+                        raw.Add((c with { BandwidthHz = bw }, PulsedCw.Generate(shape, rate), rate, 0.9 * bw));
                         break;
                     }
                     default:
@@ -288,6 +297,19 @@ namespace RfCore.Signals
                 };
             }).ToList();
             return new ModulatedSignal(spec, recs, record);
+        }
+
+        /// <summary>The pulse of a pCW signal (null when there is none), refused when a pulsed carrier shares the source
+        /// with any other carrier — a pulse beside a modulated carrier has no clear power or record — or is clipped.</summary>
+        public static PulseShape? PulseOf(SignalSpec spec)
+        {
+            var pcw = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.Pcw);
+            if (pcw is null) return null;
+            if (spec.Carriers.Count > 1)
+                throw new ArgumentException("a pulsed-CW (PCW) carrier must be the source's only carrier");
+            if (spec.ClipPaprDb is not null)
+                throw new ArgumentException("a pulsed-CW (PCW) carrier is not clipped: remove Clip from the source");
+            return PulsedCw.Validate(pcw);
         }
     }
 

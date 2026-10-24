@@ -3707,3 +3707,57 @@ not rational in freq (a pure 20 ns delay expression) was refused after 38 s by t
   per-line error the note reports (`Error` compares against the exact Zc(f)), so nothing about it goes unreported.
 - **The segment warm-up does not count a line's delay as memory** (`EnvelopeMemory` holds lines at DC). It does not need
   to: the warm-up is at least 5 µs, and a line would have to be ~1.5 km long to delay that much.
+
+## Envelope: a pulsed-CW source, and what is measured inside its pulses (brief ENV-PCW, 2026-10-24)
+
+`PCW` is a fifth carrier standard (`src/RfCore/Signals/PulsedCw.cs`); `EnvelopePulse` measures it. What was not
+obvious:
+
+- **The pulse fields are nullable on `CarrierSpec`, and that is load-bearing.** `CacheKey()` hashes the spec's JSON,
+  and System.Text.Json writes every public property — `Label` included. A defaulted `double` pulse field would have
+  appeared in every LTE/NR/CW/FILE carrier's JSON and moved every existing cache key; null with `WhenWritingNull`
+  leaves them byte-identical (checked: samples, cache keys, labels and netlist text of all four, before and after).
+  `GeneratorVersion` was deliberately NOT bumped for the same reason.
+- **Unit power on the TOP, not unit mean.** `SignalComposer` normalises every other carrier to unit mean power; a pCW
+  record is left at exactly 1 on the flat top, so `VsPeak` (built from `Pavg`) makes `Pavg` the pulse-top power with no
+  code in the source or the engine, and harmonic balance (which plays `Pavg` as CW) sees the top. `Pin_avg_dBm`
+  computed from the drive stays the record average.
+- **A pulse skips no settle.** A cold run is measured after `min(5 µs, Stop/10)`; on a pulse that drops off-time and
+  biased `Pin_avg_dBm` by +0.11 dB on a 200 µs record (a 0.498 power duty read as 0.511). A pulse starts at quiescent in its
+  off-time and has nothing to settle, so the skip is zero for it.
+- **The PRI test must be absolute.** `SignalRate.Divides` judges "whole samples" relative to the count; doubling the rate
+  until a PRI divides would then accept any PRI once the count is large enough (a 100.5 µs PRI, which no
+  1.92 MHz × 2ᵏ rate divides, passed within sixteen doublings). The native
+  rate search uses an absolute 1e-6 sample and at most 2⁸ above the edge's own need.
+- **The engine interpolates the pulse, it does not sample it.** The envelope step is 4× (standard) the native rate, so
+  `CompositeWindow`'s Kaiser sinc reconstructs the drive between native samples. Within ±24 native samples of an edge
+  that leaves sub-1e-4 ripple; the off-time and top away from the edges are exact. The droop window (10-90 % of the top)
+  is far clear of it.
+- **The memory note costs one extra elaboration**, and only on a pCW run: `Prepare` measures the slowest memory once
+  (lazily) and both the note and the segment warm-up read that one answer.
+- **`DE_pct` on a pulse is the SUPPLY's, and a storage capacitor shifts it in time.** During a pulse most of the drain's
+  energy comes out of the storage capacitor, and the supply repays it over the next few R·C after the fall. A run
+  that stops inside that recharge never counts the last repayment: one 100 µs pulse stopped 4 µs after its fall read
+  `DE_pct` 126 % (470 µF through 0.2 Ω). Nothing in the engine can tell stored charge from delivered energy, so the
+  doc states the rule instead: end `Stop` after the last pulse's recharge.
+- **Pulse cubes and the zero settle answer the same question the same way.** The skip used to look at the first
+  netlist's first `MOD_Source`, and the cubes at the merged result's sources; both now go through `EnvelopePulse.Of`.
+
+## Harmonic balance: a source directly on a nonlinear port was not honoured (2026-10-24)
+
+An ideal voltage source with nothing between it and a nonlinear device's port pins that interface node at every
+harmonic: its row and column of `Z_NN` are exactly zero. `ExtractDC`'s inductance regularization cures only the DC case
+of an ideal CHOKE through a source; with the source on the port nothing changed, and the per-harmonic `Extract` had no
+handling at all. `InvertNN`'s Gauss-Jordan skipped the singular row, leaving that node with no equation the device
+current could balance against. Nothing failed: the solve converged, and the node behaved as if about 1 Ω stood between
+it and its source. Found when an ideal 0 V source on an SDD's thermal port let the junction sit at 22.7 K (DC: 0), and a
+0.5 V source on an SDD diode read 0.49975 V.
+
+- **Fix:** `HbLinearExtractor.RegularizePinned` puts `InductanceRegR` (1 µΩ) on a pinned diagonal before every
+  inversion — the same R → 0 limit the inductive pass converges to — and `HbSmallSignalCache` calls it too, so the
+  stability probe's `Y_NN` stays the Newton's. A port that is not pinned, and a grounded interface node, are untouched,
+  so every other circuit is bit-identical (the HB, envelope and loadpull classes, 523 tests, unchanged).
+- Under `InductanceRegularization=Never` the DC path still throws first, as it did; the AC path regularizes regardless,
+  because it never had a refusal and was silently wrong. Gate: `HbPinnedPortTests`.
+- **When building an isothermal SDD bench by hand, hold the thermal node with a small resistor or an ideal source
+  alike now** — before this fix only the resistor gave the right answer in harmonic balance.

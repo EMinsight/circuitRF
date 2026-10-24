@@ -165,6 +165,17 @@ public static class EnvelopeRunner
         if (fundamentals > 2)
             throw new InvalidOperationException($"envelope: {fundamentals} widely spaced carrier groups would need {fundamentals} fundamentals; up to 2 are supported");
 
+        // measured once, on a netlist of its own, and only when something asks
+        bool measured = false;
+        EnvelopeMemory.Slowest? slowest = null;
+        EnvelopeMemory.Slowest? SlowestMemory()
+        {
+            if (!measured) { slowest = Memory(first, allSrc, elaborate, settings ?? new AnalysisSettings(), p.StopS); measured = true; }
+            return slowest;
+        }
+        if (allSrc.Length == 1 && SignalComposer.PulseOf(allSrc[0].Spec) is { } pulse)
+            note?.Invoke(PulseMemoryNote(pulse, p, SlowestMemory()));
+
         int cores = Math.Max(1, Environment.ProcessorCount);
         double warm = double.IsNaN(plan.WarmupS) ? 5e-6 : plan.WarmupS;
         int most = plan.Segments > 0 ? plan.Segments : maxSegments > 0 ? Math.Min(maxSegments, cores) : cores;
@@ -176,7 +187,7 @@ public static class EnvelopeRunner
         // An explicit Segments or Warmup is obeyed as written (the seam warning reports what it costs), and a run that
         // stays one segment anyway is not asked.
         if (segs > 1 && plan.Segments == 0 && double.IsNaN(plan.WarmupS) &&
-            Memory(first, allSrc, elaborate, settings ?? new AnalysisSettings(), p.StopS) is { } memory &&
+            SlowestMemory() is { } memory &&
             5 * memory.Seconds > warm)
         {
             warm = 5 * memory.Seconds;
@@ -256,6 +267,24 @@ public static class EnvelopeRunner
                 if (2 * port < ec.Nodes.Length && ec.Nodes[2 * port] > 0)
                     state.Add(nl.Nodes.NameOf(ec.Nodes[2 * port]));
         return [.. probes.Select(n => state.Contains(n) || n.StartsWith("__", StringComparison.Ordinal))];
+    }
+
+    /// <summary>
+    /// What a pulsed-CW run will show, said before it starts, because a thermal train is long: the slowest memory the
+    /// circuit holds against Stop. A train settles only after several of its slowest time constants, so a run shorter
+    /// than five of them measures the first pulses from cold rather than a settled train.
+    /// </summary>
+    internal static string PulseMemoryNote(PulseShape pulse, EnvelopeParams p, EnvelopeMemory.Slowest? memory)
+    {
+        int pulses = EnvelopePulse.Starts(pulse, p.StartS, p.StopS).Count;
+        string head = $"Pulsed CW: {pulses} pulse{(pulses == 1 ? "" : "s")} of {PulsedCw.FormatTime(pulse.Width)} every " +
+                      $"{PulsedCw.FormatTime(pulse.Pri)} in Stop {PulsedCw.FormatTime(p.StopS)}.";
+        if (memory is null) return head + " The circuit declares no slow memory, so every pulse is a settled one.";
+        double settle = 5 * memory.Seconds;
+        return settle <= p.StopS - pulse.Pri
+            ? $"{head} The slowest memory, {memory.What} ({EnvelopeMemory.Time(memory.Seconds)}), settles within the run: the last pulses are a settled train."
+            : $"{head} The slowest memory, {memory.What} ({EnvelopeMemory.Time(memory.Seconds)}), needs about {EnvelopeMemory.Time(settle)} to settle: " +
+              "this run shows the first pulse from cold, not a settled train.";
     }
 
     /// <summary>The slowest memory of the circuit: what its models declare, or its linear network's slowest pole, measured
@@ -369,8 +398,11 @@ public static class EnvelopeRunner
                          "Set Warm-up and Segments to auto in the Envelope analysis setup.");
         // a run that started cold (no warm-up on its first segment) is measured after a short settle
         double firstWarm = segs > 1 ? warm : (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS);
-        double skip = firstWarm > 0 ? 0 : Math.Min(5e-6, 0.1 * p.StopS);
-        var ds = EnvelopeDataSet.Build(merged, plan, skip);
+        // — except a pulse train, which starts in its off-time at the quiescent point and has nothing to settle: its
+        // Pin_avg and Pout_avg are then averages over the whole record, off-time included
+        double skip = firstWarm > 0 || EnvelopePulse.Of(merged) is not null
+            ? 0 : Math.Min(5e-6, 0.1 * p.StopS);
+        var ds = EnvelopeDataSet.Build(merged, plan, skip, note);
         ds.Add("__EnvSegments", DataCube.Scalar(segs));
         ds.Add("__EnvWarmup_s", DataCube.Scalar(warm));
         ds.Add("__EnvSeamError", DataCube.Scalar(seam));

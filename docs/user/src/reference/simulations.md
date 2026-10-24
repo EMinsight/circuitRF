@@ -4,7 +4,7 @@ slug: reference/simulations.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Simulations
 lede: Every analysis circuitRF runs, what it computes, a short overview of the method, and the full set of settings. Algorithm details are deferred to the design notes / white papers; this chapter is the operational reference.
-keywords: analysis, sweep, DC, S-parameters, harmonic balance, HB, loadpull, load pull, parametric sweep, run, simulate, envelope, modulated, ACLR, ACPR
+keywords: analysis, sweep, DC, S-parameters, harmonic balance, HB, loadpull, load pull, parametric sweep, run, simulate, envelope, modulated, ACLR, ACPR, pulsed CW, pulse droop, pulse-to-pulse, radar
 ---
 
 <nav class="toc">
@@ -124,13 +124,15 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
 
 ## Circuit Envelope (modulated signals) {#envelope}
 
-**Computes:** the circuit's response to a **modulated** signal — LTE, NR, several carriers, or an
-imported I/Q waveform from a [MOD_Source](components.html#modsource), designed in the
+**Computes:** the circuit's response to a **modulated** signal — LTE, NR, several carriers, a pulsed-CW
+train, or an imported I/Q waveform from a [MOD_Source](components.html#modsource), designed in the
 [Signal Designer](signal-designer.html) — as a time series of
 harmonic-balance spectra, and from it the modulated measurements: **ACLR / ACPR1 / ACPR2** per carrier,
 channel power, **PAPR and CCDF**, **AM-AM and AM-PM** (with the memory spread), gain, error (NMSE)
 against the input, **drain efficiency** from the DC supply currents, and for two widely spaced
-carriers the **IM2 / IM3 / IM5** products.
+carriers the **IM2 / IM3 / IM5** products. For a pulsed-CW source it measures inside the pulses instead:
+**pulse droop**, **pulse-to-pulse** spread, phase droop, rise and fall (see
+[Pulsed CW: what is measured](#envelope-pulse)).
 
 **Method.** Every envelope time step is one harmonic-balance solve with a time derivative added to
 each charge (Gear-2, backward Euler on the first step). The linear network is factored once per
@@ -252,7 +254,53 @@ Things to keep in mind:
   available power.
 - **With two fundamentals** (carriers on the mixing lattice), `Pdc_W` and `DE_pct` are not produced.
 
+### Pulsed CW: what is measured {#envelope-pulse}
+
+A [pulsed-CW](signal-designer.html#pulse) source turns the run into a pulse measurement. Harmonic
+balance cannot see what happens inside a pulse: it solves one steady state, so the device sits at one
+temperature and one trap state. An envelope run steps a [ComposedFET](model-composer.html)'s thermal
+and trap states, and the bias network's storage, as real memory over time, so the output falls across
+the top of each pulse as the channel heats and the drain supply sags.
+
+The run starts from harmonic balance at the first sample of the record, which for a pulse is the
+off-time, so the first pulse starts from the quiescent point. A record that started on the pulse top
+would start with the device already at its CW temperature, and the first pulse would show no droop at
+all; that is why a pulse's `Delay` must be greater than zero.
+
+On the **last probe** (the one `Pout_avg_dBm` is read at), it adds:
+
+| Cube | Axes | Meaning |
+|---|---|---|
+| `Pout_t_dBm` | time | output power at every step, floored at −100 dBm in the off-time, so it plots with no arithmetic |
+| `PulseTop_dBm` | pulse | Pout at the droop window's start |
+| `PulseDroop_dB` | pulse | Pout at the window's start minus at its end: positive is drooping |
+| `PulsePhaseDroop_deg` | pulse | the output phase (relative to the input) at the window's start minus at its end |
+| `PulseRise_s`, `PulseFall_s` | pulse | the 10–90 % times of the output envelope |
+| `PulseToPulse_dB`, `PulseToPulse_deg` | — | the peak-to-peak spread over the pulses of `PulseTop_dBm`, and of the output phase at the window's start; the first pulse counts |
+
+The **droop window** is the flat top from `MeasureStart` to `MeasureEnd` (10–90 % of the top by
+default; set them on the carrier). A pulse only partly inside `Stop` is not measured, and the Messages
+pane says how many were and over which window. `ACLR`, `CCDF`, `PAPR`, `AM-AM` / `AM-PM` and `NMSE`
+are not reported for a pulse: they are defined for a modulated signal, and on a pulse train they print
+numbers that look like results. `Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`, `Pdc_W` and `DE_pct` are
+averages over the whole run, off-time included, with no settling skipped (the train starts at
+quiescent and has nothing to settle), so they depend on how many pulses `Stop` holds. `Pdc_W` is
+what the DC sources deliver, so a drain fed from a storage capacitor draws most of each pulse's energy
+from the capacitor and repays the supply after the pulse: end `Stop` once the last pulse's recharge is
+over (about five of the supply resistance × storage capacitance time constants after its fall), or
+`DE_pct` reads high — above 100 % on a run that stops at the end of a pulse.
+
+**Before the run starts**, the Messages pane states how many pulses `Stop` holds and the circuit's
+slowest memory — a thermal pole, a trap's emission, the bias network — against it: a run shorter than
+about five of those time constants shows **the first pulse from cold**, not a settled train. A drain-lag
+trap that captures at the pulse peak in nanoseconds and emits over a millisecond lowers the quiescent
+current after the first pulse, so pulse 1 differs from pulse 2: that is current collapse, the effect a
+pulse-to-pulse figure exists to report. A thermal train settles only after several of its slowest time
+constants, which on a package pole means milliseconds of record at a step of a few nanoseconds.
+
 From the command line: `circuitrf env design.cnl [--stop 0.5e-3] [--accuracy standard] [-o out.npy]`.
+For a pulsed-CW source the table prints each pulse's top power, droop, phase droop, rise and fall, then
+the pulse-to-pulse spread.
 
 ## Parametric Sweep {#parametric-sweep}
 

@@ -1484,5 +1484,23 @@ src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a frequency: a n
 src/RfCore/Signals/SignalSpec.cs|empty carrier description
 src/RfCore/Signals/SignalSpec.cs|empty signal description
 src/RfCore/Signals/SignalSpec.cs|unknown carrier field '{k}'
-src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW or FILE)
+src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW or FILE)
 src/RfCore/Signals/SignalSpec.cs|unknown modulation '{v}' (QPSK, 16QAM, 64QAM, 256QAM, 1024QAM)
+
+# ── Pulsed-CW carrier (brief ENV-PCW, 2026-10-24) ─────────────────────────────────────
+# Siblings of the carrier-parse refusals above, in the same plain FormatException family, so a
+# netlist's carrier text is refused in one voice whichever field is wrong.
+src/Core/Devices/ModSourceModel.cs|MOD_Source '{name}': {ex.Message}
+src/RfCore/Signals/ModulatedSignal.cs|a pulsed-CW (PCW) carrier is not clipped: remove Clip from the source
+src/RfCore/Signals/ModulatedSignal.cs|a pulsed-CW (PCW) carrier must be the source's only carrier
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: Delay ({T(s.Delay)}) + PW ({T(s.Width)}) and half of each edge end the pulse at {T(s.End)}, past the PRI ({T(s.Pri)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: Delay must be greater than 0 (got {T(s.Delay)}), so the run starts in the off-time, at the quiescent point
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: Fall ({T(s.Fall)}) is longer than half of PW ({T(s.Width / 2)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: MeasureStart and MeasureEnd are fractions of the flat top, 0 <= MeasureStart < MeasureEnd <= 1 (got {s.MeasureStart.ToString(CultureInfo.InvariantCulture)} and {s.MeasureEnd.ToString(CultureInfo.InvariantCulture)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: PRI {FormatTime(s.Pri)} is not a whole number of samples at any 1.92 MHz x 2^k rate; choose a PRI that is (100 us, 1 ms, 250 us ...)
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: PW ({T(s.Width)}) must be shorter than PRI ({T(s.Pri)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: Rise ({T(s.Rise)}) is longer than half of PW ({T(s.Width / 2)})
+src/RfCore/Signals/PulsedCw.cs|pCW carrier: {field} must be a positive time (got {T(v)})
+src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to a PCW carrier
+src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a fraction of the pulse top
+src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a time: a number with s, ms, us or ns

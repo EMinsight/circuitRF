@@ -173,6 +173,7 @@ internal static class EnvelopeVerb
     private static void PrintSweep(DataSet ds, ParametricSweepAnalysis sweep)
     {
         var inv = CultureInfo.InvariantCulture;
+        if (ds.Cubes.TryGetValue("PulseDroop_dB", out var droop)) { PrintPulseSweep(ds, sweep, droop); return; }
         if (!ds.Cubes.TryGetValue("ACLR", out var a)) { Console.WriteLine("(no ACLR cube)"); return; }
         var ax = a.Axes;
         var vals = ax[0].Values;
@@ -214,7 +215,30 @@ internal static class EnvelopeVerb
                         nodes[p], a.RealValues[o], a.RealValues[o + 1], a.RealValues[o + 2], a.RealValues[o + 3], a.RealValues[o + 4], car[c]));
                 }
         }
-        foreach (var k in new[] { "Pin_avg_dBm", "Pout_avg_dBm", "Gt_dB", "NMSE_dB", "DE_pct", "Pdc_W", "__EnvSeamError", "__EnvTangentError" })
+        if (ds.Cubes.TryGetValue("PulseDroop_dB", out var droop))
+        {
+            // a pulsed-CW source: the pulse figures stand where ACLR does for a modulated one
+            Console.WriteLine("  pulse   top dBm   droop dB   phase droop deg   rise ns   fall ns");
+            var top = ds.Cubes["PulseTop_dBm"].RealValues; var ph = ds.Cubes["PulsePhaseDroop_deg"].RealValues;
+            var rise = ds.Cubes["PulseRise_s"].RealValues; var fall = ds.Cubes["PulseFall_s"].RealValues;
+            for (int i = 0; i < droop.RealValues.Length; i++)
+                Console.WriteLine(string.Format(inv, "  {0,5} {1,9:0.000} {2,10:0.0000} {3,17:0.000} {4,9:0.0} {5,9:0.0}",
+                    i + 1, top[i], droop.RealValues[i], ph[i], rise[i] * 1e9, fall[i] * 1e9));
+        }
+        foreach (var k in new[] { "PulseToPulse_dB", "PulseToPulse_deg", "Pin_avg_dBm", "Pout_avg_dBm", "Gt_dB", "NMSE_dB", "DE_pct", "Pdc_W", "__EnvSeamError", "__EnvTangentError" })
             if (ds.Cubes.ContainsKey(k)) Console.WriteLine(string.Format(inv, "  {0,-18} {1:0.####}", k.TrimStart('_'), S(ds, k)));
+    }
+
+    /// <summary>One line per sweep point of a pulsed-CW run: the swept value, then each pulse's droop and top.</summary>
+    private static void PrintPulseSweep(DataSet ds, ParametricSweepAnalysis sweep, DataCube droop)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var vals = droop.Axes[0].Values;
+        int n = droop.Axes[^1].Values.Length;
+        var top = ds.Cubes.TryGetValue("PulseTop_dBm", out var t) ? t.RealValues : null;
+        Console.WriteLine($"Sweep {sweep.Name} over {sweep.SweepVarName}:   droop dB (top dBm) of pulses 1..{n}");
+        for (int i = 0; i < vals.Length; i++)
+            Console.WriteLine(string.Format(inv, "  {0,-11:G5} ", vals[i]) + string.Join("  ", Enumerable.Range(0, n).Select(j =>
+                string.Format(inv, "{0:0.0000} ({1:0.00})", droop.RealValues[i * n + j], top?[i * n + j] ?? double.NaN))));
     }
 }

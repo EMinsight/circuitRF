@@ -19,6 +19,10 @@ namespace CircuitRF.Core.Devices;
 /// </code>
 /// Optional: <c>Clip=8</c> (target PAPR, dB; absent = unclipped), <c>Shaping=-80</c> (dBc floor; <c>Shaping=off</c>).
 ///
+/// A pulsed-CW carrier (<c>Carrier[1]="PCW;PRI=100us;PW=50us;..."</c>) must be the source's only carrier, and its
+/// record is normalised to unit power on the flat top, so <c>Pavg</c> is then the PULSE-TOP available power and
+/// harmonic balance and loadpull see the top: the right steady state for a pulse.
+///
 /// Node layout (as P1Tone): [0] external, [1] reference, [2] minted <c>__modsrc_&lt;inst&gt;_drv</c>.
 ///
 /// What each analysis sees:
@@ -169,6 +173,11 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
             ClipPaprDb = clip,
             ShapingFloorDbc = shaping,
         };
+        try { SignalComposer.PulseOf(spec); }
+        catch (Exception ex) when (ex is ArgumentException or FormatException)
+        {
+            throw new InvalidOperationException($"MOD_Source '{name}': {ex.Message}");
+        }
         return new ModSourceModel(name, z, Required("Pavg", "average power in dBm"), Required("Fc", "centre frequency"), spec);
     }
 }

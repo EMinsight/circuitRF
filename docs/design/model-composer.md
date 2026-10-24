@@ -1645,7 +1645,8 @@ Each departure from the briefs, with its reason. The detail of each is in the `R
 - **The extrapolation conductance near a data edge.** `G_x` is ten times the largest own-branch conductance anywhere in
   the data; for a gate current that is the forward diode's, so a millivolt past the lowest measured `Vgs` the gate already
   conducts tens of millisiemens. The example's data therefore spans the swing its benches reach. A `G_x` scaled to the
-  local conductance at the edge would make data a few volts short of the swing far less punishing.
+  local conductance at the edge would make data a few volts short of the swing far less punishing. Measured on the Pulsed
+  Radar device (1 A of reverse gate current 1 V past the data, an early saturation): brief MC-29.
 - **`ValidationBench` on a self-heating model at the intrinsic plane** writes a `ComposedCore` with three nets, which a
   thermal core refuses (it takes four). Only intrinsic-plane data sets of self-heating models reach it.
 

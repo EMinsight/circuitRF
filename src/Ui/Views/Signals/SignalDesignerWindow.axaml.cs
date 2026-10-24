@@ -64,6 +64,7 @@ public partial class SignalDesignerWindow : Window
         this.FindControl<PlotControl>("CcdfPlotControl")?.SetValue(PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
         this.FindControl<PlotControl>("ConstellationPlotControl")?.SetValue(PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
         this.FindControl<PlotControl>("EnvelopePlotControl")?.SetValue(PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
+        this.FindControl<PlotControl>("PulsePlotControl")?.SetValue(PlotControl.PlotThemeProperty, Vm.PlotHost.Theme);
     }
 
     private SignalDesignerViewModel? Vm => DataContext as SignalDesignerViewModel;
@@ -78,6 +79,7 @@ public partial class SignalDesignerWindow : Window
 
     private readonly System.Collections.ObjectModel.ObservableCollection<MarkerInfoBoxViewModel> _spectrumBoxes = [];
     private readonly System.Collections.ObjectModel.ObservableCollection<MarkerInfoBoxViewModel> _evmBoxes = [];
+    private readonly System.Collections.ObjectModel.ObservableCollection<MarkerInfoBoxViewModel> _pulseBoxes = [];
     private (PlotControl Plot, PlotContainerViewModel Container, ItemsControl Layer)[] _hosted = [];
 
     private void WireMarkers(SignalDesignerViewModel vm)
@@ -86,12 +88,15 @@ public partial class SignalDesignerWindow : Window
         var evm = this.FindControl<ItemsControl>("EvmInfoBoxLayer")!;
         spectrum.ItemsSource = _spectrumBoxes;
         evm.ItemsSource = _evmBoxes;
+        var pulse = this.FindControl<ItemsControl>("PulseInfoBoxLayer")!;
+        pulse.ItemsSource = _pulseBoxes;
         _hosted =
         [
             (this.FindControl<PlotControl>("PsdPlotControl")!, vm.PsdContainer, spectrum),
             (this.FindControl<PlotControl>("CcdfPlotControl")!, vm.CcdfContainer, spectrum),
             (this.FindControl<PlotControl>("ConstellationPlotControl")!, vm.ConstellationContainer, evm),
             (this.FindControl<PlotControl>("EnvelopePlotControl")!, vm.EnvelopeContainer, evm),
+            (this.FindControl<PlotControl>("PulsePlotControl")!, vm.PulseContainer, pulse),
         ];
         foreach (var (plot, container, _) in _hosted)
         {
@@ -117,6 +122,7 @@ public partial class SignalDesignerWindow : Window
         if (Vm is null) return;
         Refill(_spectrumBoxes, Vm.PsdContainer, Vm.CcdfContainer);
         Refill(_evmBoxes, Vm.ConstellationContainer, Vm.EnvelopeContainer);
+        Refill(_pulseBoxes, Vm.PulseContainer);
 
         void Refill(System.Collections.ObjectModel.ObservableCollection<MarkerInfoBoxViewModel> into, params PlotContainerViewModel[] mine)
         {
@@ -154,7 +160,7 @@ public partial class SignalDesignerWindow : Window
         Vm.PlotHost.SelectOnly((MarkerInfoBoxViewModel?)null);
     }
 
-    private static readonly string[] PlotNames = ["PsdPlotControl", "CcdfPlotControl", "ConstellationPlotControl", "EnvelopePlotControl"];
+    private static readonly string[] PlotNames = ["PsdPlotControl", "CcdfPlotControl", "ConstellationPlotControl", "EnvelopePlotControl", "PulsePlotControl"];
 
     /// <summary>
     /// The Designer edits its plots in place (same Plot, new traces), and a PlotControl repaints by itself only when

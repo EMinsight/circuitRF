@@ -208,7 +208,7 @@ public sealed class HbLinearExtractor
                 (zNN, _) = ZColumns(entry.Lu, entry.Size);
             }
 
-            entry.YNN = InvertNN(zNN, _N);
+            entry.YNN = InvertNN(RegularizePinned(zNN), _N);
         }
 
         // V_oc with the bias sources active, against the SAME factorization.
@@ -276,6 +276,23 @@ public sealed class HbLinearExtractor
             if (Complex.Abs(zNN[i, i]) < 1e-15) singular.Add(i);
 
         return (zNN, singular);
+    }
+
+    /// <summary>
+    /// A port the linear network holds rigidly — an ideal source, or an ideal short to one, directly on it — has a zero
+    /// row and column in Z_NN at that frequency, and Z_NN cannot be inverted. Inductance regularization cures only the
+    /// DC case of an ideal choke through a source; a source ON the port pins it at every harmonic, and Gauss-Jordan,
+    /// skipping the singular row, left that node with no equation the device current could balance against (an ideal
+    /// 0 V source on an SDD's thermal port let the node sit at 22.7 K, where DC holds it at 0). The pinned port takes
+    /// <see cref="AnalysisSettings.InductanceRegR"/> in series instead, Y = 1/R: the same R → 0 limit the inductive pass
+    /// converges to. A port that is not pinned, and a grounded interface node, are untouched.
+    /// </summary>
+    internal Complex[,] RegularizePinned(Complex[,] zNN)
+    {
+        for (int i = 0; i < _N; i++)
+            if (_interfaceNodes[i] > 0 && Complex.Abs(zNN[i, i]) < 1e-15)
+                zNN[i, i] = new Complex(_settings.InductanceRegR, 0);
+        return zNN;
     }
 
     /// <summary>I_src[k] = −Σ_j Y_{N×N}[k,j]·V_oc[j], with V_oc read off a full solution vector.</summary>
@@ -389,7 +406,7 @@ public sealed class HbLinearExtractor
         // ── Step 1: Y_{N×N} via Z-column extraction ───────────────────────────
         // Only on a genuine miss, or when the entry was created by a path that did not need Y
         // (the back-solver, the control-sensitivity row) — never a refactorization either way.
-        entry.YNN ??= InvertNN(ZColumns(entry.Lu, entry.Size).ZNN, _N);
+        entry.YNN ??= InvertNN(RegularizePinned(ZColumns(entry.Lu, entry.Size).ZNN), _N);
 
         // ── Step 2: V_oc with sources active → I_src = −Y_{N×N}·V_oc ─────────
         var bSrc = mna.BuildRhs();
@@ -439,7 +456,7 @@ public sealed class HbLinearExtractor
     public LinearPartition LinearPartitionAt(double omega)
     {
         var entry = EnsureFactorization(omega, StampAt(omega));
-        entry.YNN ??= InvertNN(ZColumns(entry.Lu, entry.Size).ZNN, _N);
+        entry.YNN ??= InvertNN(RegularizePinned(ZColumns(entry.Lu, entry.Size).ZNN), _N);
         return new LinearPartition(entry.Lu, entry.Size, entry.YNN);
     }
 

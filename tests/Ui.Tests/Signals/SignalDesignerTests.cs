@@ -482,4 +482,89 @@ public class SignalDesignerTests
         }
         finally { System.IO.Directory.Delete(ws, recursive: true); }
     }
+
+    // ── pulsed CW (brief ENV-PCW §3, gate 8) ────────────────────────────────
+
+    private const string PulseText = "PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0";
+
+    private static (SchematicViewModel vm, EditableComponent src) PulseBench()
+    {
+        var (vm, s) = Bench(pavg: "18");
+        foreach (var p in s.Parameters.Where(p => p.Name.StartsWith("Carrier[")).ToList()) s.Parameters.Remove(p);
+        s.Parameters.Add(new EditableParameter { Name = "Carrier[1]", Expression = "\"" + PulseText + "\"" });
+        s.Parameters.Add(new EditableParameter { Name = "Clip", Expression = "8" });
+        return (vm, s);
+    }
+
+    [Fact]
+    public void Pulse_LoadsItsCard_GreysWhatAPulseIgnores_AndAppliesBackUnchanged()
+    {
+        var (vm, s) = PulseBench();
+        using var d = new SignalDesignerViewModel();
+        d.SetTarget(vm, s, preview: false);
+        var c = Assert.Single(d.Carriers);
+        Assert.Equal(("PCW", "100", "50", "0.5", "0.5", "10"), (c.Standard, c.PriText, c.WidthText, c.RiseText, c.FallText, c.DelayText));
+        Assert.Equal(("PRF 10 kHz", "duty 50 %"), (c.PrfText, c.DutyText));
+        Assert.True(d.IsPulse);
+        Assert.False(d.CanEditRecord || d.CanClip || d.CanShape || d.CanAddCarrier);
+        Assert.Equal("Pulse-top power (dBm)", d.PowerLabel);
+        Assert.StartsWith("Record average 14.97 dBm", d.PulsePowerInfo);
+        Assert.Null(d.BuildSpec().ClipPaprDb);
+
+        d.ApplyCommand.Execute(null);
+        Assert.Equal("\"" + PulseText + "\"", s.Parameters.Single(p => p.Name == "Carrier[1]").Expression);
+        Assert.DoesNotContain(s.Parameters, p => p.Name == "Clip");
+    }
+
+    [Fact]
+    public void Pulse_FieldsRefuseAsTyped_OnTheFieldTheRefusalNames()
+    {
+        var (vm, s) = PulseBench();
+        using var d = new SignalDesignerViewModel();
+        d.SetTarget(vm, s, preview: false);
+        var c = d.Carriers[0];
+
+        c.WidthText = "fifty";                                       // not a time: marked, the value stays
+        Assert.True(c.HasWidthError);
+        Assert.Equal(50e-6, c.WidthS);
+        c.WidthText = "0.1 ms";                                      // a time, but PW >= PRI: PW is marked, PRI is not
+        Assert.Equal(100e-6, c.WidthS, 12);
+        Assert.True(c.HasWidthError);
+        Assert.False(c.HasPriError);
+        Assert.Contains("must be shorter than PRI", c.WidthError);
+        c.WidthText = "50";
+        Assert.False(c.HasWidthError);
+
+        c.DelayText = "";                                            // empty = centred, and says where that is
+        Assert.Null(c.DelayS);
+        Assert.False(c.HasDelayError);
+        Assert.StartsWith("empty: centred, 24.", c.DelayInfo);
+        d.ApplyCommand.Execute(null);
+        Assert.DoesNotContain("Delay", s.Parameters.Single(p => p.Name == "Carrier[1]").Expression);
+    }
+
+    [Fact]
+    public async Task Pulse_KeepsItsCcdf_AndThePulseTakesTheEvmTab()
+    {
+        var (vm, s) = PulseBench();
+        using var d = Open(vm, s);
+        await d.PreviewAsync();
+        Assert.Equal(2, d.CcdfPlot.Traces.Count);                        // the train's CCDF is as true as any signal's
+        var t = Assert.Single(d.PulsePlot.Traces);
+        Assert.Equal("Pulse", t.CubeName);
+        Assert.Equal("Pulse", d.SecondTabHeader);
+        Assert.StartsWith("pCW   PRI 100 µs", d.Stats);
+        Assert.Contains("PAPR", d.Stats);
+    }
+
+    [Fact]
+    public void PulsePreset_IsOnePulsedCarrier()
+    {
+        var (vm, s) = Bench();
+        using var d = new SignalDesignerViewModel();
+        d.SetTarget(vm, s, preview: false);
+        d.PresetPulseCommand.Execute(null);
+        Assert.True(d.IsPulse);
+        Assert.Equal("Pulse", d.SecondTabHeader);
+    }
 }

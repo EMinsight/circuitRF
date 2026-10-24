@@ -24,6 +24,7 @@ public partial class ParameterEditorViewModel
                     try
                     {
                         var c = SignalSpec.ParseCarrier(p.Expression.Trim().Trim('"'));
+                        if (c.Standard == CarrierStandard.Pcw) return $"{c.Label}, Pavg is the pulse-top power";
                         return c.OffsetHz == 0 ? c.Label : $"{c.Label} @ {c.OffsetHz / 1e6:+0.##;-0.##} MHz";
                     }
                     catch (FormatException ex) { return $"{p.Name}: {ex.Message}"; }
@@ -32,6 +33,11 @@ public partial class ParameterEditorViewModel
             return lines.Count == 0 ? "No carriers — the default LTE 20 MHz is used." : string.Join("\n", lines);
         }
     }
+
+    /// <summary>The source's carriers include a pulsed-CW one, so its Pavg is the pulse-top power.</summary>
+    internal static bool IsPulsedSource(EditableComponent comp)
+        => comp.Parameters.Any(p => p.Name.StartsWith("Carrier[", StringComparison.OrdinalIgnoreCase)
+                                    && p.Expression.Trim().Trim('"').StartsWith("PCW", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Raised by <see cref="OpenSignalDesignerCommand"/>; the view opens the window (it knows the owner).</summary>
     public event Action<EditableComponent>? OpenSignalDesignerRequested;

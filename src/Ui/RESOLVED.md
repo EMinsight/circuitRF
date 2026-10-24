@@ -40343,3 +40343,72 @@ the new data. Each rebuild then calls `OnPlotChanged` on its container. Gate:
   2 px on every selection. That is 4 physical pixels on a 2x display, about 400 controls at once, measured with a
   headless harness on real clicks. The selected style now takes the extra pixel back out of the padding, and the
   same clicks move nothing.
+
+## Signal Designer: the Pulsed CW card (brief ENV-PCW §3, 2026-10-24)
+
+- **A bare number in a pulse field is read as `<number>us` through the carrier parser, never multiplied.** `50 * 1e-6`
+  is 4.9999999999999996e-5 and `50e-6` is 5e-5: a card that multiplied wrote `PW=5E-05` back where the netlist said
+  `PW=50us`, and Apply changed a value nobody edited. `SignalSpec.FormatSeconds` has the mirror problem
+  (`100e-6 / 1e-6` is 100.00000000000001) and writes the shortest spelling that parses back to the same double.
+- **A refusal is shown on the field it names.** `PulsedCw.Validate` words every refusal `pCW carrier: <field> …`, and
+  the row reads that first word to outline the one field at fault — `PW >= PRI` marks PW, not PRI. A field that does not
+  parse is marked by its own text and keeps the last valid value, as the file sample rate does.
+- **An empty Delay is a value, not an error**: it is the netlist's unstated Delay, which centres the pulse, and Apply
+  leaves it unstated so a later edit of PW or PRI in the netlist keeps it centred. The placeholder says where centred is.
+- **The time plot takes the CCDF's slot rather than a fifth PlotControl**, so the window's marker and info-box wiring
+  (four fixed containers) did not change. A pulse's record is one PRI, often shorter than a Welch segment, so the
+  preview analyses at least 2¹⁶ samples of the periodic record: the spectrum shown is the train's, PRF lines and all.
+
+## The radar-class synthetic GaN and the Pulsed Radar example (brief ENV-PCW §5-6, 2026-10-24)
+
+`SyntheticGan` is now a parameter set (`GanTruth`); `Gan4x125` regenerates `examples/Model Composer/synthetic-gan`'s raw
+files byte for byte (`SyntheticGanTruthTests`, 4 s), and `Radar8x250` is the Pulsed Radar device. What it took, in order:
+
+- **The stock network cannot hold a 2 mm cell.** Its 6.6 Ω source and 5.2 Ω gate resistances are a half-millimetre
+  device's; on the radar core they degenerated the current to a fifth (0.34 A at Vgs +1 V where ~1.9 A was meant). The
+  truth carries its own access resistances and inner capacitances, and the document TYPES them (held), as a user who
+  knows the layout would; only Lg, Ld, Ls are fitted, and the multi-bias fit recovered all three to 0.01 %.
+- **The first device's charges are flat above ~3 V** (`tanh(vds)`), so over 5-100 V of S data the composer's C report
+  read thousands of percent "of its range" — the range was round-off. A 15 V scale in the radar truth's charges fixed
+  it (C11-C21 0.6-2.4 %, C22 12 %).
+- **A DC or S bias past ~10 W heats the junction beyond every I–V set.** At 16 W the 85 °C S biases ran past 200 °C and
+  the fit extrapolated in temperature (S95 0.085). The truth's DC instrument now stops at 10 W.
+- **Trap-setting levels must reach the drain's peak under drive.** At 48 V the drain swings to ~95 V; with quiescent and
+  pre-pulse levels only to 60 V the fit extrapolated the current collapse and read 0.7-1.5 dB high in saturation. Levels
+  to 96 V and a 100 V double pulse narrowed it, but did not close it (below).
+- **The bench needed stabilising before any number meant anything.** A 12 mm device matched at 3 GHz with nothing else
+  had K < 1 from 0.1 to 8 GHz and |S11| > 0 dB near 0.4 GHz; its "gain" was regeneration and its Pout barely moved with
+  temperature. 1 Ω + (10 Ω ∥ 50 pF) in the gate, 5 Ω + 20 pF gate shunt, 50 Ω in the gate feed and a 3 Ω + 1 nF drain
+  damper give K ≥ 1.31 everywhere.
+
+**The model departed from its truth at the design drive, and that — not the load or the physics — hid the droop.**
+The first export read 0.06 dB of droop where the truth droops 0.28 dB. Diagnosed by holding the junction at fixed
+temperatures in HB (model and truth, traps on and off) and reading the truth's intrinsic swing:
+
+- **The gate swings past every grid's edge.** At 34 dBm the intrinsic Vgs reaches −8 V; the I–V grids stopped at −6 V.
+  Below that the fitted `IgGs` network is continued with `G_x` = 10 × its largest conductance — the FORWARD diode's,
+  55 S — so at −7 V it drew ~1 A in reverse and clamped the negative swing. The clamp rectified the gate bias upward:
+  from 30.5 dBm (where the swing first passes −6 V) the model gained early and saturated about 1 dB of drive before the
+  truth, and a saturated stage does not droop. Grids to −10 V fixed it (traps off, isothermal: within 0.05 dB to
+  33.5 dBm). The composer's extrapolation law is the root; brief MC-29 makes its added conductance local to the edge.
+- **The trapped state runs hot.** With every pulsed set from a 48 V or 96 V quiescent drain at 25 °C, the refit read
+  0.7–1 dB low at 70 °C (exact at 25 °C): the fit extrapolated the trap state's temperature dependence. The same two
+  sets at 125 °C closed it to ±0.3 dB at 25, 70 and 100 °C.
+- **Two wrong turns, recorded so they are not repeated.** A drain-current/knee temperature coefficient (on-resistance
+  rising up to 0.8 %/K) changed the truth's saturated Pout by ≤ 0.06 dB: the knee does not limit this stage. A lower-
+  resistance load raises the model's droop, but on the old model the result swung 0.06–0.93 dB between loads a
+  fraction of an ohm apart — the artefact, not the circuit. And an isothermal truth bench held by an ideal 0 V source
+  on the thermal node was wrong in HB until the pinned-port fix (`src/Engine/RESOLVED.md`, same date).
+
+**Result on the 4 + j4 Ω power-optimum load, unchanged:** model and truth within 0.23 dB / 0.8 points on the CW bench
+from 20 to 34 dBm; one pulse at the design drive, model 49.07 dBm / 0.259 dB droop against the truth's 49.15 dBm /
+0.281 dB. Pulses 2 and 3 droop 0.30 dB (the traps set by pulse 1); the junction heats 47 K across pulse 1. §5's
+0.3–1 dB is met from pulse 2 and missed by 0.04 dB on pulse 1; Kt is at the top of its range, the only lever §5 allows.
+
+**Only the exported model ships.** The raw data, the `.cmc`, its fit cache and the network cell were 1.7 MB and 120 files
+that only the composer reads; the benches read the `.cmodel`, which carries its own network. `BuildDevice` builds them in
+a scratch workspace (the provenance paths are relative to the document, so they come out the same) and copies the
+export; the Model Composer example is the one that shows a document and its data.
+
+The pulse bench runs 3 ms (three whole PRIs, so DE_pct counts the storage capacitor's recharge) in ~105 s. A `PW` sweep
+was not built: a carrier is a quoted description, which a sweep variable cannot reach into.

@@ -1,4 +1,4 @@
-<!-- The MOD_Source Signal Designer. Left pane: the carriers (LTE / NR / CW / imported I/Q) as cards, the
+<!-- The MOD_Source Signal Designer. Left pane: the carriers (LTE / NR / CW / pulsed CW / imported I/Q) as cards, the
      signal-wide settings and the presets for the common cases (one LTE or NR channel, two carriers at
      any spacing, four contiguous LTE). Right pane: the composite spectrum and the CCDF — Data Display
      PlotControls at the golden ratio, exactly as the Match Designer hosts its two — and the numbers a
@@ -131,22 +131,24 @@
                         <Border Classes="card">
                             <StackPanel>
                                 <TextBlock Classes="cardhdr" Text="Source"/>
-                                <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto">
+                                <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto">
                                     <TextBlock Classes="lbl" Text="{Binding FcUnit, StringFormat='Centre Fc ({0})'}" Margin="0,0,6,0"/>
                                     <TextBox Grid.Column="1" Text="{Binding FcText}"
                                              ToolTip.Tip="A number in the unit shown, or an expression / variable (e.g. RFfreq) — written back exactly as typed"/>
-                                    <TextBlock Grid.Column="2" Classes="lbl" Text="Pavg (dBm)" Margin="12,0,6,0"/>
+                                    <TextBlock Grid.Column="2" Classes="lbl" Text="{Binding PowerLabel}" Margin="12,0,6,0"/>
                                     <TextBox Grid.Column="3" Text="{Binding PavgText}"
                                              ToolTip.Tip="A number in dBm, or an expression / variable (e.g. Pin, so a power sweep still sweeps it)"/>
                                     <TextBlock Grid.Row="1" Classes="lbl" Text="Record (ms)" Margin="0,6,6,0"/>
                                     <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Value="{Binding RecordMs}" Increment="0.5" Minimum="0.5" FormatString="0.#"
-                                                   IsEnabled="{Binding IsNotCustom}"
-                                                   ToolTip.Tip="Periodic record length, whole 0.5 ms slots. ACPR settles within ~0.1 dB from 0.5 ms; longer records tighten the statistics."/>
+                                                   IsEnabled="{Binding CanEditRecord}"
+                                                   ToolTip.Tip="Periodic record length, whole 0.5 ms slots (a pulse's record is its PRI). ACPR settles within ~0.1 dB from 0.5 ms; longer records tighten the statistics."/>
                                     <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="Sample rate" Margin="12,6,6,0"/>
                                     <ComboBox Grid.Row="1" Grid.Column="3" Margin="0,6,0,0" HorizontalAlignment="Stretch"
                                               ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}"
                                               ToolTip.Tip="Sample rate of the preview and of Export signal (a custom file is resampled to it; File rate keeps the file's own). Auto = the recommended rate for this signal. Not written to the source; the simulation picks its own time step."/>
                                     <TextBlock Grid.Row="2" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding SampleRateInfo}"/>
+                                    <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Classes="note" Margin="0,4,0,0" Text="{Binding PulsePowerInfo}"
+                                               IsVisible="{Binding IsPulse}"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -165,6 +167,8 @@
                                     <NumericUpDown Value="{Binding PresetSpacingMHz}" Increment="20" Minimum="20" FormatString="0.#" MinWidth="90"/>
                                     <TextBlock Classes="lbl" Text="MHz centre-to-centre"/>
                                 </StackPanel>
+                                <Button Classes="small" Content="Pulsed CW" Command="{Binding PresetPulseCommand}"
+                                        ToolTip.Tip="One pulsed-CW carrier, for a pulsed-radar amplifier: set its PRI, width, edges and delay on the card"/>
                             </StackPanel>
                         </Border>
 
@@ -207,17 +211,24 @@
                             <StackPanel>
                                 <TextBlock Classes="cardhdr" Text="Waveform"/>
                                 <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto">
-                                    <CheckBox Content="Clip to PAPR (dB)" IsChecked="{Binding ClipEnabled}"
+                                    <CheckBox Content="Clip to PAPR (dB)" IsChecked="{Binding ClipEnabled}" IsEnabled="{Binding CanClip}"
                                               ToolTip.Tip="Off = unclipped (natural OFDM PAPR, ~11-12 dB; a custom file as it is). On = iterative clip-and-filter to the target."/>
-                                    <NumericUpDown Grid.Column="1" Margin="6,0" Value="{Binding ClipPaprDb}" Increment="0.5" FormatString="0.#" IsEnabled="{Binding ClipEnabled}"/>
+                                    <NumericUpDown Grid.Column="1" Margin="6,0" Value="{Binding ClipPaprDb}" Increment="0.5" FormatString="0.#">
+                                        <NumericUpDown.IsEnabled>
+                                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                                <Binding Path="ClipEnabled"/>
+                                                <Binding Path="CanClip"/>
+                                            </MultiBinding>
+                                        </NumericUpDown.IsEnabled>
+                                    </NumericUpDown>
                                     <CheckBox Grid.Row="1" Margin="0,4,0,0" Content="Spectral shaping floor (dBc)" IsChecked="{Binding ShapingEnabled}"
-                                              IsEnabled="{Binding IsNotCustom}"
+                                              IsEnabled="{Binding CanShape}"
                                               ToolTip.Tip="A per-bin ceiling outside the occupied band, so the source's own ACLR sits far below the amplifier's"/>
                                     <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="6,4,6,0" Value="{Binding ShapingFloorDbc}" Increment="5" FormatString="0">
                                         <NumericUpDown.IsEnabled>
                                             <MultiBinding Converter="{x:Static BoolConverters.And}">
                                                 <Binding Path="ShapingEnabled"/>
-                                                <Binding Path="IsNotCustom"/>
+                                                <Binding Path="CanShape"/>
                                             </MultiBinding>
                                         </NumericUpDown.IsEnabled>
                                     </NumericUpDown>
@@ -230,7 +241,7 @@
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,6">
                             <TextBlock Classes="cardhdr" Text="Carriers" VerticalAlignment="Center"/>
                             <Button Padding="6,3" Margin="8,0,0,0" VerticalAlignment="Center" Command="{Binding AddCarrierCommand}"
-                                    IsEnabled="{Binding IsNotCustom}"
+                                    IsEnabled="{Binding CanAddCarrier}"
                                     ToolTip.Tip="Add carrier: a new one next to the last">
                                 <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
                             </Button>
@@ -240,7 +251,7 @@
                                 <DataTemplate x:DataType="vm:CarrierRowViewModel">
                                     <Border Classes="card" Classes.selected="{Binding IsSelected}" Tag="carrier-card" Background="Transparent"
                                             ToolTip.Tip="Click a carrier to show its EVM on the EVM tab">
-                                        <Grid ColumnDefinitions="Auto,90,*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                        <Grid ColumnDefinitions="Auto,90,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
                                             <Border Background="{DynamicResource SystemListLowColor}" CornerRadius="3" Padding="5,1" VerticalAlignment="Center" Margin="0,0,6,0">
                                                 <TextBlock FontSize="12" FontWeight="SemiBold" Text="{Binding Index, StringFormat='C{0}'}"/>
                                             </Border>
@@ -265,8 +276,9 @@
                                                 <NumericUpDown Value="{Binding PowerDb}" Increment="1" FormatString="0.##" MinWidth="70"
                                                                IsEnabled="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).HasSeveralCarriers}"
                                                                ToolTip.Tip="Relative to the other carriers; Pavg sets the total. With one carrier there is nothing to be relative to."/>
-                                                <TextBlock Classes="lbl" Text="Seed"/>
-                                                <NumericUpDown Value="{Binding Seed}" Increment="1" Minimum="0" FormatString="0" MinWidth="60"/>
+                                                <!-- only an OFDM carrier draws random data -->
+                                                <TextBlock Classes="lbl" Text="Seed" IsVisible="{Binding IsOfdm}"/>
+                                                <NumericUpDown Value="{Binding Seed}" Increment="1" Minimum="0" FormatString="0" MinWidth="60" IsVisible="{Binding IsOfdm}"/>
                                                 <ComboBox ItemsSource="{x:Static vm:CarrierRowViewModel.Modulations}" SelectedItem="{Binding Modulation}" MinWidth="96"
                                                           IsVisible="{Binding IsOfdm}" ToolTip.Tip="Subcarrier modulation"/>
                                             </StackPanel>
@@ -275,6 +287,29 @@
                                                 <Button Grid.Column="1" Classes="small" Margin="4,0,0,0" Content="Browse…"
                                                         Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).BrowseFileCommand}"
                                                         CommandParameter="{Binding}"/>
+                                            </Grid>
+                                            <!-- Pulsed CW: the pulse's timing, each typed with its unit (a bare number is µs) and outlined
+                                                 when it does not parse or when the pulse it makes cannot be generated. -->
+                                            <Grid Grid.Row="3" Grid.ColumnSpan="4" ColumnDefinitions="Auto,110,Auto,Auto,110,Auto" RowDefinitions="Auto,Auto,Auto"
+                                                  Margin="0,6,0,0" IsVisible="{Binding IsPcw}" Tag="pulse-fields">
+                                                <TextBlock Classes="lbl" Text="PRI (µs)" Margin="0,0,6,0"/>
+                                                <TextBox Grid.Column="1" Text="{Binding PriText}" Classes.error="{Binding HasPriError}"
+                                                         ToolTip.Tip="{Binding PriError, TargetNullValue='Pulse repetition interval: the record is one PRI, which repeats, so Stop in the Envelope analysis sets how many pulses are simulated'}"/>
+                                                <TextBlock Grid.Column="2" Classes="lbl" Margin="6,0,12,0" Text="{Binding PrfText}"/>
+                                                <TextBlock Grid.Column="3" Classes="lbl" Text="Width (µs)" Margin="0,0,6,0"/>
+                                                <TextBox Grid.Column="4" Text="{Binding WidthText}" Classes.error="{Binding HasWidthError}"
+                                                         ToolTip.Tip="{Binding WidthError, TargetNullValue='Pulse width, from the 50 % point of the rising edge to the 50 % point of the falling edge'}"/>
+                                                <TextBlock Grid.Column="5" Classes="lbl" Margin="6,0,0,0" Text="{Binding DutyText}"/>
+                                                <TextBlock Grid.Row="1" Classes="lbl" Text="Rise (µs)" Margin="0,6,6,0"/>
+                                                <TextBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Text="{Binding RiseText}" Classes.error="{Binding HasRiseError}"
+                                                         ToolTip.Tip="{Binding RiseError, TargetNullValue='10-90 % time of the raised-cosine rising edge; the faster edge sets the bandwidth'}"/>
+                                                <TextBlock Grid.Row="1" Grid.Column="3" Classes="lbl" Text="Fall (µs)" Margin="0,6,6,0"/>
+                                                <TextBox Grid.Row="1" Grid.Column="4" Margin="0,6,0,0" Text="{Binding FallText}" Classes.error="{Binding HasFallError}"
+                                                         ToolTip.Tip="{Binding FallError, TargetNullValue='10-90 % time of the raised-cosine falling edge'}"/>
+                                                <TextBlock Grid.Row="2" Classes="lbl" Text="Delay (µs)" Margin="0,6,6,0"/>
+                                                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" Text="{Binding DelayText}" Classes.error="{Binding HasDelayError}"
+                                                         ToolTip.Tip="{Binding DelayError, TargetNullValue='Off-time before the rising edge, greater than 0 so the run starts at the quiescent point. Empty centres the pulse in the PRI.'}"/>
+                                                <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="4" Classes="lbl" Margin="6,6,0,0" Text="{Binding DelayInfo}"/>
                                             </Grid>
                                         </Grid>
                                     </Border>
@@ -331,8 +366,34 @@
                         <!-- EVM: the numbers first (EVM against its limit, peak-to-average), then the
                              constellation of the chosen carrier over its ideal points, then a few
                              envelope cycles of power around the peak with the average and peak lines. -->
-                        <TabItem Header="EVM" FontSize="13">
-                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+                        <TabItem Header="{Binding SecondTabHeader}" FontSize="13">
+                            <Grid>
+                            <!-- a pulse carries no symbols, so in the EVM's place: the pulse over one PRI, with its own marker layer -->
+                            <Grid IsVisible="{Binding IsPulse}">
+                                <ctl:AspectRatioPanel VerticalAlignment="Top" Margin="0,2">
+                                    <ddc:PlotControl Name="PulsePlotControl" Plot="{Binding PulsePlot}" Library="{Binding PlotHost.Library}"
+                                                     CanDeletePlot="False" CanEditPlotProperties="False"/>
+                                </ctl:AspectRatioPanel>
+                                <ItemsControl Name="PulseInfoBoxLayer" Background="{x:Null}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <Canvas Background="{x:Null}"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemContainerTheme>
+                                        <ControlTheme TargetType="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                                            <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                                        </ControlTheme>
+                                    </ItemsControl.ItemContainerTheme>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="ddv:MarkerInfoBoxViewModel">
+                                            <ddvw:MarkerInfoBoxView/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" IsVisible="{Binding IsNotPulse}">
                                 <Grid ColumnDefinitions="*,*">
                                     <!-- the two headline numbers, laid out alike: caption, number, one detail line -->
                                     <Border Classes="card" Margin="0,0,6,6">
@@ -433,6 +494,7 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                            </Grid>
                             </Grid>
                         </TabItem>
                     </TabControl>

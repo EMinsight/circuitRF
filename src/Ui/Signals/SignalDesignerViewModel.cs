@@ -1,7 +1,8 @@
 // ================================================================
 //  SignalDesignerViewModel.cs  —  the MOD_Source Signal Designer
 //
-//  Edits a MOD_Source's carriers (LTE / NR / CW / imported I/Q file),
+//  Edits a MOD_Source's carriers (LTE / NR / CW / pulsed CW / imported
+//  I/Q file),
 //  record length, clipping and spectral shaping, previews the signal
 //  (generated in the BACKGROUND through SignalCache — the same cache a
 //  simulation reads, so a previewed signal is never generated twice),
@@ -42,7 +43,7 @@ namespace CircuitRF.Ui.Signals;
 
 public sealed partial class CarrierRowViewModel : ObservableObject
 {
-    public static IReadOnlyList<string> Standards { get; } = ["LTE", "NR", "CW", "FILE"];
+    public static IReadOnlyList<string> Standards { get; } = ["LTE", "NR", "CW", "PCW", "FILE"];
     public static IReadOnlyList<string> Modulations { get; } = ["QPSK", "16QAM", "64QAM", "256QAM", "1024QAM"];
     public static IReadOnlyList<double> ScsOptions { get; } = [15, 30, 60];
 
@@ -106,6 +107,117 @@ public sealed partial class CarrierRowViewModel : ObservableObject
     public bool IsOfdm => Standard is "LTE" or "NR";
     public bool IsNr => Standard == "NR";
     public bool IsFile => Standard == "FILE";
+    public bool IsPcw => Standard == "PCW";
+
+    // ── a pulsed-CW carrier's timing ─────────────────────────────────────
+    // Typed as text, a bare number in µs or a number with its own unit (50us, 0.05 ms, 500 ns), validated as typed
+    // the way the file sample rate is: a valid entry sets the value the signal is built from, an invalid one marks
+    // the field and goes no further. A pulse that parses but cannot be generated (PW >= PRI, an edge longer than
+    // half the width) marks the field its refusal names. An empty Delay centres the pulse in the PRI.
+    [ObservableProperty] private double _priS = PulsedCw.DefaultPri;
+    [ObservableProperty] private double _widthS = PulsedCw.DefaultWidth;
+    [ObservableProperty] private double _riseS = PulsedCw.DefaultEdge;
+    [ObservableProperty] private double _fallS = PulsedCw.DefaultEdge;
+    [ObservableProperty] private double? _delayS;
+    /// <summary>The droop window, written in the netlist only; carried through the Designer unchanged.</summary>
+    private double? _measureStart, _measureEnd;
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(PriError), nameof(HasPriError))] private string _priText = Us(PulsedCw.DefaultPri);
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(WidthError), nameof(HasWidthError))] private string _widthText = Us(PulsedCw.DefaultWidth);
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(RiseError), nameof(HasRiseError))] private string _riseText = Us(PulsedCw.DefaultEdge);
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(FallError), nameof(HasFallError))] private string _fallText = Us(PulsedCw.DefaultEdge);
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(DelayError), nameof(HasDelayError), nameof(DelayInfo))] private string _delayText = "";
+
+    private static string Us(double s) => (s * 1e6).ToString("0.#########", CultureInfo.InvariantCulture);
+
+    /// <summary>Null and the time in seconds, or why <paramref name="text"/> is not one (a bare number is µs).</summary>
+    public static string? TryParseTime(string? text, out double seconds)
+    {
+        seconds = 0;
+        if (string.IsNullOrWhiteSpace(text)) return "Enter a time: a number in µs, or with its unit (50 us, 0.5 ms, 500 ns).";
+        string t = text.Trim().Replace(" ", "");
+        // a bare number is µs, read as "<number>us" so 50 and 50us are the same double the netlist would hold
+        if (double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out _)) t += "us";
+        return SignalSpec.TryParseSeconds(t, out seconds) ? null : "Not a time: a number in µs, or with its unit (50 us, 0.5 ms, 500 ns).";
+    }
+
+    /// <summary>Why the pulse cannot be generated, naming its field ("pCW carrier: PW (…) must be …"), or null.</summary>
+    public string? PulseRefusal
+    {
+        get
+        {
+            if (!IsPcw) return null;
+            try { PulsedCw.Validate(ToSpec()); return null; }
+            catch (FormatException ex) { return ex.Message; }
+        }
+    }
+
+    private string? FieldError(string field, string text, bool optional = false)
+    {
+        if (optional && string.IsNullOrWhiteSpace(text)) return PulseRefusalNames(field);
+        return TryParseTime(text, out _) ?? PulseRefusalNames(field);
+    }
+
+    private string? PulseRefusalNames(string field)
+    {
+        const string head = "pCW carrier: ";
+        if (PulseRefusal is not { } why || !why.StartsWith(head, StringComparison.Ordinal)) return null;
+        string named = why[head.Length..].Split(' ', '(')[0];
+        return named == field ? why[head.Length..] : null;
+    }
+
+    public string? PriError => FieldError("PRI", PriText);
+    public string? WidthError => FieldError("PW", WidthText);
+    public string? RiseError => FieldError("Rise", RiseText);
+    public string? FallError => FieldError("Fall", FallText);
+    public string? DelayError => FieldError("Delay", DelayText, optional: true);
+    public bool HasPriError => PriError is not null;
+    public bool HasWidthError => WidthError is not null;
+    public bool HasRiseError => RiseError is not null;
+    public bool HasFallError => FallError is not null;
+    public bool HasDelayError => DelayError is not null;
+
+    /// <summary>Read-only beside PRI and PW: the repetition frequency and the 50 %-to-50 % duty.</summary>
+    public string PrfText => PriS > 0 ? "PRF " + FormatFrequency(1 / PriS) : "";
+    public string DutyText => PriS > 0 ? string.Format(CultureInfo.InvariantCulture, "duty {0:0.##} %", 100 * WidthS / PriS) : "";
+    /// <summary>What an empty Delay means for the pulse as it stands, beside the field (the field itself is too narrow).</summary>
+    public string DelayInfo => DelayText.Trim().Length == 0 && PriS > 0 && WidthS > 0
+        ? "empty: centred, " + PulsedCw.FormatTime(PulsedCw.Resolve(ToSpec() with { DelaySeconds = null }).Delay)
+        : "";
+
+    private static string FormatFrequency(double hz)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        return hz >= 1e6 ? string.Format(inv, "{0:0.###} MHz", hz / 1e6)
+             : hz >= 1e3 ? string.Format(inv, "{0:0.###} kHz", hz / 1e3)
+             : string.Format(inv, "{0:0.###} Hz", hz);
+    }
+
+    partial void OnPriTextChanged(string value) { if (TryParseTime(value, out double s) is null) PriS = s; }
+    partial void OnWidthTextChanged(string value) { if (TryParseTime(value, out double s) is null) WidthS = s; }
+    partial void OnRiseTextChanged(string value) { if (TryParseTime(value, out double s) is null) RiseS = s; }
+    partial void OnFallTextChanged(string value) { if (TryParseTime(value, out double s) is null) FallS = s; }
+    partial void OnDelayTextChanged(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) DelayS = null;
+        else if (TryParseTime(value, out double s) is null) DelayS = s;
+    }
+
+    partial void OnPriSChanged(double value) => PulseChanged();
+    partial void OnWidthSChanged(double value) => PulseChanged();
+    partial void OnRiseSChanged(double value) => PulseChanged();
+    partial void OnFallSChanged(double value) => PulseChanged();
+    partial void OnDelaySChanged(double? value) => PulseChanged();
+
+    /// <summary>One value moved: every field's refusal, the PRF, the duty and the centred Delay can move with it.</summary>
+    private void PulseChanged()
+    {
+        foreach (var n in new[] { nameof(PriError), nameof(HasPriError), nameof(WidthError), nameof(HasWidthError),
+                                  nameof(RiseError), nameof(HasRiseError), nameof(FallError), nameof(HasFallError),
+                                  nameof(DelayError), nameof(HasDelayError), nameof(PrfText), nameof(DutyText),
+                                  nameof(DelayInfo), nameof(PulseRefusal) })
+            OnPropertyChanged(n);
+    }
 
     public IReadOnlyList<double> BandwidthOptions => Standard switch
     {
@@ -116,7 +228,8 @@ public sealed partial class CarrierRowViewModel : ObservableObject
 
     partial void OnStandardChanged(string value)
     {
-        OnPropertyChanged(nameof(IsOfdm)); OnPropertyChanged(nameof(IsNr)); OnPropertyChanged(nameof(IsFile));
+        OnPropertyChanged(nameof(IsOfdm)); OnPropertyChanged(nameof(IsNr)); OnPropertyChanged(nameof(IsFile)); OnPropertyChanged(nameof(IsPcw));
+        PulseChanged();
         OnPropertyChanged(nameof(BandwidthOptions));
         if (!BandwidthOptions.Contains(BandwidthMHz)) BandwidthMHz = BandwidthOptions.Contains(20) ? 20 : BandwidthOptions.FirstOrDefault(20);
     }
@@ -127,9 +240,23 @@ public sealed partial class CarrierRowViewModel : ObservableObject
         if (Standard == "NR" && !BandwidthOptions.Contains(BandwidthMHz)) BandwidthMHz = BandwidthOptions.LastOrDefault(20);
     }
 
-    public CarrierSpec ToSpec() => new()
+    public CarrierSpec ToSpec()
     {
-        Standard = Standard switch { "NR" => CarrierStandard.Nr, "CW" => CarrierStandard.Cw, "FILE" => CarrierStandard.File, _ => CarrierStandard.Lte },
+        var c = BaseSpec();
+        if (c.Standard != CarrierStandard.Pcw) return c;
+        c = c with
+        {
+            PriSeconds = PriS, PulseWidthSeconds = WidthS, RiseSeconds = RiseS, FallSeconds = FallS, DelaySeconds = DelayS,
+            MeasureStart = _measureStart, MeasureEnd = _measureEnd,
+        };
+        // the bandwidth is the edges', as the netlist's parse sets it; a pulse that cannot be generated keeps the default
+        try { return c with { BandwidthHz = PulsedCw.BandwidthHz(PulsedCw.Validate(c)) }; }
+        catch (FormatException) { return c; }
+    }
+
+    private CarrierSpec BaseSpec() => new()
+    {
+        Standard = Standard switch { "NR" => CarrierStandard.Nr, "CW" => CarrierStandard.Cw, "PCW" => CarrierStandard.Pcw, "FILE" => CarrierStandard.File, _ => CarrierStandard.Lte },
         BandwidthHz = BandwidthMHz * 1e6,
         ScsHz = ScsKHz * 1e3,
         Modulation = SignalSpec.ParseMod(Modulation),
@@ -140,10 +267,22 @@ public sealed partial class CarrierRowViewModel : ObservableObject
         SampleRateHz = Standard == "FILE" && SampleRateMHz > 0 ? SampleRateMHz * 1e6 : null,
     };
 
-    public static CarrierRowViewModel FromSpec(CarrierSpec c, int index) => new()
+    public static CarrierRowViewModel FromSpec(CarrierSpec c, int index)
+    {
+        var row = FromBaseSpec(c, index);
+        if (c.Standard != CarrierStandard.Pcw) return row;
+        // the stated values, and the defaults for the rest — except Delay, whose default (centred) is an empty field
+        var s = PulsedCw.Resolve(c);
+        row.PriText = Us(s.Pri); row.WidthText = Us(s.Width); row.RiseText = Us(s.Rise); row.FallText = Us(s.Fall);
+        row.DelayText = c.DelaySeconds is double d ? Us(d) : "";
+        row._measureStart = c.MeasureStart; row._measureEnd = c.MeasureEnd;
+        return row;
+    }
+
+    private static CarrierRowViewModel FromBaseSpec(CarrierSpec c, int index) => new()
     {
         Index = index,
-        Standard = c.Standard switch { CarrierStandard.Nr => "NR", CarrierStandard.Cw => "CW", CarrierStandard.File => "FILE", _ => "LTE" },
+        Standard = c.Standard switch { CarrierStandard.Nr => "NR", CarrierStandard.Cw => "CW", CarrierStandard.Pcw => "PCW", CarrierStandard.File => "FILE", _ => "LTE" },
         ScsKHz = c.ScsHz / 1e3,
         BandwidthMHz = c.BandwidthHz / 1e6,
         Modulation = CarrierSpec.ModName(c.Modulation),
@@ -203,7 +342,40 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     private void RaiseCustom()
     {
         OnPropertyChanged(nameof(IsCustom)); OnPropertyChanged(nameof(IsNotCustom)); OnPropertyChanged(nameof(CustomCarrier));
+        foreach (var n in new[] { nameof(IsPulse), nameof(IsNotPulse), nameof(CanEditRecord), nameof(CanClip), nameof(CanShape),
+                                  nameof(CanAddCarrier), nameof(PowerLabel), nameof(PulsePowerInfo), nameof(SecondTabHeader) })
+            OnPropertyChanged(n);
         SyncFileRateOption();
+    }
+
+    /// <summary>
+    /// The signal is ONE pulsed-CW carrier. Its record is the PRI, it is not clipped or spectrally shaped, and it takes
+    /// no other carrier beside it, so Record, Clip, Shaping and Add carrier are disabled; Pavg is then the pulse-top
+    /// power, and the preview shows the pulse in time where a modulated signal shows its CCDF.
+    /// </summary>
+    public bool IsPulse => Carriers.Count == 1 && Carriers[0].IsPcw;
+    public bool IsNotPulse => !IsPulse;
+    public bool CanEditRecord => IsNotCustom && IsNotPulse;
+    public bool CanClip => IsNotPulse;
+    public bool CanShape => IsNotCustom && IsNotPulse;
+    public bool CanAddCarrier => IsNotCustom && IsNotPulse;
+    public string PowerLabel => IsPulse ? "Pulse-top power (dBm)" : "Pavg (dBm)";
+    /// <summary>The second preview tab: a pulse carries no symbols, so where a modulated signal's EVM is it shows the pulse.</summary>
+    public string SecondTabHeader => IsPulse ? "Pulse" : "EVM";
+
+    /// <summary>For a pulse: the record average the top power gives, and the power duty they differ by.</summary>
+    public string PulsePowerInfo
+    {
+        get
+        {
+            if (!IsPulse || Carriers[0].PulseRefusal is not null) return "";
+            var inv = CultureInfo.InvariantCulture;
+            double duty = PulsedCw.Resolve(Carriers[0].ToSpec()).PowerDuty, db = 10 * Math.Log10(duty);
+            string avg = double.TryParse(PavgText, NumberStyles.Float, inv, out double top)
+                ? string.Format(inv, "{0:0.##} dBm", top + db)
+                : string.Format(inv, "{0} {1:+0.##;-0.##} dB", PavgText.Trim(), db);
+            return string.Format(inv, "Record average {0}   ·   power duty {1:0.##} % ({2:0.##} dB)", avg, 100 * duty, db);
+        }
     }
 
     /// <summary>Fc and Pavg as the user's own TEXT — a number (GHz / dBm) or an expression such as
@@ -242,6 +414,9 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     public PlotContainerViewModel EnvelopeContainer { get; private set; } = null!;
     public Plot ConstellationPlot => ConstellationContainer.PlotVM.Plot;
     public Plot EnvelopePlot => EnvelopeContainer.PlotVM.Plot;
+    /// <summary>A pulsed-CW source's |envelope| over one PRI, on the second tab where a modulated signal's EVM is.</summary>
+    public PlotContainerViewModel PulseContainer { get; private set; } = null!;
+    public Plot PulsePlot => PulseContainer.PlotVM.Plot;
 
     /// <summary>0 = spectrum and CCDF, 1 = EVM.</summary>
     [ObservableProperty] private int _previewTab;
@@ -381,11 +556,9 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         CcdfContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 300, width: 640, height: 300);
         ConstellationContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 600, width: 400, height: 400);
         EnvelopeContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 1000, width: 640, height: 300);
-        PsdPlot.Axes.LockedPanning = true;
-        CcdfPlot.Axes.LockedPanning = true;
-        ConstellationPlot.Axes.LockedPanning = true;
-        EnvelopePlot.Axes.LockedPanning = true;
-        foreach (var p in new[] { PsdPlot, CcdfPlot, ConstellationPlot, EnvelopePlot }) Readable(p);
+        PulseContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 1300, width: 640, height: 300);
+        foreach (var p in new[] { PsdPlot, CcdfPlot, ConstellationPlot, EnvelopePlot, PulsePlot }) p.Axes.LockedPanning = true;
+        foreach (var p in new[] { PsdPlot, CcdfPlot, ConstellationPlot, EnvelopePlot, PulsePlot }) Readable(p);
         PlotHost.SelectOnly((PlotContainerViewModel?)null);
 
         // Live preview: any edit to a carrier or a waveform setting re-previews after a short pause (each
@@ -406,6 +579,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             if (e.PropertyName is nameof(RecordMs) or nameof(ClipEnabled) or nameof(ClipPaprDb)
                 or nameof(ShapingEnabled) or nameof(ShapingFloorDbc))
                 SchedulePreview();
+            if (e.PropertyName is nameof(PavgText)) OnPropertyChanged(nameof(PulsePowerInfo));
         };
     }
 
@@ -414,6 +588,14 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         if (e.PropertyName is nameof(CarrierRowViewModel.Index) or nameof(CarrierRowViewModel.IsSelected)) return;
         if (e.PropertyName == nameof(CarrierRowViewModel.Standard)) RaiseCustom();
         if (e.PropertyName == nameof(CarrierRowViewModel.SampleRateMHz)) SyncFileRateOption();
+        if (e.PropertyName is nameof(CarrierRowViewModel.PriS) or nameof(CarrierRowViewModel.WidthS)
+            or nameof(CarrierRowViewModel.RiseS) or nameof(CarrierRowViewModel.FallS) or nameof(CarrierRowViewModel.DelayS))
+            OnPropertyChanged(nameof(PulsePowerInfo));
+        // a derived read-out of the pulse moved, not a value the signal is built from
+        if (e.PropertyName is nameof(CarrierRowViewModel.PrfText) or nameof(CarrierRowViewModel.DutyText)
+            or nameof(CarrierRowViewModel.DelayInfo) or nameof(CarrierRowViewModel.PulseRefusal)
+            || e.PropertyName?.EndsWith("Error", StringComparison.Ordinal) == true
+            || e.PropertyName?.EndsWith("Text", StringComparison.Ordinal) == true) return;
         SchedulePreview();
     }
 
@@ -520,7 +702,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     {
         Carriers = Carriers.Select(c => c.ToSpec()).Select(c => c.FilePath is { Length: > 0 } f ? c with { FilePath = ResolveIqPath(f) } : c).ToList(),
         RecordSeconds = Math.Max(0.5, RecordMs) * 1e-3,
-        ClipPaprDb = ClipEnabled ? ClipPaprDb : null,
+        ClipPaprDb = ClipEnabled && CanClip ? ClipPaprDb : null,
         ShapingFloorDbc = ShapingEnabled ? ShapingFloorDbc : null,
     };
 
@@ -564,7 +746,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
                 Dimension = UnitDimension.None,
             });
         updated.Add(new EditableParameter { Name = "Record", Expression = (Math.Max(0.5, RecordMs) * 1e-3).ToString("R", inv), ShowOnSchematic = false, Dimension = UnitDimension.None });
-        if (ClipEnabled)
+        if (ClipEnabled && CanClip)
             updated.Add(new EditableParameter { Name = "Clip", Expression = ClipPaprDb.ToString("R", inv), ShowOnSchematic = false, Dimension = UnitDimension.None });
         updated.Add(new EditableParameter
         {
@@ -623,6 +805,8 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         _ = PreviewAsync();
     }
 
+    /// <summary>One pulsed-CW carrier at the card's defaults, for a pulsed-radar amplifier.</summary>
+    [RelayCommand] private void PresetPulse() => Preset(new CarrierSpec { Standard = CarrierStandard.Pcw });
     [RelayCommand] private void PresetLte20() => Preset(new CarrierSpec { Standard = CarrierStandard.Lte, BandwidthHz = 20e6, Modulation = QamOrder.Qam64 });
     [RelayCommand] private void PresetNr20() => Preset(new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 20e6, ScsHz = 30e3, Modulation = QamOrder.Qam64 });
     [RelayCommand] private void PresetNr100() => Preset(new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 100e6, ScsHz = 30e3, Modulation = QamOrder.Qam256 });
@@ -722,7 +906,9 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
                 string.Format(inv, "{0} samples = {1:0.######} ms record (periodic: the last sample wraps to the first)",
                     n, sig.RecordSeconds * 1e3),
                 "Fc = " + FcText + " " + FcUnit + " (the I/Q is relative to it),  Pavg = " + PavgText + " dBm",
-                "scale: unit mean power (|I + jQ|^2 averages 1); set the level with the source's Pavg",
+                SignalComposer.PulseOf(spec) is not null
+                    ? "scale: unit power on the pulse top (|I + jQ| is 1 there); Pavg sets the pulse-top power"
+                    : "scale: unit mean power (|I + jQ|^2 averages 1); set the level with the source's Pavg",
                 string.Format(inv, "PAPR {0:0.00} dB at 0.01 %,  clipping {1},  shaping {2}",
                     SignalMeasure.PaprDb(sig.CompositeWindow(rate, 0, 0, Math.Min(n, 1 << 22)), 1e-4),
                     spec.ClipPaprDb is double c ? c.ToString("0.#", inv) + " dB PAPR" : "off",
@@ -844,8 +1030,9 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     {
         double rate = rateHz > 0 ? rateHz : sig.SuggestedCompositeRateHz();
         int n = sig.LengthAt(rate);
-        // keep the preview fast: at most ~4 M samples of the record
-        int count = Math.Min(n, 1 << 22);
+        // keep the preview fast: at most ~4 M samples of the record. A pulse's record is one PRI, often shorter than one
+        // Welch segment: the window runs over several (the record is periodic), so the spectrum is the TRAIN's.
+        int count = Math.Min(SignalComposer.PulseOf(sig.Spec) is null ? n : Math.Max(n, 1 << 16), 1 << 22);
         var x = sig.CompositeWindow(rate, 0, 0, count);
         var (f, p) = SignalMeasure.Welch(x, rate, 8192);
         double pk = p.Max();
@@ -880,6 +1067,22 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
 
         var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
+        if (SignalComposer.PulseOf(sig.Spec) is { } pulse)
+        {
+            // The pulse in time over one PRI, from its own native record (exact 0 and 1, no resampling ripple).
+            var nat = sig.Carriers[0];
+            double us = 1e6 / nat.NativeRateHz;
+            ds.Add("Pulse", new DataCube([new Axis("time", [.. Enumerable.Range(0, nat.Native.Length).Select(i => i * us)], "us")],
+                                         [.. nat.Native.Select(v => v.Magnitude)]));
+            sb.AppendLine(string.Format(inv, "pCW   PRI {0}   PRF {1:0.###} kHz   PW {2}   duty {3:0.##} %   power duty {4:0.##} %",
+                PulsedCw.FormatTime(pulse.Pri), pulse.Prf / 1e3, PulsedCw.FormatTime(pulse.Width), 100 * pulse.Duty, 100 * pulse.PowerDuty));
+            sb.AppendLine(string.Format(inv, "rise {0}   fall {1}   delay {2}   bandwidth {3:0.###} MHz   rate {4:0.##} MS/s",
+                PulsedCw.FormatTime(pulse.Rise), PulsedCw.FormatTime(pulse.Fall), PulsedCw.FormatTime(pulse.Delay),
+                nat.Spec.BandwidthHz / 1e6, rate / 1e6));
+            sb.AppendLine(string.Format(inv, "PAPR {0:0.00} dB at 0.01 %   peak {1:0.00} dB   (1 / power duty: {2:0.00} dB)",
+                SignalMeasure.PaprDb(x, 1e-4), SignalMeasure.PaprDb(x, 0), -10 * Math.Log10(pulse.PowerDuty)));
+            return (ds, sb.ToString().TrimEnd(), MeasureEnvelope(x, rate));
+        }
         sb.AppendLine(string.Format(inv, "{0} carrier(s)   IBW {1:0.##} MHz   record {2:0.###e0} s   rate {3:0.##} MS/s",
             sig.Carriers.Count, sig.InstantaneousBandwidthHz / 1e6, sig.RecordSeconds, rate / 1e6));
         sb.AppendLine(string.Format(inv, "PAPR {0:0.00} dB at 0.01 %   peak {1:0.00} dB", SignalMeasure.PaprDb(x, 1e-4), SignalMeasure.PaprDb(x, 0)));
@@ -968,9 +1171,16 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     private void ShowPlots(DataSet ds)
     {
         Fill(PsdPlot, ds, [("PSD", 0)], "Spectrum", "PSD (dB re peak)", "Offset from Fc (MHz)");
+        // A pulse train's CCDF is as true as any signal's: a step at its peak-to-average, which is its power duty.
         CcdfPlot.Axes.YScale = AxisScale.Log;
         Fill(CcdfPlot, ds, [("CCDF", 0), ("Gaussian", 3)], "CCDF", "Probability (%)", "Power above average (dB)");
         Announce(PsdContainer, CcdfContainer);
+        if (ds.Contains("Pulse"))
+        {
+            // |envelope| over one PRI, zoomable onto an edge like any Data Display plot
+            Fill(PulsePlot, ds, [("Pulse", 0)], "Pulse (one PRI)", "|Envelope| (re pulse top)", "Time (µs)");
+            Announce(PulseContainer);
+        }
     }
 
     private void ShowEnvelope(DataSet ds)
@@ -1093,6 +1303,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             CarrierStandard.Lte => string.Format(inv, "LTE {0:0.#} MHz, {1}", s.BandwidthHz / 1e6, CarrierSpec.ModName(s.Modulation)),
             CarrierStandard.Nr => string.Format(inv, "NR {0:0.#} MHz, {1:0} kHz SCS, {2}", s.BandwidthHz / 1e6, s.ScsHz / 1e3, CarrierSpec.ModName(s.Modulation)),
             CarrierStandard.Cw => "CW",
+            CarrierStandard.Pcw => s.Label,
             _ => "I/Q file " + System.IO.Path.GetFileName(s.FilePath ?? ""),
         };
         string clip = sig.Spec.ClipPaprDb is double t ? string.Format(inv, "clipped to {0:0.#} dB PAPR", t) : "unclipped";

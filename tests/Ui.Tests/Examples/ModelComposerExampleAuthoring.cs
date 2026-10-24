@@ -106,7 +106,7 @@ public sealed class ModelComposerExampleAuthoring(ITestOutputHelper output)
     // ── The network, a cell ───────────────────────────────────────────────────
 
     /// <summary>The stock network the document copied beside itself, made a cell of the workspace and named from there.</summary>
-    private static void UseNetworkCell(string ws, string cmc)
+    internal static void UseNetworkCell(string ws, string cmc)
     {
         string cellSch = Path.Combine(ws, Network, "schematic", Network + ".csch");
         string beside = Path.Combine(Path.GetDirectoryName(cmc)!, "gan-two-shell.csch");
@@ -374,6 +374,11 @@ public sealed class ModelComposerExampleAuthoring(ITestOutputHelper output)
     /// <summary>A test bench cell whose schematic is <paramref name="netlist"/> drawn — <c>netlist --to-schematic</c>'s own
     /// function. <paramref name="unwired"/> names a net on one pin that the drawing leaves unwired.</summary>
     private static SchematicEditModel Draw(string ws, string cell, string netlist, string? unwired = null)
+        => Draw(ws, cell, netlist, unwired, GanModel, GanVa);
+
+    /// <summary><see cref="Draw(string, string, string, string?)"/> for a workspace whose model files are
+    /// <paramref name="files"/>: each is stored unquoted, as a schematic stores a File.</summary>
+    internal static SchematicEditModel Draw(string ws, string cell, string netlist, string? unwired, params string[] files)
     {
         var created = CellCreate.Create(ws, cell, CellViews.Schematic);
         string schDir = Path.GetDirectoryName(created.SchematicPath!)!;
@@ -383,9 +388,9 @@ public sealed class ModelComposerExampleAuthoring(ITestOutputHelper output)
         // A net on one pin only is drawn as that pin's label; without it the pin is unwired, as a schematic leaves it.
         if (unwired is not null) Assert.Equal(1, drawn.Schematic!.NetLabels.RemoveAll(l => l.Name == unwired));
         // A schematic stores a File unquoted, relative to its workspace root; the drawing keeps the netlist's quotes.
-        string json = SchematicPersistence.Serialize(drawn.Schematic!, cell)
-            .Replace($"\"\\u0022{GanModel}\\u0022\"", $"\"{GanModel}\"", StringComparison.Ordinal)
-            .Replace($"\"\\u0022{GanVa}\\u0022\"", $"\"{GanVa}\"", StringComparison.Ordinal);
+        string json = SchematicPersistence.Serialize(drawn.Schematic!, cell);
+        foreach (string file in files)
+            json = json.Replace($"\"\\u0022{file}\\u0022\"", $"\"{file}\"", StringComparison.Ordinal);
         // The reader resolves a loadpull grid to an absolute path and the drawing keeps it; a schematic stores it relative
         // to its workspace root, as the Loadpull example's does.
         foreach (var lp in drawn.Schematic!.Analyses.OfType<CircuitRF.Core.Design.LoadpullAnalysis>())

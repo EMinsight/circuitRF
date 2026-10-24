@@ -1,8 +1,8 @@
 // ================================================================
 //  SignalSpec.cs  —  the description of a modulated test signal
 //
-//  A signal is a list of carriers (LTE, NR, CW or an imported I/Q
-//  file), each with its own bandwidth, modulation, frequency offset
+//  A signal is a list of carriers (LTE, NR, CW, pulsed CW or an
+//  imported I/Q file), each with its own bandwidth, modulation, frequency offset
 //  from the source's centre frequency and relative power, plus record
 //  length, clipping and spectral-shaping settings.  The spec is plain
 //  data: it serialises to the .cmod JSON file the Signal Designer
@@ -21,7 +21,7 @@ using System.Text.Json.Serialization;
 
 namespace RfCore.Signals
 {
-    public enum CarrierStandard { Lte, Nr, Cw, File }
+    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw }
 
     public enum QamOrder { Qpsk = 2, Qam16 = 4, Qam64 = 6, Qam256 = 8, Qam1024 = 10 }
 
@@ -44,11 +44,27 @@ namespace RfCore.Signals
         /// <c># sample_rate_hz</c> header. Stated, it wins over the header — a file with none needs it.</summary>
         public double? SampleRateHz { get; init; }
 
+        // A pulsed-CW carrier's timing (s); null = the default PulsedCw.Resolve applies. Null rather than defaulted so
+        // the JSON, and with it the cache key, of every other carrier is what it was before pCW existed.
+        /// <summary>Pulse repetition interval: the record is one PRI.</summary>
+        public double? PriSeconds { get; init; }
+        /// <summary>Pulse width, 50 % to 50 %.</summary>
+        public double? PulseWidthSeconds { get; init; }
+        /// <summary>10-90 % times of the raised-cosine edges.</summary>
+        public double? RiseSeconds { get; init; }
+        public double? FallSeconds { get; init; }
+        /// <summary>Off-time before the rising edge leaves 0; null centres the pulse in the PRI.</summary>
+        public double? DelaySeconds { get; init; }
+        /// <summary>The droop window, as fractions of the flat top (null = 0.1 and 0.9).</summary>
+        public double? MeasureStart { get; init; }
+        public double? MeasureEnd { get; init; }
+
         public string Label => Standard switch
         {
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
             CarrierStandard.Nr => $"NR {BandwidthHz / 1e6:0.#} MHz {ScsHz / 1e3:0} kHz {ModName(Modulation)}",
             CarrierStandard.Cw => "CW",
+            CarrierStandard.Pcw => $"pCW {PulsedCw.FormatTime(PulsedCw.Resolve(this).Width)} / {PulsedCw.FormatTime(PulsedCw.Resolve(this).Pri)}",
             _ => $"File {System.IO.Path.GetFileName(FilePath ?? "")}",
         };
 
@@ -159,8 +175,10 @@ namespace RfCore.Signals
         /// <summary>
         /// Parses the compact inline carrier form used in netlists:
         /// <c>"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=3"</c>, or for an imported I/Q file
-        /// <c>"FILE;File=iq/capture.txt;Fs=122.88MHz;Off=0;P=0"</c>. BW, SCS, Fs and Off take Hz, kHz, MHz or
-        /// GHz after the number; a bare number is Hz (<c>BW=20e6</c>).
+        /// <c>"FILE;File=iq/capture.txt;Fs=122.88MHz;Off=0;P=0"</c>, or for a pulse train
+        /// <c>"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"</c>. BW, SCS, Fs and Off take Hz, kHz,
+        /// MHz or GHz after the number; a bare number is Hz (<c>BW=20e6</c>). PRI, PW, Rise, Fall and Delay take s, ms,
+        /// us (or µs) or ns; a bare number is seconds.
         /// </summary>
         public static CarrierSpec ParseCarrier(string text)
         {
@@ -174,7 +192,8 @@ namespace RfCore.Signals
                     "NR" => CarrierStandard.Nr,
                     "CW" => CarrierStandard.Cw,
                     "FILE" => CarrierStandard.File,
-                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW or FILE)"),
+                    "PCW" => CarrierStandard.Pcw,
+                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW or FILE)"),
                 },
             };
             foreach (var p in parts.Skip(1))
@@ -193,10 +212,72 @@ namespace RfCore.Signals
                     "FILE" => c with { FilePath = v.Trim('"') },
                     "FS" => c with { SampleRateHz = ParseHz(k, v) },
                     "MOD" => c with { Modulation = ParseMod(v) },
+                    "PRI" => c with { PriSeconds = PulseField(c, k, v) },
+                    "PW" => c with { PulseWidthSeconds = PulseField(c, k, v) },
+                    "RISE" => c with { RiseSeconds = PulseField(c, k, v) },
+                    "FALL" => c with { FallSeconds = PulseField(c, k, v) },
+                    "DELAY" => c with { DelaySeconds = PulseField(c, k, v) },
+                    "MEASURESTART" => c with { MeasureStart = PulseFraction(c, k, v) },
+                    "MEASUREEND" => c with { MeasureEnd = PulseFraction(c, k, v) },
                     _ => throw new FormatException($"unknown carrier field '{k}'"),
                 };
             }
+            // A pulse's bandwidth is its edges', never the 20 MHz a CarrierSpec defaults to.
+            if (c.Standard == CarrierStandard.Pcw) c = c with { BandwidthHz = PulsedCw.BandwidthHz(PulsedCw.Validate(c)) };
             return c;
+        }
+
+        private static double PulseField(CarrierSpec c, string key, string v)
+        {
+            if (c.Standard != CarrierStandard.Pcw) throw new FormatException($"carrier field {key} belongs to a PCW carrier");
+            return ParseSeconds(key, v);
+        }
+
+        private static double PulseFraction(CarrierSpec c, string key, string v)
+        {
+            if (c.Standard != CarrierStandard.Pcw) throw new FormatException($"carrier field {key} belongs to a PCW carrier");
+            if (!double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double f))
+                throw new FormatException($"carrier field {key}={v} is not a fraction of the pulse top");
+            return f;
+        }
+
+        private static readonly (string Unit, string Exponent)[] TimeUnits =
+            [("ms", "e-3"), ("us", "e-6"), ("µs", "e-6"), ("ns", "e-9"), ("s", "")];
+
+        /// <summary>A time field: a number, optionally followed by s, ms, us (µs) or ns, exact case as for
+        /// <see cref="ParseHz"/>, and applied the same way, by re-reading the literal with its exponent.</summary>
+        private static double ParseSeconds(string key, string v)
+        {
+            string num = v, exp = "";
+            foreach (var (unit, e) in TimeUnits)
+                if (v.EndsWith(unit, StringComparison.Ordinal)) { num = v[..^unit.Length].TrimEnd(); exp = e; break; }
+            bool hasExponent = num.Contains('e', StringComparison.OrdinalIgnoreCase);
+            if (!double.TryParse(hasExponent ? num : num + exp, NumberStyles.Float, CultureInfo.InvariantCulture, out double s))
+                throw new FormatException($"carrier field {key}={v} is not a time: a number with s, ms, us or ns");
+            return hasExponent && exp.Length > 0 ? s * Math.Pow(10, int.Parse(exp[1..], CultureInfo.InvariantCulture)) : s;
+        }
+
+        /// <summary>A time as a carrier's time fields read it (a number with s, ms, us, µs or ns; bare = seconds), or false.</summary>
+        public static bool TryParseSeconds(string text, out double seconds)
+        {
+            try { seconds = ParseSeconds("", text.Trim()); return true; }
+            catch (FormatException) { seconds = 0; return false; }
+        }
+
+        /// <summary>Writes <paramref name="s"/> in <paramref name="unit"/> when that reads back as the same double, and as
+        /// plain seconds otherwise.</summary>
+        private static string FormatSeconds(double s, string unit)
+        {
+            if (s == 0) return "0";
+            var inv = CultureInfo.InvariantCulture;
+            // 100e-6 / 1e-6 is 100.00000000000001: the shortest spelling that parses back to the same double is the one written
+            double scaled = s / double.Parse("1" + TimeUnits.First(u => u.Unit == unit).Exponent, inv);
+            foreach (var f in new[] { "G15", "G16", "R" })
+            {
+                string text = scaled.ToString(f, inv);
+                if (!text.Contains('E') && ParseSeconds("", text + unit) == s) return text + unit;
+            }
+            return s.ToString("R", inv);
         }
 
         private static readonly (string Unit, string Exponent)[] FrequencyUnits =
@@ -252,9 +333,19 @@ namespace RfCore.Signals
                 sb.Append(";File=").Append(c.FilePath);
                 if (c.SampleRateHz is double fs) sb.Append(";Fs=").Append(FormatHz(fs, "MHz"));
             }
+            if (c.Standard == CarrierStandard.Pcw)
+            {
+                // only what is stated: an unstated Delay stays centred when PW or PRI is edited in the netlist
+                foreach (var (key, value) in new[] { ("PRI", c.PriSeconds), ("PW", c.PulseWidthSeconds), ("Rise", c.RiseSeconds),
+                                                     ("Fall", c.FallSeconds), ("Delay", c.DelaySeconds) })
+                    if (value is double t) sb.Append(';').Append(key).Append('=').Append(FormatSeconds(t, "us"));
+                if (c.MeasureStart is double ms) sb.Append(";MeasureStart=").Append(ms.ToString("R", inv));
+                if (c.MeasureEnd is double me) sb.Append(";MeasureEnd=").Append(me.ToString("R", inv));
+            }
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));
             sb.Append(";P=").Append(c.PowerDb.ToString("R", inv));
-            sb.Append(";Seed=").Append(c.Seed.ToString(inv));
+            // a pulse draws no random symbols
+            if (c.Standard != CarrierStandard.Pcw) sb.Append(";Seed=").Append(c.Seed.ToString(inv));
             return sb.ToString();
         }
     }
