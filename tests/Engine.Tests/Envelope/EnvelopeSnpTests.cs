@@ -305,22 +305,26 @@ public sealed class EnvelopeSnpTests(ITestOutputHelper output) : IDisposable
 
     // ── 6. what stays a tangent says so ───────────────────────────────────
 
+    /// <summary>A coupled line keeps its value and slope at each harmonic (a TLIN is stepped as its delay since brief
+    /// ENV-FIT, and is exact): a long mismatched one is named, in both engines.</summary>
     [Theory]
     [InlineData("Off=0")]                                   // one fundamental
     [InlineData("Off=-100MHz")]                             // with a second carrier at +100 MHz: two fundamentals
-    public void LongMismatchedLine_WarnsAndNamesIt(string off)
+    public void LongMismatchedCoupledLine_WarnsAndNamesIt(string off)
     {
         string carriers = off == "Off=0"
             ? $"Carrier[1]=\"{Nr20}\""
             : "Carrier[1]=\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-100MHz;P=0;Seed=1\" Carrier[2]=\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=100MHz;P=0;Seed=2\"";
         Run($"""
             MOD_Source:S1 in 0 Fc=1e9 Pavg=0 Z=50 Record=0.5e-3 {carriers}
-            TLIN:TL1 in out Z=25 Ohm E=2970 deg F=1 GHz
+            CLIN:TL1 in out c d Ze=30 Ohm Zo=20 Ohm E=2970 deg F=1 GHz
             R:RL out 0 R=50 Ohm
+            R:Rc c 0 R=50 Ohm
+            R:Rd d 0 R=50 Ohm
             analysis ENV1 type=env Stop=2e-6 Accuracy=draft MaxHarm=1 MaxMixOrder=1 Probes="out" Segments=1
             """, out var nl);
         output.WriteLine(string.Join("\n", nl.Warnings));
-        Assert.Contains(nl.Warnings, w => w.Contains("'TL1'") && w.Contains("straight line"));
+        Assert.Contains(nl.Warnings, w => w.Contains("'TL1'") && w.Contains("approximated to first order around each harmonic"));
     }
 
     // ── System blocks: the same fit, from their own stamp ─────────────────

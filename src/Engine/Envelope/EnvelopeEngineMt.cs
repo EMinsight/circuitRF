@@ -18,8 +18,9 @@
 //  the same w >= 0 contract the harmonic-balance engine keeps.  The
 //  device Jacobian is HbNewtonNd.BuildJNd with dg + alpha*dc as the
 //  conductance waveform, which adds exactly the alpha*C triple product.
-//  SnP blocks are rational fits for the run and lines keep their tangent,
-//  checked at each product's band edge, exactly as in EnvelopeEngine.
+//  Lines are stepped as their delay and SnP blocks and other non-affine
+//  elements are rational fits for the run, exactly as in EnvelopeEngine;
+//  a product at a negative frequency sees a line at |w|, as its state is.
 // ================================================================
 
 using System.Diagnostics;
@@ -138,8 +139,10 @@ public sealed class EnvelopeEngineMt
                 drv[s, t] = x;
             }
 
-        // Every SnP is its rational fit for the whole run (EnvelopeSnpFit), the multi-tone start included.
+        // Every line is its delay and every SnP its rational fit for the whole run, the multi-tone start included (as in
+        // EnvelopeEngine).
         var stampHz = wMix.Select(w => Math.Abs(w) / (2 * Math.PI)).Where(f => f > 0).Distinct().ToArray();
+        using var lines = EnvelopeLineDelay.Apply(_nl, [.. wMix.Select(w => Math.Abs(w) / (2 * Math.PI))], h, 0.5 * need);
         using var snpFit = EnvelopeSnpFit.Apply(_nl, stampHz.DefaultIfEmpty(0).Max() + 0.5 * rate, stampHz, 0.5 * rate);
         using var baseband = EnvelopeBaseband.Apply(_nl, Math.PI * need);    // as in EnvelopeEngine
 
@@ -167,6 +170,7 @@ public sealed class EnvelopeEngineMt
                 double dlt = Math.Max(1e-6 * Math.Max(w, 2 * Math.PI * 1e6), 2 * Math.PI * 1.0);
                 CompressedColumnStorage<Complex> A0, C;
                 baseband.Holding = m == 0;            // the whole baseband product, its right-hand side included
+                lines.Product = m;
                 if (m == 0)
                 {
                     var a1 = EnvelopeEngine.Stamp(extractor, mna, dlt);
@@ -200,16 +204,20 @@ public sealed class EnvelopeEngineMt
                 }
                 var pr = new Prod { W = wMix[m], Neg = wMix[m] < 0, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
                 baseband.Holding = false;
-                pr.Be = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit));
-                pr.G2 = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit));
+                lines.Product = null;
+                lines.Bind();
+                var delayNow = lines.Coupling(m, 1, A0.RowCount);
+                pr.Be = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit, delayNow));
+                pr.G2 = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit, delayNow));
                 prods[m] = pr;
             }
         }
-        finally { baseband.Holding = false; foreach (var s in sources) s.EnvelopeDrive = null; }
+        finally { baseband.Holding = false; lines.Product = null; foreach (var s in sources) s.EnvelopeDrive = null; }
 
         // ── start: multi-tone HB with the t0 drives ─────────────────────────
         var (V, X0, q0) = Start(extractor, baseband, sources, apft, tones, wMix, toneMix, N, ifNodes, p, (s, t) => drv[s, t][0]);
         for (int m = 0; m < M; m++) { prods[m].Xm1 = X0[m]; prods[m].Xm2 = X0[m]; }
+        lines.Start(X0);
         var qm1 = q0; var qm2 = q0;
 
         var probes = ResolveProbes(p, srcEcs);
@@ -250,7 +258,7 @@ public sealed class EnvelopeEngineMt
         // is source s's drive at tone t. Null when Newton did not converge.
         Complex[][]? Advance(EnvelopeNewton nw, double alpha, double b1, double b2, Func<int, EnvelopeEngine.Stage> stageOf,
                              Func<int, int, Complex> drvAt, Complex[][] x1, Complex[][] x2, Complex[,] q1, Complex[,] q2,
-                             Complex[,] V, out Complex[,] qNow)
+                             Complex[,] V, Action<int, Complex[]>? delayed, out Complex[,] qNow)
         {
             var yEff = new Complex[M][,];
             var iSrc = new Complex[M][];
@@ -264,6 +272,7 @@ public sealed class EnvelopeEngineMt
                 for (int r = 0; r < n; r++) hv[r] = b1 * x1[m][r] + b2 * x2[m][r];
                 var bh = new Complex[n];
                 EnvelopeEngine.MulCsc(pr.C, hv, bh, -1.0);
+                delayed?.Invoke(m, bh);
                 var xh = new Complex[n];
                 sg.Lu.Solve(bh, xh);
                 var x = xoc[m] = new Complex[n];
@@ -341,14 +350,15 @@ public sealed class EnvelopeEngineMt
                 var q = qm1;
                 var vs = (Complex[,])vHist[^1].Clone();
                 bool ok = true;
+                lines.BeginSplit();
                 for (int i = 1; i <= sub && ok; i++)
                 {
                     double f = (double)i / sub;
-                    var xn = Advance(nw, aSub, -aSub, 0.0, m => SplitStage(prods[m], sub, aSub),
+                    var xn = Advance(nw, aSub, -aSub, 0.0, m => SplitStage(m, sub, aSub),
                                      (s, t) => drv[s, t][step - 1] + f * (drv[s, t][step] - drv[s, t][step - 1]),
-                                     x, x, q, q, vs, out var qn);
+                                     x, x, q, q, vs, lines.Any ? (m, b) => lines.AddSplit(m, b, sub, i) : null, out var qn);
                     if (xn is null) ok = false;
-                    else { x = xn; q = qn; }
+                    else { x = xn; q = qn; lines.PushSub(xn); }
                 }
                 if (!ok) continue;
                 Array.Copy(vs, V, V.Length);
@@ -361,11 +371,12 @@ public sealed class EnvelopeEngineMt
                 $"envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {EnvelopeEngine.MaxStepSplit} sub-steps");
         }
 
-        EnvelopeEngine.Stage SplitStage(Prod pr, int sub, double aSub)
+        EnvelopeEngine.Stage SplitStage(int m, int sub, double aSub)
         {
+            var pr = prods[m];
             if (!pr.Split.TryGetValue(sub, out var sg))
                 pr.Split[sub] = sg = EnvelopeEngine.Stage.Of(
-                    EnvelopeEngine.Prepare(pr.A0, pr.C, Math.Abs(pr.W), aSub, ifNodes, pr.BStatic, pr.BUnit));
+                    EnvelopeEngine.Prepare(pr.A0, pr.C, Math.Abs(pr.W), aSub, ifNodes, pr.BStatic, pr.BUnit, lines.Coupling(m, sub, pr.A0.RowCount)));
             return sg;
         }
 
@@ -383,9 +394,10 @@ public sealed class EnvelopeEngineMt
 
             var xNew = Advance(newton, alpha, b1, b2, m => be ? prods[m].Be : prods[m].G2, (s, t) => drv[s, t][step],
                                prods.Select(pr => pr.Xm1).ToArray(), prods.Select(pr => pr.Xm2).ToArray(), qm1, qm2, V,
-                               out var qNow)
+                               lines.Any ? lines.AddMain : null, out var qNow)
                        ?? Split(step, V, out qNow);
             for (int m = 0; m < M; m++) { prods[m].Xm2 = prods[m].Xm1; prods[m].Xm1 = xNew[m]; }
+            lines.Push(xNew);
             qm2 = qm1; qm1 = qNow;
             vHist.Add((Complex[,])V.Clone()); if (vHist.Count > 3) vHist.RemoveAt(0);
             Record(step);

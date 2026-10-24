@@ -171,22 +171,32 @@ Three things make long modulated runs practical:
   where ACPR2 and the bias-node memory are converged on every measured case. *draft* (1×) is about
   0.4 dB pessimistic on ACPR2 and badly off on bias-network ringing. *fine* (8×) is for reference runs.
 
-**Frequency-dependent blocks.** Each step treats the linear network as a straight line in frequency
-around every harmonic. Resistors, capacitors and inductors are exactly that; other blocks are handled
-as follows.
+**Frequency-dependent blocks.** Resistors, capacitors and inductors enter every step exactly. Other
+blocks are handled as follows.
 
-- **S-parameter blocks** ([SnP](components.html#snp)) and the System [Filter](components.html#filter)
-  and [Duplexer](components.html#duplexer) are fitted with a rational model and simulated exactly
-  across the signal band, and at DC and every harmonic. The Messages pane reports each fit's order and
-  error, and, for an SnP, how far the fit is from the file's interpolated values at DC and at any
-  harmonic outside the file's frequency range. A fit that misses its error tolerance, or that is not
-  passive, warns.
-- **Lines and Z(freq) blocks** ([TLIN](components.html#tline), the microstrip, stripline, coplanar and
-  coupled lines, and an [Impedance N-Port](components.html#zport) with a `Z(freq)`) are still
-  approximated by a straight line in frequency around each harmonic. In the baseband envelope (the
-  bias path) a line is held at what it is at DC, a short from end to end (each strip of a coupled
-  pair its own short), and a Z(freq) block at its DC value. A warning names any whose error across
-  the band is large enough to move ACPR by about 0.1 dB.
+- **Lines** ([TLIN](components.html#tline), and the microstrip, stripline and coplanar lines) are
+  stepped as a delay: each end sees the wave that left the other end one line delay earlier. A
+  lossless line is exact at any length, across the signal band and in the baseband envelope (the bias
+  path). A lossy line's loss is taken to first order around each harmonic and left out of the baseband
+  envelope, where the line stays exact at DC. A line is usually shorter than one step, so the
+  delayed wave is interpolated between steps: at *standard* this is off by up to about 1.5 % at the edge
+  of the signal band, at *fine* about 0.2 %. The Messages pane gives each line's delay and how far it
+  is from the line across the band, and a warning names any line far enough off to move ACPR by about
+  0.1 dB.
+- **S-parameter blocks** ([SnP](components.html#snp)), the System [Filter](components.html#filter)
+  and [Duplexer](components.html#duplexer), an [Impedance N-Port](components.html#zport) with a
+  `Z(freq)`, and any other part whose response bends across a harmonic's band by more than the fit's
+  error tolerance (a [Klopfenstein taper](components.html#mklopf), for one) are fitted with a rational
+  model and simulated exactly across the signal band, at DC and at every harmonic. The Messages pane
+  reports each fit's order and error, and, for an SnP, how far the fit is from the file's interpolated
+  values at DC and at any harmonic outside the file's frequency range. An SnP, Filter or Duplexer
+  whose fit misses its error tolerance, or is not passive, warns. Any other part whose fit misses or
+  is not passive is not fitted: it is approximated to first order around each harmonic (its value and
+  slope there) and held at its DC value across the baseband envelope, and a warning names it.
+- **Coupled lines** (CLIN and the coupled microstrip and broadside pairs) are approximated to first
+  order around each harmonic (their value and slope there). In the baseband envelope each strip is
+  held at what it is at DC, a short from end to end. A warning names any whose error across the band
+  is large enough to move ACPR by about 0.1 dB.
 
 | Setting | Default | Meaning |
 |---|---|---|

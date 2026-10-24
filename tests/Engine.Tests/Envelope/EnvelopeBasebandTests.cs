@@ -11,8 +11,9 @@ namespace CircuitRF.Engine.Tests.Envelope;
 
 /// <summary>
 /// A line in the baseband envelope. The k = 0 product took its C from stamps at 1 Hz and 2 Hz, where a line's Y stamp
-/// goes as 1/(jωL): a 25-ohm line of 90-450° gave a slope of ~1e15 and the LU found no pivot. Such an element is now held
-/// at its DC stamp for the baseband product (EnvelopeBaseband).
+/// goes as 1/(jωL): a 25-ohm line of 90-450° gave a slope of ~1e15 and the LU found no pivot. Such an element was then held
+/// at its DC stamp for the baseband product (EnvelopeBaseband); since brief ENV-FIT a line is stepped as its delay
+/// (EnvelopeLineDelay), its DC short at ω = 0 and exact across the baseband when lossless.
 /// </summary>
 public sealed class EnvelopeBasebandTests(ITestOutputHelper output)
 {
@@ -66,16 +67,14 @@ public sealed class EnvelopeBasebandTests(ITestOutputHelper output)
         Assert.True(Math.Abs(pdc - 0.1) < 1e-6, $"Pdc {pdc} W, not 0.1 W");
     }
 
-    /// <summary>Holding costs a short line little across a 50 MHz baseband (4.5° at its edge) and is not reported; a line
-    /// 0.4 wavelengths long at that edge is named.</summary>
+    /// <summary>A line 0.4 wavelengths long at the edge of a 50 MHz baseband was named for being held at its DC value there
+    /// (147 %); stepped as its delay it is not held, and nothing names it.</summary>
     [Fact]
-    public void ALongLineHeldAcrossTheBaseband_IsNamed_AShortOneIsNot()
+    public void ALongLine_IsNotHeldAcrossTheBaseband()
     {
-        Run(Line(90).Replace("CW;Off=0;P=0", "NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1"), out var shortNl);
         Run(Line(2970).Replace("CW;Off=0;P=0", "NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1"), out var longNl);
-        output.WriteLine("short: " + string.Join(" | ", shortNl.Warnings));
-        output.WriteLine("long:  " + string.Join(" | ", longNl.Warnings));
-        Assert.DoesNotContain(shortNl.Warnings, w => w.Contains("baseband envelope"));
-        Assert.Contains(longNl.Warnings, w => w.Contains("'TL1'") && w.Contains("held at its DC value"));
+        output.WriteLine("long:  " + string.Join(" | ", longNl.Notes.Concat(longNl.Warnings)));
+        Assert.DoesNotContain(longNl.Warnings, w => w.Contains("'TL1'"));
+        Assert.Contains(longNl.Notes, n => n.Contains("'TL1'") && n.Contains("stepped as its delay"));
     }
 }

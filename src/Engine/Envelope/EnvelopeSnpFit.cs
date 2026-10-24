@@ -24,7 +24,14 @@
 //
 //  A System Filter or Duplexer has the same problem (its S(w) is the
 //  rational response of a prototype, stamped as b = S(w) a), so it gets
-//  the same realization, fitted to samples of its own stamp.
+//  the same realization, fitted to samples of its own stamp.  So does any
+//  other linear element whose stamp MEASURES as far from affine in jw
+//  (its tangent error above the fit's tolerance): a Z(freq) block, a
+//  Klopfenstein taper.  Coupled lines are not fitted (see NotAffine).  For
+//  those, a fit that misses its tolerance or is not passive is refused,
+//  and the element keeps its value and slope at each harmonic.  A two-
+//  conductor line is not fitted at all: it is stepped as its delay
+//  (EnvelopeLineDelay), substituted before this runs.
 //
 //  One fit per file (absolute path, write time, length and the fit
 //  settings) and per block definition: parallel-in-time segments, sweep
@@ -204,11 +211,16 @@ public static class EnvelopeSnpFit
     public static Substitution Apply(ElaboratedNetlist nl, double topHz, IReadOnlyList<double> stampHz, double bandHz)
     {
         var sub = new Substitution(nl);
+        var ws = stampHz.Select(f => 2 * Math.PI * f).Where(w => w > 2 * Math.PI * bandHz).Distinct().ToArray();
         for (int i = 0; i < nl.Components.Count; i++)
         {
             var ec = nl.Components[i];
-            if (ec.Model is FilterModel or DuplexerModel && !ec.IsNonlinear) { FitSystemBlock(nl, sub, i, ec, topHz, stampHz, bandHz); continue; }
-            if (ec.Model is not SnpModel snp) continue;
+            if (ec.Model is FilterModel or DuplexerModel && !ec.IsNonlinear) { FitSystemBlock(nl, sub, i, ec, topHz, stampHz, bandHz, generic: false); continue; }
+            if (ec.Model is not SnpModel snp)
+            {
+                if (NotAffine(ec, ws, bandHz)) FitSystemBlock(nl, sub, i, ec, topHz, stampHz, bandHz, generic: true);
+                continue;
+            }
             // A missing file is the SnpModel's own refusal, which names the instance: leave it to stamp.
             if (string.IsNullOrWhiteSpace(snp.FilePath) || !File.Exists(snp.FilePath)) continue;
             string who = $"SnP '{ec.InstancePath}'";
@@ -216,8 +228,7 @@ public static class EnvelopeSnpFit
             if (e.Model is null || e.Ports != snp.PortCount)
             {
                 string why = e.Refusal ?? $"its file has {e.Ports} port(s), the block {snp.PortCount}";
-                nl.AddWarningOnce("env-snp-nofit:" + ec.InstancePath,
-                    $"{who}: not fitted for the envelope ({why}); it is approximated by a straight line in frequency around each harmonic");
+                nl.AddWarningOnce("env-snp-nofit:" + ec.InstancePath, $"{who}: not fitted for the envelope ({why}); {FirstOrder}");
                 continue;
             }
             var model = new RationalSnpModel(e.Ports, e.Z0, e.Model);
@@ -243,16 +254,42 @@ public static class EnvelopeSnpFit
         return sub;
     }
 
+    /// <summary>What a block whose fit was refused is, in each refusal's words.</summary>
+    private const string FirstOrder = "it is approximated to first order around each harmonic (its value and slope there)";
+
+    /// <summary>
+    /// Whether <paramref name="ec"/>'s stamp is far enough from affine in jω, across the products at <paramref name="ws"/>,
+    /// for a fit to improve on its value and slope there: its tangent error (<see cref="EnvelopeTangentCheck.ElementError"/>)
+    /// above the fit's own <see cref="Tolerance"/>. Above round-off alone is not enough: a microstrip bend, tee, cross, via
+    /// or spiral reads 1e-5 to 6e-5 (an affine stamp ~1e-12), which first order already holds to better than any fit, and a
+    /// spiral's fit cost 21 s (src/Engine/RESOLVED.md, ENV-FIT). Sources, terminations and inductive branches are not measured (their stamps are
+    /// constant or affine by construction, and stamping one alone re-numbers its branch). A coupled line is not fitted
+    /// either: it keeps its value and slope at each harmonic, because a long one cannot be fitted and finding that out
+    /// walked every order (132 s for a 300 mm MCLIN, src/Engine/RESOLVED.md, ENV-FIT).
+    /// </summary>
+    private static bool NotAffine(ElaboratedComponent ec, double[] ws, double bandHz)
+    {
+        if (ws.Length == 0 || ec.IsNonlinear || ec.Model is IDcShortedTerminals
+                || ec.Model is ModSourceModel or RationalSnpModel or DelayLineModel or IInductiveBranch
+                or MutualInductanceModel or PortModel or TermModel or VdcModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel)
+            return false;
+        try { return EnvelopeTangentCheck.ElementError(ec, ws, 2 * Math.PI * bandHz) > Tolerance; }
+        catch (Exception) { return false; }    // an element that cannot be stamped alone is the run's to refuse
+    }
+
     /// <summary>
     /// A System Filter or Duplexer: its S is rational (a prototype placed by a frequency transformation) but stamped as
     /// <c>b = S(ω)·a</c>, which the envelope would take as a tangent like any non-affine stamp. Its own stamp is sampled
     /// instead — terminated at its nodes, as a node-referenced S in 50 ohm (<see cref="EnvelopeTangentCheck.NodeS"/>) —
     /// from DC to the top of the run and densely across every product's band, and that is fitted and realized exactly
-    /// as an SnP is. Nothing of the block's own model is read but its stamp.
+    /// as an SnP is. Nothing of the block's own model is read but its stamp. A <paramref name="generic"/> element (one the
+    /// tangent measure found not affine) is fitted to <see cref="Tolerance"/>, not to the exactly-rational block's
+    /// <see cref="BlockTolerance"/>, and a fit that misses it or is not passive is refused.
     /// </summary>
     private static void FitSystemBlock(ElaboratedNetlist nl, Substitution sub, int index, ElaboratedComponent ec,
-                                       double topHz, IReadOnlyList<double> stampHz, double bandHz)
+                                       double topHz, IReadOnlyList<double> stampHz, double bandHz, bool generic)
     {
+        double tol = generic ? Tolerance : BlockTolerance;
         string who = $"{ec.ComponentType} '{ec.InstancePath}'";
         var nodes = ec.Nodes.Where(n => n > 0).Distinct().ToArray();
         // Its S is exactly rational, so a few hundred samples determine it: a coarse anchor from DC to the top, and 41
@@ -263,17 +300,27 @@ public static class EnvelopeSnpFit
         // One fit per block DEFINITION and grid: the parameters, the way its nets meet ground, and the run's span.
         string shape = string.Join(",", ec.Nodes.Select(n => n == 0 ? "g" : Array.IndexOf(nodes, n).ToString(CultureInfo.InvariantCulture)));
         string key = string.Join(";", ec.Parameters.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Key + "=" + kv.Value)) +
-                     FormattableString.Invariant($"|{ec.ComponentType}|{shape}|{topHz:R}|{bandHz:R}|{string.Join(",", stampHz)}|{BlockTolerance:R}|{MaxOrder}");
-        var e = BlockCache.GetOrAdd(key, _ => new Lazy<Entry>(() => BuildBlock(ec, nodes, grid), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+                     FormattableString.Invariant($"|{ec.ComponentType}|{shape}|{topHz:R}|{bandHz:R}|{string.Join(",", stampHz)}|{tol:R}|{MaxOrder}");
+        var e = BlockCache.GetOrAdd(key, _ => new Lazy<Entry>(() => BuildBlock(ec, nodes, grid, tol), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         if (e.Model is null)
         {
-            nl.AddWarningOnce("env-snp-nofit:" + ec.InstancePath,
-                $"{who}: not fitted for the envelope ({e.Refusal}); it is approximated by a straight line in frequency around each harmonic");
+            nl.AddWarningOnce("env-snp-nofit:" + ec.InstancePath, $"{who}: not fitted for the envelope ({e.Refusal}); {FirstOrder}");
             return;
         }
         var model = new RationalSnpModel(e.Ports, e.Z0, e.Model);
-        sub.Swap(index, new ElaboratedComponent(ec.ComponentType, ec.InstancePath, nodes, ec.Parameters, model) { Multiplicity = ec.Multiplicity });
         double sigma = e.Sigma.GetOrAdd(topHz, t => SigmaMax(model, e, t));
+        // Written as "not within" so a NaN error or σmax is a refusal, never a fit that steps
+        if (generic && !(e.RelativeError <= Tolerance && sigma <= PassivityWarnAbove))
+        {
+            var inv = CultureInfo.InvariantCulture;
+            string why = !(e.RelativeError <= Tolerance)
+                ? string.Format(inv, "its rational fit reached a relative error of {0:G2} at order {1}, against a tolerance of {2:G2}", e.RelativeError, e.Order, Tolerance)
+                : string.Format(inv, "its rational fit is not passive: σmax(S) = {0:0.####} between DC and {1:0.###} GHz", sigma, topHz / 1e9);
+            nl.AddWarningOnce("env-snp-nofit:" + ec.InstancePath, $"{who}: not fitted for the envelope ({why}); {FirstOrder}");
+            return;
+        }
+        // The samples are of the element's own stamp, its multiplier applied: the fit is all m copies, so it carries none.
+        sub.Swap(index, new ElaboratedComponent(ec.ComponentType, ec.InstancePath, nodes, ec.Parameters, model));
         bool met = e.RelativeError <= Tolerance;
         sub.Reports.Add(new SnpFitReport(ec.InstancePath, e.Order, e.RelativeError, sigma, met));
         Report(nl, ec.InstancePath, who, e, sigma, topHz, $"over {e.Points} samples from DC to {topHz / 1e9:0.###} GHz", "");
@@ -281,7 +328,7 @@ public static class EnvelopeSnpFit
 
     private static readonly ConcurrentDictionary<string, Lazy<Entry>> BlockCache = new();
 
-    private static Entry BuildBlock(ElaboratedComponent ec, int[] nodes, double[] grid)
+    private static Entry BuildBlock(ElaboratedComponent ec, int[] nodes, double[] grid, double tol)
     {
         var e = new Entry { Ports = nodes.Length, Z0 = EnvelopeTangentCheck.NodeSReference };
         int n = nodes.Length;
@@ -303,7 +350,7 @@ public static class EnvelopeSnpFit
         Interlocked.Increment(ref _fitCount);
         try
         {
-            var fit = VectorFit.FitByError([.. f], [.. resp.Select(r => r.ToArray())], BlockTolerance, MaxOrder, Settings);
+            var fit = VectorFit.FitByError([.. f], [.. resp.Select(r => r.ToArray())], tol, MaxOrder, Settings);
             e.Model = fit.Model; e.Order = fit.Order; e.RelativeError = fit.RelativeError;
         }
         catch (ArithmeticException ex) { e.Refusal = "the rational fit failed: " + ex.Message; }

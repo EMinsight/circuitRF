@@ -17,7 +17,7 @@ namespace CircuitRF.Core.Devices;
 /// <para>TEM: ε_eff = Er at every frequency and Z₀ = <see cref="Stripline.Z0Air"/>/√Er. Conductor loss by
 /// Wheeler's incremental-inductance rule; dielectric loss tanδ only, α_d = π·f·√εr·tanδ/c.</para>
 /// </summary>
-public sealed class StriplineModel : ComponentModel, IPlanarLineModel, IDcShortedTerminals
+public sealed class StriplineModel : ComponentModel, IPlanarLineModel, IDcShortedTerminals, IUniformLine
 {
     /// <summary>Lossless at DC (every loss term here vanishes at 0 Hz): a short from port 1 to port 2.</summary>
     public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1)];
@@ -62,10 +62,15 @@ public sealed class StriplineModel : ComponentModel, IPlanarLineModel, IDcShorte
         return new MicrostripLineParameters(z0, _er, z0, _er, alphaC, alphaD, beta);
     }
 
+    public (double Z0, Complex GammaLength) LineAt(double freqHz)
+    {
+        var p = LineParameters(freqHz);
+        return (p.Z0, new Complex(p.AlphaNpPerM * _l, p.BetaRadPerM * _l));
+    }
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
-        var p = LineParameters(omega / (2.0 * Math.PI));
-        var gammaLength = new Complex(p.AlphaNpPerM * _l, p.BetaRadPerM * _l);
-        TLineModel.StampUniformLine(mna, c.Nodes[0], c.Nodes[1], new Complex(p.Z0, 0.0), gammaLength);
+        var (z0, gammaLength) = LineAt(omega / (2.0 * Math.PI));
+        TLineModel.StampUniformLine(mna, c.Nodes[0], c.Nodes[1], new Complex(z0, 0.0), gammaLength);
     }
 }

@@ -26,7 +26,7 @@ namespace CircuitRF.Core.Devices;
 /// R-pc-16/microstrip-models.md R4: out-of-range parameters are reported once per distinct
 /// violation via <see cref="MicrostripValidityReporter"/>, never silently extrapolated.
 /// </summary>
-public sealed class MicrostripLineModel : ComponentModel, IPlanarLineModel, IDcShortedTerminals
+public sealed class MicrostripLineModel : ComponentModel, IPlanarLineModel, IDcShortedTerminals, IUniformLine
 {
     /// <summary>Lossless at DC (every loss term here vanishes at 0 Hz): a short from port 1 to port 2.</summary>
     public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1)];
@@ -108,11 +108,16 @@ public sealed class MicrostripLineModel : ComponentModel, IPlanarLineModel, IDcS
         return new MicrostripLineParameters(z0Static, eeff0, z0, eeff, alphaC, alphaD, betaRadPerM);
     }
 
+    public (double Z0, Complex GammaLength) LineAt(double freqHz)
+    {
+        var p = LineParameters(freqHz);
+        return (p.Z0, new Complex(p.AlphaNpPerM * _lMeters, p.BetaRadPerM * _lMeters));
+    }
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
-        var p = LineParameters(omega / (2.0 * Math.PI));
-        var gammaLength = new Complex(p.AlphaNpPerM * _lMeters, p.BetaRadPerM * _lMeters);
-        TLineModel.StampUniformLine(mna, c.Nodes[0], c.Nodes[1], new Complex(p.Z0, 0.0), gammaLength);
+        var (z0, gammaLength) = LineAt(omega / (2.0 * Math.PI));
+        TLineModel.StampUniformLine(mna, c.Nodes[0], c.Nodes[1], new Complex(z0, 0.0), gammaLength);
     }
 }
 

@@ -56,7 +56,7 @@ namespace CircuitRF.Core.Devices;
 /// frequency exactly as before. DC (ω = 0 → θ = 0) is the same degeneracy and is clamped
 /// identically.
 /// </summary>
-public sealed class TLineModel : ComponentModel, IDcShortedTerminals
+public sealed class TLineModel : ComponentModel, IDcShortedTerminals, IUniformLine
 {
     /// <summary>Lossless at DC (every loss term here vanishes at 0 Hz): a short from port 1 to port 2.</summary>
     public IReadOnlyList<(int A, int B)> DcShortedTerminals { get; } = [(0, 1)];
@@ -142,6 +142,9 @@ public sealed class TLineModel : ComponentModel, IDcShortedTerminals
         if (_acDbPerM == 0.0 && _adDbPerM == 0.0) return 0.0;
         return (_acDbPerM * Math.Sqrt(freqRatio) + _adDbPerM * freqRatio) * _lengthM / DbPerNp;
     }
+
+    public (double Z0, Complex GammaLength) LineAt(double freqHz) =>
+        (_z0, new Complex(AttenuationNp(freqHz), ElectricalLengthRad(freqHz)));
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {

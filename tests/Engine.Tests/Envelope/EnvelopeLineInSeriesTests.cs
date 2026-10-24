@@ -12,7 +12,8 @@ namespace CircuitRF.Engine.Tests.Envelope;
 /// A line in series behind a DC block at a power amplifier's output (brief ENV-TLIN). The baseband product held the line
 /// at its ω = 0 stamp, which is the resonance clamp of its 1/(jωL) pole: a purely imaginary ~2e7 S. Behind the real
 /// projection the k = 0 envelope makes at the interface that is not passive, and the baseband state grew ×4.8 a step
-/// until a step failed (~50 ns) at any length, loss, form or drive. A line is now held shorted at DC (EnvelopeBaseband).
+/// until a step failed (~50 ns) at any length, loss, form or drive. A line was then held shorted at DC (EnvelopeBaseband);
+/// since brief ENV-FIT it is stepped as its delay (EnvelopeLineDelay), which is its DC short at ω = 0.
 /// </summary>
 public sealed class EnvelopeLineInSeriesTests(ITestOutputHelper output)
 {
@@ -39,7 +40,7 @@ public sealed class EnvelopeLineInSeriesTests(ITestOutputHelper output)
         """;
 
     /// <summary>The brief's reproduction with <paramref name="line"/> between the output DC block (n10) and the load (Vout).</summary>
-    private static string Pa(string line, double pinDbm, string stop) => Fet + $"""
+    internal static string Pa(string line, double pinDbm, string stop) => Fet + $"""
 
         Pin = {pinDbm}
         VDD = 48
@@ -62,7 +63,7 @@ public sealed class EnvelopeLineInSeriesTests(ITestOutputHelper output)
         analysis ENV1 type=env Stop={stop} Accuracy=standard MaxHarm=5 MaxMixOrder=7 Probes="Vin,Vd,Vout" Segments=1
         """;
 
-    private static DataSet Run(string cnl, out ElaboratedNetlist nl)
+    internal static DataSet Run(string cnl, out ElaboratedNetlist nl)
     {
         var (lib, tb) = new CnlReader().Read(cnl);
         var first = new Elaborator(lib).Elaborate(tb);
@@ -73,7 +74,7 @@ public sealed class EnvelopeLineInSeriesTests(ITestOutputHelper output)
         return EnvelopeRunner.Run(plan, () => { lock (gate) { if (used) return new Elaborator(lib).Elaborate(tb); used = true; return first; } });
     }
 
-    private static double[] Aclr(DataSet ds, string node)
+    internal static double[] Aclr(DataSet ds, string node)
     {
         var a = ds["ACLR"];
         int p = Array.IndexOf(a.Axes[0].Labels!, node), nc = a.Axes[1].Length;
@@ -110,16 +111,16 @@ public sealed class EnvelopeLineInSeriesTests(ITestOutputHelper output)
         Assert.True(Math.Abs(a[1] - b[1]) < 0.05 && Math.Abs(a[2] - b[2]) < 0.05, $"ACPR1 {a[1] - b[1]:0.0000} / {a[2] - b[2]:0.0000} dB");
     }
 
-    /// <summary>The straight-line warning still names a line that bends across the band, and not a short one. 1 m is the
-    /// first of 0.3/1/2/3 m above the threshold (12.8 % / 55.4 % / 75.3 % / 94.8 %); 300 mm is below it and is not named.</summary>
+    /// <summary>A line of any length is stepped as its delay, so none is approximated across the band any more: 1 m, which
+    /// the first-order treatment put 55.4 % off (and named), is named in no warning, like 3 mm.</summary>
     [Fact]
-    public void ALongLine_IsNamed_AShortOneIsNot()
+    public void NoLineIsNamed_WhateverItsLength()
     {
         Run(Pa("TLIN:TL3 n10 Vout Z=50 Ohm L=1000 mm", 14, "1e-6"), out var longNl);
         Run(Pa("TLIN:TL3 n10 Vout Z=50 Ohm L=3 mm", 14, "1e-6"), out var shortNl);
-        output.WriteLine("long:  " + string.Join(" | ", longNl.Warnings));
-        output.WriteLine("short: " + string.Join(" | ", shortNl.Warnings));
-        Assert.Contains(longNl.Warnings, w => w.Contains("'TL3'") && w.Contains("straight line in frequency"));
+        output.WriteLine("long:  " + string.Join(" | ", longNl.Notes.Concat(longNl.Warnings)));
+        output.WriteLine("short: " + string.Join(" | ", shortNl.Notes.Concat(shortNl.Warnings)));
+        Assert.DoesNotContain(longNl.Warnings, w => w.Contains("'TL3'"));
         Assert.DoesNotContain(shortNl.Warnings, w => w.Contains("'TL3'"));
     }
 }

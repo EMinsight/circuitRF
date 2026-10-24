@@ -3517,3 +3517,193 @@ to ~1e-9; it is exact now. No hero, example or HB fixture has a line, so no gate
 `tests/Engine.Tests/Devices/DcLineShortTests.cs`.
 
 Gate: `tests/Engine.Tests/Envelope/EnvelopeLineInSeriesTests.cs`.
+
+## Envelope: what a rational fit of a line costs (brief ENV-FIT §1b, 2026-10-23) — stopped at the gate
+
+Measured before building anything, through the System Filter path as it stands (`EnvelopeTangentCheck.NodeS` samples,
+every node terminated in 50 Ω; `VectorFit.FitByError`, tolerance 1e-3, `MaxOrder` 60, `Proportional = false`), on the
+reference bench's span: f0 = 2.14 GHz, MaxHarm 5, NR 20 MHz (rate 122.88 MHz), so the top of the run is 10.76 GHz and
+each product's band ±61.4 MHz. Lines are TLIN with `Eeff=1`. σmax(S_fit) is over 2,001 points from DC to the top.
+"Anchor" is the grid the System Filter uses (101 points DC→top plus 41 across DC and each product's band, 321 samples);
+"bands" is option (ii) (DC and the bands only, 226 samples). Time is the whole `FitByError` call, which tries orders
+1, 2, … until one meets the tolerance; "one fit" is a single `Fit` at the order reached.
+
+| element | grid | order | rel. error | σmax (dense) | σmax (on samples) | time | one fit |
+|---|---|---|---|---|---|---|---|
+| 50 Ω, 3 mm | anchor | 2 | 9.1e-6 | 1.00000 | | 0.03 s | |
+| 50 Ω, 30 mm | anchor | 5 | 8.2e-5 | 1.00006 | | 0.05 s | |
+| 50 Ω, 100 mm | anchor | 11 | 7.4e-5 | 1.00005 | | 0.34 s | |
+| **50 Ω, 300 mm** | anchor | 27 | 1.4e-4 | 1.00013 | 1.00012 | **3.7 s** | 0.39 s |
+| 50 Ω, 1000 mm | anchor | 41 (best) | **0.47** | 2.31 | | 38 s | |
+| 25 Ω, 3 mm | anchor | 2 | 7.5e-4 | 1.00094 | | 0.00 s | |
+| 25 Ω, 30 mm | anchor | 8 | 1.2e-4 | 1.00031 | | 0.13 s | |
+| 25 Ω, 100 mm | anchor | 19 | 1.6e-4 | 1.00042 | | 1.4 s | |
+| **25 Ω, 300 mm** | anchor | 48 | 4.1e-4 | 1.00163 | 1.00157 | **19.4 s** | 1.19 s |
+| 25 Ω, 1000 mm | anchor | 51 (best) | **0.46** | 3.54 | | 35 s | |
+| **50 Ω, 300 mm, `Ac=20 Ad=20 F=2 GHz`** | anchor | 58 (best) | **0.018** | 1.0142 | 0.99993 | **48 s** | 2.32 s |
+| Z(freq) parallel resonator, Q 20 at 2.14 GHz | anchor | 2 | 1.5e-15 | 1.00000 | 1 | 0.01 s | |
+| 50 Ω, 300 mm | bands | 14 | 6.0e-4 | 1.037 | 1.00086 | 0.47 s | 0.08 s |
+| 25 Ω, 300 mm | bands | 25 | 4.7e-4 | 1.047 | 1.0011 | 2.3 s | 0.25 s |
+| 50 Ω, 1000 mm | bands | 24 | 4.0e-4 | 1.086 | | 2.0 s | |
+| 25 Ω, 100 mm | bands | 16 | 8.8e-4 | **1.177** | | 0.65 s | |
+| 25 Ω, 1000 mm | bands | 39 | 9.5e-4 | **8.16** | | 8.3 s | |
+| 50 Ω, 300 mm lossy | bands | 58 | 7.2e-4 | **259.7** | 1.0000 | 35 s | 1.90 s |
+
+The Z(freq) expression was `Z[1,1]=50*freq*2.14e9/(freq*2.14e9 + j*20*(freq*freq - 2.14e9*2.14e9))` (a Z_Port in series).
+
+**The §1b.2 gate fails, so nothing was built.** The 300 mm line meets the tolerance at order ≤ 60 (27 at 50 Ω, 48 at
+25 Ω), but in 3.7 s and 19.4 s, not under ~2 s; the lossy 300 mm line misses the tolerance at every order (0.018 at
+order 58, 48 s). What the numbers say about each option:
+- **Most of the time is the order search, not the fit.** One fit at the order reached is 0.39 s (50 Ω) and 1.19 s
+  (25 Ω); `FitByError` spends the rest fitting every lower order first. A search that starts near the answer would
+  bring the 50 Ω line under 2 s with no change to the fit itself (2·τ·f_top ≈ 22 against the 27 reached). It would not
+  reliably bring the 25 Ω line there: its mismatch resonances took order 48, far from that estimate, and each fit near
+  it costs ~1 s. That is a change to the fit's search, so it is the owner's to choose.
+- **(i) a higher order cap** does not help the lossy line: its error stops falling well inside 60. The skin-effect
+  term (√f) has a branch point at DC, which no low-order rational function follows; the misfit is near DC.
+- **(ii) bands only** is fast and meets the tolerance up to 1000 mm, and is passive on its own samples, but between the
+  bands the fit is unconstrained: σmax 1.04-8.2 on the lossless lines and 260 on the lossy one. The stepping does read
+  the realization outside the fitted bands (Gear-2 at `standard` resolves ±245 MHz around each harmonic, against
+  ±61 MHz fitted), so a fit passive only on its samples is not known to be safe to step.
+- **(iii) a delay realization** is the only option the table does not rule out for long or lossy lines.
+- **1000 mm on the anchor grid** fails for a reason of its own: the anchor's 107 MHz spacing is 128° of the line's
+  phase, so the fit cannot follow it between samples.
+- A Z(freq) block that is rational in `freq` (as a resonator expression is) fits exactly at its own order.
+
+### Option (iii), measured before building (2026-10-23)
+
+Same span (f0 2.14 GHz, MaxHarm 5, signal extent ±50 MHz, standard step h = 2.03 ns, Nyquist ±245.8 MHz).
+
+**The line loss models are not causal, so the loss residual cannot be fitted globally.** In a delay realization the line
+is its Zc plus the wave from the other end delayed by τ and filtered by the residual H̃(f) = e^{−γl}·e^{jωτ}. Every
+line model here gives γl = αl(f) + jβl(f) with an attenuation that has no matching phase (TLIN: αl ∝ Ac·√f + Ad·f,
+βl = ωτ exactly; MLIN: conductor and dielectric α with a geometric-only εeff(f)). A real, frequency-dependent |H̃|
+with no phase is an impulse response symmetric about t = 0, which no causal (stable rational) function follows across
+DC to 10.8 GHz. Fitting H̃ alone (one response, 401 points DC→top plus the bands, 1e-3, order ≤ 60), with τ reduced by
+Δ = 0, 2, 5, 10, 20, 50 ps to let the fit absorb some delay, met the tolerance in no lossy case: TLIN 300 mm
+Ac = Ad = 20 → 0.20-0.28 relative error at order 51-58 (|H̃_fit| up to 1.54, not passive); Ac = Ad = 2 → 7.7e-3 to
+1.6e-2; Ad = 20 only → 0.098-0.18; Ac = 20 only → 0.064-0.10; 42 mm Ac = Ad = 2 → 9.8e-4 at Δ = 50 ps only; 1000 mm
+Ac = Ad = 20 → 0.35-0.38; MLIN FR4 300 mm (W 1.5, H 0.8 mm, Er 4.4, TanD 0.02) → 0.022-0.039. Each took ~55 s. The same
+non-causality is the likely reason the lossy line failed the whole-line fit above.
+
+**What works: exact delay plus the residual to first order around each harmonic.** The run reads the line only across
+each product's band, where H̃ and Zc are smooth (the delay, which is what makes a line hard, is taken out). Per product
+k, H̃ ≈ H̃(kf0) + H̃′(kf0)·Δf and Zc likewise. At the baseband the envelope is real, so H̃ can only be a real constant
+there, and it is held at H̃(0) = 1 to keep DC exact: the baseband column is the lossless delay against the lossy line.
+(A first draft of this table fitted a complex slope at the baseband too, which no real envelope can step; its baseband
+column read 4-30× smaller.) max|ΔS| (50 Ω, worst over S11 and S21) across ±50 MHz against the exact line, beside today's first-order
+treatment of the whole line (its Y stamp's value and slope; at the baseband, the short it is held at):
+
+| line | today, k = 1…5 | today, baseband | delay + residual, k = 1…5 | delay + residual, baseband |
+|---|---|---|---|---|
+| TLIN 50 Ω 300 mm lossless | 0.054-0.40 | 0.31 | ≤ 1e-13 (exact) | exact |
+| TLIN 25 Ω 300 mm lossless | 0.038-0.26 | 0.38 | exact | exact |
+| TLIN 25 Ω 1000 mm lossless | 0.80-1.1 | 1.0 | exact | exact |
+| TLIN 50 Ω 300 mm Ac = Ad = 20 | 2.5e-4 to 1.2e-2 | 0.32 | 1.1e-6 to 8.9e-5 | 0.12 |
+| TLIN 25 Ω 300 mm Ac = Ad = 20 | 2.2e-4 to 1.1e-2 | 0.37 | 1.0e-6 to 8.0e-5 | 0.13 |
+| TLIN 50 Ω 300 mm Ac = Ad = 2 | 0.028-0.097 | 0.31 | 1.6e-6 to 7.1e-6 | 1.3e-2 |
+| TLIN 50 Ω 42 mm Ac = Ad = 2 (ENV-TLIN's resonance case) | 1.0e-3 to 1.1e-2 | 0.044 | ≤ 7.4e-7 | 1.8e-3 |
+| TLIN 50 Ω 1000 mm Ac = Ad = 20 | ≤ 4.3e-3 | 0.88 | ≤ 3.1e-5 | 0.34 |
+| MLIN FR4 300 mm | 0.061-0.83 | 0.56 | 2.8e-5 to 9.8e-5 | 1.3e-2 |
+
+Passive in every case: σmax of the realized S ≤ 1 across the whole ±245.8 MHz the step resolves around each product
+(1.00000 for the lossless lines, below 1 for the lossy ones). These numbers leave out the one remaining error, below.
+
+**The delay is usually shorter than a step**, so it needs a fractional-delay interpolation (300 mm at εeff 1 is 1 ns;
+h = 2.03 ns at standard). The delayed value is then partly the CURRENT step's, which puts a term in the stepped matrix
+(linear, fixed per run, so still one factorization per product). Causal Lagrange on steps n, n−1, …, max error across
+±50 MHz against e^{−jΔωτ}, and max |L| up to Nyquist:
+
+| accuracy (h) | τ | linear | quadratic | cubic |
+|---|---|---|---|---|
+| standard (2.03 ns) | 0.1 ns | 9.4e-3 | 3.9e-3 | 1.8e-3, max |L| 1.004 |
+| standard | 1 ns | 5.1e-2 | 1.6e-2 | 6.3e-3, max |L| 1.086 |
+| standard | 3.3 ns | 4.8e-2 | 1.4e-2 | 5.2e-3, max |L| 1.147 |
+| standard | 10 ns | 1.6e-2 | 3.6e-3 | 1.2e-3, max |L| 1.098 |
+| fine (1.02 ns) | 0.3 ns | 1.1e-2 | 1.9e-3 | 4.1e-4, max |L| 1.036 |
+| fine | 3.3 ns | 9.4e-3 | 1.8e-3 | 3.8e-4, max |L| 1.028 |
+| draft (8.14 ns) | 1 ns | 0.30 | 0.37 | 0.50 |
+
+Linear and quadratic never exceed |L| = 1 (passive); cubic does, so it is out. Quadratic at standard is 0.4-1.6 % at the
+band edge, of the order of Gear-2's own error at that step (the SnP gate above needed 16x to reach 0.003 dB), and 5-25× better than today's treatment of a lossless 300 mm
+line. At draft the signal band reaches 2.6 rad per step and no interpolation is accurate; draft is already documented as
+coarse.
+
+### Built (2026-10-24)
+
+Code: `src/Engine/Envelope/EnvelopeLineDelay.cs` (new: `DelayLineModel` and the run-scoped substitution, history and
+interpolation), `src/Core/Devices/IUniformLine.cs` (new: Zc and γl of TLIN, MLIN, SLIN, CPWG, whose stamps now read
+through it with the same arithmetic), and the gate in `EnvelopeSnpFit.cs`. Gate: `tests/Engine.Tests/Envelope/EnvelopeLineDelayTests.cs`.
+
+**How a line is stepped.** Each end is `V − Zc·I` = the other end's wave `V + Zc·I` from τ earlier, rotated by e^(−jω_kτ)
+and filtered by the residual to first order (the slope as a time derivative of the delayed wave). τ is the line's group
+delay at each product, so the residual has no phase slope; at the baseband it is the low-frequency delay and the residual
+is 1. The delayed wave is quadratic Lagrange on the step grid; when τ < h the current step's weight is a term of the
+stepped matrix (`Prepare`'s `delayNow`), fixed per run, so there is still one factorization per product. A split step
+uses linear interpolation (its own spacing). With no product set the model stamps the line's exact steady state, so the
+DC solve, the HB start and every extraction see the line itself, and at ω = 0 the Branin rows are its DC short: no
+resonance clamp anywhere, and lines are no longer wrapped by `EnvelopeBaseband`. The DC solve numbers the line's branches
+differently from the run's system, so the run copies the branch rows right after stamping each product (`Bind`) rather
+than reading the model's last stamp later. A residual whose |h0 + h1·Δf| exceeds 1 anywhere up to the step's Nyquist is
+stepped with h1 = 0 and the note says where; no case run here needed it.
+
+**Accuracy, in the tests** (closed forms; steps chosen to divide 20 ns so the tone windows are whole periods — at
+0.32 ns, 62.5 steps per period leaked 1.8e-3 into |S21|, which first looked like an engine error):
+two CW carriers at f0 ± 50 MHz through a 25 Ω, 300 mm TLIN, step 0.4 ns (τ = 2.5 steps, interpolation's worst case):
+−0.6673 / −1.7318 dB against −0.6675 / −1.7316 dB; the first-order treatment gave −0.5197 dB at −50 MHz (measured before
+the change). The 100 MHz beat of those carriers through a square law and the same line in a bias feed: −0.7749 dB against
+−0.7721 dB; held shorted it read 0.0000 dB. The interpolation error in |ΔS21| for that line: 1.3e-4 at h = 0.4 ns,
+8.8e-4 at 0.8 ns, 2.9e-7 at 0.2 ns (τ = 5.003 steps, nearly whole). A Z(freq) parallel resonator (Q 20 at f0), one
+carrier at +50 MHz: −2.2371 dB against −2.2385 dB (fitted at order 2); under the first-order treatment that run went to NaN.
+
+**The reference bench** (ENV-TLIN's PA, 14 dBm, `TLIN Z=50 Ohm L=300 mm`, 20 µs): Pout_avg 24.0125 dBm, ACPR1
+−28.09 / −28.98 dBc, ACPR2 −55.35 / −54.36 dBc; first order gave 24.0172 dBm, −28.06 / −28.94 dBc, −55.18 / −54.19 dBc.
+The line is matched to the 50 Ω load, so it is nearly a pure delay at the PA and the two differ by 0.005-0.17 dB. It posts
+`TLIN 'TL3': stepped as its delay (1.0007 ns) with its loss to first order around each harmonic; 0 % (RMS) from the line
+across the ±50 MHz signal band` and no warning.
+
+**ENV-TLIN's lossy-resonance divergence is gone for lines**: TLIN 42.03 mm Ac = Ad = 2 (3λ/2 at 5·f0) and SLIN 20 mm,
+which failed, run at −10 and 14 dBm. BCLIN 20 mm still fails (step 16): a coupled line is still first order.
+
+**Nothing else moved.** SHA-256 over every cube (wall time excluded), before the change and after it: an all-lumped PA run
+(1 µs, and 2 µs with automatic segments), the same PA through an SnP (a 2 nH / 1 pF lowpass file) and a two-fundamental
+lattice run — all four identical. HB, S-parameter, DC and loadpull do not reach this code; the four line models' `Stamp`
+now calls `LineAt`, the same arithmetic in the same order. A System Filter or Duplexer with a multiplier m ≠ 1 was swapped
+for its fit with the multiplier kept, but its fit is of the element's own stamp (m applied) and the realization allocates
+branches, which a multiplier refuses: such a block could not run an envelope. The fit now carries none; m = 1 is unchanged.
+
+**The fit gate, and what it found.** The brief asked for every linear element whose tangent error is above round-off. A
+survey of the linear primitives (defaults or a typical FR4 geometry, products at k·2.14 GHz, ±50 MHz):
+- at round-off (≤ 5e-13): R, C, L, PRLC, Bead, TFR, Short, SemiC, Transformer, Atten, VCCS, VCVS, WSProbe, IProbe;
+- 1e-7 to 1e-6: MIMCAP 9.4e-8, AIRBRIDGE 4.7e-7;
+- 1e-5 to 1e-4: MBEND 1.5e-5, MMITER 1.2e-5, MTEE 1.3e-5, MCROSS 3.2e-5, VIA 2.1e-5, VIAGND 6.1e-5, SPIRAL 5.4e-5,
+  OSPIRAL 5.1e-5, SRLC 1.8e-4 (its series C makes the branch non-affine);
+- above 1e-3: MKLOPF 5.4e-3, the Z(freq) resonator, and the lines (TLIN 8.5e-3 at its defaults, MLIN 2.6e-3 and SLIN 5.2e-3
+  at 20 mm, CPWG 9.3e-4 at 10 mm — stepped as delays instead), CLIN 1.4, MCLIN 1.9e-2, MBCLIN 1.8e-3, BCLIN 3.6e-4;
+- MTAPER 6.8e-4, MCURVE 9.1e-4.
+Fitting at "above round-off" cost a default SPIRAL **21 s** (order 44) for an element first order already holds to 5e-5,
+so the gate is **above the fit's own tolerance, 1e-3**: a fit accurate to 1e-3 cannot improve on a tangent that is already
+closer. That fits MKLOPF (order 10, 0.3 s) and Z(freq) blocks, and leaves the rest as they were. SRLC is an inductive
+branch and is not measured (as `EnvelopeBaseband` already skipped it).
+
+**Coupled lines are not fitted, by decision pending the owner.** Through the fit path a 20 mm MCLIN fitted in 3.2 s
+(order 15), but a 300 mm MCLIN was refused after **132 s** (0.17 at order 50) and a CLIN 90° was refused for σmax 1.0012
+in 1 s; the refusal costs every order of the walk. They keep their first-order treatment and the baseband short, as
+before. Options: a modal delay realization (a symmetric pair decouples into even and odd lines with the fixed [1 1; 1 −1]
+transform; an asymmetric one needs the general modal path), or a bounded order search in the fit. A Z(freq) block that is
+not rational in freq (a pure 20 ns delay expression) was refused after 38 s by the same walk.
+
+### Reviewed after building (2026-10-24)
+
+- **A generic fit's refusal is now written "not within tolerance and passive"** (`EnvelopeSnpFit.FitSystemBlock`), so a
+  NaN relative error or σmax refuses the fit. Before, `NaN > Tolerance` was false and such a fit would have been stepped.
+  Non-finite samples are already dropped before fitting, so no case run here reached it; it is the one way a fit could
+  pass the gate that §1c forbids.
+- **The refusal path had no test** (§3.5). `EnvelopeLineDelayTests.AZFreqBlockWhoseFitIsNotPassive_IsRefused_AndNamed`
+  is the resonator with its sign turned: it fits exactly at order 2 but σmax(S) = 3, so it is refused, stays its own
+  model, and is named with the reason and the first-order wording.
+- **Zc is held at its value at each product**, not taken to first order as the "measured before building" table did. For
+  TLIN, SLIN and the angle form it is constant anyway; for MLIN and CPWG its dispersion across a product's band is in the
+  per-line error the note reports (`Error` compares against the exact Zc(f)), so nothing about it goes unreported.
+- **The segment warm-up does not count a line's delay as memory** (`EnvelopeMemory` holds lines at DC). It does not need
+  to: the warm-up is at least 5 µs, and a line would have to be ~1.5 km long to delay that much.

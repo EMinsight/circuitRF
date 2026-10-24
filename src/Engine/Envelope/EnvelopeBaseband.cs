@@ -14,8 +14,12 @@
 //  warns, naming it, when that is large enough to matter.
 //
 //  An element is held only when its own baseband tangent is not exact, so
-//  R/L/C, the sources and a fitted SnP never are, and a lumped circuit's
-//  run is unchanged bit for bit.
+//  R/L/C, the sources and a fitted block never are, and a lumped circuit's
+//  run is unchanged bit for bit.  A two-conductor line is never held in an
+//  envelope run either: it is stepped as its delay (EnvelopeLineDelay),
+//  exact across the baseband for a lossless line.  What is still held is
+//  a block whose rational fit was refused, and a coupled line, which is
+//  never fitted (held shorted, below).
 //
 //  A LINE is not held at its w = 0 stamp: that is the resonance clamp of
 //  its 1/(jw L) pole, a ~2e7 S purely IMAGINARY admittance, and the k = 0
@@ -121,7 +125,7 @@ public static class EnvelopeBaseband
         {
             var ec = nl.Components[i];
             if (ec.IsNonlinear || ec.Model is ModSourceModel or IInductiveBranch or MutualInductanceModel or PortModel or TermModel
-                    or VdcModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel)
+                    or VdcModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel or DelayLineModel)
                 continue;
             var model = new BasebandHeldModel(ec.Model, ec);
             var replacement = new ElaboratedComponent(ec.ComponentType, ec.InstancePath, ec.Nodes, ec.Parameters, model)

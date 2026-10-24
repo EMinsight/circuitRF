@@ -9,12 +9,17 @@
 //
 //  Gear-2 (BDF2) with backward Euler on the first step.  For lumped
 //  (affine-in-jw) linear models the s-domain stamp is exact: C is
-//  recovered from two stamps at k w0 +- delta.  An S-parameter block is
-//  replaced for the run by a rational fit that is affine by construction
-//  (EnvelopeSnpFit).  A non-affine model (distributed line, Z(freq)) gets
-//  its tangent at k w0; the run reports how far that tangent is from the
-//  true stamp at the edge of the envelope band, matrix-wide and per
-//  element (EnvelopeTangentCheck), and warns naming the element.
+//  recovered from two stamps at k w0 +- delta.  A two-conductor line is
+//  stepped as its delay (EnvelopeLineDelay): its delayed waves enter the
+//  right-hand side, and the current step's share of them, when the line
+//  is shorter than a step, the stepped matrix.  An S-parameter block, a
+//  System Filter and any other element whose stamp is not affine (a
+//  Z(freq) block) is replaced for the run by a rational fit that is
+//  affine by construction (EnvelopeSnpFit).  One whose fit is refused is
+//  approximated to first order around each harmonic (its value and slope
+//  there); the run reports how far that is from its true stamp across the
+//  signal band, matrix-wide and per element (EnvelopeTangentCheck), and
+//  warns naming the element.
 //
 //  The sparse factorization of G + (j k w0 + alpha) C is done ONCE per
 //  harmonic per run (alpha is fixed by the step), so a step costs one
@@ -180,9 +185,12 @@ public sealed class EnvelopeEngine
         foreach (var sg in signals)
             if (Math.Abs(sg.RecordSeconds - record) > 1e-12)
                 throw new InvalidOperationException("all MOD_Sources in one envelope run must use the same record length");
-        // Every SnP is its rational fit for the whole run — the DC solve, the HB start and the stepping (EnvelopeSnpFit).
+        // Every line is its delay for the whole run — the DC solve, the HB start and the stepping (EnvelopeLineDelay) — and
+        // every other non-affine element (an SnP, a System Filter, a Z(freq) block) its rational fit (EnvelopeSnpFit).
+        using var lines = EnvelopeLineDelay.Apply(_nl, [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], h, 0.5 * need);
         using var snpFit = EnvelopeSnpFit.Apply(_nl, K * f0 + 0.5 * rate, [.. Enumerable.Range(1, K).Select(k => k * f0)], 0.5 * rate);
-        // A line (any stamp whose 1 Hz / 2 Hz tangent is not exact) is held at its DC stamp for the baseband product.
+        // An element whose fit was refused (any stamp whose 1 Hz / 2 Hz tangent is not exact) is held at its DC stamp for
+        // the baseband product.
         using var baseband = EnvelopeBaseband.Apply(_nl, Math.PI * need);
 
         var swSetup = Stopwatch.StartNew();
@@ -235,6 +243,7 @@ public sealed class EnvelopeEngine
                 double dlt = Math.Max(1e-6 * Math.Max(w, 2 * Math.PI * 1e6), 2 * Math.PI * 1.0);
                 CompressedColumnStorage<Complex> A0, C;
                 baseband.Holding = k == 0;            // the whole baseband product, its right-hand side included
+                lines.Product = k;
                 if (k == 0)
                 {
                     var a1 = Stamp(extractor, mna, dlt);
@@ -269,14 +278,18 @@ public sealed class EnvelopeEngine
                 }
                 var pr = new Product { Omega = w, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
                 baseband.Holding = false;
-                pr.Be = Stage.Of(Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit));
-                pr.G2 = Stage.Of(Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit));
+                lines.Product = null;
+                lines.Bind();
+                var delayNow = lines.Coupling(k, 1, A0.RowCount);
+                pr.Be = Stage.Of(Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit, delayNow));
+                pr.G2 = Stage.Of(Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit, delayNow));
                 products[k] = pr;
             }
         }
         finally
         {
             baseband.Holding = false;
+            lines.Product = null;
             foreach (var s in sources) s.EnvelopeDrive = null;
         }
 
@@ -284,6 +297,7 @@ public sealed class EnvelopeEngine
         // ── start: harmonic balance at the first stimulus sample ─────────
         var (V, hbX, qPrev) = SteadyStart(extractor, baseband, sources, f0, K, N, ifNodes, gridN, p, s => Drv(s, 0));
         for (int k = 0; k <= K; k++) { products[k].Xm1 = hbX[k]; products[k].Xm2 = hbX[k]; }
+        lines.Start(hbX);
         var qm1 = qPrev; var qm2 = qPrev;
         Mark("HB start");
 
@@ -334,9 +348,10 @@ public sealed class EnvelopeEngine
 
         // One step from the history (x1, x2, q1, q2) to the new state of every product, with V the starting guess and,
         // on return, the solved interface spectrum. Null when Newton did not converge.
+        // delayed(k, b) adds the lines' known delayed waves for product k to its right-hand side.
         Complex[][]? Advance(EnvelopeNewton nw, double alpha, double b1, double b2, Func<int, Stage> stageOf,
                              Func<int, Complex> drv, Complex[][] x1, Complex[][] x2, Complex[,] q1, Complex[,] q2,
-                             Complex[,] V, out Complex[,] qNow)
+                             Complex[,] V, Action<int, Complex[]>? delayed, out Complex[,] qNow)
         {
             if (prof) swL.Start();
             var iSrc = new Complex[K + 1][];
@@ -351,6 +366,7 @@ public sealed class EnvelopeEngine
                 for (int r = 0; r < n; r++) hv[r] = b1 * x1[k][r] + b2 * x2[k][r];
                 var bh = new Complex[n];
                 MulCsc(products[k].C, hv, bh, -1.0);
+                delayed?.Invoke(k, bh);
                 var xh = new Complex[n];
                 sg.Lu.Solve(bh, xh);
                 var x = xoc[k] = new Complex[n];
@@ -428,13 +444,15 @@ public sealed class EnvelopeEngine
                 var q = qm1;
                 var vs = (Complex[,])vHist[^1].Clone();
                 bool ok = true;
+                lines.BeginSplit();
                 for (int i = 1; i <= m && ok; i++)
                 {
                     double f = (double)i / m;
-                    var xn = Advance(nw, aSub, -aSub, 0.0, k => SplitStage(products[k], m, aSub),
-                                     s => Drv(s, step - 1) + f * (Drv(s, step) - Drv(s, step - 1)), x, x, q, q, vs, out var qn);
+                    var xn = Advance(nw, aSub, -aSub, 0.0, k => SplitStage(k, m, aSub),
+                                     s => Drv(s, step - 1) + f * (Drv(s, step) - Drv(s, step - 1)), x, x, q, q, vs,
+                                     lines.Any ? (k, b) => lines.AddSplit(k, b, m, i) : null, out var qn);
                     if (xn is null) ok = false;
-                    else { x = xn; q = qn; }
+                    else { x = xn; q = qn; lines.PushSub(xn); }
                 }
                 if (!ok) continue;
                 Array.Copy(vs, V, V.Length);
@@ -447,10 +465,11 @@ public sealed class EnvelopeEngine
                 $"envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {MaxStepSplit} sub-steps");
         }
 
-        Stage SplitStage(Product pr, int m, double aSub)
+        Stage SplitStage(int k, int m, double aSub)
         {
+            var pr = products[k];
             if (!pr.Split.TryGetValue(m, out var sg))
-                pr.Split[m] = sg = Stage.Of(Prepare(pr.A0, pr.C, pr.Omega, aSub, ifNodes, pr.BStatic, pr.BUnit));
+                pr.Split[m] = sg = Stage.Of(Prepare(pr.A0, pr.C, pr.Omega, aSub, ifNodes, pr.BStatic, pr.BUnit, lines.Coupling(k, m, pr.A0.RowCount)));
             return sg;
         }
 
@@ -471,9 +490,10 @@ public sealed class EnvelopeEngine
 
             var xNew = Advance(newton, alpha, b1, b2, k => be ? products[k].Be : products[k].G2, s => Drv(s, step),
                                products.Select(pr => pr.Xm1).ToArray(), products.Select(pr => pr.Xm2).ToArray(), qm1, qm2, V,
-                               out var qNow)
+                               lines.Any ? lines.AddMain : null, out var qNow)
                        ?? Split(step, V, out qNow);
             for (int k = 0; k <= K; k++) { products[k].Xm2 = products[k].Xm1; products[k].Xm1 = xNew[k]; }
+            lines.Push(xNew);
             qm2 = qm1; qm1 = qNow;
             vHist.Add((Complex[,])V.Clone()); if (vHist.Count > 3) vHist.RemoveAt(0);
             Record(step);
@@ -573,11 +593,14 @@ public sealed class EnvelopeEngine
         }
     }
 
+    /// <param name="delayNow">The lines' share of the current step's delayed wave (<see cref="EnvelopeLineDelay.Run.Coupling"/>),
+    /// null when there is none.</param>
     internal static (SparseLU lu, Complex[][] zcol, Complex[,] Y, Complex[] xs, Complex[][] xu) Prepare(
         CompressedColumnStorage<Complex> A0, CompressedColumnStorage<Complex> C, double w, double alpha,
-        int[] ifNodes, Complex[] bStatic, Complex[][] bUnit)
+        int[] ifNodes, Complex[] bStatic, Complex[][] bUnit, CompressedColumnStorage<Complex>? delayNow = null)
     {
         var A = Combine(A0, C, 1.0, alpha);
+        if (delayNow is not null) A = Combine(A, delayNow, 1.0, 1.0);
         var lu = SparseLU.Create(A, CSparse.ColumnOrdering.MinimumDegreeAtPlusA, 1.0);
         int n = A.RowCount, N = ifNodes.Length;
         var zcol = new Complex[N][];

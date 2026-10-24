@@ -1,9 +1,10 @@
 // ================================================================
 //  EnvelopeTangentCheck.cs  —  which element the envelope's tangent fails
 //
-//  A linear stamp that is not affine in jw (a line, a Z(freq) block, an
-//  SnP the fit could not take) enters each harmonic's envelope as its
-//  value and slope at that harmonic.  The run's matrix-wide band-edge
+//  A linear stamp that is not affine in jw and was not fitted (an SnP or
+//  a Z(freq) block the fit could not take) enters each harmonic's
+//  envelope as its value and slope at that harmonic.  A line is stepped
+//  as its delay (EnvelopeLineDelay) and is not measured here.  The run's matrix-wide band-edge
 //  check (__EnvTangentError) cannot say WHICH element bends, so each
 //  linear element is stamped on its own, into a recorder rather than the
 //  run's matrix, with every node it touches tied to ground through 50 ohm,
@@ -45,34 +46,40 @@ public static class EnvelopeTangentCheck
         if (ws.Length == 0) return list;
         foreach (var ec in nl.Components)
         {
-            if (ec.IsNonlinear || ec.Model is ModSourceModel) continue;
-            double worst = 0;
-            try
-            {
-                foreach (double w in ws)
-                {
-                    double dlt = Math.Max(1e-6 * Math.Max(w, 2 * Math.PI * 1e6), 2 * Math.PI * 1.0);   // the engines' own step
-                    var a0 = Stamped(ec, w);
-                    var ap = Stamped(ec, w + dlt);
-                    var am = Stamped(ec, w - dlt);
-                    double sum = 0;
-                    var offsets = Enumerable.Range(1, Offsets).SelectMany(i => new[] { bandRad * i / Offsets, -bandRad * i / Offsets }).ToArray();
-                    foreach (double e in offsets)
-                    {
-                        var edge = Stamped(ec, w + e);
-                        var tan = new Dictionary<long, Complex>();
-                        foreach (var key in edge.Keys.Union(a0.Keys).Union(ap.Keys).Union(am.Keys))
-                            tan[key] = Get(a0, key) + new Complex(0, e) * (Get(ap, key) - Get(am, key)) / new Complex(0, 2 * dlt);
-                        double d = TerminatedDiff(edge, tan);
-                        sum += d * d;
-                    }
-                    worst = Math.Max(worst, Math.Sqrt(sum / offsets.Length));
-                }
-            }
+            if (ec.IsNonlinear || ec.Model is ModSourceModel or DelayLineModel) continue;
+            double worst;
+            try { worst = ElementError(ec, ws, bandRad); }
             catch (Exception) { continue; }    // an element that cannot be stamped or terminated alone is the run's to refuse, not this check's
             list.Add((ec.InstancePath, worst));
         }
         return list;
+    }
+
+    /// <summary>One element's worst tangent error over the products at <paramref name="ws"/> (rad/s, each above the band),
+    /// by <see cref="Measure"/>'s measure. Throws when the element cannot be stamped or terminated alone.</summary>
+    internal static double ElementError(ElaboratedComponent ec, IReadOnlyList<double> ws, double bandRad)
+    {
+        double worst = 0;
+        foreach (double w in ws)
+        {
+            double dlt = Math.Max(1e-6 * Math.Max(w, 2 * Math.PI * 1e6), 2 * Math.PI * 1.0);   // the engines' own step
+            var a0 = Stamped(ec, w);
+            var ap = Stamped(ec, w + dlt);
+            var am = Stamped(ec, w - dlt);
+            double sum = 0;
+            var offsets = Enumerable.Range(1, Offsets).SelectMany(i => new[] { bandRad * i / Offsets, -bandRad * i / Offsets }).ToArray();
+            foreach (double e in offsets)
+            {
+                var edge = Stamped(ec, w + e);
+                var tan = new Dictionary<long, Complex>();
+                foreach (var key in edge.Keys.Union(a0.Keys).Union(ap.Keys).Union(am.Keys))
+                    tan[key] = Get(a0, key) + new Complex(0, e) * (Get(ap, key) - Get(am, key)) / new Complex(0, 2 * dlt);
+                double d = TerminatedDiff(edge, tan);
+                sum += d * d;
+            }
+            worst = Math.Max(worst, Math.Sqrt(sum / offsets.Length));
+        }
+        return worst;
     }
 
     /// <summary>
@@ -193,8 +200,8 @@ public static class EnvelopeTangentCheck
         var inv = CultureInfo.InvariantCulture;
         string names = string.Join(", ", bad.Select(x => string.Format(inv, "'{0}' ({1:0.#} %)", x.Instance, 100 * x.Error)));
         nl.AddWarningOnce("env-tangent", string.Format(inv,
-            "envelope: {0} {1} approximated by a straight line in frequency around each harmonic, off by that much (RMS) across " +
-            "the ±{2:0.##} MHz signal band; results across the band are approximate",
+            "envelope: {0} {1} approximated to first order around each harmonic (its value and slope there), off by that much " +
+            "(RMS) across the ±{2:0.##} MHz signal band; results across the band are approximate",
             names, bad.Count == 1 ? "is" : "are", bandHz / 1e6));
     }
 
