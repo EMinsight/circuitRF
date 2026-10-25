@@ -6,7 +6,17 @@ namespace CircuitRF.Design.Layout.PCells;
 /// <param name="EpsR">Those dielectrics as one, in series (<c>TestPadFormulas.SeriesDielectric</c>).</param>
 /// <param name="Passed">The conductors between the pad and the plane that were passed: cleared under the pad, or
 /// with no metal there.</param>
-public sealed record TestPadFace(StackupLayer Plane, double HeightMeters, double EpsR, IReadOnlyList<string> Passed);
+/// <param name="Cut">The first of them, when it is one of the pad's <c>ClearLayers</c>: the plane the pad faces over
+/// the annulus outside its <c>ClearD</c> hole (brief-dfr27-1 R-dfr27-1-1).</param>
+public sealed record TestPadFace(StackupLayer Plane, double HeightMeters, double EpsR, IReadOnlyList<string> Passed,
+                                 TestPadCutPlane? Cut = null);
+
+/// <summary>A cleared plane between a test pad and the plane it faces (brief-dfr27-1 R-dfr27-1-1).</summary>
+/// <param name="Plane">The conductor.</param>
+/// <param name="HeightMeters">The dielectric between the pad and it.</param>
+/// <param name="EpsR">That dielectric in series.</param>
+/// <param name="ThicknessMeters">Its copper.</param>
+public sealed record TestPadCutPlane(StackupLayer Plane, double HeightMeters, double EpsR, double ThicknessMeters);
 
 /// <summary>One plane a test pad's via passes, and where along the via it sits.</summary>
 /// <param name="Plane">The conductor.</param>
@@ -107,6 +117,7 @@ public static partial class SubstrateResolver
         {
             var dielectric = new List<(double, double)>();
             var passed = new List<string>();
+            TestPadCutPlane? cut = null;
             for (int i = iPad + step; i >= 0 && i < layers.Count; i += step)
             {
                 var l = layers[i];
@@ -116,8 +127,13 @@ public static partial class SubstrateResolver
                     if (facesPad(l))
                     {
                         var (h, er) = CircuitRF.Core.Devices.TestPadFormulas.SeriesDielectric(dielectric);
-                        if (h > 0) faces.Add(new TestPadFace(l, h, er, passed));
+                        if (h > 0) faces.Add(new TestPadFace(l, h, er, passed, cut));
                         break;
+                    }
+                    if (passed.Count == 0 && Cleared(l))
+                    {
+                        var (hc, erc) = CircuitRF.Core.Devices.TestPadFormulas.SeriesDielectric(dielectric);
+                        if (hc > 0) cut = new TestPadCutPlane(l, hc, erc, DbuToMeters(l.ThicknessDbu, FallbackDbuPerMicron));
                     }
                     passed.Add(l.Name);
                 }

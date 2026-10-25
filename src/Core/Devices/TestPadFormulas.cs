@@ -19,17 +19,15 @@ public static class TestPadFormulas
     public const double Epsilon0 = 8.8541878128e-12;
 
     /// <summary>
-    /// A round pad's capacitance to a plane, as parallel plates plus a rim fringe:
-    /// <c>C = ε₀εᵣπr²/h + ε₀εᵣ·2πr·ln(1 + 2r/h)</c>, with <c>r</c> the pad's radius and <c>h</c> the
-    /// dielectric between it and the plane.
+    /// A round pad's capacitance to a plane, Kirchhoff's disc over a plane:
+    /// <c>C = ε₀εᵣπr²/h + ε₀εᵣr·[ln(16πr/h) − 1]</c>, with <c>r</c> the pad's radius and <c>h</c> the dielectric
+    /// between it and the plane (G. Kirchhoff, <i>Gesammelte Abhandlungen</i>, 1882).
     ///
-    /// <para>The first term is the parallel-plate capacitance of the disc, exact as <c>r/h → ∞</c>. The
-    /// second charges the rim with a fringe per unit length that grows logarithmically with <c>r/h</c>, as
-    /// Kirchhoff's asymptotic result for a disc over a plane does (G. Kirchhoff, <i>Gesammelte
-    /// Abhandlungen</i>, 1882: <c>C ≈ ε₀εᵣπr²/h + ε₀εᵣr·[ln(16πr/h) − 1]</c>). This form is the board
-    /// designer's hand estimate the component was asked for, and its rim term is the larger of the two: a
-    /// 1.5 mm pad 71 µm over εᵣ 4.4 is 1.54 pF here and 1.12 pF by Kirchhoff, of which 0.97 pF is the
-    /// plates. The EM setup decides between them. Zero for a pad with no plane to face
+    /// <para>The first term is the parallel-plate capacitance of the disc, exact as <c>r/h → ∞</c>; the second is
+    /// the rim's fringe. A 1.5 mm pad 71 µm over εᵣ 4.4 is 1.12 pF here, of which 0.97 pF is the plates, and an
+    /// axisymmetric field solve of that pad on the ten-layer board gives 1.12 pF; 140 µm over it, 0.63 pF against the
+    /// solve's 0.57 (brief-dfr27-1, <c>src/Core/RESOLVED.md</c>). The rim term is held at zero where the asymptote
+    /// would turn negative (<c>r/h</c> below 0.054, a pad far from its plane). Zero for a pad with no plane to face
     /// (<paramref name="h"/> ≤ 0).</para>
     /// </summary>
     /// <param name="diameter">Pad diameter, m.</param>
@@ -40,7 +38,56 @@ public static class TestPadFormulas
     {
         if (diameter <= 0 || h <= 0) return 0.0;
         double r = diameter / 2;
-        return Epsilon0 * epsR * (Math.PI * r * r / h + 2 * Math.PI * r * Math.Log(1 + 2 * r / h));
+        return Epsilon0 * epsR * (Math.PI * r * r / h + r * Math.Max(0.0, Math.Log(16 * Math.PI * r / h) - 1));
+    }
+
+    /// <summary>
+    /// A round pad's capacitance on a side where the nearest plane has a round hole under it (brief-dfr27-1
+    /// R-dfr27-1-1): the pad faces that plane over the annulus outside the hole and the next plane through it.
+    /// <c>C = C₁ − s·(C₁ − C₂)</c>, with <c>C₁</c> the pad's <see cref="PadCapacitance"/> to the cleared plane and
+    /// <c>C₂</c> to the plane beyond, and <c>s</c> the share of the pad the hole takes.
+    ///
+    /// <para><b>The share</b> is the area weight <c>(c/r)²</c> of a hole whose edge is pulled in by a strip
+    /// <c>δ</c>: the pad under the hole's rim still couples to the rim, so a hole of radius <c>c</c> takes the area
+    /// of one of <c>c − δ</c>. <c>δ = (h₁/π)·[(1+g)ln(1+g) − g·ln g] + t/2</c>, with <c>h₁</c> the dielectric to the
+    /// cleared plane, <c>g</c> the dielectric beyond it over <c>h₁</c> (at most 10), and <c>t</c> the plane's
+    /// copper. Where the parabola's decay length falls to <c>λ = 1.6δ</c>, <c>s</c> continues as
+    /// <c>1 − q·exp(−x/λ)</c>, matching value and slope, so a hole wider than the pad still holds part of the rim's
+    /// coupling and joins <c>C₂</c> smoothly — the uncut-pad value is reached only as the hole grows past the pad.</para>
+    ///
+    /// <para><b>Calibrated against a field solve</b>, as <see cref="InnerPadCapacitance"/> is: an axisymmetric
+    /// finite-volume solve of a pad 0.8 to 2 mm across, cleared planes 69 to 300 µm away and the next plane 69 to
+    /// 460 µm beyond, holes from 0 to 3 pad diameters (72 cases); with the solve's own <c>C₁</c> and <c>C₂</c> the
+    /// share is within 3 %. Non-increasing in <paramref name="hole"/> by construction.</para>
+    /// </summary>
+    /// <param name="diameter">Pad diameter, m.</param>
+    /// <param name="hole">The hole's diameter in the cleared plane, m.</param>
+    /// <param name="hNear">Dielectric thickness to the cleared plane, m.</param>
+    /// <param name="epsNear">Its permittivity.</param>
+    /// <param name="tNear">The cleared plane's copper thickness, m.</param>
+    /// <param name="hFar">Dielectric thickness to the plane beyond, m (zero: there is none).</param>
+    /// <param name="epsFar">Its permittivity, in series.</param>
+    public static double ClearedPadCapacitance(double diameter, double hole, double hNear, double epsNear, double tNear,
+                                               double hFar, double epsFar)
+    {
+        double c1 = PadCapacitance(diameter, hNear, epsNear);
+        if (!(hole > 0) || c1 <= 0) return c1;
+        double c2 = Math.Min(c1, PadCapacitance(diameter, hFar, epsFar));
+        return c1 - ClearedShare(diameter / 2, hole / 2, hNear, tNear, hFar) * (c1 - c2);
+    }
+
+    /// <summary>The share <c>s</c> of <see cref="ClearedPadCapacitance"/>: 0 with no hole, rising to 1 as the hole
+    /// outgrows the pad.</summary>
+    public static double ClearedShare(double r, double c, double hNear, double tNear, double hFar)
+    {
+        if (!(c > 0) || !(r > 0)) return 0.0;
+        double g = hNear > 0 && hFar > hNear ? Math.Min((hFar - hNear) / hNear, 10.0) : 10.0;
+        double delta = Math.Max(hNear, 0) / Math.PI * ((1 + g) * Math.Log(1 + g) - g * Math.Log(g)) + Math.Max(tNear, 0) / 2;
+        double lambda = 1.6 * delta, ce = Math.Max(0.0, c - delta);
+        if (!(lambda > 0)) return Math.Min(1.0, ce * ce / (r * r));
+        double cs = Math.Sqrt(lambda * lambda + r * r) - lambda;   // where (r² − c²)/2c, the parabola's decay length, is λ
+        if (ce <= cs) return ce * ce / (r * r);
+        return 1 - (1 - cs * cs / (r * r)) * Math.Exp(-(ce - cs) / lambda);
     }
 
     /// <summary>

@@ -1966,18 +1966,23 @@ by a short stub leaving it on one side (<code>N</code>, <code>E</code>, <code>S<
 via on <code>ViaFrom</code>, or the stub's end — and terminal 2 is the pad centre. Leave terminal 2 open for a test
 point that is not in use, or continue it to a connector.</p>
 <p>The pad loads the line with its capacitance to the nearest plane and the via's inductance, and the two
-resonate. The model is an estimate: the pad's capacitance to the nearest conductor on each side that
-<code>ClearLayers</code> does not name, as parallel plates plus a rim fringe, with the dielectrics between combined in
-series; the via's inductance over its length, with the barrel's capacitance to each plane it passes. Every
-inner conductor counts as a plane under the pad unless <code>ClearLayers</code> names it. Messages gives the values
-and the resonance once per run.</p>
+resonate. The model is an estimate: the pad's capacitance to the nearest plane on each side, as a disc over a
+plane, with the dielectrics between combined in series; the via's inductance over its length, with the barrel's
+capacitance to each plane it passes. Every inner conductor counts as a plane under the pad unless <code>ClearLayers</code>
+names it. Messages gives the values and the resonance once per run. Rows that do not apply to the chosen <code>Feed</code>
+are greyed out in the parameter dialog: <code>FeedW</code> through a via, and <code>ViaFrom</code>, <code>Drill</code>, <code>InnerPadD</code> and
+<code>AntipadD</code> for a side-fed pad.</p>
 <p><strong>Unused pads on the via.</strong> Board CAD usually keeps a pad on every conductor a via passes, joined to nothing,
 and each adds capacitance across its antipad. Set <code>InnerPadD</code> to their diameter and the model counts them
 (and the layout draws them) on every conductor between <code>ViaFrom</code> and <code>PadLayer</code> that <code>ClearLayers</code> does not
 name; <code>AntipadD</code> is the clearance round the via in each plane (empty: the technology's). Messages gives their
 share separately. Removing unused pads at manufacture removes it.</p>
 <p><strong>Cut-outs.</strong> <code>ClearLayers</code> names the conductors whose plane gets a round cut-out <code>ClearD</code> across under the
-pad. They are not drawn as shapes: a ground pour drawn by Update Layout or Draw Ground Pour cuts them, as it
+pad; the parameter dialog lists the technology's conductors to tick. Where the nearest plane is cut, the pad faces
+it over the ring outside the hole and the next plane through the hole, so its capacitance falls as <code>ClearD</code>
+grows and settles once the hole is a little wider than the pad. <code>ClearD = 0</code>, or one no wider than the via's
+<code>AntipadD</code>, cuts nothing: those planes are modelled as ordinary planes, and Messages says so. In a plane the via
+passes, its barrel sees the larger of <code>ClearD</code> and <code>AntipadD</code>. Cut-outs are not drawn as shapes: a ground pour drawn by Update Layout or Draw Ground Pour cuts them, as it
 cuts a via's antipad. On a board whose planes are drawn artwork, right-click the placed pad and choose
 <a href="layout-editor.html#cut-clearances">Cut Clearances into Planes</a>.</p>
 <p><strong>An EM port at the centre.</strong> With <code>Centre = Port</code> the layout carries an EM port at the pad's centre, an
@@ -1998,12 +2003,12 @@ any cut-out — so the pad can be solved with and without each cut-out before a 
 <tr><td>D</td><td><code>1.5</code></td><td>mm</td><td>shown</td><td>The pad&#39;s diameter. The test fixture usually sets it.</td></tr>
 <tr><td>Feed</td><td><code>Via</code></td><td>&mdash;</td><td>shown</td><td>Where terminal 1 joins: Via — through a via at the pad&#39;s centre from ViaFrom — or N, E, S or W, a short stub leaving the pad on that side.</td></tr>
 <tr><td>FeedW</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The side stub&#39;s width. Empty: the 50 Ω microstrip width on PadLayer. Not used through a via.</td></tr>
-<tr><td>ViaFrom</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The conductor at the via&#39;s other end, where terminal 1 is. Default: the top conductor. Not used for a side-fed pad.</td></tr>
+<tr><td>ViaFrom</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The layer the trace arrives on: the via starts here, where terminal 1 is, and runs to PadLayer. Default: the top conductor. Not used for a side-fed pad.</td></tr>
 <tr><td>Drill</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The via&#39;s drill. Empty: the technology&#39;s via drill.</td></tr>
 <tr><td>InnerPadD</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The unused pads the via keeps on each conductor it passes (not those in ClearLayers). Empty: none. Board CAD keeps them unless told to remove them, and each adds capacitance.</td></tr>
 <tr><td>AntipadD</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The clearance round the via in each plane it passes. Empty: the technology&#39;s via pad + 0.3 mm.</td></tr>
-<tr><td>ClearLayers</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>The conductors whose plane gets a round cut-out under the pad, comma-separated. Empty: none. The pad&#39;s capacitance is taken to the nearest conductor NOT named here.</td></tr>
-<tr><td>ClearD</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The cut-out&#39;s diameter on those conductors. Empty: D + 0.5 mm.</td></tr>
+<tr><td>ClearLayers</td><td>&mdash;</td><td>&mdash;</td><td>shown</td><td>The conductors whose plane gets a round cut-out under the pad. Empty: none. Through the cut-out the pad faces the next conductor not named here.</td></tr>
+<tr><td>ClearD</td><td>&mdash;</td><td>mm</td><td>&mdash;</td><td>The cut-out&#39;s diameter on those conductors. Empty: D + 0.5 mm. 0, or no wider than AntipadD, cuts nothing: those planes stay planes.</td></tr>
 <tr><td>Centre</td><td><code>Open</code></td><td>&mdash;</td><td>shown</td><td>Open: the pad is metal and nothing more (a test point not in use). Port: the layout also carries an EM port at the pad&#39;s centre, an internal port to ground.</td></tr>
 <tr><td>PortNum</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>The EM port&#39;s number when Centre is Port. Empty: the next free number.</td></tr>
 </tbody></table>

@@ -3868,3 +3868,36 @@ identity with the junction-only stamp).
   1e-9 and `A = 1 + B·jωC` is exactly 1 in floating point: the C lived only in `C`, which that form never reads.
 - **Fix**: the pad's admittance is added to `Y22` after the conversion — exact for any `B`, since a shunt at port 2
   adds to `Y22` alone. Via-fed results are unchanged. Test: `TestPadModelTests.SideFedPad_IsItsShuntCapacitance`.
+
+## TESTPAD: the pad's capacitance depends on ClearD; Kirchhoff's disc (brief DFR27-1, 2026-10-25)
+
+- **Symptom**: sweeping `ClearD` on a pad with `ClearLayers = Inner 8`, S11 got worse from 0 to 1 mm, then better.
+- **Cause, structural**: `ClearD` never reached the pad's capacitance. Naming a plane in `ClearLayers` moved the pad's
+  plate to the next plane for ANY `ClearD`, even one smaller than the pad; `ClearD` only set the barrel's clearance in
+  that plane, where at 0 `ln(b/a)` went negative. 0 meant "no hole" to a designer and "a hole of any size" to the model.
+- **The pad formula is now Kirchhoff's disc** `ε₀εᵣπr²/h + ε₀εᵣr·[ln(16πr/h) − 1]` (owner's choice; rim term held ≥ 0),
+  replacing DFR26-7's hand estimate `… + ε₀εᵣ·2πr·ln(1 + 2r/h)`. The brief's gate (within 25 % of a field solve at
+  `ClearD = D + 0.5 mm`, and joining today's value at `ClearD ≥ D`) could not both hold with the old form: for the board's
+  1.5 mm pad over Inner 7 (140 µm) it gave 0.944 pF against the solve's 0.573. Kirchhoff gives 1.124 pF uncut (solve
+  1.118) and 0.626 fully cleared (solve 0.573, +9 %). Every TESTPAD value and the impedance tool's pad report move with
+  it; DFR26-8's board stub drops from 1.76 pF to about 1.35 (solve 1.45, −7 %; it was +21 %).
+- **The cleared form** (`TestPadFormulas.ClearedPadCapacitance`): `C₁ − s·(C₁ − C₂)`, `C₁` to the cleared plane and `C₂`
+  to the plane beyond. `s` is the area weight `(c/r)²` of a hole whose edge is pulled in by a strip
+  `δ = (h₁/π)·[(1+g)ln(1+g) − g·ln g] + t/2` (g the dielectric beyond the cleared plane over the one before it, at most
+  10; t its copper), with an exponential tail of length `1.6δ` matched in value and slope where the parabola decays that
+  fast, so it joins `C₂` smoothly past the pad's edge. Non-increasing in `ClearD` by construction.
+- **Reference data**: an axisymmetric finite-volume solve (pad as a 35 µm conductor in air on the outer layer, the
+  cleared plane 18 µm copper with its hole filled by the dielectric, the deeper plane solid, Neumann far boundaries;
+  0.2 % between grids). Six geometries — pads 0.8 to 2 mm, cleared planes 69 to 300 µm away, the next plane 69 to
+  460 µm beyond, holes 0 to 3 D: the share is within 3 % of the solve when given the solve's own `C₁`, `C₂`. Inside
+  the pad's radius the solve's effective hole is the drawn one less a near-constant strip; the strip's two constants
+  were fitted (0.51 and 1.63, rounded to 0.5 and 1.6).
+- **ClearD = 0, or no wider than `AntipadD` on a via-fed pad, clears nothing**: the plane is an ordinary plane and the
+  run says so in one Messages line naming it (`TESTPAD-uncleared`, names from the injected `ClearNames`, a quoted text
+  parameter the elaborator keeps verbatim). The barrel's clearance in a cleared plane is `max(ClearD, AntipadD)`. The
+  artwork agrees: `TestPadPCell` keeps an explicit 0 (it used to substitute D + 0.5 mm), a pour cuts only the antipad,
+  and Cut Clearances into Planes refuses with the reason.
+- New injected parameters beside `Hpad`: `Hcl`/`Ercl`/`Tcl` (and `…2`) for the cleared plane in front of each face.
+- Gates: `TestPadRound26Tests.PadCapacitance_FallsWithClearD_FromTheUnclearedPad_ToTheFieldSolve` (non-increasing over
+  0…3·D in 0.1 mm, `ClearD = 0` equal to the uncut pad, 0.575 pF ±25 % at D + 0.5 mm);
+  `TestPadModelTests.ClearD_NoWiderThanTheAntipad_ClearsNothing_AndTheNoteNamesThePlane`.

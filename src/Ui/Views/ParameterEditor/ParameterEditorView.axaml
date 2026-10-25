@@ -552,6 +552,8 @@
                                          IsVisible="{Binding ShowExpressionTextBox}"
                                          IsReadOnly="{Binding ExpressionReadOnly}"
                                          IsEnabled="{Binding ExpressionEnabled}"
+                                         ToolTip.Tip="{Binding DisabledReason}"
+                                         ToolTip.ShowOnDisabled="True"
                                          FontSize="11"
                                          Padding="4,3"
                                          VerticalAlignment="Center"
@@ -576,11 +578,51 @@
                                           ItemsSource="{Binding LayerChoiceOptions}"
                                           SelectedItem="{Binding SelectedLayerChoice}"
                                           IsVisible="{Binding IsLayerChoiceParam}"
+                                          IsEnabled="{Binding ExpressionEnabled}"
                                           FontSize="11"
                                           Padding="4,3"
                                           HorizontalAlignment="Stretch"
                                           VerticalAlignment="Center"
-                                          ToolTip.Tip="{Binding LayerChoiceMissingWarning}"/>
+                                          ToolTip.Tip="{Binding LayerChoiceTooltip}"
+                                          ToolTip.ShowOnDisabled="True"/>
+                                <!-- Several conductors (a test pad's ClearLayers, brief-dfr27-1 R-dfr27-1-2): a
+                                     drop-down of the technology's conductors with a check box each, writing the
+                                     same comma-separated text the row always held. A name that is no longer a
+                                     conductor stays listed, checked and flagged, until it is unticked. -->
+                                <Button Grid.Column="1"
+                                        IsVisible="{Binding IsLayerChecklistParam}"
+                                        IsEnabled="{Binding ExpressionEnabled}"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left"
+                                        FontSize="11"
+                                        Padding="4,3"
+                                        VerticalAlignment="Center"
+                                        ToolTip.Tip="{Binding LayerChecklistTooltip}"
+                                        ToolTip.ShowOnDisabled="True">
+                                    <DockPanel>
+                                        <mi:MaterialIcon DockPanel.Dock="Right" Kind="ChevronDown" Width="12" Height="12" Margin="4,0,0,0"/>
+                                        <mi:MaterialIcon DockPanel.Dock="Right" Kind="AlertOutline" Width="12" Height="12"
+                                                         IsVisible="{Binding HasLayerChecklistMissingWarning}"/>
+                                        <TextBlock Text="{Binding LayerChecklistSummary}" TextTrimming="CharacterEllipsis"/>
+                                    </DockPanel>
+                                    <Button.Flyout>
+                                        <Flyout Placement="BottomEdgeAlignedLeft">
+                                            <StackPanel Spacing="2" Margin="6">
+                                                <TextBlock Text="{Binding LayerChecklistMissingWarning}"
+                                                           IsVisible="{Binding HasLayerChecklistMissingWarning}"
+                                                           TextWrapping="Wrap" MaxWidth="280" FontSize="11" Margin="0,0,0,4"/>
+                                                <ItemsControl ItemsSource="{Binding LayerCheckItems}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:LayerCheckItem">
+                                                            <CheckBox IsChecked="{Binding IsChecked}"
+                                                                      Content="{Binding Label}" FontSize="12"/>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
                                 <!-- Cell-declared choice parameter (e.g. an imported kit part that
                                      ships more than one formulation of the same device): the cell's
                                      own closed value set, as a picker. A choice circuitRF cannot
@@ -611,6 +653,8 @@
                                           SelectedItem="{Binding StagedUnit}"
                                           IsVisible="{Binding ShowUnitCombo}"
                                           IsEnabled="{Binding ExpressionEnabled}"
+                                          ToolTip.Tip="{Binding DisabledReason}"
+                                          ToolTip.ShowOnDisabled="True"
                                           FontSize="11"
                                           Padding="4,3"
                                           MinWidth="60"

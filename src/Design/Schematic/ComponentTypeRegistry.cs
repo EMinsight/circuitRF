@@ -1486,9 +1486,10 @@ public static class ComponentTypeRegistry
           + "dielectric loss from the film's tanD; the bottom plate's capacitance through the substrate to "
           + "ground. Lumped while the longer side is under a twentieth of a wavelength in the film.",
         SymbolKind.TestPad =>
-            "AN ESTIMATE. The pad's capacitance to the nearest conductor not in ClearLayers on each side, as parallel "
-          + "plates plus a rim fringe, C = ε0εr·πr²/h + ε0εr·2πr·ln(1 + 2r/h), with h the dielectric between them and "
-          + "the layers combined in series; the via's inductance by Goldfarb and Pucel over its length, with the "
+            "AN ESTIMATE. The pad's capacitance to the nearest plane on each side, as a disc over a plane (Kirchhoff), "
+          + "C = ε0εr·πr²/h + ε0εr·r·[ln(16πr/h) − 1], with h the dielectric between them and the layers combined in "
+          + "series; where that plane is in ClearLayers, the pad faces it outside the ClearD hole and the next plane "
+          + "through it, the hole's rim calibrated to a field solve; the via's inductance by Goldfarb and Pucel over its length, with the "
           + "barrel's coaxial capacitance to each plane it passes (the clearance as the outer radius) at its point "
           + "along it; with InnerPadD set, each unused pad's rim coupling across its AntipadD clearance to its own plane "
           + "and to the neighbouring planes' antipad edges, less the bare barrel's, calibrated to a field solve. "
@@ -1586,15 +1587,16 @@ public static class ComponentTypeRegistry
             "Feed"        => "Where terminal 1 joins: Via — through a via at the pad's centre from ViaFrom — or N, E, S "
                            + "or W, a short stub leaving the pad on that side.",
             "FeedW"       => "The side stub's width. Empty: the 50 Ω microstrip width on PadLayer. Not used through a via.",
-            "ViaFrom"     => "The conductor at the via's other end, where terminal 1 is. Default: the top conductor. Not "
-                           + "used for a side-fed pad.",
+            "ViaFrom"     => "The layer the trace arrives on: the via starts here, where terminal 1 is, and runs to "
+                           + "PadLayer. Default: the top conductor. Not used for a side-fed pad.",
             "Drill"       => "The via's drill. Empty: the technology's via drill.",
             "InnerPadD"   => "The unused pads the via keeps on each conductor it passes (not those in ClearLayers). "
                            + "Empty: none. Board CAD keeps them unless told to remove them, and each adds capacitance.",
             "AntipadD"    => "The clearance round the via in each plane it passes. Empty: the technology's via pad + 0.3 mm.",
-            "ClearLayers" => "The conductors whose plane gets a round cut-out under the pad, comma-separated. Empty: "
-                           + "none. The pad's capacitance is taken to the nearest conductor NOT named here.",
-            "ClearD"      => "The cut-out's diameter on those conductors. Empty: D + 0.5 mm.",
+            "ClearLayers" => "The conductors whose plane gets a round cut-out under the pad. Empty: none. Through the "
+                           + "cut-out the pad faces the next conductor not named here.",
+            "ClearD"      => "The cut-out's diameter on those conductors. Empty: D + 0.5 mm. 0, or no wider than "
+                           + "AntipadD, cuts nothing: those planes stay planes.",
             "Centre"      => "Open: the pad is metal and nothing more (a test point not in use). Port: the layout also "
                            + "carries an EM port at the pad's centre, an internal port to ground.",
             "PortNum"     => "The EM port's number when Centre is Port. Empty: the next free number.",
@@ -3831,6 +3833,14 @@ public static class ComponentTypeRegistry
     /// own kind set rather than a second, duplicate list.</summary>
     public enum LayerChoiceKind { Signal, Ground }
 
+    /// <summary>
+    /// True for a parameter naming SEVERAL conductors as comma-separated text — a test pad's <c>ClearLayers</c>
+    /// (brief-dfr27-1 R-dfr27-1-2). The parameter dialog offers the technology's conductors with a check box each
+    /// and writes the same text, so a file written before the checklist reads unchanged.
+    /// </summary>
+    public static bool IsLayerChecklistParameter(SymbolKind kind, string paramName)
+        => kind == SymbolKind.TestPad && paramName == TestPadInjection.ClearLayersParam;
+
     public static LayerChoiceKind? LayerChoiceKindFor(SymbolKind kind, string paramName)
     {
         // A via's two ends take any conductor; its GroundLayer only a ground-designated one, as a
@@ -3843,7 +3853,7 @@ public static class ComponentTypeRegistry
                 _ => null,
             };
         // A test pad's conductor and its via's far end take any conductor, as a via's two ends do. ClearLayers names
-        // several, so it stays text.
+        // several, so it is a checklist instead (IsLayerChecklistParameter).
         if (kind == SymbolKind.TestPad)
             return paramName is TestPadInjection.PadLayerParam or TestPadInjection.ViaFromParam ? LayerChoiceKind.Signal : null;
         // A broadside pair's two strips each take a signal conductor.

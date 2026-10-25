@@ -1020,11 +1020,12 @@ via on `ViaFrom`, or the stub's end — and terminal 2 is the pad centre. Leave 
 point that is not in use, or continue it to a connector.
 
 The pad loads the line with its capacitance to the nearest plane and the via's inductance, and the two
-resonate. The model is an estimate: the pad's capacitance to the nearest conductor on each side that
-`ClearLayers` does not name, as parallel plates plus a rim fringe, with the dielectrics between combined in
-series; the via's inductance over its length, with the barrel's capacitance to each plane it passes. Every
-inner conductor counts as a plane under the pad unless `ClearLayers` names it. Messages gives the values
-and the resonance once per run.
+resonate. The model is an estimate: the pad's capacitance to the nearest plane on each side, as a disc over a
+plane, with the dielectrics between combined in series; the via's inductance over its length, with the barrel's
+capacitance to each plane it passes. Every inner conductor counts as a plane under the pad unless `ClearLayers`
+names it. Messages gives the values and the resonance once per run. Rows that do not apply to the chosen `Feed`
+are greyed out in the parameter dialog: `FeedW` through a via, and `ViaFrom`, `Drill`, `InnerPadD` and
+`AntipadD` for a side-fed pad.
 
 **Unused pads on the via.** Board CAD usually keeps a pad on every conductor a via passes, joined to nothing,
 and each adds capacitance across its antipad. Set `InnerPadD` to their diameter and the model counts them
@@ -1033,7 +1034,11 @@ name; `AntipadD` is the clearance round the via in each plane (empty: the techno
 share separately. Removing unused pads at manufacture removes it.
 
 **Cut-outs.** `ClearLayers` names the conductors whose plane gets a round cut-out `ClearD` across under the
-pad. They are not drawn as shapes: a ground pour drawn by Update Layout or Draw Ground Pour cuts them, as it
+pad; the parameter dialog lists the technology's conductors to tick. Where the nearest plane is cut, the pad faces
+it over the ring outside the hole and the next plane through the hole, so its capacitance falls as `ClearD`
+grows and settles once the hole is a little wider than the pad. `ClearD = 0`, or one no wider than the via's
+`AntipadD`, cuts nothing: those planes are modelled as ordinary planes, and Messages says so. In a plane the via
+passes, its barrel sees the larger of `ClearD` and `AntipadD`. Cut-outs are not drawn as shapes: a ground pour drawn by Update Layout or Draw Ground Pour cuts them, as it
 cuts a via's antipad. On a board whose planes are drawn artwork, right-click the placed pad and choose
 [Cut Clearances into Planes](layout-editor.html#cut-clearances).
 

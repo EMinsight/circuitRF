@@ -4,8 +4,10 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Engine.Mom;
+using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.ViewModels;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Layout;
@@ -248,10 +250,12 @@ public sealed class TestPadRound26Tests : IDisposable
     {
         var tp = Component(SymbolKind.TestPad, "TP1", [("PadLayer", Bottom), ("ViaFrom", Top), .. set]);
         var values = TestPadInjection.Build(_tech, tp.Parameters).Overrides
-            .ToDictionary(o => o.Name, o => new CircuitRF.Core.Expressions.Value(double.Parse(o.Expression, System.Globalization.CultureInfo.InvariantCulture)));
+            .ToDictionary(o => o.Name, o => o.Expression.StartsWith('"')
+                ? new CircuitRF.Core.Expressions.Value(o.Expression.Trim('"'))
+                : new CircuitRF.Core.Expressions.Value(double.Parse(o.Expression, System.Globalization.CultureInfo.InvariantCulture)));
         values["D"] = new CircuitRF.Core.Expressions.Value(1.5e-3);
         foreach (var (n, v) in set)
-            if (n is "Drill" or "InnerPadD" or "AntipadD")
+            if (n is "Drill" or "InnerPadD" or "AntipadD" or "ClearD")
                 values[n] = new CircuitRF.Core.Expressions.Value(double.Parse(v, System.Globalization.CultureInfo.InvariantCulture) * 1e-3);
         return Assert.IsType<TestPadModel>(ComponentModelFactory.TryCreate("TESTPAD", values));
     }
@@ -272,6 +276,86 @@ public sealed class TestPadRound26Tests : IDisposable
         Assert.Empty(without.Pads);
         Assert.InRange(with.StubCapacitance, 0.75 * 1.446e-12, 1.25 * 1.446e-12);
         Assert.InRange(with.StubCapacitance - without.StubCapacitance, 0.75 * 0.192e-12, 1.25 * 0.192e-12);
+    }
+
+    // ── brief-dfr27-1 R-dfr27-1-1: the pad's capacitance depends on ClearD ───────────────────────
+
+    /// <summary>
+    /// R-dfr27-1-1's gate on the shipped board: D 1.5 mm on Bottom, ClearLayers = Inner 8. The capacitance never rises
+    /// as the hole grows, a ClearD of 0 is the uncleared pad, and at D + 0.5 mm it is within 25 % of an axisymmetric
+    /// finite-volume solve of the pad alone over Inner 8 with that hole and a solid Inner 7: 0.575 pF (fixed reference
+    /// data, computed outside circuitRF; 1.118 pF with no hole).
+    /// </summary>
+    [Fact]
+    public void PadCapacitance_FallsWithClearD_FromTheUnclearedPad_ToTheFieldSolve()
+    {
+        double Pad(double clearMm) => ExtractedModel(("ClearLayers", "Inner 8"),
+            ("ClearD", clearMm.ToString(System.Globalization.CultureInfo.InvariantCulture))).Geometry.PadCapacitance;
+
+        double[] c = [.. Enumerable.Range(0, 46).Select(k => Pad(k * 0.1))];
+        for (int k = 1; k < c.Length; k++) Assert.True(c[k] <= c[k - 1], $"rises at ClearD {k * 0.1:0.0} mm");
+        Assert.Equal(ExtractedModel().Geometry.PadCapacitance, c[0], c[0] * 0.01);
+        Assert.InRange(c[20], 0.75 * 0.575e-12, 1.25 * 0.575e-12);
+    }
+
+    // ── brief-dfr27-1 R-dfr27-1-2/3: the parameter dialog ────────────────────────────────────────
+
+    /// <summary>A TESTPAD in a schematic of a workspace on the ten-layer board, open in the parameter dialog.</summary>
+    private (SchematicViewModel Vm, EditableComponent Comp, ParameterEditorViewModel Editor) InDialog(params (string Name, string Value)[] set)
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "tech"));
+        TechPersistence.SaveToFile(Path.Combine(_root, "tech", "t.ctech"), _tech);
+        WorkspacePersistence.SaveToFile(Path.Combine(_root, ".cws"), new CwsFile { DefaultTechRef = "tech/t.ctech" });
+        string schematicDir = Path.Combine(_root, "Pad", "schematic");
+        Directory.CreateDirectory(schematicDir);
+
+        var model = new SchematicEditModel { SchematicDirectory = schematicDir };
+        var comp = Component(SymbolKind.TestPad, "TP1", set);
+        model.Components.Add(comp);
+        var vm = new SchematicViewModel(model);
+        var editor = new ParameterEditorViewModel();
+        editor.SetTargetDirect(vm, comp, showClose: false);
+        return (vm, comp, editor);
+    }
+
+    [Fact]
+    public void ClearLayers_IsAChecklistOfTheConductors_WritingTheSameText()
+    {
+        var (_, comp, editor) = InDialog(("ClearLayers", "Inner 8, Gone"));
+        var row = editor.Rows.Single(r => r.Name == "ClearLayers");
+        string Text() => comp.Parameters.Single(p => p.Name == "ClearLayers").Expression;
+
+        Assert.True(row.IsLayerChecklistParam);
+        Assert.False(row.ShowExpressionTextBox);
+        Assert.Equal(11, row.LayerCheckItems.Count);   // ten conductors, then the name that is not one
+        Assert.Equal(["Inner 8", "Gone"], row.LayerCheckItems.Where(i => i.IsChecked).Select(i => i.Name));
+        Assert.True(row.LayerCheckItems.Single(i => i.Name == "Gone").IsMissing);
+        Assert.Contains("\"Gone\" is not a conductor", row.LayerChecklistMissingWarning);
+
+        row.LayerCheckItems.Single(i => i.Name == "Inner 7").IsChecked = true;
+        Assert.Equal("Inner 7, Inner 8, Gone", Text());   // stackup order, then the unknown name
+
+        while (row.LayerCheckItems.FirstOrDefault(i => i.IsChecked) is { } on) on.IsChecked = false;
+        Assert.Equal("", Text());
+        Assert.False(row.HasLayerChecklistMissingWarning);
+    }
+
+    [Fact]
+    public void RowsTheFeedDoesNotUse_AreGreyed_WithTheReason_AndKeepTheirValues()
+    {
+        var (vm, comp, editor) = InDialog(("Drill", "0.25"), ("FeedW", "0.4"));
+        ParameterRowViewModel Row(string name) => editor.Rows.Single(r => r.Name == name);
+        string[] viaRows = ["ViaFrom", "Drill", "InnerPadD", "AntipadD"];
+
+        Assert.False(Row("FeedW").ExpressionEnabled);
+        Assert.Contains("Feed = Via", Row("FeedW").DisabledReason);
+        Assert.All(viaRows, n => Assert.True(Row(n).ExpressionEnabled));
+
+        vm.Execute(new EditParameterCommand(vm.EditModel, comp.Parameters.Single(p => p.Name == "Feed"), "E", ""));
+        Assert.True(Row("FeedW").ExpressionEnabled);
+        Assert.All(viaRows, n => Assert.False(Row(n).ExpressionEnabled));
+        Assert.StartsWith("Not used with Feed = E", Row("ViaFrom").NameTooltip);
+        Assert.Equal("0.25", comp.Parameters.Single(p => p.Name == "Drill").Expression);
     }
 
     [Fact]

@@ -40588,3 +40588,23 @@ held-back-read test fails on the old overlay.
   `PlotInspectorView.IsFlyout`, set by `PlotControl.ShowPlotInspector`. The ✕ shares its line with the centred
   plot-type row; a plot of fixed type hides that row and the next one has buttons at its right end, which the ✕
   covered, so in that case the rows step down by the button's height (`UpdateCloseRoom`).
+
+## TESTPAD rows: ClearLayers as a checklist, rows the Feed does not use (brief DFR27-1, 2026-10-25)
+
+- **`ClearLayers` is a drop-down of the technology's conductors with a check box each**
+  (`ComponentTypeRegistry.IsLayerChecklistParameter`, `ParameterRowViewModel.LayerChecklist.cs`). It reads and writes
+  the comma-separated text the row always held, through `TestPadPCell.ParseClearLayers`, so old files are unchanged.
+  Ticking writes conductors in stackup order, then any name the row held that is not a conductor — kept checked and
+  flagged, with the layer picker's kind of warning, until it is unticked. Every box unticked writes empty, which
+  `HasEmptyDefault` lets through. The item list is replaced only when its NAMES change: a refresh runs on every row
+  after every edit, and replacing the list under an open flyout would close it.
+- **Rows the chosen `Feed` does not use are greyed with the reason** (`ParameterEditorViewModel.TestPad.cs`): `FeedW`
+  through a via; `ViaFrom`, `Drill`, `InnerPadD`, `AntipadD` for a side-fed pad. Values are kept, so switching back
+  restores them. Two things this needed:
+  - **It runs on every refresh, not only when the rows are built.** A `Feed` change is an `EditParameterCommand`, which
+    keeps the rows; the wBond's Temp rows only work from the build because their checkbox commits a
+    `SetParametersCommand`, which clones the parameters and so rebuilds the rows.
+  - **A disabled control shows no tooltip unless it says `ToolTip.ShowOnDisabled="True"`.** The reason is the value
+    box's, the unit combo's and the layer picker's tooltip, and it leads the name box's (`NameTooltip`), which is never
+    disabled. `SetDisabledByMode` takes the reason as an optional argument.
+- `ViaFrom`'s description now starts from the layer the trace arrives on.

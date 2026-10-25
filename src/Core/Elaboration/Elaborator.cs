@@ -1260,6 +1260,14 @@ public sealed class Elaborator
         var result = new Dictionary<string, Value>(StringComparer.Ordinal);
         foreach (var ov in inst.Overrides)
         {
+            // A test pad's ClearNames is the cleared conductors' names, for its notes (brief-dfr27-1): text, not an
+            // expression, so it is kept verbatim as an enum name is.
+            if (ov.Name == "ClearNames" && inst.Reference.Equals("TESTPAD", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+                continue;
+            }
+
             // Frequency dependence has to TERMINATE at a model that binds `freq`. Anything else is
             // asking for a single number that does not exist, and saying so here — naming the
             // device, the parameter and the models that can take one — beats the bare

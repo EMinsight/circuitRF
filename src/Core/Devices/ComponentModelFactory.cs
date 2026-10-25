@@ -2439,8 +2439,14 @@ public static class ComponentModelFactory
     /// or an absent one is no plane on that side). The via is <c>Hvia</c> long (zero: side-fed) with <c>Drill</c>,
     /// and the planes it passes ride as indexed parameters, <c>Planes=n</c> with <c>Zp1..Zpn</c> (where along the
     /// via, from pin 1), <c>Tp</c> (barrel length the plane owns), <c>Erp</c> and <c>Bp</c> (clearance diameter) — or
-    /// <c>Clp</c>=1 for a plane in the pad's <c>ClearLayers</c>, whose clearance is <c>ClearD</c> (default <c>D</c> +
-    /// 0.5 mm).
+    /// <c>Clp</c>=1 for a plane in the pad's <c>ClearLayers</c>, whose clearance is the larger of <c>ClearD</c> (default
+    /// <c>D</c> + 0.5 mm) and <c>AntipadD</c>.
+    ///
+    /// <para>A cleared plane in front of a face (brief-dfr27-1) is <c>Hcl</c>/<c>Ercl</c>/<c>Tcl</c> beside that face's
+    /// <c>Hpad</c> — the dielectric to it and its copper — and the pad faces it over the annulus outside a <c>ClearD</c>
+    /// hole (<see cref="TestPadFormulas.ClearedPadCapacitance"/>). A <c>ClearD</c> no wider than <c>AntipadD</c> (a
+    /// side-fed pad: zero) clears nothing: the pad faces that plane as an ordinary one, and the note names
+    /// <c>ClearNames</c>, the cleared conductors as text.</para>
     ///
     /// <para>Unused inner pads (brief-dfr26-8) ride the same way when <c>InnerPadD</c> is stated: <c>InnerPads=n</c>
     /// with <c>Zq</c> (where along the via), <c>Tq</c> (copper thickness), <c>Erq</c>, and per side <c>Hqa</c>/<c>Kqa</c>
@@ -2451,27 +2457,51 @@ public static class ComponentModelFactory
     /// </summary>
     private static TestPadGeometry ReadTestPadGeometry(IReadOnlyDictionary<string, Value> parameters)
     {
-        var faces = new List<(double, double)>();
-        foreach (string suffix in new[] { "", "2" })
-        {
-            double h = GetReal(parameters, $"Hpad{suffix}", suffix.Length == 0 ? DefaultSubstrateHMeters : 0.0);
-            if (h > 0) faces.Add((h, GetReal(parameters, $"Erpad{suffix}", DefaultSubstrateEpsR)));
-        }
         double hvia = Math.Max(GetReal(parameters, "Hvia", 0.0), 0.0);
         double drill = GetReal(parameters, "Drill", DefaultViaDrillMeters);
         double d = GetReal(parameters, "D", DefaultTestPadDiameterMeters);
         double clearD = GetReal(parameters, "ClearD", d + DefaultTestPadClearRingMeters);
         double antipad = GetReal(parameters, "AntipadD", DefaultViaPadMeters + DefaultViaAntipadRingMeters);
+        // ClearD = 0 is "no hole" (brief-dfr27-1); so is one no wider than the antipad an ordinary plane has anyway.
+        double threshold = hvia > 0 ? antipad : 0.0;
+        bool cleared = clearD > threshold;
+        bool clearNamed = false;
+
+        var faces = new List<TestPadFacing>();
+        foreach (string suffix in new[] { "", "2" })
+        {
+            double h = GetReal(parameters, $"Hpad{suffix}", suffix.Length == 0 ? DefaultSubstrateHMeters : 0.0);
+            double er = GetReal(parameters, $"Erpad{suffix}", DefaultSubstrateEpsR);
+            double hcl = GetReal(parameters, $"Hcl{suffix}", 0.0);
+            if (hcl > 0 && h > hcl)
+            {
+                clearNamed = true;
+                double ercl = GetReal(parameters, $"Ercl{suffix}", er);
+                faces.Add(cleared
+                    ? new TestPadFacing(h, er, new TestPadCut(hcl, ercl, GetReal(parameters, $"Tcl{suffix}", 0.0), clearD))
+                    : new TestPadFacing(hcl, ercl));
+            }
+            else if (h > 0) faces.Add(new TestPadFacing(h, er));
+        }
         int n = (int)Math.Round(GetReal(parameters, "Planes", 0.0));
         var planes = new List<TestPadPlane>(Math.Max(n, 0));
         for (int i = 1; i <= n; i++)
+        {
+            bool clp = BooleanParameter.Parse(parameters, $"Clp{i}", whenAbsent: false);
+            clearNamed |= clp;
             planes.Add(new TestPadPlane(
                 GetReal(parameters, $"Zp{i}", hvia / 2),
                 GetReal(parameters, $"Tp{i}", 0.0),
                 GetReal(parameters, $"Erp{i}", DefaultSubstrateEpsR),
-                BooleanParameter.Parse(parameters, $"Clp{i}", whenAbsent: false)
-                    ? clearD
-                    : GetReal(parameters, $"Bp{i}", antipad)));
+                clp ? Math.Max(clearD, antipad) : GetReal(parameters, $"Bp{i}", antipad)));
+        }
+        TestPadUncleared? uncleared = null;
+        if (clearNamed && !cleared)
+        {
+            string? names = parameters.TryGetValue("ClearNames", out var nv) && nv.Kind == ValueKind.String
+                            && nv.AsString().Trim() is { Length: > 0 } t ? t : null;
+            uncleared = new TestPadUncleared(names, clearD, threshold);
+        }
         var pads = new List<TestPadInnerPad>();
         double innerPadD = GetReal(parameters, "InnerPadD", 0.0);
         if (innerPadD > 0)
@@ -2502,7 +2532,8 @@ public static class ComponentModelFactory
             ViaLength: hvia,
             ViaEpsR:  GetReal(parameters, "ErVia", DefaultSubstrateEpsR),
             Planes:   planes,
-            InnerPads: pads);
+            InnerPads: pads,
+            Uncleared: uncleared);
     }
 
     // ── MIMCAP / SPIRAL / TFR / AIRBRIDGE (brief-agent-authoring-overview.md AA-1) ────────────

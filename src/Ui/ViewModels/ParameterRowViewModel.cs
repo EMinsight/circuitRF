@@ -90,7 +90,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// <see cref="LayerChoiceOptions"/>'s own doc comment). A user who needs a value the picker
     /// doesn't offer (a custom or since-renamed layer name) sets it via the schematic canvas's own
     /// inline label text-edit instead — the same escape hatch every other parameter already has.</summary>
-    public bool ShowExpressionTextBox => !IsEnumParam && !IsLayerChoiceParam && !IsChoiceParam;
+    public bool ShowExpressionTextBox => !IsEnumParam && !IsLayerChoiceParam && !IsChoiceParam && !IsLayerChecklistParam;
 
     /// <summary>
     /// True when the value is stated by something the user has already chosen, so the box shows it
@@ -146,13 +146,25 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// same component (R-wbt-5b).
     /// </summary>
     private bool _disabledByMode;
+    private string? _disabledReason;
 
-    internal void SetDisabledByMode(bool disabled)
+    /// <summary>Greys the row for now, keeping its value; <paramref name="reason"/> is what its tooltips say instead
+    /// (a test pad's rows its <c>Feed</c> does not use, brief-dfr27-1 R-dfr27-1-3).</summary>
+    internal void SetDisabledByMode(bool disabled, string? reason = null)
     {
-        if (_disabledByMode == disabled) return;
+        string? r = disabled ? reason : null;
+        if (_disabledByMode == disabled && _disabledReason == r) return;
         _disabledByMode = disabled;
+        _disabledReason = r;
         OnPropertyChanged(nameof(ExpressionEnabled));
+        OnPropertyChanged(nameof(DisabledReason));
+        OnPropertyChanged(nameof(NameTooltip));
+        OnPropertyChanged(nameof(LayerChoiceTooltip));
+        OnPropertyChanged(nameof(LayerChecklistTooltip));
     }
+
+    /// <summary>Why the row is greyed, when it says; null otherwise, which shows no tooltip.</summary>
+    public string? DisabledReason => _disabledReason;
 
     /// <summary>
     /// Whether this row leads with a checkbox — a wBond's <c>Temp</c>, whose checkbox is its <c>FixedTemp</c>
@@ -209,7 +221,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// <para>Anything else added to column 2 must be excluded here too.</para>
     /// </summary>
     public bool ShowUnitCombo => !IsEnumParam && !IsLayerChoiceParam && !IsChoiceParam && !IsFilePathParam
-                                 && FixedUnit.Length == 0;
+                                 && !IsLayerChecklistParam && FixedUnit.Length == 0;
 
     /// <summary>The unit this parameter is always stated in (<c>°C</c> for a temperature), shown as
     /// text in the unit column instead of a combo whose only entry would be "None". Empty for every
@@ -326,6 +338,9 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     }
     public bool HasLayerChoiceMissingWarning => LayerChoiceMissingWarning.Length > 0;
 
+    /// <summary>The layer picker's tooltip: why the row is greyed, else the missing-name warning, else nothing.</summary>
+    public string? LayerChoiceTooltip => DisabledReason ?? (HasLayerChoiceMissingWarning ? LayerChoiceMissingWarning : null);
+
     // ── cell-declared choice parameters ───────────────────────────────────────
 
     /// <summary>
@@ -421,7 +436,8 @@ public sealed partial class ParameterRowViewModel : ObservableObject
 
     /// <summary>What the name field explains on hover: a problem with the name when there is one,
     /// otherwise the kit's own description of the parameter.</summary>
-    public string NameTooltip => NameError.Length > 0 ? NameError : Description;
+    public string NameTooltip => NameError.Length > 0 ? NameError
+                               : _disabledReason is { } why ? $"{why}\n\n{Description}" : Description;
 
     /// <summary>Set by the editor when it builds rows; opens the host's own file picker. Null in
     /// contexts with no UI, where the row is simply a text box.
@@ -577,6 +593,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
             OnPropertyChanged(nameof(SelectedLayerChoice));
             OnPropertyChanged(nameof(LayerChoiceMissingWarning));
             OnPropertyChanged(nameof(HasLayerChoiceMissingWarning));
+            OnPropertyChanged(nameof(LayerChoiceTooltip));
         }
     }
 
@@ -603,6 +620,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         _showOnSchematic  = param.ShowOnSchematic;
         _selectedEnumIndex = ParseEnumIndex(param.Expression);
         if (IsLayerChoiceParam) RecomputeLayerChoiceOptions();
+        InitLayerChecklist();
         // A built-in primitive has no cell to declare a file-valued parameter on, so the registry
         // states it. Set BEFORE the cell pass, which owns the answer for a kit part and leaves this
         // alone when there is no cell.
@@ -966,7 +984,9 @@ public sealed partial class ParameterRowViewModel : ObservableObject
             OnPropertyChanged(nameof(SelectedLayerChoice));
             OnPropertyChanged(nameof(LayerChoiceMissingWarning));
             OnPropertyChanged(nameof(HasLayerChoiceMissingWarning));
+            OnPropertyChanged(nameof(LayerChoiceTooltip));
         }
+        if (IsLayerChecklistParam) RecomputeLayerChecklist();
         if (IsChoiceParam)
         {
             // The option list itself is NOT re-read here: it comes from the cell's published

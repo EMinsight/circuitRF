@@ -63,7 +63,20 @@ public static class TestPadInjection
             string suffix = i == 0 ? "" : "2";
             Add($"Hpad{suffix}", stack.Faces[i].HeightMeters);
             Add($"Erpad{suffix}", stack.Faces[i].EpsR);
+            // The cleared plane in front of it (brief-dfr27-1): the pad faces it outside the ClearD hole.
+            if (stack.Faces[i].Cut is { } cut)
+            {
+                Add($"Hcl{suffix}", cut.HeightMeters);
+                Add($"Ercl{suffix}", cut.EpsR);
+                Add($"Tcl{suffix}", cut.ThicknessMeters);
+            }
         }
+        // The cleared conductors by name, for the run's note when ClearD is too small to clear them.
+        var clearNames = clear.Select(c => technology!.Stackup.Layers.FirstOrDefault(l =>
+                                  l.Kind == StackupKind.Conductor && string.Equals(l.Name, c, StringComparison.OrdinalIgnoreCase))?.Name)
+                              .OfType<string>().ToList();
+        if (clearNames.Count > 0)
+            overrides.Add(new ParameterAssignment("ClearNames", "\"" + string.Join(", ", clearNames) + "\""));
 
         if (stack.Via is { } via)
         {

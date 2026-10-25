@@ -49,6 +49,12 @@ public static class TestPadClearances
             return Refused("The test pad's ClearLayers is empty, so there is nothing to cut. Name the conductors whose " +
                            "plane should be cleared under the pad, then run it again.");
 
+        double noWider = r.ViaFed ? r.ViaAntipad : 0.0;
+        if (r.ClearD <= noWider)
+            return Refused(r.ViaFed
+                ? $"The test pad's ClearD ({r.ClearD * 1e3:0.###} mm) is no wider than its via's antipad ({noWider * 1e3:0.###} mm), " +
+                  "so it clears nothing. Set ClearD to the hole you want, then run it again."
+                : "The test pad's ClearD is 0, so it clears nothing. Set ClearD to the hole you want, then run it again.");
         long radius = (long)Math.Round(r.ClearD / 2 * 1e6 * view.DbuPerMicron);
         var stencil = new CircleShape { Layer = r.PadLayer, Cx = inst.X, Cy = inst.Y, R = radius };
         var stencilBox = LayoutGeometry.BboxOf(stencil);

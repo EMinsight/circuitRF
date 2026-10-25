@@ -179,7 +179,7 @@ public static partial class TraceImpedanceAnalysis
             }
         var geometry = new TestPadGeometry(
             Diameter: 2 * pad.R * m,
-            Faces: [.. stack.Faces.Select(f => (f.HeightMeters, f.EpsR))],
+            Faces: [.. stack.Faces.Select(f => new TestPadFacing(f.HeightMeters, f.EpsR))],
             Drill: via is null ? 0 : via.DrillSize * m,
             ViaLength: stack.ViaLengthMeters,
             ViaEpsR: stack.Via?.MaxRelativePermittivity ?? 1,

@@ -1001,6 +1001,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             foreach (var row in built.Where(r => !r.IsFilePathParam && IsFloatedChoice(r))) Rows.Add(row);
             foreach (var row in built.Where(r => !r.IsFilePathParam && !IsFloatedChoice(r))) Rows.Add(row);
             foreach (var row in built.Where(IsOwnOverride)) Rows.Add(row);
+            ConfigureTestPadRows();
         }
 
         if (comp.Symbol == SymbolKind.Snp) AdoptDefaultSnpParameters(comp);
@@ -2008,6 +2009,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowModelsExistingArtwork));
         foreach (var row in Rows.Concat(SwitchRows))
             row.RefreshFromModel();
+        ConfigureTestPadRows();
         _isRefreshing = false;
         // A READOUT of the instance, so it follows every change to it — including an undo of a
         // footprint change, and including the Custom… picker's own write.

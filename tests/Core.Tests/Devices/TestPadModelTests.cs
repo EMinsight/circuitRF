@@ -12,14 +12,16 @@ namespace CircuitRF.Core.Tests.Devices;
 /// </summary>
 public class TestPadModelTests
 {
+    /// <summary>Kirchhoff's disc over a plane, written out here (brief-dfr27-1). The field solve of this pad on the ten-layer
+    /// board gives 1.118 pF.</summary>
     [Fact]
-    public void PadCapacitance_IsTheDesignersFormula_ForAOneAndAHalfMillimetrePad71MicronsOverFr4()
+    public void PadCapacitance_IsKirchhoffsDisc_ForAOneAndAHalfMillimetrePad71MicronsOverFr4()
     {
         const double e0 = 8.8541878128e-12, er = 4.4, r = 0.75e-3, h = 71e-6;
-        double designer = e0 * er * Math.PI * r * r / h + e0 * er * 2 * Math.PI * r * Math.Log(1 + 2 * r / h);
+        double kirchhoff = e0 * er * Math.PI * r * r / h + e0 * er * r * (Math.Log(16 * Math.PI * r / h) - 1);
 
-        Assert.Equal(designer, TestPadFormulas.PadCapacitance(1.5e-3, h, er), 1e-24);
-        Assert.Equal(1.538e-12, designer, 1e-15);
+        Assert.Equal(kirchhoff, TestPadFormulas.PadCapacitance(1.5e-3, h, er), 1e-24);
+        Assert.Equal(1.124e-12, kirchhoff, 1e-15);
     }
 
     [Fact]
@@ -73,13 +75,44 @@ public class TestPadModelTests
     [Fact]
     public void APlaneInClearLayers_TakesClearD_AndTheOthersTheirOwnClearance()
     {
-        var model = Assert.IsType<TestPadModel>(ComponentModelFactory.TryCreate("TESTPAD", new Dictionary<string, Value>
+        TestPadGeometry With(double clearD) => Assert.IsType<TestPadModel>(ComponentModelFactory.TryCreate("TESTPAD", new Dictionary<string, Value>
         {
-            ["D"] = new(1.5e-3), ["Hvia"] = new(1.6e-3), ["Planes"] = new(2.0),
-            ["Clp1"] = new(1.0), ["Bp2"] = new(0.9e-3), ["ClearD"] = new(2.5e-3),
-        }));
-        Assert.Equal([2.5e-3, 0.9e-3], model.Geometry.Planes.Select(p => p.Clearance));
+            ["D"] = new(1.5e-3), ["Hvia"] = new(1.6e-3), ["Planes"] = new(2.0), ["AntipadD"] = new(0.9e-3),
+            ["Clp1"] = new(1.0), ["Bp2"] = new(0.8e-3), ["ClearD"] = new(clearD),
+        })).Geometry;
+        Assert.Equal([2.5e-3, 0.8e-3], With(2.5e-3).Planes.Select(p => p.Clearance));
+        // brief-dfr27-1: never narrower than the antipad, which the plane has anyway.
+        Assert.Equal([0.9e-3, 0.8e-3], With(0).Planes.Select(p => p.Clearance));
     }
+
+    // ── brief-dfr27-1: the pad's capacitance depends on ClearD ──────────────────────────────────
+
+    /// <summary>A pad on Bottom of the ten-layer board with Inner 8 (71 µm away) in ClearLayers and Inner 7 140 µm away,
+    /// as the extraction states it.</summary>
+    private static TestPadModel ClearedPad(double clearD) => Assert.IsType<TestPadModel>(ComponentModelFactory.TryCreate("TESTPAD", new Dictionary<string, Value>
+    {
+        ["D"] = new(1.5e-3), ["Hpad"] = new(140e-6), ["Erpad"] = new(4.4), ["Hcl"] = new(71e-6), ["Ercl"] = new(4.4), ["Tcl"] = new(18e-6),
+        ["Hvia"] = new(1.6e-3), ["AntipadD"] = new(0.9e-3), ["ClearD"] = new(clearD), ["ClearNames"] = new("Inner 8"),
+    }));
+
+    [Fact]
+    public void ClearD_NoWiderThanTheAntipad_ClearsNothing_AndTheNoteNamesThePlane()
+    {
+        double uncut = TestPadFormulas.PadCapacitance(1.5e-3, 71e-6, 4.4);
+        foreach (double clearD in new[] { 0.0, 0.9e-3 })
+        {
+            var model = ClearedPad(clearD);
+            Assert.Equal(uncut, model.Geometry.PadCapacitance, 1e-24);
+            model.Stamp(new CircuitRF.Core.Tests.Devices.Microstrip.CapturingMnaContext(),
+                        new CircuitRF.Core.Elaboration.ElaboratedComponent("TESTPAD", "TP1", [1, 2], new Dictionary<string, Value>(), model), 1e9);
+            Assert.Contains(model.DrainWarnings(), w => w.Key == "TESTPAD-uncleared:TP1" && w.Message.Contains("Inner 8 is not cleared"));
+        }
+
+        var cut = ClearedPad(0.91e-3);
+        Assert.True(cut.Geometry.PadCapacitance < uncut);
+        Assert.Null(cut.Geometry.Uncleared);
+    }
+
 
     // ── brief-dfr26-8: unused inner pads ────────────────────────────────────────────────────────
 

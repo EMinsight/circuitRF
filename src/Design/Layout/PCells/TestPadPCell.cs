@@ -95,8 +95,10 @@ public static class TestPadPCell
         double drill = parameters.Real("Drill", stack?.Via?.DrillMeters ?? ViaDefaultsSi.Drill);
         if (!(drill > 0)) drill = ViaDefaultsSi.Drill;
         double viaPad = Math.Max(stack?.Via?.PadMeters ?? ViaDefaultsSi.Pad, drill);
+        // An explicit 0 is "no cut-out" (brief-dfr27-1), as the model reads it; only a value that is not a size takes
+        // the default.
         double clearD = parameters.Real("ClearD", d + DefaultClearRingMeters);
-        if (!(clearD > 0)) clearD = d + DefaultClearRingMeters;
+        if (!(clearD >= 0)) clearD = d + DefaultClearRingMeters;
 
         double innerPadD = parameters.Real("InnerPadD", 0.0);
         if (!(innerPadD > 0)) innerPadD = 0;

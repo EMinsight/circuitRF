@@ -53,27 +53,56 @@ public sealed record TestPadInnerPad(
     }
 }
 
+/// <summary>The plane a test pad faces on one side (brief-dfr26-7), and, when the plane nearest it on that side is
+/// cleared under it, that cut (brief-dfr27-1 R-dfr27-1-1).</summary>
+/// <param name="H">The dielectric to the plane faced through the cut — the nearest plane not cleared, m.</param>
+/// <param name="EpsR">Its series permittivity.</param>
+/// <param name="Cut">The cleared plane in front of it, or null: the pad faces <see cref="H"/>'s plane alone.</param>
+public sealed record TestPadFacing(double H, double EpsR, TestPadCut? Cut = null)
+{
+    /// <summary>The pad's capacitance on this side, F.</summary>
+    public double Capacitance(double diameter) => Cut is { } c
+        ? TestPadFormulas.ClearedPadCapacitance(diameter, c.Diameter, c.H, c.EpsR, c.Thickness, H, EpsR)
+        : TestPadFormulas.PadCapacitance(diameter, H, EpsR);
+}
+
+/// <summary>A round hole under the pad in the plane nearest it (brief-dfr27-1 R-dfr27-1-1).</summary>
+/// <param name="H">The dielectric between the pad and that plane, m.</param>
+/// <param name="EpsR">Its permittivity.</param>
+/// <param name="Thickness">The plane's copper, m.</param>
+/// <param name="Diameter">The hole, m — <c>ClearD</c>.</param>
+public sealed record TestPadCut(double H, double EpsR, double Thickness, double Diameter);
+
+/// <summary>Planes named in <c>ClearLayers</c> that <c>ClearD</c> leaves uncleared, being no wider than
+/// <paramref name="Threshold"/> — the via's antipad, or zero for a side-fed pad (brief-dfr27-1 R-dfr27-1-1).</summary>
+/// <param name="Planes">Their names, or null when the line did not carry them.</param>
+public sealed record TestPadUncleared(string? Planes, double ClearD, double Threshold);
+
 /// <summary>
 /// Everything a test pad's model is built from, fully resolved (SI). The schematic's extraction resolves it from
 /// the stackup (<c>TestPadInjection</c>, src/Design); a bare <c>.cnl</c> line types it.
 /// </summary>
 /// <param name="Diameter">The pad's diameter, m.</param>
 /// <param name="Faces">The plane the pad faces on each side that has one, as the dielectric between them: its
-/// summed thickness and its series permittivity. Empty for a pad facing no plane at all.</param>
+/// summed thickness and its series permittivity, and the cleared plane in front of it when there is one. Empty for a
+/// pad facing no plane at all.</param>
 /// <param name="Drill">The via's drill, m.</param>
 /// <param name="ViaLength">The via's length from pin 1's conductor to the pad's, m; zero for a side-fed pad.</param>
 /// <param name="ViaEpsR">The densest dielectric the via crosses, for the validity bound.</param>
 /// <param name="Planes">The planes the via passes, with where along it each sits.</param>
 /// <param name="InnerPads">The unused pads the via carries on the conductors it passes (brief-dfr26-8); none by
 /// default, as <c>TestPadPCell</c> draws none unless <c>InnerPadD</c> is set.</param>
+/// <param name="Uncleared">The <c>ClearLayers</c> planes <c>ClearD</c> is too small to clear, which the model takes as
+/// ordinary planes (brief-dfr27-1); null when there are none.</param>
 public sealed record TestPadGeometry(
     double Diameter,
-    IReadOnlyList<(double H, double EpsR)> Faces,
+    IReadOnlyList<TestPadFacing> Faces,
     double Drill,
     double ViaLength,
     double ViaEpsR,
     IReadOnlyList<TestPadPlane> Planes,
-    IReadOnlyList<TestPadInnerPad>? InnerPads = null)
+    IReadOnlyList<TestPadInnerPad>? InnerPads = null,
+    TestPadUncleared? Uncleared = null)
 {
     /// <summary>The unused pads, never null.</summary>
     public IReadOnlyList<TestPadInnerPad> Pads => InnerPads ?? [];
@@ -85,7 +114,7 @@ public sealed record TestPadGeometry(
     public double InnerPadCapacitance => ViaLength > 0 ? Pads.Sum(InnerPadCapacitanceOf) : 0.0;
 
     /// <summary>The pad's capacitance to the planes it faces, F.</summary>
-    public double PadCapacitance => Faces.Sum(f => TestPadFormulas.PadCapacitance(Diameter, f.H, f.EpsR));
+    public double PadCapacitance => Faces.Sum(f => f.Capacitance(Diameter));
 
     /// <summary>The via's inductance over its whole length, H; zero for a side-fed pad.</summary>
     public double ViaInductance => TestPadFormulas.ViaInductance(ViaLength, Drill);
@@ -217,6 +246,16 @@ public sealed class TestPadModel : ComponentModel, IReportsWarnings
             _pending.Add(($"TESTPAD-innerpad:{instancePath}",
                 $"{instancePath}: InnerPadD ({F(wide.Diameter * 1e3)} mm) is no smaller than AntipadD ({F(wide.Antipad * 1e3)} mm), " +
                 "so each unused pad would touch its plane; they are left out of the estimate."));
+        // ClearD = 0 is "no hole" (brief-dfr27-1): the named planes are modelled uncut, and the run says which.
+        if (g.Uncleared is { } u)
+        {
+            bool one = u.Planes is { } names && !names.Contains(',');
+            _pending.Add(($"TESTPAD-uncleared:{instancePath}",
+                $"{instancePath}: ClearD ({F(u.ClearD * 1e3)} mm) is " +
+                (u.Threshold > 0 ? $"no wider than the via's antipad ({F(u.Threshold * 1e3)} mm)" : "zero") +
+                $", so {u.Planes ?? "the planes in ClearLayers"} {(one ? "is" : "are")} not cleared: modelled as " +
+                (one ? "an ordinary plane." : "ordinary planes.")));
+        }
         _pending.Add(($"TESTPAD-estimate:{instancePath}",
             $"{instancePath}: the test pad's values are a closed-form estimate — pad {F(g.PadCapacitance * 1e12)} pF{via}. " +
             "An EM setup of the pad, its via and the planes it passes is the reference."));
