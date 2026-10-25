@@ -238,7 +238,7 @@ public class LibraryCatalogTests
     }
 
     [Fact]
-    public void ByCategory_Microstrip_ContainsAllTwelveBuiltIns()
+    public void ByCategory_Microstrip_ContainsAllThirteenBuiltIns()
     {
         // brief-L5a-pcell-contract-and-microstrip.md: MLIN/MBend/MTee/MCross are SymbolKind-
         // registered under the Microstrip category (previously reserved, unpopulated).
@@ -246,7 +246,7 @@ public class LibraryCatalogTests
         // the two vias a board's lines change layers and return to ground through, and MCurve the
         // radiused bend, and MMiter the chamfered one; MCLine and MBCLine are the two microstrip coupled
         // pairs (edge-coupled and broadside). BCLine, the broadside STRIPLINE pair, is a transmission
-        // line and not here.
+        // line and not here. brief-dfr26-7 adds TESTPAD, a via ending on a round test-point pad.
         var kinds = LibraryCatalog.ByCategory(ComponentCategory.Microstrip).Select(i => i.Kind).ToList();
         Assert.Contains(SymbolKind.Mlin, kinds);
         Assert.Contains(SymbolKind.MBend, kinds);
@@ -260,8 +260,9 @@ public class LibraryCatalogTests
         Assert.Contains(SymbolKind.ViaGnd, kinds);
         Assert.Contains(SymbolKind.MCLine, kinds);
         Assert.Contains(SymbolKind.MBCLine, kinds);
+        Assert.Contains(SymbolKind.TestPad, kinds);
         Assert.DoesNotContain(SymbolKind.BCLine, kinds);
-        Assert.Equal(12, kinds.Count);
+        Assert.Equal(13, kinds.Count);
     }
 
     [Fact]

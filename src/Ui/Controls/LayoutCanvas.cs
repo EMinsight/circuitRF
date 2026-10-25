@@ -1470,6 +1470,16 @@ public sealed class LayoutCanvas : Control
         // the array case on its own) so the two can never diverge.
         AddAvailItem("Explode Array", _viewModel.ExplodeArrayAvailability).Click += async (_, _) => await ShowFlattenHierarchyAsync();
 
+        // brief-dfr26-7 R-dfr26-7-2: a placed test pad's declared cut-outs, cut into drawn planes. Offered only on one.
+        if (_viewModel.SelectionIsOneTestPad)
+        {
+            Sep();
+            var cut = new MenuItem { Header = "Cut Clearances into Planes" };
+            ToolTip.SetTip(cut, "Cut the pad's ClearD circle out of every drawn shape on each layer its ClearLayers names, as one undo step.");
+            cut.Click += (_, _) => _viewModel.CutTestPadClearances();
+            items.Add(cut);
+        }
+
         Sep();
         string groupHeader = "Group into Cell…" + (_viewModel.GroupIntoCellOutcomeText is { } t3 ? $" ({t3})" : "");
         AddAvailItem(groupHeader, _viewModel.GroupIntoCellAvailability).Click += async (_, _) => await ShowGroupIntoCellAsync();

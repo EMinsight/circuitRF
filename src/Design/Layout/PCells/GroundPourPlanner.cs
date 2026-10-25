@@ -193,6 +193,13 @@ public static class GroundPourPlanner
         {
             string cell = Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
             if (!view.PCellSnapshots.TryGetValue(cell, out var snap)) continue;
+            if (string.Equals(snap.GeneratorId, TestPadPCell.GeneratorId, StringComparison.OrdinalIgnoreCase))
+            {
+                if (TestPadClearance(TestPadPCell.Resolve(snap.Parameters, technology), technology, ground, view.DbuPerMicron) is { } tr
+                    && inst.X + tr >= outer.MinX && inst.X - tr <= outer.MaxX && inst.Y + tr >= outer.MinY && inst.Y - tr <= outer.MaxY)
+                    discs.Add(Disc(inst.X, inst.Y, tr));
+                continue;
+            }
             bool grounded = string.Equals(snap.GeneratorId, ViaPCell.GroundGeneratorId, StringComparison.OrdinalIgnoreCase);
             if (!grounded && !string.Equals(snap.GeneratorId, ViaPCell.GeneratorId, StringComparison.OrdinalIgnoreCase)) continue;
 
@@ -236,6 +243,30 @@ public static class GroundPourPlanner
             discs.Add(Disc(via.X, via.Y, radius));
         }
         return (discs, joined, groundVias);
+    }
+
+    /// <summary>
+    /// brief-dfr26-7 R-dfr26-7-1 — the radius, DBU, a placed TESTPAD clears in <paramref name="ground"/>, or null for
+    /// none: its declared cut-out (<c>ClearD</c>) on a plane named in its <c>ClearLayers</c>, and its via's antipad on
+    /// a plane the via's drill passes, the larger where both apply. Centred on the instance's origin, which is the
+    /// pad's centre and the via's axis.
+    /// </summary>
+    internal static long? TestPadClearance(TestPadPCell.Resolved r, Technology technology, StackupLayer ground, int dbuPerMicron)
+    {
+        double diameter = 0;
+        if (r.ClearLayers.Any(c => string.Equals(c, ground.Name, StringComparison.OrdinalIgnoreCase))) diameter = r.ClearD;
+        if (r.Stack?.Via is { } span)
+        {
+            var layers = technology.Stackup.Layers;
+            int g = IndexOf(layers, ground);
+            int from = IndexOf(layers, span.From), to = IndexOf(layers, span.To);
+            int top = Math.Min(from, to), bottom = Math.Max(from, to);
+            if (span.ViaEntry is { } entry && ViaSpanResolver.Resolve(entry, technology) is { } drillSpan)
+                (top, bottom) = (IndexOf(layers, drillSpan.Top), IndexOf(layers, drillSpan.Bottom));
+            bool joined = ReferenceEquals(span.From, ground) || ReferenceEquals(span.To, ground);
+            if (!joined && top <= g && g <= bottom) diameter = Math.Max(diameter, r.ViaAntipad);
+        }
+        return diameter > 0 ? (long)Math.Round(diameter / 2 * 1e6 * dbuPerMicron) : null;
     }
 
     private static int IndexOf(IReadOnlyList<StackupLayer> layers, StackupLayer layer)

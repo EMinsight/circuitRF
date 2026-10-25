@@ -7,6 +7,7 @@ using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
 
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Layout.PCells;
 namespace CircuitRF.Design.Schematic;
 
 // ── Item 8: Central component-type metadata registry ─────────────────────────
@@ -792,6 +793,11 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["VIAGND", "via", "ground via", "via to ground", "grounding via", "shunt",
                           "return", "pad capacitance", "plated through hole"]),
+        // A test-point pad (brief-dfr26-7): with the vias, since it is one ending on a round pad.
+        [SymbolKind.TestPad]      = new("TESTPAD", "TP",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["TESTPAD", "test point", "test pad", "probe pad", "pad", "round pad", "pad capacitance",
+                          "cut-out", "clearance", "via", "EM port"]),
         // The MMIC passives (AA-1), in their own category. Not also under Lumped: that category is
         // held to the ideal lumped elements (LibraryCatalogTests), and these are process parts.
         [SymbolKind.MimCap]       = new("MIMCAP", "MIM",
@@ -1002,6 +1008,11 @@ public static class ComponentTypeRegistry
         SymbolKind.ViaGnd =>
             "One terminal, A, on FromLayer. The far end is ground: the via lands on GroundLayer.",
 
+        SymbolKind.TestPad =>
+            "Not interchangeable: terminal 1 is the feed — the via on ViaFrom, or the end of the side stub — and "
+          + "terminal 2 is the pad centre. Leave 2 open for a test point that is not in use, or continue it to a "
+          + "connector.",
+
         SymbolKind.MimCap =>
             "Not interchangeable: terminal 1 is the top plate and terminal 2 the bottom plate, the one "
           + "lying on the substrate, which carries the plate's capacitance to ground. For a shunt "
@@ -1160,6 +1171,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Mklopf        => "MKLOPF",
         SymbolKind.Via           => "VIA",
         SymbolKind.ViaGnd        => "VIAGND",
+        SymbolKind.TestPad       => "TESTPAD",
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1332,6 +1344,7 @@ public static class ComponentTypeRegistry
          : kind is SymbolKind.Duplexer ? DuplexerParameterDescription(parameterName)
          : SystemBlockParameterDescription(kind, parameterName) is { Length: > 0 } sysDesc ? sysDesc
          : ViaParameterDescription(kind, parameterName) is { Length: > 0 } viaDesc ? viaDesc
+         : TestPadParameterDescription(kind, parameterName) is { Length: > 0 } tpDesc ? tpDesc
          : MmicParameterDescription(kind, parameterName) is { Length: > 0 } mmicDesc ? mmicDesc
          : CoupledPairParameterDescription(kind, parameterName) is { Length: > 0 } cpDesc ? cpDesc
          : WBondParameterDescription(kind, parameterName) is { Length: > 0 } wbDesc ? wbDesc
@@ -1464,6 +1477,13 @@ public static class ComponentTypeRegistry
           + "thicknesses); ESR from both plates' sheet resistance with skin effect, Rs·L/(3W) each; "
           + "dielectric loss from the film's tanD; the bottom plate's capacitance through the substrate to "
           + "ground. Lumped while the longer side is under a twentieth of a wavelength in the film.",
+        SymbolKind.TestPad =>
+            "AN ESTIMATE. The pad's capacitance to the nearest conductor not in ClearLayers on each side, as parallel "
+          + "plates plus a rim fringe, C = ε0εr·πr²/h + ε0εr·2πr·ln(1 + 2r/h), with h the dielectric between them and "
+          + "the layers combined in series; the via's inductance by Goldfarb and Pucel over its length, with the "
+          + "barrel's coaxial capacitance to each plane it passes (the clearance as the outer radius) at its point "
+          + "along it. Lossless. Every inner conductor counts as a plane under the pad unless ClearLayers names it. "
+          + "An EM setup of the pad, its via and its planes is the reference: set Centre to Port to give it a port.",
         SymbolKind.Spiral =>
             "AN ESTIMATE. L by partial-inductance summation (Greenhouse 1974) over the drawn coil, its escape "
           + "and its pad, with their images in the ground plane under the substrate; each conductor is a "
@@ -1541,6 +1561,30 @@ public static class ComponentTypeRegistry
                            + "barrel's resistance and inductance only.",
             "C"           => "Replaces the computed capacitance outright. Empty: computed from the pad, the "
                            + "antipad and the dielectric, which is an estimate (see the component's help).",
+            _             => "",
+        };
+    }
+
+    /// <summary>The test pad's parameter meanings (brief-dfr26-7). Each says what an EMPTY row does.</summary>
+    private static string TestPadParameterDescription(SymbolKind kind, string parameterName)
+    {
+        if (kind != SymbolKind.TestPad) return "";
+        return parameterName switch
+        {
+            "PadLayer"    => "The conductor the pad is on. Default: the lowest conductor that is not a ground plane.",
+            "D"           => "The pad's diameter. The test fixture usually sets it.",
+            "Feed"        => "Where terminal 1 joins: Via — through a via at the pad's centre from ViaFrom — or N, E, S "
+                           + "or W, a short stub leaving the pad on that side.",
+            "FeedW"       => "The side stub's width. Empty: the 50 Ω microstrip width on PadLayer. Not used through a via.",
+            "ViaFrom"     => "The conductor at the via's other end, where terminal 1 is. Default: the top conductor. Not "
+                           + "used for a side-fed pad.",
+            "Drill"       => "The via's drill. Empty: the technology's via drill.",
+            "ClearLayers" => "The conductors whose plane gets a round cut-out under the pad, comma-separated. Empty: "
+                           + "none. The pad's capacitance is taken to the nearest conductor NOT named here.",
+            "ClearD"      => "The cut-out's diameter on those conductors. Empty: D + 0.5 mm.",
+            "Centre"      => "Open: the pad is metal and nothing more (a test point not in use). Port: the layout also "
+                           + "carries an EM port at the pad's centre, an internal port to ground.",
+            "PortNum"     => "The EM port's number when Centre is Port. Empty: the next free number.",
             _             => "",
         };
     }
@@ -3203,6 +3247,21 @@ public static class ComponentTypeRegistry
                         new(ViaSubstrateInjection.GroundLayerParam, "", "", false, UnitDimension.None),
                         .. ViaDimensionParams];
 
+            // TESTPAD (brief-dfr26-7 R-dfr26-7-1). Empty rows follow the technology, as a via's do; the layer
+            // rows are conductor NAMES. What the stackup resolves — the dielectric the pad faces, the via's
+            // length and the planes it passes — is injected at extraction (TestPadInjection).
+            case SymbolKind.TestPad:
+                return [new(TestPadInjection.PadLayerParam,    "",     "",   false, UnitDimension.None),
+                        new("D",                               "1.5",  "mm", true,  UnitDimension.Length),
+                        new("Feed",                            TestPadPCell.ViaFeed, "", true, UnitDimension.None),
+                        new("FeedW",                           "",     "mm", false, UnitDimension.Length),
+                        new(TestPadInjection.ViaFromParam,     "",     "",   false, UnitDimension.None),
+                        new("Drill",                           "",     "mm", false, UnitDimension.Length),
+                        new(TestPadInjection.ClearLayersParam, "",     "",   true,  UnitDimension.None),
+                        new("ClearD",                          "",     "mm", false, UnitDimension.Length),
+                        new("Centre",                          TestPadPCell.CentreOpen, "", true, UnitDimension.None),
+                        new("PortNum",                         "",     "",   false, UnitDimension.None)];
+
             // The MMIC passives (AA-1). Geometry only, in micrometres because that is what a die is
             // drawn in; everything a process decides is injected from the technology at extraction
             // (MmicPassiveInjection), as a microstrip's substrate is.
@@ -3351,6 +3410,7 @@ public static class ComponentTypeRegistry
             case "SLIN":     kind = SymbolKind.Slin;         return true;
             case "VIA":      kind = SymbolKind.Via;          return true;
             case "VIAGND":   kind = SymbolKind.ViaGnd;       return true;
+            case "TESTPAD":  kind = SymbolKind.TestPad;      return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
@@ -3655,6 +3715,10 @@ public static class ComponentTypeRegistry
     /// the schematic writes.</summary>
     private static readonly string[] ShowBiasOptions = ["false", "true"];
 
+    /// <summary>A test pad's <c>Feed</c> and <c>Centre</c> (brief-dfr26-7): the spellings <c>TestPadPCell</c> reads.</summary>
+    private static readonly string[] TestPadFeedOptions = [TestPadPCell.ViaFeed, "N", "E", "S", "W"];
+    private static readonly string[] TestPadCentreOptions = [TestPadPCell.CentreOpen, TestPadPCell.CentrePort];
+
     /// <summary>
     /// The closed set of NAMES a parameter accepts, for a parameter whose value is an enum name
     /// rather than a number — <c>Response</c>, <c>Form</c>, <c>Direction</c>, <c>OffState</c>,
@@ -3701,6 +3765,9 @@ public static class ComponentTypeRegistry
         // A via's capacitance switch: the same two words, turned into 1/0 at extraction
         // (ViaSubstrateInjection.FlagExpression), since a bare word in an expression is a name.
         (SymbolKind.Via or SymbolKind.ViaGnd, "IncludeC")                                => ShowBiasOptions,
+        // A test pad's feed side and what its centre is (brief-dfr26-7): closed sets of words the generator reads.
+        (SymbolKind.TestPad, "Feed")                                                     => TestPadFeedOptions,
+        (SymbolKind.TestPad, "Centre")                                                   => TestPadCentreOptions,
         // A composed FET's instance switches (brief-modelcomposer-21): yes or no. A switch bound to an expression keeps a
         // text box (ParameterRowViewModel), since a picker cannot hold one.
         (SymbolKind.ComposedFET, _) when ComposedSwitches.IsSwitch(paramName)                => ComposedSwitchOptions,

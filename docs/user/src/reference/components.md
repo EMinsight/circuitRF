@@ -1009,6 +1009,36 @@ replaces.
 
 {{table: components/ViaGnd}}
 
+### Test Point Pad (TESTPAD) {#testpad}
+
+{{symbol: testpad}}
+
+A round test-point pad on an RF line: a pad of diameter `D` on `PadLayer` — by default the lowest signal
+conductor, the board's far side — fed either through a via at its centre from `ViaFrom` (`Feed = Via`) or
+by a short stub leaving it on one side (`N`, `E`, `S` or `W`, `FeedW` wide). Terminal 1 is the feed — the
+via on `ViaFrom`, or the stub's end — and terminal 2 is the pad centre. Leave terminal 2 open for a test
+point that is not in use, or continue it to a connector.
+
+The pad loads the line with its capacitance to the nearest plane and the via's inductance, and the two
+resonate. The model is an estimate: the pad's capacitance to the nearest conductor on each side that
+`ClearLayers` does not name, as parallel plates plus a rim fringe, with the dielectrics between combined in
+series; the via's inductance over its length, with the barrel's capacitance to each plane it passes. Every
+inner conductor counts as a plane under the pad unless `ClearLayers` names it. Messages gives the values
+and the resonance once per run.
+
+**Cut-outs.** `ClearLayers` names the conductors whose plane gets a round cut-out `ClearD` across under the
+pad. They are not drawn as shapes: a ground pour drawn by Update Layout or Draw Ground Pour cuts them, as it
+cuts a via's antipad. On a board whose planes are drawn artwork, right-click the placed pad and choose
+[Cut Clearances into Planes](layout-editor.html#cut-clearances).
+
+**An EM port at the centre.** With `Centre = Port` the layout carries an EM port at the pad's centre, an
+internal port to ground numbered `PortNum` (empty: the next free number). An EM setup of the board picks it
+up from inside the placed part — in 3D as a sheet from the pad to the nearest plane with metal there, through
+any cut-out — so the pad can be solved with and without each cut-out before a board is built. See
+[Ports a component carries](em-3d.html#component-ports).
+
+{{table: components/TestPad}}
+
 ### Wirebond (wBond) {#wbond}
 
 {{symbol: wbond}}

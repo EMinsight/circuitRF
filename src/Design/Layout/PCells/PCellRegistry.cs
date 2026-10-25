@@ -33,6 +33,8 @@ public static class PCellRegistry
             { "SLIN",   MlinPCell.Generate   },
             { ViaPCell.GeneratorId,       ViaPCell.Generate       },
             { ViaPCell.GroundGeneratorId, ViaPCell.GenerateGround },
+            // A test-point pad, through a via or fed from a side (brief-dfr26-7).
+            { TestPadPCell.GeneratorId,   TestPadPCell.Generate   },
             // The MMIC passives (brief-agent-authoring-overview.md AA-1).
             { MimCapPCell.GeneratorId,    MimCapPCell.Generate    },
             { SpiralPCell.GeneratorId,    SpiralPCell.Generate    },

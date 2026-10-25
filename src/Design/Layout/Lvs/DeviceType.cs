@@ -156,6 +156,7 @@ public static class DeviceTypes
             ["SLIN"]   = SymbolKind.Slin,
             ["VIA"]    = SymbolKind.Via,
             ["VIAGND"] = SymbolKind.ViaGnd,
+            ["TESTPAD"] = SymbolKind.TestPad,
             // The MMIC passives (AA-1): each generator is keyed by its component's own token.
             ["MIMCAP"]    = SymbolKind.MimCap,
             ["SPIRAL"]    = SymbolKind.Spiral,
@@ -278,7 +279,8 @@ public static class DeviceTypes
         SymbolKind.Airbridge => DeviceKind.Crossover,
 
         // Both vias are one kind: which one is told apart by the terminal count, as a tee from a cross.
-        SymbolKind.Via or SymbolKind.ViaGnd => DeviceKind.Via,
+        // A test pad is a via ending on a pad: two terminals joined by a barrel, so the same kind.
+        SymbolKind.Via or SymbolKind.ViaGnd or SymbolKind.TestPad => DeviceKind.Via,
 
         SymbolKind.Diode => DeviceKind.Diode,
 

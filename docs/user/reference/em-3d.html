@@ -223,6 +223,12 @@ side away from the trace that feeds the pad, and moves out to where the plane's 
 via ends. The setup's named return plane, if it names one, is the only plane it lands on. Metal of
 another layer across the sheet's path is refused, naming that layer. A delta-gap port (a cut across a
 line) is planar only.</p>
+<p><a id="component-ports"></a><strong>Ports a component carries.</strong> A port label inside a placed part is that
+part's terminal and never a port of the board — except a port the component declares as an <strong>EM port</strong>.
+A <a href="components.html#testpad">TESTPAD</a> with <code>Centre = Port</code> is one: its pad centre becomes an internal
+port numbered <code>PortNum</code>, wherever the part is placed, turned or mirrored, and in 3D it is the pad-to-plane
+port above. A planar setup takes it as an internal port to ground. Its number is checked against the
+board's own port labels and every other component's: a number used twice is refused, naming both.</p>
 </li>
 <li><p><strong>Terminals</strong> (<code>Terminals3D</code>, static solves): the matrix's rows and columns, each named by a net.
 Every conductor on that net belongs to the terminal. A magnetostatic terminal also names the port its

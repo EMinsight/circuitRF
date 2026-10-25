@@ -1,0 +1,90 @@
+// Framework-free. No Avalonia, no SkiaSharp.
+
+namespace CircuitRF.Design.Layout.Em;
+
+/// <summary>
+/// brief-dfr26-7 R-dfr26-7-3 — the port labels an EM setup reads: the layout's own top-level ones, plus every
+/// port a placed COMPONENT declares (<see cref="LabelShape.EmPort"/>), transformed to top-level coordinates.
+///
+/// <para><b>Why not hand the extractor the flattened shapes.</b> <see cref="EmPortExtraction.Extract"/> infers an
+/// unstated port's type from the shapes it is given, and every port drawn before this existed was inferred
+/// against the TOP-LEVEL shapes alone; handing it the flattened artwork would quietly change what those ports
+/// resolve to. So the top level is passed as it always was, and only the component ports are added beside it —
+/// each states its own type, so nothing about them is inferred.</para>
+///
+/// <para><b>A number used twice is a refusal naming both</b> — a top-level label and a component, or two
+/// components — raised here, where the instance each came from is still known, rather than by the extractor,
+/// which could only name two labels.</para>
+/// </summary>
+public static class EmComponentPorts
+{
+    /// <summary>The labels to extract ports from, the refusal when two name one number, and one note per
+    /// component port.</summary>
+    public sealed record Result(IReadOnlyList<LayoutShape> Shapes, string? Refusal, IReadOnlyList<string> Notes);
+
+    /// <summary>One component-declared port: its label in top-level coordinates and the instance it came from.</summary>
+    public sealed record ComponentPort(LabelShape Label, string Owner);
+
+    /// <summary>
+    /// <see cref="EmLayoutSource.View"/>'s top-level shapes plus every component-declared EM port inside its
+    /// placed instances, at any depth.
+    /// </summary>
+    public static Result Collect(EmLayoutSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var top = source.View.Shapes;
+        var found = Find(source.View, source.AbsolutePath, source.Technology);
+        if (found.Count == 0) return new Result(top, null, []);
+
+        string At(LabelShape l) => $"({LayoutUnits.Format(l.X, source.View.DisplayUnit, source.DbuPerMicron)}, " +
+                                   $"{LayoutUnits.Format(l.Y, source.View.DisplayUnit, source.DbuPerMicron)} " +
+                                   $"{LayoutUnits.Suffix(source.View.DisplayUnit)})";
+
+        var owners = new Dictionary<int, string>();
+        foreach (var s in top)
+            if (s is LabelShape { IsPort: true } l && EmPortExtraction.TryParseNumber(l.Text, out int n))
+                owners.TryAdd(n, $"the port label '{l.Text}' at {At(l)}");
+
+        var notes = new List<string>();
+        foreach (var p in found)
+        {
+            string what = $"the EM port instance '{p.Owner}' declares at {At(p.Label)}";
+            if (EmPortExtraction.TryParseNumber(p.Label.Text, out int n))
+            {
+                if (owners.TryGetValue(n, out var first))
+                    return new Result(top,
+                        $"Port {n} is named twice: by {first} and by {what}. Port numbers index the s-parameter matrix, " +
+                        "so they have to be distinct — renumber one of them (a component's port number is its PortNum).",
+                        notes);
+                owners[n] = what;
+                notes.Add($"Port {n} is {what}.");
+            }
+            else notes.Add($"A port with no number of its own is {what}; it takes the next free number.");
+        }
+        return new Result([.. top, .. found.Select(p => p.Label)], null, notes);
+    }
+
+    /// <summary>Every component-declared EM port inside <paramref name="view"/>'s placed instances, in top-level
+    /// coordinates, in placement order. An instance whose cell carries none (and places nothing of its own) is not
+    /// flattened, so a board of ordinary lines costs one cached cell read per instance.</summary>
+    public static IReadOnlyList<ComponentPort> Find(LayoutView view, string clayPath, Technology? technology)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        if (view.Instances.Count == 0) return [];
+        string baseDir = Path.GetDirectoryName(clayPath) ?? "";
+        var ports = new List<ComponentPort>();
+        foreach (var inst in view.Instances)
+        {
+            var res = CellLayoutResolver.Resolve(inst, baseDir, technology);
+            if (res.State != CellLayoutState.Resolved || res.View is not { } cell) continue;
+            if (cell.Instances.Count == 0 && !cell.Shapes.Any(IsComponentPort)) continue;
+
+            string owner = inst.SchematicId is { Length: > 0 } id ? id : Path.GetFileName(inst.CellRef.TrimEnd('/', '\\'));
+            foreach (var s in LayoutFlatten.FlattenAllLevels(inst, baseDir, technology).Shapes)
+                if (s is LabelShape l && IsComponentPort(l)) ports.Add(new ComponentPort(l, owner));
+        }
+        return ports;
+    }
+
+    private static bool IsComponentPort(LayoutShape s) => s is LabelShape { IsPort: true, EmPort: true };
+}

@@ -23177,3 +23177,68 @@ The ten-layer put Inner 2's spec row 25.8 px off its band: four thin layers abov
 taller than their bands, so the cluster spreads (Inner 7, Dielectric 5 and Dielectric 8 sit 18-19 px off for the same
 reason). The mean is unaffected: 6.9 px over the ten-layer's 19 bands, against the 8 px ceiling. That mean is what fails
 at the old padding (39.4 px).
+
+## brief-dfr26-7 — a test-point pad component that carries its own EM port (2026-10-24)
+
+**The component.** `TESTPAD` (`SymbolKind.TestPad`, appended so no ordinal moved): `TestPadPCell` draws the pad, the
+via drill on the span `SubstrateResolver.ResolveViaSpan` picks and a via land on `ViaFrom` — nothing on the layers
+between — or a stub on one side. Pins `1` (feed) and `2` (pad centre). The stackup walk is
+`SubstrateResolver.ResolveTestPad`, shared by the PCell, the extraction (`TestPadInjection`, which keeps `D`, `Drill`
+and `ClearD` as typed so a swept diameter sweeps) and the impedance tool. A `.cnl` line inside a workspace is bound the
+same way (`CnlTechnologyBinding.BindTestPad`).
+
+**What "the nearest plane" means, and the one place the model and the board can differ.** The stackup cannot say what
+is drawn on a conductor, so the model takes every conductor not in `ClearLayers` as a plane under the pad — on the
+designer's ten-layer board only Inner 1 and Inner 8 are ground references, yet the plane they want to clear second is
+Inner 7. The barrel's coaxial capacitance is counted only at ground references and at conductors named in
+`ClearLayers`, since a signal layer with no copper round the via contributes nothing. The impedance tool answers the
+same question from the artwork instead: a conductor faces the pad when its copper covers at least half the pad's area
+(sampled on four equal-area rings — a via's own antipad under a via-in-pad does not clear a pad twice its size), or
+when it is an undrawn ground reference.
+
+**Cut-outs are declared, not drawn.** `GroundPourPlanner.TestPadClearance`: `ClearD` on a plane in `ClearLayers`, the
+via's antipad (land + 0.3 mm) on any plane the drill passes, the larger where both apply, centred on the instance origin
+(pad centre = via axis). On drawn planes `TestPadClearances.For` plans the cut with `LayoutBooleans.CutOut` and the
+editor applies it as one `ReplaceShapesCommand`. **A smaller re-cut does nothing**: Cut Out only removes metal, the old
+hole holds the new disc, and the report says to undo the earlier cut first — re-growing copper into a hole would need to
+know what the hole used to be, which nothing records.
+
+**The component-declared EM port.** `LabelShape.EmPort` (additive, omitted when false) on an `IsPort` label survives
+placement: `LayoutFlatten.IsCellBoundaryMarker` drops a cell's port labels but not these. `EmComponentPorts.Collect`
+hands the extractor the top-level labels PLUS the instances' EM-port labels, rather than the flattened shapes, because
+`EmPortExtraction` infers an unstated port's type from the shapes it is given and every existing port was inferred
+against the top level alone. Duplicate numbers are refused there, while the owning instance is still known. Wired into
+`Em3dGenerator.BuildPorts` and all three `EmRunService` port sites. **Every reader of a setup's ports has to take the same set**, or
+the run solves a port the panel never lists: the `.cem` editor's port rows and its internal-port check, `explain`'s
+port returns, and `EmGeometry.ForSetup`'s solve-region test (a component port outside the region is refused as a drawn
+one is) all go through `Collect` too — the first pass wired only the run, which left the panel one row short. The label
+commits `PortLayer` = the pad's layer, as the Port tool does: a via-fed pad has the via's land at the same point on
+`ViaFrom`, so the port names its conductor instead of leaving it to the metal under it. Text "TP" (no number) takes the next free number.
+`GerberExport` already skips port labels, so a flattened board does not print them as silkscreen.
+
+**The impedance tool's round pad.** A via whose land is drawn as a separate disc (as `ViaPCell` and `TestPadPCell`
+draw it) carries no `LandingLayer`, so the trace walk calls that end "pad", not "via". `PadShuntAt` therefore looks
+for a drilled via at the end first, whatever the end's kind, and only then for a disc on the trace's own layer — else
+a plain via land would be reported as a test pad. The numbers come out of `TestPadGeometry`, the record the circuit
+model is built from.
+
+**EM check (local measurement, not a committed test).** A 50 Ω line (102 µm on Top Copper, 5 mm) with a via-fed 1.5 mm
+`TESTPAD` to Bottom Copper at its middle, on the shipped ten-layer stackup, every inner layer drawn as a plane with the
+via's 0.9 mm antipad, Palace Standard with one adaptive pass, 2.44 GHz. EM S21 is normalised by a line-only solve
+(|S11| −25 dB) and the shunt admittance taken as `Y = (2/S21n − 2)/50`:
+
+| ClearLayers | model \|S21\| | EM \|S21\| (normalised) | model Y (mS) | EM Y (mS) |
+|---|---|---|---|---|
+| — (faces Inner 8, h 71 µm) | −1.99 dB | −2.05 dB | j30.5 | 7.4 + j17.9 |
+| Inner 8 (faces Inner 7, h 140 µm) | −0.72 dB | −0.89 dB | j17.1 | 2.7 + j12.0 |
+| Inner 8, Inner 7 (faces Inner 6, h 600 µm) | −0.11 dB | −0.32 dB | j6.5 | 0.8 + j7.5 |
+
+Two passes on the first case moved EM by 0.13 dB (−1.92 dB). The trend is the model's, but the model's susceptance is
+1.7× the EM's next to the plane and the EM has a conductance the lossless model has not: the via drives the
+parallel-plate space between the planes, which here runs out to absorbing box faces with no stitching vias (on a real
+board it rings in the plane cavity instead). The rim term is the designer's estimate and is the larger of the two
+published forms (1.54 pF here against Kirchhoff's 1.12 pF) — likely part of the susceptance gap. Draft quality was not
+usable for this: the line alone came back at |S11| 0.49. Standard runs needed ~5-5.7 GB peak; the watchdog cap was 6 GB.
+
+Gates: `tests/Ui.Tests/Layout/TestPadRound26Tests.cs` (artwork, pour cut-outs, Cut Clearances as one undo, the EM port
+seen / not seen / duplicate refused, the face walk, impedance tool = model) and `tests/Core.Tests/Devices/TestPadModelTests.cs`.

@@ -634,6 +634,12 @@ public enum SymbolKind
     /// analysis. Carriers are Carrier[i] description strings, edited in the Signal Designer. Reuses P1Tone's
     /// 2-pin geometry. Not an S-param port.</summary>
     ModSource,
+    /// <summary>Test-point pad (engine "TESTPAD", brief-dfr26-7): a round pad of diameter <c>D</c> on
+    /// <c>PadLayer</c>, fed through a via from <c>ViaFrom</c> or from one side. Pin 1 the feed, pin 2 the pad
+    /// centre. The planes named in <c>ClearLayers</c> get a <c>ClearD</c> cut-out under the pad; with
+    /// <c>Centre = Port</c> the layout carries an EM port at the pad centre. Appended so no existing kind's
+    /// ordinal moves.</summary>
+    TestPad,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

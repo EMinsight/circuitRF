@@ -65,7 +65,8 @@ public static class EmGeometry
         var flat = Flatten(source.View, source.AbsolutePath, source.Technology);
         if (setup.SolveRegion is null) return flat;
 
-        var clip = EmSolveRegionClip.Apply(flat.Shapes, source.View.Shapes, setup.SolveRegion,
+        // brief-dfr26-7 R-dfr26-7-3: a placed component's EM port has to lie inside the region as a drawn one does.
+        var clip = EmSolveRegionClip.Apply(flat.Shapes, EmComponentPorts.Collect(source).Shapes, setup.SolveRegion,
                                            source.DbuPerMicron, source.Technology);
         var notes = new List<string>(flat.Notes);
         if (clip.Note is { } note) notes.Add(note);

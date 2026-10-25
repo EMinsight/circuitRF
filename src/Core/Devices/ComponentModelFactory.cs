@@ -90,6 +90,8 @@ public static class ComponentModelFactory
             "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
             "VIA", "VIAGND",
+            // A round test-point pad off a line, through a via or fed from a side (brief-dfr26-7).
+            "TESTPAD",
             // The four MMIC passives (brief-agent-authoring-overview.md AA-1), each bound to the
             // technology's stackup at extraction as MLIN is.
             "MIMCAP", "SPIRAL", "OSPIRAL", "TFR", "AIRBRIDGE",
@@ -229,6 +231,8 @@ public static class ComponentModelFactory
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
             return CreateViaGroundModel(parameters);
+        if (typeName.Equals("TESTPAD", StringComparison.OrdinalIgnoreCase))
+            return new TestPadModel(ReadTestPadGeometry(parameters));
         if (typeName.Equals("MIMCAP", StringComparison.OrdinalIgnoreCase))
             return CreateMimCapModel(parameters);
         if (typeName.Equals("SPIRAL", StringComparison.OrdinalIgnoreCase))
@@ -2420,6 +2424,53 @@ public static class ComponentModelFactory
         return new ViaGroundModel(g,
             padThickness: GetReal(parameters, "Tpad", g.Length),
             padEpsR:      GetReal(parameters, "Erpad", GetReal(parameters, "Er", DefaultSubstrateEpsR)));
+    }
+
+    // ── TESTPAD (brief-dfr26-7) ─────────────────────────────────────────────────────────────────
+    // Every length is SI metres. A schematic instance on a technology has the dielectric its pad faces, its via's
+    // length and the planes the via passes injected at extraction (TestPadInjection, src/Design); a bare .cnl line
+    // types them, falling back to the FR-4 numbers MLIN falls back to and no via.
+    public const double DefaultTestPadDiameterMeters = 1.5e-3;
+    /// <summary>An unstated cut-out is the pad plus this.</summary>
+    public const double DefaultTestPadClearRingMeters = 0.5e-3;
+
+    /// <summary>
+    /// The pad faces up to two planes, <c>Hpad</c>/<c>Erpad</c> and <c>Hpad2</c>/<c>Erpad2</c> (a thickness of zero
+    /// or an absent one is no plane on that side). The via is <c>Hvia</c> long (zero: side-fed) with <c>Drill</c>,
+    /// and the planes it passes ride as indexed parameters, <c>Planes=n</c> with <c>Zp1..Zpn</c> (where along the
+    /// via, from pin 1), <c>Tp</c> (barrel length the plane owns), <c>Erp</c> and <c>Bp</c> (clearance diameter) — or
+    /// <c>Clp</c>=1 for a plane in the pad's <c>ClearLayers</c>, whose clearance is <c>ClearD</c> (default <c>D</c> +
+    /// 0.5 mm).
+    /// </summary>
+    private static TestPadGeometry ReadTestPadGeometry(IReadOnlyDictionary<string, Value> parameters)
+    {
+        var faces = new List<(double, double)>();
+        foreach (string suffix in new[] { "", "2" })
+        {
+            double h = GetReal(parameters, $"Hpad{suffix}", suffix.Length == 0 ? DefaultSubstrateHMeters : 0.0);
+            if (h > 0) faces.Add((h, GetReal(parameters, $"Erpad{suffix}", DefaultSubstrateEpsR)));
+        }
+        double hvia = Math.Max(GetReal(parameters, "Hvia", 0.0), 0.0);
+        double drill = GetReal(parameters, "Drill", DefaultViaDrillMeters);
+        double d = GetReal(parameters, "D", DefaultTestPadDiameterMeters);
+        double clearD = GetReal(parameters, "ClearD", d + DefaultTestPadClearRingMeters);
+        int n = (int)Math.Round(GetReal(parameters, "Planes", 0.0));
+        var planes = new List<TestPadPlane>(Math.Max(n, 0));
+        for (int i = 1; i <= n; i++)
+            planes.Add(new TestPadPlane(
+                GetReal(parameters, $"Zp{i}", hvia / 2),
+                GetReal(parameters, $"Tp{i}", 0.0),
+                GetReal(parameters, $"Erp{i}", DefaultSubstrateEpsR),
+                BooleanParameter.Parse(parameters, $"Clp{i}", whenAbsent: false)
+                    ? clearD
+                    : GetReal(parameters, $"Bp{i}", DefaultViaPadMeters + DefaultViaAntipadRingMeters)));
+        return new TestPadGeometry(
+            Diameter: d,
+            Faces:    faces,
+            Drill:    drill,
+            ViaLength: hvia,
+            ViaEpsR:  GetReal(parameters, "ErVia", DefaultSubstrateEpsR),
+            Planes:   planes);
     }
 
     // ── MIMCAP / SPIRAL / TFR / AIRBRIDGE (brief-agent-authoring-overview.md AA-1) ────────────

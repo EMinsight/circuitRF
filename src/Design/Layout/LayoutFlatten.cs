@@ -309,8 +309,12 @@ public static class LayoutFlatten
     /// here would silently delete silkscreen text from every sub-cell on a Gerber export, which is a
     /// worse failure than the one this fixes. A generated PCell cell contains no ordinary labels, so
     /// this distinction costs the reported case nothing.</para>
+    ///
+    /// <para><b>A component-declared EM port is not a boundary marker</b> (brief-dfr26-7 R-dfr26-7-3): a label
+    /// flagged <see cref="LabelShape.EmPort"/> is a port the component asks to be in its PARENT's EM problem, so it
+    /// is carried up, transformed, like artwork.</para>
     /// </summary>
-    private static bool IsCellBoundaryMarker(LayoutShape shape) => shape is LabelShape { IsPort: true };
+    private static bool IsCellBoundaryMarker(LayoutShape shape) => shape is LabelShape { IsPort: true, EmPort: false };
 
     /// <summary>
     /// How many shapes <see cref="FlattenOneLevel"/> would emit for a plain (non-array) instance —

@@ -318,6 +318,10 @@ public sealed record TraceRun
     /// length, for instance.</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
 
+    /// <summary>Round pads hanging off this trace's ends — a test point, directly or through a via — as the shunt
+    /// elements they are (brief-dfr26-7 R-dfr26-7-5). Each is also one of <see cref="Notes"/>.</summary>
+    public IReadOnlyList<TracePadShunt> PadShunts { get; init; } = [];
+
     public TraceVerdict Verdict { get; init; }
 
     /// <summary>The findings on this trace covered by an acceptance.</summary>
@@ -812,9 +816,13 @@ public static partial class TraceImpedanceAnalysis
                 var junctionIds = new Dictionary<int, string>();
                 var arms = new Dictionary<int, List<TraceJunctionArm>>();
                 var runOf = new Dictionary<ChainWork, string>();
+                var padFmt = new TraceImpedanceReport { DbuPerMicron = dbuPerMicron, DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um };
                 foreach (var chain in lw.Chains)
                 {
                     var run = Assemble(chain, lw, answers, options, dbuPerMicron, ref id);
+                    // brief-dfr26-7 R-dfr26-7-5: a round pad hanging off either end, reported as the shunt it is.
+                    if (PadShunts(run, shapes, ctx, padFmt) is { Count: > 0 } shunts)
+                        run = run with { PadShunts = shunts, Notes = [.. run.Notes, .. shunts.Select(sh => sh.Text)] };
                     runOf[chain] = run.Id;
                     string? JunctionOf(int key, bool atStart)
                     {

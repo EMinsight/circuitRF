@@ -414,6 +414,14 @@ the 3D view's board and air box match the crop.</li>
 </ul>
 <p>Before anything changes, a confirmation lists each layer, marked when it is hidden or locked, with how many
 shapes it keeps, cuts at the edge and removes, then the instance counts. <strong>Crop</strong> applies it as a single undo.</p>
+<h3 id="cut-clearances">Cut Clearances into Planes</h3>
+<p>A placed <a href="components.html#testpad">TESTPAD</a> declares a round cut-out, <code>ClearD</code> across, on each conductor its
+<code>ClearLayers</code> names. A ground pour cuts it on its own; a plane that is drawn artwork, as on an imported board, does
+not. Right-click the placed pad and choose <strong>Cut Clearances into Planes</strong>: the disc is cut out of every drawn shape on
+each listed layer, centred on the pad, as one undo step — the same cut <strong>Cut Out</strong> makes. Messages lists each layer and
+what was cut there, or that nothing was drawn on it.</p>
+<p>A cut only removes metal. After making <code>ClearD</code> larger, run it again and each hole grows to the new size. To make a
+hole smaller, undo the earlier cut first, then run it again.</p>
 <div class="callout note">
 <span class="label">The two "flatten" commands are different operations</span>
 <p><strong>Flatten to Polygon</strong> turns a curve into a polygon and always asks for the tolerance.
@@ -2025,6 +2033,11 @@ layer's map.</p>
 </table>
 <p>A layer cleared under the <strong>whole</strong> trace is not a fault; it is noted, with the deeper layer that
 became the reference.</p>
+<p><strong>A round pad hanging off a trace</strong> — a test point, joined straight to the trace's end or through a via to
+another layer — is not a finding but is noted on the trace: the pad's capacitance to the plane it faces and,
+through a via, the via's inductance and the frequency the two resonate at. The numbers are the
+<a href="components.html#testpad">TESTPAD</a> model's, worked out from what is drawn: the plane is the nearest one with copper
+under most of the pad, and each plane the via passes contributes through the clearance drawn round it.</p>
 <p><strong>Electrically short.</strong> With a <strong>Highest frequency</strong> given, a stretch outside the warning band whose
 electrical length is under <strong>λ/20</strong> there — a neck-down into a pad, a width step at a launch
 — is a warning, not a fail. λ is taken from each cut's own effective permittivity, and the

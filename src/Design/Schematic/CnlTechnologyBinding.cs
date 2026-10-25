@@ -89,6 +89,7 @@ public static class CnlTechnologyBinding
         if (!ComponentTypeRegistry.TryParseCode(inst.Reference, out var kind, out _)) return null;
 
         if (MmicPassiveInjection.IsMmicKind(kind)) return BindMmic(inst, kind, context);
+        if (kind == SymbolKind.TestPad) return BindTestPad(inst, context);
         if (PlanarLineSubstrateInjection.IsPlanarLineKind(kind)) return BindPlanarLine(inst, kind, context);
 
         bool microstrip = MicrostripSubstrateInjection.IsMicrostripKind(kind);
@@ -190,6 +191,46 @@ public static class CnlTechnologyBinding
             $"{label}: process from the technology {context.TechnologyName} — " +
             string.Join(", ", added.Select(a => $"{a.Name}={a.Expression}")) + ".");
         return Rebuilt(inst, [.. inst.Overrides, .. added]);
+    }
+
+    /// <summary>
+    /// A test pad (brief-dfr26-7): the schematic's rule. A line that states <c>Hpad</c> has stated its stackup and
+    /// is left alone; otherwise its layer words are consumed and what the technology resolves is appended. Outside
+    /// a technology the standalone default stands, and naming a layer there is a refusal, as for a via.
+    /// </summary>
+    private static Instance? BindTestPad(Instance inst, Context context)
+    {
+        string[] inputs = [TestPadInjection.PadLayerParam, TestPadInjection.ViaFromParam, TestPadInjection.ClearLayersParam,
+                           "Feed", "FeedW", "Centre", "PortNum"];
+        var stated = new HashSet<string>(inst.Overrides.Select(o => o.Name), StringComparer.Ordinal);
+        var kept = inst.Overrides.Where(o => !inputs.Contains(o.Name)).ToList();
+        string label = $"{inst.Reference}:{inst.InstanceName}";
+        if (stated.Contains("Hpad"))
+            return kept.Count == inst.Overrides.Count ? null : Rebuilt(inst, kept);
+
+        var tech = context.Technology;
+        string? Text(string name) => inst.Overrides.LastOrDefault(o => o.Name == name)?.Expression is { } e
+                                     && Unquote(e) is { Length: > 0 } t ? t : null;
+        if (tech is null)
+        {
+            if (Text(TestPadInjection.PadLayerParam) is not null || Text(TestPadInjection.ViaFromParam) is not null)
+                throw new InvalidOperationException(
+                    $"{label} names a layer, but no technology resolves for this netlist (it is not inside a workspace, or"
+                    + " the workspace names no default technology). Put the netlist in a workspace whose technology has that"
+                    + " layer, or state Hpad, Erpad and Hvia on the line.");
+            return kept.Count == inst.Overrides.Count ? null : Rebuilt(inst, kept);
+        }
+
+        var editable = inst.Overrides.Select(o => new EditableParameter { Name = o.Name, Expression = Unquote(o.Expression) });
+        var injection = TestPadInjection.Build(tech, editable);
+        foreach (var m in injection.Messages) context.Tb.ReadWarnings.Add($"{label}: {m}");
+        var added = injection.Overrides.Where(r => !stated.Contains(r.Name)).ToList();
+        kept.AddRange(added);
+        if (added.Count > 0)
+            context.Tb.ReadNotes.Add(
+                $"{label}: stackup from the technology {context.TechnologyName} — " +
+                string.Join(", ", added.Select(a => $"{a.Name}={a.Expression}")) + ".");
+        return Rebuilt(inst, kept);
     }
 
     /// <summary>

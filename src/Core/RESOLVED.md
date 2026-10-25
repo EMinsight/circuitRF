@@ -3807,3 +3807,22 @@ are `MicrostripLineModel.LineAt` stamped through `TLineModel.StampUniformLine`, 
 Gate: `tests/Core.Tests/Devices/Microstrip/JunctionArmTests.cs` against `testdata/microstrip-junction-arms/`
 (straight tee = MLIN of `L1 + L2`, tee = hand-built MLIN + junction + MLIN, the same two for the cross, no-`L`
 identity with the junction-only stamp).
+
+## TESTPAD: a test-point pad's closed forms (brief DFR26-7, 2026-10-24)
+
+- `TestPadFormulas` holds every form the component uses; `TestPadModel` and the layout's impedance tool both go
+  through `TestPadGeometry`, so the two cannot compute different values from the same geometry.
+- **Pad C is the designer's estimate**, `ε₀εᵣπr²/h + ε₀εᵣ·2πr·ln(1 + 2r/h)`, as asked. Its rim term is larger than
+  Kirchhoff's asymptotic disc result (1.54 pF against 1.12 pF for a 1.5 mm pad 71 µm over εᵣ 4.4, 0.97 pF of it the
+  plates); a 3D solve of that pad on the ten-layer board put the effective shunt susceptance at 0.6× the model's
+  (`src/Design/RESOLVED.md`, brief-dfr26-7).
+- A layered dielectric is one layer of the summed thickness with the series permittivity, `h/Σ(tᵢ/εᵣᵢ)`.
+- The via inductance is split along the via in proportion to length at each plane's barrel capacitance. Goldfarb and
+  Pucel's form is not additive in length (it has a log), so splitting the WHOLE-via value is what keeps the total equal
+  to the via's own.
+- Lossless: no barrel resistance, no dielectric loss. A side-fed pad (no via) is one node through the via model's
+  micro-ohm floor (`ViaModel.SeriesFloor`).
+- One note per instance (through `IReportsWarnings`) gives the values and names the EM setup as the reference.
+- A via-fed pad also warns once per instance above the via's lumped limit (a twentieth of a wavelength in its densest
+  dielectric, `ViaFormulas.LumpedValidityFrequency`), as a placed `VIA` does; `ViaEpsR` was injected for this and
+  had been read by nothing.

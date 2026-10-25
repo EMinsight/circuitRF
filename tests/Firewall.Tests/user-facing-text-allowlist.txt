@@ -1083,6 +1083,8 @@ src/Engine/Em3d/ModalTerminalTransform.cs|The sample's matrices, the faces and t
 # exception message (CnlReadException and its kin); converting this one alone to a Diagnostic would
 # split one failure channel in two.
 src/Design/Schematic/CnlTechnologyBinding.cs|{label} names {Describe(namedLayers, Text)}, but {why}. Put the netlist in a workspace whose technology has that layer, or state {substrate} on the line.
+# The same refusal for a TESTPAD line (brief-dfr26-7), on the same channel for the same reason.
+src/Design/Schematic/CnlTechnologyBinding.cs|{label} names a layer, but no technology resolves for this netlist (it is not inside a workspace, or
 
 # ── Optimizer ask/tell contract (brief-tuneopt-6, 2026-10-07) ─────────────────────────
 # Misuse of the IOptimizerAlgorithm API by a caller (Tell before Ask, a result count that does not

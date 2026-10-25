@@ -108,6 +108,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _mklopf        = BuildMklopf();
     private static readonly Symbol _via           = BuildVia();
     private static readonly Symbol _viaGnd        = BuildViaGnd();
+    private static readonly Symbol _testPad       = BuildTestPad();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -238,6 +239,7 @@ public static class BuiltInSymbols
             case SymbolKind.Mklopf:     return _mklopf;
             case SymbolKind.Via:        return _via;
             case SymbolKind.ViaGnd:     return _viaGnd;
+            case SymbolKind.TestPad:    return _testPad;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2281,6 +2283,23 @@ public static class BuiltInSymbols
         prims.Add(L(-16, 199, 16, 199));
         prims.Add(L(0, -200, 0, -ViaPadY - ViaBarrelR * ViaFlatten));      // lead A drops into the opening
         return Sym(prims, SymbolKind.ViaGnd);
+    }
+
+    // TESTPAD (brief-dfr26-7): the via's barrel landing on a wide round pad — the test point a probe
+    // touches — drawn from the same viewpoint as the vias. Pin 1 the feed at the top, as a via's A; pin 2
+    // leaves the pad's front edge downward. The pad's back half is left out behind the barrel.
+    private static Symbol BuildTestPad()
+    {
+        const double padY = 100, padR = 150;
+        double h = Math.Acos(ViaBarrelR / padR) * 180.0 / Math.PI;
+        var prims = ViaTopAndBarrel(padY);
+        prims.Add(PLine(EllipseArc(0, padY, ViaBarrelR, 0, 180, 16)));         // where the barrel meets the pad
+        prims.Add(PLine(EllipseArc(0, padY, padR, 0, 180, 32)));               // the pad, front half
+        prims.Add(PLine(EllipseArc(0, padY, padR, 180, 180 + h, 12)));         // its back, left of the barrel
+        prims.Add(PLine(EllipseArc(0, padY, padR, 360 - h, 360, 12)));         // and right of it
+        prims.Add(L(0, -200, 0, -ViaPadY - ViaBarrelR * ViaFlatten));          // lead 1 drops into the opening
+        prims.Add(L(0, padY + padR * ViaFlatten, 0, 200));                     // lead 2 leaves the pad
+        return Sym(prims, SymbolKind.TestPad);
     }
 
     // ── MMIC passives (brief-agent-authoring-overview.md AA-1) ────────────────────────────

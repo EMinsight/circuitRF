@@ -59,6 +59,8 @@ public static class InstanceNetContract
         // A signal via is two terminals over the implicit reference, as MLIN is. A via to ground draws
         // one pin and binds two nets, like Term: the extractor appends "0".
         ViaModel or ViaGroundModel                                                            => 2,
+        // A test pad: pin 1 the feed, pin 2 the pad centre, over the implicit reference.
+        TestPadModel                                                                          => 2,
         // The MMIC passives (AA-1): two terminals over the implicit reference, as MLIN; the air bridge
         // three — its two landings and the line it crosses.
         MimCapModel or SpiralInductorModel or ThinFilmResistorModel                          => 2,

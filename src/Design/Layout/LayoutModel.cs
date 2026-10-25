@@ -667,6 +667,22 @@ public sealed class LabelShape : LayoutShape
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LayoutPortReturn? PortReturn { get; set; }
 
+    /// <summary>
+    /// <b>brief-dfr26-7 R-dfr26-7-3 — a port a COMPONENT declares, which an EM setup collects from inside the
+    /// placed instance.</b> Meaningful only with <see cref="IsPort"/>. Absent (false) means what every port label
+    /// meant before: a port of the layout it is drawn in, and — inside a placed cell — that cell's terminal, which
+    /// an EM setup of the parent never reads (an MLIN's pin labels are not the board's ports).
+    ///
+    /// <para>Set, the label survives being placed: <c>LayoutFlatten</c> carries it up, transformed, where it
+    /// drops a cell's other port labels, and <c>EmComponentPorts</c> hands it to the port extractor beside the
+    /// top-level labels, numbered by its text like any port label. A test pad's centre port is the first thing to
+    /// set it; the flag is the mechanism, so a connector footprint can set it too.</para>
+    ///
+    /// <para>Additive: no <c>.clay</c> <c>FormatVersion</c> bump, omitted from the file when false.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool EmPort { get; set; }
+
     /// <summary>Additive (no <c>.clay</c> <c>FormatVersion</c> bump) — a newly-placed label always
     /// defaults to Regular; edited via the Properties Inspector.</summary>
     public LabelFontStyle Style { get; set; } = LabelFontStyle.Regular;

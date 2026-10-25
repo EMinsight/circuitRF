@@ -1121,10 +1121,14 @@ internal static class Explain
         // nothing — this verb is read-only by contract.
         EmPortKindMigration.ApplyInMemory(source.View.Shapes, setup.PortKinds);
 
-        var ports = EmPortExtraction.Extract(
-            source.View.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
-            source.View.DisplayUnit,
-            EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
+        // brief-dfr26-7 R-dfr26-7-3: the ports a placed component declares are the run's ports too.
+        var portLabels = EmComponentPorts.Collect(source);
+        var ports = portLabels.Refusal is { } duplicate
+            ? EmPortExtractionResult.No(duplicate)
+            : EmPortExtraction.Extract(
+                portLabels.Shapes, problem, source.DbuPerMicron, setup.ResolvePortZ0,
+                source.View.DisplayUnit,
+                EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 
         if (!ports.Rows.Any(r => r.Port?.IsConductorReferenced == true)) return;
 

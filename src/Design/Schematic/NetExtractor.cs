@@ -2377,6 +2377,24 @@ public static class NetExtractor
             return new Instance(comp.InstanceName, reference, viaNets, overrides2);
         }
 
+        // The test pad (brief-dfr26-7): D, Drill and ClearD reach the engine as typed; every other row is a resolution
+        // or artwork input, consumed here, and what the stackup resolves for it is appended in their place.
+        if (comp.Symbol == SymbolKind.TestPad)
+        {
+            overrides2.RemoveAll(o => !TestPadInjection.EngineParams.Contains(o.Name) || string.IsNullOrWhiteSpace(o.Expression));
+            var pad = TestPadInjection.Build(microstripTech, comp.Parameters);
+            overrides2.AddRange(pad.Overrides);
+            foreach (var m in pad.Messages) warningsOut?.Add($"{comp.InstanceName}: {m}");
+
+            var padNets = new List<string>();
+            foreach (var def in GetEffectivePortDefs(model, comp, cellRefResolutions))
+            {
+                var (px, py) = model.PortWorldOf(comp, def);
+                padNets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
+            }
+            return new Instance(comp.InstanceName, reference, padNets, overrides2);
+        }
+
         // The broadside-coupled pairs (BCLIN, MBCLIN): the layer choices and every cross-section row left
         // empty are resolution INPUTS, exactly as a via's are — never engine parameters, and an empty
         // value must not reach the .cnl. What the stackup resolves for them is appended in their place.

@@ -84,6 +84,8 @@ public static class SymbolPortDefs
             // the bottom. VIAGND: A only; the ground it lands on is drawn, not a pin.
             case SymbolKind.Via:     return [("A", 0f, -200f), ("B", 0f, 200f)];
             case SymbolKind.ViaGnd:  return [("A", 0f, -200f)];
+            // TESTPAD: vertical as the vias — 1 the feed at the top, 2 the pad centre at the bottom.
+            case SymbolKind.TestPad: return [("1", 0f, -200f), ("2", 0f, 200f)];
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit
             // in a die's lines. MIMCAP 1 = top plate, 2 = bottom plate; SPIRAL 1 = outer end, 2 = inner
             // end; AIRBRIDGE 1/2 = the landings, and 3 (below) / 4 (above) the two ends of the line it crosses.

@@ -250,7 +250,7 @@ public static class Em3dGenerator
             // brief-em3d-22 R-em3d22-1c — an electrostatic solve has no ports; a magnetostatic one keeps
             // only the ports its terminals are driven through, each a source sheet. brief-em3d-23 — an
             // eigenmode solve needs none: a closed cavity has no port, and a port it has is a load.
-            bool anyPortLabel = source.View.Shapes.Any(sh => sh is LabelShape { IsPort: true });
+            bool anyPortLabel = PortLabels.Shapes.Any(sh => sh is LabelShape { IsPort: true });
             if (setup.Problem3D != Em3dProblemType.Electrostatic &&
                 (setup.Problem3D != Em3dProblemType.Eigenmode || anyPortLabel) &&
                 BuildPorts(bands, pieces, pecFloor ? ground : null, floorZ, ports, waves) is { } portRefusal)
@@ -345,6 +345,10 @@ public static class Em3dGenerator
 
         // ── Ports ────────────────────────────────────────────────────────────────────────────
 
+        /// <summary>The port labels this problem's ports come from — <see cref="EmComponentPorts.Collect"/>, once.</summary>
+        private EmComponentPorts.Result PortLabels => _portLabels ??= EmComponentPorts.Collect(source);
+        private EmComponentPorts.Result? _portLabels;
+
         /// <summary>
         /// The planar port extractor, run over this problem's own signal-conductor polygons — so the
         /// numbering (R-em3d3-2d), the side inference and every refusal (R-em3d3-2b) are its own —
@@ -366,7 +370,10 @@ public static class Em3dGenerator
 
             // Every signal conductor is a level here, so a port over copper on another layer is resolved by
             // its own layer (the technology says which level that is), and no refusal offers analysis levels.
-            var extracted = EmPortExtraction.Extract(source.View.Shapes, portProblem, source.DbuPerMicron,
+            // brief-dfr26-7 R-dfr26-7-3: the top level's port labels and every port a placed component declares.
+            if (PortLabels.Refusal is { } dup) return dup;
+            _notes.AddRange(PortLabels.Notes);
+            var extracted = EmPortExtraction.Extract(PortLabels.Shapes, portProblem, source.DbuPerMicron,
                                                      setup.ResolvePortZ0, source.View.DisplayUnit,
                                                      technology: source.Technology, analysisLevelsApply: false,
                                                      padToPlane: true);

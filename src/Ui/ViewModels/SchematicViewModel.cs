@@ -4017,6 +4017,13 @@ public sealed partial class SchematicViewModel : ObservableObject
             foreach (var p in comp.Parameters)
                 if (p.Name is "Drill" or "Pad" or "Antipad" && p.Expression.Length == 0) p.Unit = unit;
         }
+        // A test pad's empty length rows likewise (brief-dfr26-7): typed into, they read in the board's unit.
+        else if (kind == SymbolKind.TestPad)
+        {
+            string unit = MicrostripSubstrateInjection.LengthUnitFor(SchematicTechnology.Of(EditModel));
+            foreach (var p in comp.Parameters)
+                if (p.Name is "FeedW" or "Drill" or "ClearD" && p.Expression.Length == 0) p.Unit = unit;
+        }
 
         ApplyDefaultFootprint(comp);
 

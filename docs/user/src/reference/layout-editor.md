@@ -200,6 +200,17 @@ board.
 Before anything changes, a confirmation lists each layer, marked when it is hidden or locked, with how many
 shapes it keeps, cuts at the edge and removes, then the instance counts. **Crop** applies it as a single undo.
 
+### Cut Clearances into Planes {#cut-clearances}
+
+A placed [TESTPAD](components.html#testpad) declares a round cut-out, `ClearD` across, on each conductor its
+`ClearLayers` names. A ground pour cuts it on its own; a plane that is drawn artwork, as on an imported board, does
+not. Right-click the placed pad and choose **Cut Clearances into Planes**: the disc is cut out of every drawn shape on
+each listed layer, centred on the pad, as one undo step — the same cut **Cut Out** makes. Messages lists each layer and
+what was cut there, or that nothing was drawn on it.
+
+A cut only removes metal. After making `ClearD` larger, run it again and each hole grows to the new size. To make a
+hole smaller, undo the earlier cut first, then run it again.
+
 <div class="callout note">
 <span class="label">The two "flatten" commands are different operations</span>
 <p><strong>Flatten to Polygon</strong> turns a curve into a polygon and always asks for the tolerance.
@@ -1251,6 +1262,12 @@ layer's map.
 
 A layer cleared under the **whole** trace is not a fault; it is noted, with the deeper layer that
 became the reference.
+
+**A round pad hanging off a trace** &mdash; a test point, joined straight to the trace's end or through a via to
+another layer &mdash; is not a finding but is noted on the trace: the pad's capacitance to the plane it faces and,
+through a via, the via's inductance and the frequency the two resonate at. The numbers are the
+[TESTPAD](components.html#testpad) model's, worked out from what is drawn: the plane is the nearest one with copper
+under most of the pad, and each plane the via passes contributes through the clearance drawn round it.
 
 **Electrically short.** With a **Highest frequency** given, a stretch outside the warning band whose
 electrical length is under **λ/20** there &mdash; a neck-down into a pad, a width step at a launch

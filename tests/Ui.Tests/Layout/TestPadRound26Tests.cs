@@ -1,0 +1,224 @@
+using CircuitRF.Core.Design;
+using CircuitRF.Core.Devices;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.PCells;
+using CircuitRF.Engine.Mom;
+using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Schematic;
+using Xunit;
+
+namespace CircuitRF.Ui.Tests.Layout;
+
+/// <summary>
+/// brief-dfr26-7 — the TESTPAD component on the shipped ten-layer board: its artwork, the cut-outs it declares (poured
+/// and drawn), the EM port it carries at its centre, its stackup resolution, and the impedance tool's report of a pad
+/// hanging off a line.
+/// </summary>
+public sealed class TestPadRound26Tests : IDisposable
+{
+    private const string TenLayer = "pcb-10layer_FR-4_1.7mm_1oz";
+    private const string Top = "Top Copper (1 oz)", Bottom = "Bottom Copper (1 oz)";
+    private static readonly LayerKey TopKey = new(1, 0), BottomKey = new(2, 0), Inner1Key = new(10, 0),
+                                     Inner7Key = new(20, 0), Inner8Key = new(21, 0), ThroughDrill = new(7, 0);
+
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-dfr26-7-" + Guid.NewGuid().ToString("N")[..12]);
+    private readonly Technology _tech = ShippedTechnologies.Load(TenLayer);
+
+    public void Dispose()
+    {
+        CellLayoutResolver.InvalidateUnder(_root);
+        try { Directory.Delete(_root, recursive: true); } catch { }
+    }
+
+    private static EditableComponent Component(SymbolKind kind, string name, params (string Name, string Value)[] set)
+    {
+        var comp = new EditableComponent { InstanceName = name, Symbol = kind };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(kind, 0))
+            comp.Parameters.Add(new EditableParameter { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, Dimension = dp.Dimension });
+        foreach (var (n, v) in set) comp.Parameters.Single(p => p.Name == n).Expression = v;
+        return comp;
+    }
+
+    /// <summary>Update Layout from a schematic of <paramref name="parts"/>: the generated layout, its folder and path.</summary>
+    private (LayoutView View, string LayoutDir, string Clay) LaidOut(params EditableComponent[] parts)
+    {
+        string cellDir = CellFolder.CreateCellFolder(_root, "Board" + Guid.NewGuid().ToString("N")[..6]);
+        string schematicDir = CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
+        string layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        Directory.CreateDirectory(layoutDir);
+        var model = new SchematicEditModel { SchematicDirectory = schematicDir };
+        foreach (var p in parts) model.Components.Add(p);
+        var view = new LayoutView();
+        SchematicToLayoutGenerator.Run(model, view, schematicDir, _root, layoutDir, _tech, null, null).Command!.Execute();
+        return (view, layoutDir, Path.Combine(layoutDir, "Board.clay"));
+    }
+
+    private PCellResult Generate(params (string Key, PCellValue Value)[] set)
+        => TestPadPCell.Generate(set.ToDictionary(s => s.Key, s => s.Value), _tech, PCellLayerSelection.Default);
+
+    // ── Test 1: artwork ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ViaFed_DrawsThePadOnPadLayer_TheDrillOnTheThroughSpan_AndNothingBetween()
+    {
+        var r = Generate(("PadLayer", Bottom), ("ViaFrom", Top), ("D", 1.5e-3));
+
+        var pad = Assert.Single(r.Shapes.OfType<CircleShape>(), c => c.Layer == BottomKey);
+        Assert.Equal(750_000, pad.R);
+        var drill = Assert.Single(r.Shapes.OfType<ViaShape>());
+        Assert.Equal(ThroughDrill, drill.Layer);
+        Assert.Equal(300_000, drill.DrillSize);
+        Assert.Single(r.Shapes.OfType<CircleShape>(), c => c.Layer == TopKey);
+        Assert.Equal([TopKey, BottomKey, ThroughDrill], r.Shapes.Select(s => s.Layer).Distinct().OrderBy(k => k.Layer));
+
+        Assert.Equal(TopKey, r.Pins.Single(p => p.Name == "1").Layer);
+        var pin2 = r.Pins.Single(p => p.Name == "2");
+        Assert.Equal((BottomKey, 0L, 0L), (pin2.Layer, pin2.X, pin2.Y));
+    }
+
+    [Fact]
+    public void SideFed_DrawsAStubOnTheNamedSide_WithPinOneAtItsEnd()
+    {
+        var r = Generate(("PadLayer", Bottom), ("Feed", "E"), ("D", 1.5e-3), ("FeedW", 0.2e-3));
+
+        Assert.Empty(r.Shapes.OfType<ViaShape>());
+        var stub = Assert.Single(r.Shapes.OfType<RectShape>());
+        Assert.Equal(BottomKey, stub.Layer);
+        Assert.Equal((0L, 950_000L), (stub.X1, stub.X2));          // centre out past the 0.75 mm rim by one width
+        Assert.Equal((-100_000L, 100_000L), (stub.Y1, stub.Y2));
+        var pin1 = r.Pins.Single(p => p.Name == "1");
+        Assert.Equal((950_000L, 0L, 0.0), (pin1.X, pin1.Y, pin1.OutwardDirectionDeg));
+    }
+
+    // ── Test 2: the pour's cut-outs ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GroundPour_CutsClearD_OutOfEachPlaneInClearLayers_AndOnlyTheViaAntipadElsewhere()
+    {
+        var (view, layoutDir, _) = LaidOut(
+            Component(SymbolKind.Mlin, "ML1", ("SignalLayer", Top)),                                 // returns through Inner 1
+            Component(SymbolKind.Mlin, "ML2", ("SignalLayer", Bottom), ("GroundReference", "Inner 8")),
+            Component(SymbolKind.TestPad, "TP1", ("PadLayer", Bottom), ("ViaFrom", Top),
+                      ("ClearLayers", "Inner 8"), ("ClearD", "2.5")));
+        var tp = view.Instances.Single(i => i.SchematicId == "TP1");
+        foreach (var ml in view.Instances.Where(i => i.SchematicId!.StartsWith("ML")))
+        {
+            var bb = CellHierarchy.InstanceBbox(ml, layoutDir);
+            ml.X -= (bb.MinX + bb.MaxX) / 2; ml.Y -= (bb.MinY + bb.MaxY) / 2;   // both lines centred on the pad
+        }
+        tp.X = 0; tp.Y = 0;
+
+        var pours = GroundPourPlanner.Plan(view, _tech, layoutDir);
+        long HoleWidth(string plane)
+        {
+            var poly = Assert.IsType<PolygonShape>(Assert.Single(pours.Single(p => p.Ground.Name == plane).Shapes));
+            var hole = Assert.Single(poly.Holes!);
+            return hole.Where((_, i) => i % 2 == 0).Max() - hole.Where((_, i) => i % 2 == 0).Min();
+        }
+        Assert.InRange(HoleWidth("Inner 8"), 2_499_000, 2_520_000);   // ClearD
+        Assert.InRange(HoleWidth("Inner 1"), 899_000, 910_000);       // the via's own pad + 0.3 mm, not ClearD
+    }
+
+    // ── Test 3: Cut Clearances into Planes ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void CutClearances_CutsACircleFromEachListedDrawnPlane_AsOneUndoEntry()
+    {
+        var (view, _, clay) = LaidOut(Component(SymbolKind.TestPad, "TP1", ("PadLayer", Bottom), ("ViaFrom", Top),
+                                                ("ClearLayers", "Inner 8, Inner 7"), ("ClearD", "2")));
+        var tp = view.Instances.Single();
+        tp.X = 0; tp.Y = 0;
+        foreach (var layer in new[] { Inner8Key, Inner7Key, Inner1Key })
+            view.Shapes.Add(new RectShape { Layer = layer, X1 = -5_000_000, Y1 = -5_000_000, X2 = 5_000_000, Y2 = 5_000_000 });
+
+        var vm = new LayoutEditorViewModel(view, clay) { Technology = _tech };
+        vm.SelectInstance(0);
+        Assert.True(vm.SelectionIsOneTestPad);
+        vm.CutTestPadClearances();
+
+        PolygonShape On(LayerKey k) => Assert.IsType<PolygonShape>(Assert.Single(view.Shapes, s => s.Layer == k));
+        foreach (var k in new[] { Inner8Key, Inner7Key })
+        {
+            var hole = Assert.Single(On(k).Holes!);
+            Assert.InRange(hole.Where((_, i) => i % 2 == 0).Max() - hole.Where((_, i) => i % 2 == 0).Min(), 1_980_000, 2_010_000);
+        }
+        Assert.IsType<RectShape>(Assert.Single(view.Shapes, s => s.Layer == Inner1Key));   // not listed: untouched
+
+        Assert.Equal("Undo \"Cut Clearances into Planes\"", vm.UndoRedo.UndoDescription);
+        vm.UndoRedo.Undo();
+        Assert.Equal(3, view.Shapes.OfType<RectShape>().Count());
+        Assert.False(vm.UndoRedo.CanUndo);
+    }
+
+    // ── Test 4: the component-declared EM port ───────────────────────────────────────────────────
+
+    [Fact]
+    public void CentrePort_IsSeenAtThePadCentreOnPadLayer_OpenIsNot_AndADuplicateNumberIsRefused()
+    {
+        var (view, _, clay) = LaidOut(
+            Component(SymbolKind.TestPad, "TP1", ("PadLayer", Bottom), ("Centre", "Port"), ("PortNum", "3")),
+            Component(SymbolKind.TestPad, "TP2", ("PadLayer", Bottom)));
+        var tp1 = view.Instances.Single(i => i.SchematicId == "TP1");
+        (tp1.X, tp1.Y, tp1.Rot) = (5_000_000, 2_000_000, LayoutRotation.R90);
+        var source = new EmLayoutSource(clay, view, _tech, view.DbuPerMicron);
+
+        var found = EmComponentPorts.Collect(source);
+        Assert.Null(found.Refusal);
+        var port = Assert.Single(found.Shapes.OfType<LabelShape>());                        // TP2's Open centre adds nothing
+        Assert.Equal((5_000_000L, 2_000_000L, BottomKey), (port.X, port.Y, port.Layer));
+        Assert.Equal(PlanarPortKind.Internal, port.PortKind);
+        Assert.Equal(3, Assert.Single(EmPortExtraction.NumberPorts(found.Shapes)).Number);
+
+        view.Shapes.Add(new LabelShape { Layer = TopKey, X = 0, Y = 0, Text = "P3", IsPort = true });
+        var refused = EmComponentPorts.Collect(source).Refusal;
+        Assert.NotNull(refused);
+        Assert.Contains("'P3'", refused);
+        Assert.Contains("'TP1'", refused);
+    }
+
+    // ── Test 5 (stackup half): which plane the pad faces ─────────────────────────────────────────
+
+    [Fact]
+    public void ThePadFacesTheNearestUnclearedConductor_AndClearingItMovesHToTheNext()
+    {
+        TestPadFace Face(params string[] clear)
+            => Assert.Single(SubstrateResolver.ResolveTestPad(_tech, Bottom, Top, viaFed: true, clear).Pad!.Faces);
+
+        var near = Face();
+        Assert.Equal(("Inner 8", 71e-6), (near.Plane.Name, Math.Round(near.HeightMeters, 9)));
+        var next = Face("Inner 8");
+        Assert.Equal(("Inner 7", 140e-6), (next.Plane.Name, Math.Round(next.HeightMeters, 9)));
+        Assert.Equal(["Inner 8"], next.Passed);
+    }
+
+    // ── Test 6: the impedance tool reports what the model computes ───────────────────────────────
+
+    [Fact]
+    public void ImpedanceTool_OnALineWithAPadOffIt_ReportsTheModelsCAndL()
+    {
+        // A 50 Ω-ish Top Copper line into a through via, a 1.5 mm pad on Bottom Copper; the planes are undrawn.
+        var shapes = new List<LayoutShape>
+        {
+            new RectShape { Layer = TopKey, X1 = 0, Y1 = -65_000, X2 = 20_000_000, Y2 = 65_000 },
+            new CircleShape { Layer = TopKey, Cx = 20_000_000, Cy = 0, R = 300_000 },
+            new ViaShape { Layer = ThroughDrill, X = 20_000_000, Y = 0, PadSize = 600_000, DrillSize = 300_000 },
+            new CircleShape { Layer = BottomKey, Cx = 20_000_000, Cy = 0, R = 750_000 },
+        };
+        var report = TraceImpedanceAnalysis.Analyze(shapes, _tech, LayoutUnits.DefaultDbuPerMicron,
+                                                    new TraceImpedanceOptions { Layers = [TopKey] });
+        Assert.True(report.Ok, report.Refusal);
+        var shunt = Assert.Single(report.Layers.SelectMany(l => l.Traces).SelectMany(t => t.PadShunts));
+
+        var tp = Component(SymbolKind.TestPad, "TP1", ("PadLayer", Bottom), ("ViaFrom", Top));
+        var values = TestPadInjection.Build(_tech, tp.Parameters).Overrides
+            .ToDictionary(o => o.Name, o => new CircuitRF.Core.Expressions.Value(double.Parse(o.Expression, System.Globalization.CultureInfo.InvariantCulture)));
+        values["D"] = new CircuitRF.Core.Expressions.Value(1.5e-3);
+        var model = Assert.IsType<TestPadModel>(ComponentModelFactory.TryCreate("TESTPAD", values));
+
+        Assert.Equal(["Inner 8"], shunt.ReferencePlanes);
+        Assert.Equal(model.Geometry.PadCapacitance, shunt.Capacitance, 1e-18);
+        Assert.Equal(model.Geometry.ViaInductance, shunt.ViaInductance!.Value, 1e-15);
+        Assert.Equal(model.Geometry.BarrelCapacitance, shunt.BarrelCapacitance, 1e-18);
+    }
+}

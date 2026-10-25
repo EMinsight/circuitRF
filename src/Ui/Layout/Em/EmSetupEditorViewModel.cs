@@ -1967,7 +1967,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // InternalPortOnTheWrongKernel is to fire when the CROSS-SECTION kernel has been chosen, and
         // the planar refresh does not run then. It needs no problem and no mesh: whether a port is an
         // internal one is a question about the label and the metal under it.
-        _layoutHasNonEdgePort = EmPortExtraction.AnyNonEdgePort(source.View.Shapes);
+        // brief-dfr26-7 R-dfr26-7-3: a placed component's EM port counts, as it does in the run.
+        _layoutHasNonEdgePort = EmPortExtraction.AnyNonEdgePort(EmComponentPorts.Collect(source).Shapes);
 
         if (source.Technology is null)
         {
@@ -2105,10 +2106,15 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             planar.Problem!, EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron));
         KernelRefusal = verdict.Ok ? null : verdict.Reason;
 
-        var ports = EmPortExtraction.Extract(
-            source.View.Shapes, planar.Problem!, source.DbuPerMicron, Working.ResolvePortZ0,
-            source.View.DisplayUnit,
-            EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
+        // brief-dfr26-7 R-dfr26-7-3: the top level's port labels and every port a placed component declares —
+        // the set the run extracts, so the panel lists the ports the run solves.
+        var portLabels = EmComponentPorts.Collect(source);
+        var ports = portLabels.Refusal is { } duplicate
+            ? EmPortExtractionResult.No(duplicate)
+            : EmPortExtraction.Extract(
+                portLabels.Shapes, planar.Problem!, source.DbuPerMicron, Working.ResolvePortZ0,
+                source.View.DisplayUnit,
+                EmPortExtraction.DefaultGroundPathWidthM(source.Technology), source.Technology);
 
         PortRefusal = ports.Ok ? null : ports.Refusal;
         PlanarPorts = ports.Ports;
@@ -2131,6 +2137,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         var notes = new List<string>(_geometryNotes);
         notes.AddRange(EmFindings.NoteTexts(planar.Findings));
+        notes.AddRange(portLabels.Notes);
         notes.AddRange(ports.Notes);           // port extraction carries no class
         Notes    = [.. notes];
         Warnings = [.. EmFindings.WarningTexts(planar.Findings)];
