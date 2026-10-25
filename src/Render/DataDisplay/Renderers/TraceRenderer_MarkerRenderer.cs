@@ -355,6 +355,52 @@ namespace CircuitRF.Render.DataDisplay
             }
         }
 
+        /// <summary>
+        /// A circle, kept to the same box <see cref="ClippedPolyline"/> keeps a line to. A stability circle
+        /// near the singular point is nearly a straight line with a radius of thousands in Γ: at 1600 px it is
+        /// a million pixels, and every circle of a sweep goes into ONE path. Skia drew that path correctly at
+        /// 400 px and dropped or bent its circles at 1600, so the same data changed shape with the zoom. A
+        /// circle that fits the box is still <c>AddCircle</c>; a larger one contributes only its arcs inside
+        /// the box, sampled in double precision so the chord never strays more than 0.05 px from the circle.
+        /// </summary>
+        internal static void AppendClippedCircle(SKPath path, double cx, double cy, double r, (double W, double H) canvas)
+        {
+            if (!double.IsFinite(cx) || !double.IsFinite(cy) || !double.IsFinite(r) || r <= 0) return;
+            double m  = 4 * Math.Max(Math.Max(canvas.W, canvas.H), 1);
+            double x0 = -m, y0 = -m, x1 = canvas.W + m, y1 = canvas.H + m;
+
+            if (cx - r >= x0 && cx + r <= x1 && cy - r >= y0 && cy + r <= y1)
+            {
+                path.AddCircle((float)cx, (float)cy, (float)r);
+                return;
+            }
+
+            // The angles at which the circle crosses the box's edge lines split it into arcs that are wholly
+            // inside or wholly outside; the midpoint of each says which.
+            var cuts = new List<double>(8);
+            void CrossX(double x) { double d = x - cx; if (Math.Abs(d) < r) { double h = Math.Sqrt(r * r - d * d); cuts.Add(Math.Atan2(h, d)); cuts.Add(Math.Atan2(-h, d)); } }
+            void CrossY(double y) { double d = y - cy; if (Math.Abs(d) < r) { double h = Math.Sqrt(r * r - d * d); cuts.Add(Math.Atan2(d, h)); cuts.Add(Math.Atan2(d, -h)); } }
+            CrossX(x0); CrossX(x1); CrossY(y0); CrossY(y1);
+            if (cuts.Count == 0) return;   // it does not fit the box and never crosses it: it encloses it, or misses it
+            cuts.Sort();
+
+            double step = 2 * Math.Sqrt(2 * 0.05 / r);   // the angle whose chord sags 0.05 px from the arc
+            for (int k = 0; k < cuts.Count; k++)
+            {
+                double a = cuts[k], b = k + 1 < cuts.Count ? cuts[k + 1] : cuts[0] + 2 * Math.PI;
+                if (b - a <= 0) continue;
+                double mid = 0.5 * (a + b), mx = cx + r * Math.Cos(mid), my = cy + r * Math.Sin(mid);
+                if (mx < x0 || mx > x1 || my < y0 || my > y1) continue;
+                int n = Math.Max(1, (int)Math.Ceiling((b - a) / step));
+                for (int j = 0; j <= n; j++)
+                {
+                    double t = a + (b - a) * j / n;
+                    var p = new SKPoint((float)(cx + r * Math.Cos(t)), (float)(cy + r * Math.Sin(t)));
+                    if (j == 0) path.MoveTo(p); else path.LineTo(p);
+                }
+            }
+        }
+
         /// <summary>Above this many points a line is drawn through <see cref="AppendLargePolyline"/>.
         /// Below it the original per-point path is used unchanged.</summary>
         internal const int LargeTracePoints = 20_000;
@@ -448,12 +494,10 @@ namespace CircuitRF.Render.DataDisplay
             {
                 for (int i = 0; i < trace.StabilityCircleCentres.Count; i++)
                 {
-                    var   c   = trace.StabilityCircleCentres[i];
-                    var   cPx = tf.ToCanvas(c.X, c.Y, useSecondary);
-                    var   ePx = tf.ToCanvas(c.X + (float)trace.StabilityCircleRadii[i],
-                                            c.Y, useSecondary);
-                    float r   = Math.Abs(ePx.X - cPx.X);
-                    path.AddCircle(cPx.X, cPx.Y, r);
+                    var c   = trace.StabilityCircleCentres[i];
+                    var cPx = tf.ToCanvasPrecise(c.X, c.Y, useSecondary);
+                    var ePx = tf.ToCanvasPrecise(c.X + trace.StabilityCircleRadii[i], c.Y, useSecondary);
+                    AppendClippedCircle(path, cPx.X, cPx.Y, Math.Abs(ePx.X - cPx.X), tf.CanvasSize);
                 }
             }
             else if (trace.Points.Count > LargeTracePoints)

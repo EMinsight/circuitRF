@@ -5292,3 +5292,18 @@ that happened to have the font. Reproduced in WebKit on a Mac without Plex insta
   overridden face carries that face's family name, which does not resolve, so it stays as text.
 - **Outlined vs live text through one rasteriser** differs only by a hairline of antialiasing around every glyph
   (outline fill against hinted glyph raster), with no displacement.
+
+## Stability circles changed shape with the zoom (2026-10-24)
+
+A FET's load stability circles drew as a fan sweeping up to the right at one zoom and as a flat band
+through the chart centre at another, from the same data. Near the singular point (|S22|² ≈ |Δ|²) a
+stability circle is nearly a straight line with a radius of ~1,800 in Γ, which is over a million pixels
+at a 1600 px plot, and `TraceRenderer.BuildPath` put every circle of the sweep into ONE path with
+`AddCircle`. **Skia's CPU raster drew that path correctly at 400 and 800 px and dropped or bent its
+circles at 1600** — two circles in one path are enough (the near-singular one and an ordinary one); each
+drawn as its own path is correct at every size, and a single huge circle is too. This is the
+`ClippedPolyline` failure again, reached through a circle instead of a polyline, and on the CPU raster
+as well as the GPU. `TraceRenderer.AppendClippedCircle` keeps each circle to the same box: one that fits
+is still `AddCircle`; a larger one contributes only its arcs inside the box, sampled in double precision
+(`TransformSet.ToCanvasPrecise`) with a 0.05 px chord sag. Gate: the second test in
+`OutOfRangeLineTests`, which draws those two circles at 1600 px and fails without the fix.

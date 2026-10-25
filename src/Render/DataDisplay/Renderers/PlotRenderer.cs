@@ -109,6 +109,14 @@ namespace CircuitRF.Render.DataDisplay
         public SKPoint ToCanvas(double wx, double wy, bool useSecondary) =>
             useSecondary ? SecondaryToCanvas(wx, wy) : PrimaryToCanvas(wx, wy);
 
+        /// <summary>World → canvas with no float rounding on the way: <see cref="ToCanvas"/> rounds
+        /// its inputs to float, which at a stability circle's centre a million pixels away moves the
+        /// part that is on screen by a tenth of a pixel or more.</summary>
+        public (double X, double Y) ToCanvasPrecise(double wx, double wy, bool useSecondary) =>
+            useSecondary
+                ? (MapX(wx, Secondary.XScale, Secondary.XOffset), wy * Secondary.YScale + Secondary.YOffset)
+                : (MapX(wx, Primary.XScale, Primary.XOffset), MapYPrimary(wy));
+
         public (double Wx, double Wy) PrimaryFromCanvas(float cx, float cy) =>
             (UnmapX(cx, Primary.XScale, Primary.XOffset),
              YLog ? Math.Pow(10.0, (cy - Primary.YOffset) / Primary.YScale)
