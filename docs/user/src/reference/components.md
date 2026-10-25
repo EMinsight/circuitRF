@@ -1026,6 +1026,12 @@ series; the via's inductance over its length, with the barrel's capacitance to e
 inner conductor counts as a plane under the pad unless `ClearLayers` names it. Messages gives the values
 and the resonance once per run.
 
+**Unused pads on the via.** Board CAD usually keeps a pad on every conductor a via passes, joined to nothing,
+and each adds capacitance across its antipad. Set `InnerPadD` to their diameter and the model counts them
+(and the layout draws them) on every conductor between `ViaFrom` and `PadLayer` that `ClearLayers` does not
+name; `AntipadD` is the clearance round the via in each plane (empty: the technology's). Messages gives their
+share separately. Removing unused pads at manufacture removes it.
+
 **Cut-outs.** `ClearLayers` names the conductors whose plane gets a round cut-out `ClearD` across under the
 pad. They are not drawn as shapes: a ground pour drawn by Update Layout or Draw Ground Pour cuts them, as it
 cuts a via's antipad. On a board whose planes are drawn artwork, right-click the placed pad and choose

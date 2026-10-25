@@ -228,7 +228,7 @@ public static partial class Em3dRunService
         // brief-em3d-21 R-em3d21-2 — the mesh's size is known now, and on a problem whose mesh is mostly
         // refinement (a bond wire) it is the first figure that can say the run will not fit.
         if (meshed.Tetrahedra is { } tets &&
-            memory.Admit(MeshMemoryVerdict(tets, settings, physical, plan.Memory), log) is { } tooBig)
+            memory.Admit(MeshMemoryVerdict(tets, settings, physical, plan.Memory, problem.IsStatic), log) is { } tooBig)
             return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource,
                 tooBig + $" The mesh is kept in {runDir}, so a run started anyway reuses it."));
 
@@ -867,8 +867,14 @@ public static partial class Em3dRunService
         // air, else free space.
         string fill = p.Boundary.Material ?? GmshGeoWriter.BackgroundMaterial(p.Solids, p.Materials);
         var background = byName.TryGetValue(fill, out var bg) ? bg : new Em3dMaterial("(free space)", 1, null, 0, 1, 0);
-        double SolidSize(Em3dSolid s) => GmshGeoWriter.MaxElementSizeM(byName[s.Material], GmshGeoWriter.SizingFrequencyHz(p), settings);
-        double backgroundSize = GmshGeoWriter.MaxElementSizeM(background, GmshGeoWriter.SizingFrequencyHz(p), settings);
+        // brief-dfr26-8 — a static problem is sized as the script sizes it: one element, a fraction of the air box's largest
+        // side, in every material. Pricing it by wavelength had a ten-layer electrostatic run at 37 GB against 4.9 GB used.
+        var (lo, hi) = (p.Boundary.Min, p.Boundary.Max);
+        double staticSize = GmshGeoWriter.StaticMaxElementSizeM(Math.Max(hi.X - lo.X, Math.Max(hi.Y - lo.Y, hi.Z - lo.Z)), settings);
+        double SolidSize(Em3dSolid s) => p.IsStatic ? staticSize
+            : GmshGeoWriter.MaxElementSizeM(byName[s.Material], GmshGeoWriter.SizingFrequencyHz(p), settings);
+        double backgroundSize = p.IsStatic ? staticSize
+            : GmshGeoWriter.MaxElementSizeM(background, GmshGeoWriter.SizingFrequencyHz(p), settings);
         return Em3dSizeEstimate.Palace(p, SolidSize, settings.ElementOrder, backgroundSize, settings.AdaptiveMaxIterations,
                                        GmshGeoWriter.RefinementSizing(p, SolidSize, backgroundSize, settings));
     }
@@ -947,9 +953,16 @@ public static partial class Em3dRunService
     /// ones a mesh this size can be priced for without meshing again.
     /// </summary>
     public static Em3dMemoryVerdict MeshMemoryVerdict(long tetrahedra, PalaceSettings settings, long physicalBytes,
-                                                      Em3dMemoryScope? scope = null)
+                                                      Em3dMemoryScope? scope = null, bool isStatic = false)
     {
         if (settings.ElementOrder is not (1 or 2)) return Em3dMemoryVerdict.Unknown;
+        // brief-dfr26-8 — a static solve's unknowns are scalar: priced as a field's, a ten-layer electrostatic run that used
+        // 4.9 GB read several times that and would have been refused on a smaller machine.
+        if (isStatic)
+            return Em3dSizeEstimate.PalaceStaticMemoryBytesForMesh(tetrahedra, settings.ElementOrder, settings.AdaptiveMaxIterations) is { } se
+                ? Em3dMemoryVerdict.Evaluate(se, physicalBytes, [],
+                      basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope)
+                : Em3dMemoryVerdict.Unknown;
         long e = Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, settings.AdaptiveMaxIterations);
         var remedies = new List<Em3dMemoryRemedy>();
         if (settings.ElementOrder != 1 || settings.AdaptiveMaxIterations > 0)

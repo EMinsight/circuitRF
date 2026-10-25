@@ -54,6 +54,9 @@ so the artwork and the model stay one statement. Messages names the inner-pad te
 Gate: on the shipped ten-layer stackup, D = 1.5 mm, drill 0.3, `InnerPadD` 0.6, `AntipadD` 0.94, the model's stub
 capacitance is within 25 % of 3.36 pF, and removing the pads moves it by 1.6 pF ± 25 %.
 
+*Restated 2026-10-25 (owner's choice):* a converged axisymmetric field solve of that via gives 1.446 pF and 0.192 pF;
+the Palace pass above was under-resolved (`src/Core/RESOLVED.md`). The gate is 25 % of those.
+
 ### R-dfr26-8-2 — The impedance tool's pad report counts the pads that are drawn
 
 `PadShuntAt` reads the via's land on each passed conductor from the artwork. Report each unused pad and its share,

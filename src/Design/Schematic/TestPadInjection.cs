@@ -12,7 +12,8 @@ namespace CircuitRF.Design.Schematic;
 /// and the planes the via passes resolved from the stackup (<see cref="SubstrateResolver.ResolveTestPad"/>) and
 /// injected as plain SI overrides.
 ///
-/// <para><b>What the user states</b> stays theirs: <c>D</c>, <c>Drill</c> and <c>ClearD</c> reach the engine as
+/// <para><b>What the user states</b> stays theirs: <c>D</c>, <c>Drill</c>, <c>ClearD</c>, <c>InnerPadD</c> and
+/// <c>AntipadD</c> reach the engine as
 /// typed, expressions and units included, so a swept diameter sweeps. The layer rows, <c>Feed</c>,
 /// <c>FeedW</c>, <c>Centre</c> and <c>PortNum</c> are resolution or artwork inputs and never reach the
 /// <c>.cnl</c>; an empty row never does either (<c>Key=</c> is the empty-value trap).</para>
@@ -24,7 +25,7 @@ public static class TestPadInjection
     public const string ClearLayersParam = "ClearLayers";
 
     /// <summary>The rows the engine reads as typed — every other TESTPAD row is consumed here.</summary>
-    public static readonly IReadOnlySet<string> EngineParams = new HashSet<string>(StringComparer.Ordinal) { "D", "Drill", "ClearD" };
+    public static readonly IReadOnlySet<string> EngineParams = new HashSet<string>(StringComparer.Ordinal) { "D", "Drill", "ClearD", "InnerPadD", "AntipadD" };
 
     /// <summary>The overrides to append, the sentences to post, and the resolved stack for a readout.</summary>
     public sealed record Injection(IReadOnlyList<ParameterAssignment> Overrides, IReadOnlyList<string> Messages, ResolvedTestPad? Stack);
@@ -74,7 +75,10 @@ public static class TestPadInjection
                 else messages.Add($"A default is used where the technology states none: Drill = {ComponentModelFactory.DefaultViaDrillMeters * 1e3:0.###} mm. " +
                                   "Set it on the component to use your own.");
             }
-            double antipad = (via.PadMeters ?? ComponentModelFactory.DefaultViaPadMeters) + ComponentModelFactory.DefaultViaAntipadRingMeters;
+            // The technology's via antipad, unless the component states one. Every uncleared plane's barrel clearance
+            // and every unused pad's antipad is AntipadD, so the model reads it from the one row.
+            if (Text("AntipadD") is null)
+                Add("AntipadD", (via.PadMeters ?? ComponentModelFactory.DefaultViaPadMeters) + ComponentModelFactory.DefaultViaAntipadRingMeters);
             if (stack.Planes.Count > 0)
             {
                 Add("Planes", stack.Planes.Count);
@@ -85,7 +89,23 @@ public static class TestPadInjection
                     Add($"Tp{i + 1}", p.LengthMeters);
                     Add($"Erp{i + 1}", p.EpsR);
                     if (p.Cleared) Add($"Clp{i + 1}", 1);
-                    else Add($"Bp{i + 1}", antipad);
+                }
+            }
+            // The unused pads (brief-dfr26-8), only when the component says it has them: where each sits and what is
+            // next to it. Their size stays the user's InnerPadD, so a swept diameter sweeps.
+            if (Text("InnerPadD") is not null && stack.InnerPadSlots.Count > 0)
+            {
+                Add("InnerPads", stack.InnerPadSlots.Count);
+                for (int i = 0; i < stack.InnerPadSlots.Count; i++)
+                {
+                    var q = stack.InnerPadSlots[i];
+                    Add($"Zq{i + 1}", q.PositionMeters);
+                    Add($"Tq{i + 1}", q.ThicknessMeters);
+                    Add($"Erq{i + 1}", q.EpsR);
+                    Add($"Hqa{i + 1}", q.GapAMeters);
+                    Add($"Kqa{i + 1}", (int)q.SideA);
+                    Add($"Hqb{i + 1}", q.GapBMeters);
+                    Add($"Kqb{i + 1}", (int)q.SideB);
                 }
             }
         }

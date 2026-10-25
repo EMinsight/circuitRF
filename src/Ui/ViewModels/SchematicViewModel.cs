@@ -4022,7 +4022,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         {
             string unit = MicrostripSubstrateInjection.LengthUnitFor(SchematicTechnology.Of(EditModel));
             foreach (var p in comp.Parameters)
-                if (p.Name is "FeedW" or "Drill" or "ClearD" && p.Expression.Length == 0) p.Unit = unit;
+                if (p.Name is "FeedW" or "Drill" or "ClearD" or "InnerPadD" or "AntipadD" && p.Expression.Length == 0) p.Unit = unit;
         }
 
         ApplyDefaultFootprint(comp);

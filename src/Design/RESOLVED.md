@@ -23258,3 +23258,27 @@ seen / not seen / duplicate refused, the face walk, impedance tool = model) and 
   Gerber profile draws on, and the crop line), wound counter-clockwise as every other outer ring; strokes that close
   only together still go through the merge and `BoardRegions`' line rule, and strokes that close nothing stay out.
   Reading the merged ring's hole instead would have left 100 µm of copper over air at every crop edge.
+
+## brief-dfr26-8 — unused pads in the artwork, the Palace size estimate, an edge port on the air box (2026-10-25)
+
+- **The impedance tool's clearance read a drawn land as the antipad.** `MeasuredClearance` walked out from the drill
+  and stopped at the first radius with copper all round, which on a via carrying a land is the land itself: a
+  "clearance" no wider than the drill and no barrel capacitance. The land is measured first (`MeasuredLand`) and the
+  clearance from past its rim. Each land is reported with its share through the TESTPAD's own slots
+  (`SubstrateResolver.InnerPadSlots`), so the artwork read and the model use one formula.
+- **A static problem was priced as a driven one, twice over.** `EstimatePalace` sized it by wavelength while the script
+  sizes a static mesh at a fraction of the box's largest side, and counted Nédélec unknowns where Palace solves a
+  scalar potential on H1 elements (1.68 per tetrahedron at order 2 against 6.5). The round-26 electrostatic setup read
+  482k tetrahedra / 3.1M unknowns / 37 GB and used 242k / 399k / 4.9-6.0 GB; it now reads 106k / 178k / 3.5 GB. The
+  post-mesh check prices a static mesh the same way. Order 1 static has no measured memory figure, so it prints none.
+- **The driven estimate is still low on a feature-dense multilayer board, and is NOT fixed.** Round 26's Draft setup
+  reads 41.8k tetrahedra against Gmsh's 151k; a 4 mm fixture (`TestPadRound26Tests.Fixture`) 7.7k against 23.5k.
+  A cap at 1.8× the thinnest layer matched round 26 and overshot the fixture 8×, so it was withdrawn: layer
+  thickness is not what refines it. Binning the meshes points at short boundary segments (each 64-gon antipad and
+  pad, on every plane, forces elements no longer than its 46 µm segments) and the via cylinders' curvature sizing.
+  Priced as small graded shells, a hand estimate puts both boards within ~20 %. That is the next step, not done.
+- **An edge port at a zero-padding board edge selected nothing.** In a driven script the air-box faces were claimed
+  before lumped ports, so a port sheet lying IN a box face went to the face. On the round-26 crop the GND via that
+  straddles the edge pushed the box 0.3 mm out, which is why port 6 survived only with the via present. Lumped ports on
+  a box face are now claimed before the faces; a script with none is byte-identical. The other half of R-dfr26-8-4 —
+  `LayoutCrop` keeping a via whose drill crosses the new edge, which breaks the `.c3d` route in Gmsh — is still open.

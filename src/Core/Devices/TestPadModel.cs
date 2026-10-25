@@ -11,6 +11,48 @@ namespace CircuitRF.Core.Devices;
 /// <param name="Clearance">The clearance diameter in the plane, m.</param>
 public sealed record TestPadPlane(double Position, double Length, double EpsR, double Clearance);
 
+/// <summary>What is next to an unused pad on one side, which decides how much of that side's field it keeps
+/// (brief-dfr26-8 R-dfr26-8-1).</summary>
+public enum TestPadSide
+{
+    /// <summary>The via's own end — its land or the test pad, with no plane round it: no antipad edge to couple to,
+    /// and that side adds nothing.</summary>
+    ViaEnd = 0,
+    /// <summary>A plane carrying a pad of the same via: the side is shared (<see cref="TestPadFormulas.InnerPadScreen"/>).</summary>
+    Pad = 1,
+    /// <summary>A plane with nothing of the via's but its barrel in the antipad: the whole side.</summary>
+    Plane = 2,
+}
+
+/// <summary>An unused pad the via carries on a conductor it passes (brief-dfr26-8 R-dfr26-8-1).</summary>
+/// <param name="Position">Where along the via, from pin 1's end, m.</param>
+/// <param name="Thickness">The conductor's copper thickness, m.</param>
+/// <param name="EpsR">The dielectric either side, thickness-weighted.</param>
+/// <param name="Diameter">The pad's diameter, m.</param>
+/// <param name="Antipad">The antipad round it, m.</param>
+/// <param name="GapA">The dielectric to the next conductor towards pin 1, m.</param>
+/// <param name="SideA">What that conductor is.</param>
+/// <param name="GapB">The dielectric to the next conductor towards the pad, m.</param>
+/// <param name="SideB">What that conductor is.</param>
+public sealed record TestPadInnerPad(
+    double Position, double Thickness, double EpsR, double Diameter, double Antipad,
+    double GapA, TestPadSide SideA, double GapB, TestPadSide SideB)
+{
+    /// <summary>The pad's capacitance to ground less the bare barrel's it replaces, each side's half kept as far as
+    /// <see cref="SideA"/>/<see cref="SideB"/> allow, F.</summary>
+    public double Capacitance(double drill)
+    {
+        double Keep(TestPadSide side, double gap) => side switch
+        {
+            TestPadSide.ViaEnd => 0.0,
+            TestPadSide.Pad => TestPadFormulas.InnerPadScreen(gap, Diameter, Antipad),
+            _ => 1.0,
+        };
+        return TestPadFormulas.InnerPadCapacitance(Diameter, Antipad, drill, Thickness, EpsR)
+               * (Keep(SideA, GapA) + Keep(SideB, GapB)) / 2;
+    }
+}
+
 /// <summary>
 /// Everything a test pad's model is built from, fully resolved (SI). The schematic's extraction resolves it from
 /// the stackup (<c>TestPadInjection</c>, src/Design); a bare <c>.cnl</c> line types it.
@@ -22,14 +64,26 @@ public sealed record TestPadPlane(double Position, double Length, double EpsR, d
 /// <param name="ViaLength">The via's length from pin 1's conductor to the pad's, m; zero for a side-fed pad.</param>
 /// <param name="ViaEpsR">The densest dielectric the via crosses, for the validity bound.</param>
 /// <param name="Planes">The planes the via passes, with where along it each sits.</param>
+/// <param name="InnerPads">The unused pads the via carries on the conductors it passes (brief-dfr26-8); none by
+/// default, as <c>TestPadPCell</c> draws none unless <c>InnerPadD</c> is set.</param>
 public sealed record TestPadGeometry(
     double Diameter,
     IReadOnlyList<(double H, double EpsR)> Faces,
     double Drill,
     double ViaLength,
     double ViaEpsR,
-    IReadOnlyList<TestPadPlane> Planes)
+    IReadOnlyList<TestPadPlane> Planes,
+    IReadOnlyList<TestPadInnerPad>? InnerPads = null)
 {
+    /// <summary>The unused pads, never null.</summary>
+    public IReadOnlyList<TestPadInnerPad> Pads => InnerPads ?? [];
+
+    /// <summary>One unused pad's capacitance, F.</summary>
+    public double InnerPadCapacitanceOf(TestPadInnerPad p) => p.Capacitance(Drill);
+
+    /// <summary>What the unused pads add, F; zero for a side-fed pad or none.</summary>
+    public double InnerPadCapacitance => ViaLength > 0 ? Pads.Sum(InnerPadCapacitanceOf) : 0.0;
+
     /// <summary>The pad's capacitance to the planes it faces, F.</summary>
     public double PadCapacitance => Faces.Sum(f => TestPadFormulas.PadCapacitance(Diameter, f.H, f.EpsR));
 
@@ -47,7 +101,10 @@ public sealed record TestPadGeometry(
 
     /// <summary>The frequency at which the via's inductance and everything capacitive below it resonate — the
     /// notch the pad cuts in the line it hangs off.</summary>
-    public double ResonanceHz => TestPadFormulas.SeriesResonanceHz(ViaInductance, PadCapacitance + BarrelCapacitance);
+    public double ResonanceHz => TestPadFormulas.SeriesResonanceHz(ViaInductance, StubCapacitance);
+
+    /// <summary>Everything capacitive hanging off pin 1 at low frequency — pad, barrel and unused pads, F.</summary>
+    public double StubCapacitance => PadCapacitance + BarrelCapacitance + InnerPadCapacitance;
 }
 
 /// <summary>
@@ -56,7 +113,8 @@ public sealed record TestPadGeometry(
 /// <c>MLIN</c>.
 ///
 /// <para><b>Topology.</b> The via's inductance from pin 1 to the pad node, split along its length at each plane
-/// it passes, where that plane's barrel capacitance goes to node 0; the pad's capacitance to the planes it faces
+/// it passes, where that plane's barrel capacitance goes to node 0, and at each unused inner pad it carries
+/// (<see cref="TestPadInnerPad"/>, brief-dfr26-8), where that pad's capacitance does; the pad's capacitance to the planes it faces
 /// at the pad node, which is pin 2. A side-fed pad has no via, so pin 1 and pin 2 are one node (a micro-ohm, as
 /// for a zero-length via). Lossless: neither the barrel's resistance nor the dielectric's loss is modelled.
 /// Every closed form is in <see cref="TestPadFormulas"/>, with its source.</para>
@@ -88,8 +146,8 @@ public sealed class TestPadModel : ComponentModel, IReportsWarnings
     public (Complex Y11, Complex Y12, Complex Y22) Admittance(double omega)
     {
         var g = Geometry;
-        // ABCD of the chain from pin 1 to pin 2: series L segments with each plane's shunt barrel C between them,
-        // then the pad's shunt C at pin 2.
+        // ABCD of the chain from pin 1 to pin 2: series L segments with each plane's shunt barrel C and each unused
+        // pad's C between them, at their points along the via, then the pad's shunt C at pin 2.
         Complex a = 1, b = 0, c = 0, d = 1;
         void Series(Complex z) { b += a * z; d += c * z; }
         void Shunt(Complex y) { a += b * y; c += d * y; }
@@ -98,10 +156,14 @@ public sealed class TestPadModel : ComponentModel, IReportsWarnings
         if (g.ViaLength > 0)
         {
             double at = 0;
-            foreach (var p in g.Planes.Where(p => p.Position > 0 && p.Position < g.ViaLength).OrderBy(p => p.Position))
+            var shunts = g.Planes.Select(p => (p.Position, C: g.BarrelCapacitanceOf(p)))
+                          .Concat(g.Pads.Select(p => (p.Position, C: g.InnerPadCapacitanceOf(p))))
+                          .Where(s => s.Position > 0 && s.Position < g.ViaLength)
+                          .OrderBy(s => s.Position);
+            foreach (var p in shunts)
             {
                 Series(new Complex(0, omega * l * (p.Position - at) / g.ViaLength));
-                Shunt(new Complex(0, omega * g.BarrelCapacitanceOf(p)));
+                Shunt(new Complex(0, omega * p.C));
                 at = p.Position;
             }
             Series(new Complex(0, omega * l * (g.ViaLength - at) / g.ViaLength));
@@ -147,8 +209,14 @@ public sealed class TestPadModel : ComponentModel, IReportsWarnings
         string via = g.ViaLength > 0
             ? $", its via {F(g.ViaInductance * 1e9)} nH" +
               (g.BarrelCapacitance > 0 ? $" with {F(g.BarrelCapacitance * 1e12)} pF to the planes it passes" : "") +
+              (g.Pads.Count > 0 ? $", its {g.Pads.Count} unused inner pad{(g.Pads.Count == 1 ? "" : "s")} {F(g.InnerPadCapacitance * 1e12)} pF" : "") +
               (double.IsFinite(g.ResonanceHz) ? $", resonating at {F(g.ResonanceHz / 1e9)} GHz" : "")
             : "";
+        // A pad no narrower than its antipad would touch its plane, so it is counted as nothing — say so.
+        if (g.Pads.FirstOrDefault(p => p.Diameter >= p.Antipad) is { } wide)
+            _pending.Add(($"TESTPAD-innerpad:{instancePath}",
+                $"{instancePath}: InnerPadD ({F(wide.Diameter * 1e3)} mm) is no smaller than AntipadD ({F(wide.Antipad * 1e3)} mm), " +
+                "so each unused pad would touch its plane; they are left out of the estimate."));
         _pending.Add(($"TESTPAD-estimate:{instancePath}",
             $"{instancePath}: the test pad's values are a closed-form estimate — pad {F(g.PadCapacitance * 1e12)} pF{via}. " +
             "An EM setup of the pad, its via and the planes it passes is the reference."));

@@ -76,6 +76,48 @@ public static class TestPadFormulas
         return 2 * Math.PI * Epsilon0 * Math.Max(epsR, 1.0) * length / Math.Log(clearance / drill);
     }
 
+    /// <summary>
+    /// What an unused pad on the via adds where the via passes a plane through its antipad (brief-dfr26-8
+    /// R-dfr26-8-1): the pad's rim term less the bare barrel's, which the pad replaces. A conductor of radius
+    /// <c>r</c> in a clearance of radius <c>b</c> in a plane <c>t</c> thick couples to it as a coaxial line
+    /// <c>t + λ</c> long, <c>C = 2πε₀εᵣ·(t + λ)/ln(b/r)</c>, where the fringe length <c>λ = k_r·r + k_g·(b − r)</c>
+    /// carries the field that leaves the conductor's faces for the plane's edge and the antipad edges of the planes
+    /// above and below. Nothing is parallel plate: the planes either side are cleared to the same antipad.
+    ///
+    /// <para><b>Calibrated, not derived.</b> The four constants are a fit to an axisymmetric finite-difference
+    /// solve of a via through planes 69 to 460 µm apart, pads 0.45 to 0.75 mm in antipads 0.8 to 1.2 mm, drills 0.2
+    /// to 0.4 mm (60 cases, 7 % rms, 15 % worst). The fringe is set by the antipad, not the dielectric: from 69 to
+    /// 460 µm a neighbouring plane moved the unscreened term by 15 %, which the fit leaves out. On the ten-layer
+    /// board of round 26 (0.6 mm pads in 0.94 mm antipads on eight conductors) the solve gives 0.19 pF for the
+    /// eight; <see cref="InnerPadScreen"/> holds the part of that a neighbouring pad takes. Zero when the pad is no
+    /// wider than the drill or no narrower than its antipad (it would touch its plane).</para>
+    /// </summary>
+    /// <param name="padDiameter">The unused pad's diameter, m.</param>
+    /// <param name="antipadDiameter">The antipad in its plane, m.</param>
+    /// <param name="drill">The barrel's diameter, m.</param>
+    /// <param name="thickness">The plane's (and pad's) copper thickness, m.</param>
+    /// <param name="epsR">The dielectric either side of it, thickness-weighted.</param>
+    public static double InnerPadCapacitance(double padDiameter, double antipadDiameter, double drill, double thickness, double epsR)
+    {
+        if (!(drill > 0) || !(padDiameter > drill) || !(antipadDiameter > padDiameter)) return 0.0;
+        double b = antipadDiameter / 2, eps = Epsilon0 * Math.Max(epsR, 1.0), t = Math.Max(thickness, 0.0);
+        double Rim(double r, double kr, double kg) => 2 * Math.PI * eps * (t + kr * r + kg * (b - r)) / Math.Log(b / r);
+        return Math.Max(0.0, Rim(padDiameter / 2, 0.2, 1.0) - Rim(drill / 2, 0.19, 1.2));
+    }
+
+    /// <summary>
+    /// The fraction of one side's half of <see cref="InnerPadCapacitance"/> a pad keeps when the conductor next to
+    /// it on that side carries a pad of the same via, <paramref name="gap"/> away through the dielectric:
+    /// <c>1 − exp(−z / (0.72·(b − r)))</c>. The two pads share the field round the antipad edges between them, so
+    /// the nearer the less each adds — at 69 µm a pad of 0.6 mm in 0.94 mm keeps 46 % of that side, at 460 µm 97 %.
+    /// From the same solve as <see cref="InnerPadCapacitance"/>.
+    /// </summary>
+    public static double InnerPadScreen(double gap, double padDiameter, double antipadDiameter)
+    {
+        double ring = (antipadDiameter - padDiameter) / 2;
+        return gap > 0 && ring > 0 ? 1 - Math.Exp(-gap / (0.72 * ring)) : 0.0;
+    }
+
     /// <summary>The via's inductance over its length, Goldfarb and Pucel — the same form a placed <c>VIA</c>
     /// uses (<see cref="ViaFormulas.GoldfarbPucelInductance"/>). Zero for a side-fed pad, which has no via.</summary>
     public static double ViaInductance(double length, double drill)

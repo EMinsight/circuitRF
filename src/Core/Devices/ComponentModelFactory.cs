@@ -2441,6 +2441,13 @@ public static class ComponentModelFactory
     /// via, from pin 1), <c>Tp</c> (barrel length the plane owns), <c>Erp</c> and <c>Bp</c> (clearance diameter) — or
     /// <c>Clp</c>=1 for a plane in the pad's <c>ClearLayers</c>, whose clearance is <c>ClearD</c> (default <c>D</c> +
     /// 0.5 mm).
+    ///
+    /// <para>Unused inner pads (brief-dfr26-8) ride the same way when <c>InnerPadD</c> is stated: <c>InnerPads=n</c>
+    /// with <c>Zq</c> (where along the via), <c>Tq</c> (copper thickness), <c>Erq</c>, and per side <c>Hqa</c>/<c>Kqa</c>
+    /// towards pin 1 and <c>Hqb</c>/<c>Kqb</c> towards the pad — the dielectric to the next conductor and what it is
+    /// (<see cref="TestPadSide"/>: 0 the via's end, 1 a plane with a pad of the via, 2 a plane without). Each sits in
+    /// an <c>AntipadD</c> clearance (default the via pad + 0.3 mm), which is also every uncleared plane's barrel
+    /// clearance unless <c>Bp</c> states one.</para>
     /// </summary>
     private static TestPadGeometry ReadTestPadGeometry(IReadOnlyDictionary<string, Value> parameters)
     {
@@ -2454,6 +2461,7 @@ public static class ComponentModelFactory
         double drill = GetReal(parameters, "Drill", DefaultViaDrillMeters);
         double d = GetReal(parameters, "D", DefaultTestPadDiameterMeters);
         double clearD = GetReal(parameters, "ClearD", d + DefaultTestPadClearRingMeters);
+        double antipad = GetReal(parameters, "AntipadD", DefaultViaPadMeters + DefaultViaAntipadRingMeters);
         int n = (int)Math.Round(GetReal(parameters, "Planes", 0.0));
         var planes = new List<TestPadPlane>(Math.Max(n, 0));
         for (int i = 1; i <= n; i++)
@@ -2463,14 +2471,38 @@ public static class ComponentModelFactory
                 GetReal(parameters, $"Erp{i}", DefaultSubstrateEpsR),
                 BooleanParameter.Parse(parameters, $"Clp{i}", whenAbsent: false)
                     ? clearD
-                    : GetReal(parameters, $"Bp{i}", DefaultViaPadMeters + DefaultViaAntipadRingMeters)));
+                    : GetReal(parameters, $"Bp{i}", antipad)));
+        var pads = new List<TestPadInnerPad>();
+        double innerPadD = GetReal(parameters, "InnerPadD", 0.0);
+        if (innerPadD > 0)
+        {
+            TestPadSide Side(string key) => (int)Math.Round(GetReal(parameters, key, (double)TestPadSide.Plane)) switch
+            {
+                0 => TestPadSide.ViaEnd,
+                1 => TestPadSide.Pad,
+                _ => TestPadSide.Plane,
+            };
+            int m = (int)Math.Round(GetReal(parameters, "InnerPads", 0.0));
+            for (int i = 1; i <= m; i++)
+                pads.Add(new TestPadInnerPad(
+                    Position:  GetReal(parameters, $"Zq{i}", hvia / 2),
+                    Thickness: GetReal(parameters, $"Tq{i}", 0.0),
+                    EpsR:      GetReal(parameters, $"Erq{i}", DefaultSubstrateEpsR),
+                    Diameter:  innerPadD,
+                    Antipad:   antipad,
+                    GapA:      GetReal(parameters, $"Hqa{i}", 0.0),
+                    SideA:     Side($"Kqa{i}"),
+                    GapB:      GetReal(parameters, $"Hqb{i}", 0.0),
+                    SideB:     Side($"Kqb{i}")));
+        }
         return new TestPadGeometry(
             Diameter: d,
             Faces:    faces,
             Drill:    drill,
             ViaLength: hvia,
             ViaEpsR:  GetReal(parameters, "ErVia", DefaultSubstrateEpsR),
-            Planes:   planes);
+            Planes:   planes,
+            InnerPads: pads);
     }
 
     // ── MIMCAP / SPIRAL / TFR / AIRBRIDGE (brief-agent-authoring-overview.md AA-1) ────────────

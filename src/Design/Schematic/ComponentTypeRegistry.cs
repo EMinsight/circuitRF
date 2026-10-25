@@ -1482,7 +1482,9 @@ public static class ComponentTypeRegistry
           + "plates plus a rim fringe, C = ε0εr·πr²/h + ε0εr·2πr·ln(1 + 2r/h), with h the dielectric between them and "
           + "the layers combined in series; the via's inductance by Goldfarb and Pucel over its length, with the "
           + "barrel's coaxial capacitance to each plane it passes (the clearance as the outer radius) at its point "
-          + "along it. Lossless. Every inner conductor counts as a plane under the pad unless ClearLayers names it. "
+          + "along it; with InnerPadD set, each unused pad's rim coupling across its AntipadD clearance to its own plane "
+          + "and to the neighbouring planes' antipad edges, less the bare barrel's, calibrated to a field solve. "
+          + "Lossless. Every inner conductor counts as a plane under the pad unless ClearLayers names it. "
           + "An EM setup of the pad, its via and its planes is the reference: set Centre to Port to give it a port.",
         SymbolKind.Spiral =>
             "AN ESTIMATE. L by partial-inductance summation (Greenhouse 1974) over the drawn coil, its escape "
@@ -1579,6 +1581,9 @@ public static class ComponentTypeRegistry
             "ViaFrom"     => "The conductor at the via's other end, where terminal 1 is. Default: the top conductor. Not "
                            + "used for a side-fed pad.",
             "Drill"       => "The via's drill. Empty: the technology's via drill.",
+            "InnerPadD"   => "The unused pads the via keeps on each conductor it passes (not those in ClearLayers). "
+                           + "Empty: none. Board CAD keeps them unless told to remove them, and each adds capacitance.",
+            "AntipadD"    => "The clearance round the via in each plane it passes. Empty: the technology's via pad + 0.3 mm.",
             "ClearLayers" => "The conductors whose plane gets a round cut-out under the pad, comma-separated. Empty: "
                            + "none. The pad's capacitance is taken to the nearest conductor NOT named here.",
             "ClearD"      => "The cut-out's diameter on those conductors. Empty: D + 0.5 mm.",
@@ -3257,6 +3262,8 @@ public static class ComponentTypeRegistry
                         new("FeedW",                           "",     "mm", false, UnitDimension.Length),
                         new(TestPadInjection.ViaFromParam,     "",     "",   false, UnitDimension.None),
                         new("Drill",                           "",     "mm", false, UnitDimension.Length),
+                        new("InnerPadD",                       "",     "mm", false, UnitDimension.Length),
+                        new("AntipadD",                        "",     "mm", false, UnitDimension.Length),
                         new(TestPadInjection.ClearLayersParam, "",     "",   true,  UnitDimension.None),
                         new("ClearD",                          "",     "mm", false, UnitDimension.Length),
                         new("Centre",                          TestPadPCell.CentreOpen, "", true, UnitDimension.None),

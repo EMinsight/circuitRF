@@ -34,6 +34,26 @@ public static class Em3dSizeEstimate
     public const double UnknownsPerTetOrder2 = 953_946.0 / 146_769.0;
 
     /// <summary>
+    /// brief-dfr26-8 R-dfr26-8-3 — a STATIC problem's unknowns per tetrahedron at order 2. Palace solves
+    /// electrostatics and magnetostatics for a scalar potential on H1 elements, not for a field on Nédélec edges, so a
+    /// mesh carries about a quarter of a driven solve's unknowns. Measured on the round-26 ten-layer board's
+    /// electrostatic run: 399,300 unknowns on 237,080 tetrahedra.
+    /// </summary>
+    public const double UnknownsPerTetStaticOrder2 = 399_300.0 / 237_080.0;
+
+    /// <summary>…and at order 1: the same run's first multigrid level (p = 1), 59,099 unknowns on the same mesh — one
+    /// per vertex.</summary>
+    public const double UnknownsPerTetStaticOrder1 = 59_099.0 / 237_080.0;
+
+    /// <summary>
+    /// brief-dfr26-8 R-dfr26-8-3 — Palace's peak memory per unknown for a static problem at order 2, as Palace reports it
+    /// (the <c>Peak Memory</c> table's total high-water mark): 4.9 GB for those 399,300 unknowns, ten ranks, with the error
+    /// estimator's construction (1.1 GB) included. Order 1 has no measurement, so a static order-1 run has no memory
+    /// figure rather than a borrowed one.
+    /// </summary>
+    public const double PalaceBytesPerUnknownStaticOrder2 = 4.9e9 / 399_300.0;
+
+    /// <summary>
     /// Palace's peak memory per unknown at order 2, all eight ranks together, as Palace reports it:
     /// F0's <c>B palace</c>, 7.0 GB for 593,548 unknowns — the HIGHEST of the order-2 runs without
     /// adaptive refinement (case A's is 7.4 GB for 953,946), so an estimate errs toward not fitting.
@@ -96,6 +116,8 @@ public static class Em3dSizeEstimate
     /// <param name="refinement">Designer feedback round 11 — the mesh script's refinement at conductors, sheets and ports
     /// (<see cref="Em3dRefinementSizing"/>), priced as a shell over each surface. Null leaves it out, as every estimate did
     /// before: the shipped connector launch then read 2,037 tetrahedra against Gmsh's 93,371.</param>
+    /// <remarks>A static problem (<see cref="Em3dProblem.IsStatic"/>) is priced in Palace's scalar unknowns
+    /// (<see cref="UnknownsPerTetStaticOrder2"/>), brief-dfr26-8.</remarks>
     public static Em3dPalaceEstimate Palace(Em3dProblem problem, Func<Em3dSolid, double> initialEdgeM, int order,
                                             double? backgroundEdgeM = null, int refinementPasses = 0,
                                             Em3dRefinementSizing? refinement = null)
@@ -151,10 +173,19 @@ public static class Em3dSizeEstimate
                 Shell($"port {p.Name} (both sides)", 2 * PortArea(p), r.PortEdgeM(p));
             tets = Math.Max(tets - overlap, 0) + shells;
         }
-        long unknowns = (long)Math.Round(tets * (order == 1 ? UnknownsPerTetOrder1 : UnknownsPerTetOrder2));
+        long unknowns = (long)Math.Round(tets * UnknownsPerTet(order, problem.IsStatic));
         return new Em3dPalaceEstimate((long)Math.Round(tets), unknowns, order,
-                                      PalaceMemoryBytes(unknowns, order, refinementPasses), regions);
+                                      PalaceMemoryBytes(unknowns, order, refinementPasses, problem.IsStatic), regions);
     }
+
+    /// <summary>Palace's unknowns per tetrahedron: Nédélec for a field (driven, eigenmode), H1 for a static potential.</summary>
+    public static double UnknownsPerTet(int order, bool isStatic) => (order, isStatic) switch
+    {
+        (1, false) => UnknownsPerTetOrder1,
+        (_, false) => UnknownsPerTetOrder2,
+        (1, true)  => UnknownsPerTetStaticOrder1,
+        _          => UnknownsPerTetStaticOrder2,
+    };
 
     /// <summary>
     /// brief-em3d-21 — Palace's peak memory for a mesh whose tetrahedra are KNOWN (Gmsh has printed its
@@ -164,14 +195,25 @@ public static class Em3dSizeEstimate
     /// tetrahedra, where the volumes alone give about 500).
     /// </summary>
     public static long PalaceMemoryBytesForMesh(long tetrahedra, int order, int refinementPasses)
-        => PalaceMemoryBytes((long)Math.Round(tetrahedra * (order == 1 ? UnknownsPerTetOrder1 : UnknownsPerTetOrder2)),
-                             order, refinementPasses);
+        => PalaceMemoryBytes((long)Math.Round(tetrahedra * UnknownsPerTet(order, false)), order, refinementPasses);
+
+    /// <summary>brief-dfr26-8 — the same for a static problem, in its scalar unknowns; null at order 1, which has no
+    /// measured memory figure.</summary>
+    public static long? PalaceStaticMemoryBytesForMesh(long tetrahedra, int order, int refinementPasses)
+        => PalaceMemoryBytes((long)Math.Round(tetrahedra * UnknownsPerTet(order, true)), order, refinementPasses, isStatic: true);
 
     /// <summary>Palace's peak memory for <paramref name="unknowns"/> at <paramref name="order"/>, with
     /// <see cref="PalaceRefinementMemoryFactor"/> when any refinement pass is allowed.</summary>
     public static long PalaceMemoryBytes(long unknowns, int order, int refinementPasses)
         => (long)Math.Round(unknowns * (order == 1 ? PalaceBytesPerUnknownOrder1 : PalaceBytesPerUnknownOrder2)
                             * (refinementPasses > 0 ? PalaceRefinementMemoryFactor : 1));
+
+    /// <summary>…for a field or, with <paramref name="isStatic"/>, a static potential — null for a static order-1 run,
+    /// which nothing has measured.</summary>
+    public static long? PalaceMemoryBytes(long unknowns, int order, int refinementPasses, bool isStatic)
+        => !isStatic ? PalaceMemoryBytes(unknowns, order, refinementPasses)
+         : order == 1 ? null
+         : (long)Math.Round(unknowns * PalaceBytesPerUnknownStaticOrder2 * (refinementPasses > 0 ? PalaceRefinementMemoryFactor : 1));
 
     /// <summary>openEMS's memory for a grid of <paramref name="cells"/> cells — brief 8 supplies the
     /// count.</summary>

@@ -3835,3 +3835,26 @@ identity with the junction-only stamp).
   always assumed. The schema's summary says so.
 - **"this run reaches X GHz"** in the TESTPAD, VIA and MMIC-passive validity notes named the FIRST frequency past the
   limit, not the sweep's top (a 1-6 GHz run "reached 4.25 GHz"). It now reads "this run goes past it, from X GHz".
+
+## brief-dfr26-8 — TESTPAD's unused inner pads (2026-10-25)
+
+- **The brief's Palace figures are not the reference.** Its gate (stub within 25 % of 3.36 pF, the eight unused pads
+  worth 1.61 pF) came from one order-2 electrostatic pass with no adaptive refinement. A converged axisymmetric
+  finite-difference solve of the same via (0.3 mm drill, 0.6 mm pads in 0.94 mm antipads on the eight inner planes of
+  the shipped ten-layer stackup, a 0.6 mm top land, the 1.5 mm pad on Bottom) gives the stub as **1.446 pF** and the
+  eight pads as **0.192 pF**. Clearing Inner 8 + 7 to 2.0 mm moves it −0.71 pF (Palace −1.00). 0.2 pF per pad is not
+  reachable here: it needs more than the pad's whole area facing solid copper 69 µm away, and the planes either side are
+  cleared to the same antipad. Under-resolved conforming FEM overstates capacitance, worst on small thin (18 µm)
+  conductors. The owner chose the field solve as the reference; the gate is restated on it.
+- **The form**: each pad's rim term less the bare barrel's, both a coaxial term over a fringe length,
+  `2πε₀εᵣ(t + k_r·r + k_g·(b − r))/ln(b/r)`, pad (0.2, 1.0), barrel (0.19, 1.2); `TestPadFormulas.InnerPadCapacitance`.
+  Fitted to 60 single-pad solves (planes 69-460 µm apart, pads 0.45-0.75 mm, antipads 0.8-1.2 mm, drills 0.2-0.4 mm):
+  7 % rms, 15 % worst. A neighbouring plane's distance moved the term 15 % at most and is left out.
+- **Pads screen each other, and the via's ends take a side.** The eight pads alone sum to 0.28 pF, together 0.19 pF.
+  Each side keeps half the term: all of it beside a plane with only the barrel in its hole, `1 − exp(−z/(0.72(b − r)))`
+  beside another pad of the via `z` away, none beside the via's own end (its land or the test pad, no plane there).
+  On the board config this gives 0.191 pF against 0.192; over five pad/antipad pairs on the board, within ±14 %.
+- **`AntipadD` is one row for two things**: every uncleared plane's barrel clearance and every inner pad's antipad.
+  The injection writes the technology's value into it when empty and no longer writes `Bp`.
+- **The model's stub on the board config is 1.76 pF against the solve's 1.45 (+21 %)**: the designer's pad formula
+  (1.54 pF) ignores the antipad under the pad's centre, which the brief left out of scope.

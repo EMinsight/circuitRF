@@ -221,4 +221,149 @@ public sealed class TestPadRound26Tests : IDisposable
         Assert.Equal(model.Geometry.ViaInductance, shunt.ViaInductance!.Value, 1e-15);
         Assert.Equal(model.Geometry.BarrelCapacitance, shunt.BarrelCapacitance, 1e-18);
     }
+
+    // ── brief-dfr26-8: the via's unused inner pads ───────────────────────────────────────────────
+
+    private static readonly LayerKey[] InnerKeys = [new(10, 0), new(11, 0), new(12, 0), new(13, 0), new(18, 0), new(19, 0), new(20, 0), new(21, 0)];
+
+    /// <summary>The model a schematic TESTPAD on the ten-layer board extracts to, with <paramref name="set"/> typed.</summary>
+    private TestPadModel ExtractedModel(params (string Name, string Value)[] set)
+    {
+        var tp = Component(SymbolKind.TestPad, "TP1", [("PadLayer", Bottom), ("ViaFrom", Top), .. set]);
+        var values = TestPadInjection.Build(_tech, tp.Parameters).Overrides
+            .ToDictionary(o => o.Name, o => new CircuitRF.Core.Expressions.Value(double.Parse(o.Expression, System.Globalization.CultureInfo.InvariantCulture)));
+        values["D"] = new CircuitRF.Core.Expressions.Value(1.5e-3);
+        foreach (var (n, v) in set)
+            if (n is "Drill" or "InnerPadD" or "AntipadD")
+                values[n] = new CircuitRF.Core.Expressions.Value(double.Parse(v, System.Globalization.CultureInfo.InvariantCulture) * 1e-3);
+        return Assert.IsType<TestPadModel>(ComponentModelFactory.TryCreate("TESTPAD", values));
+    }
+
+    /// <summary>
+    /// R-dfr26-8-1's gate, against an axisymmetric finite-difference solve of the same via (fixed reference data,
+    /// computed outside circuitRF): the stub as built 1.446 pF, of which the eight 0.6 mm pads in 0.94 mm antipads are
+    /// 0.192 pF. The brief's Palace figures (3.36 and 1.61 pF) came from one unrefined pass and are not the
+    /// reference — src/Core/RESOLVED.md says why.
+    /// </summary>
+    [Fact]
+    public void UnusedInnerPads_OnTheTenLayerBoard_AddWhatTheFieldSolveDoes()
+    {
+        var with = ExtractedModel(("Drill", "0.3"), ("InnerPadD", "0.6"), ("AntipadD", "0.94")).Geometry;
+        var without = ExtractedModel(("Drill", "0.3"), ("AntipadD", "0.94")).Geometry;
+
+        Assert.Equal(8, with.Pads.Count);
+        Assert.Empty(without.Pads);
+        Assert.InRange(with.StubCapacitance, 0.75 * 1.446e-12, 1.25 * 1.446e-12);
+        Assert.InRange(with.StubCapacitance - without.StubCapacitance, 0.75 * 0.192e-12, 1.25 * 0.192e-12);
+    }
+
+    [Fact]
+    public void InnerPadD_DrawsAPadOnEachPassedConductor_ButNotOnAClearedOne()
+    {
+        var r = Generate(("PadLayer", Bottom), ("ViaFrom", Top), ("InnerPadD", 0.6e-3), ("ClearLayers", "Inner 8"));
+        var inner = r.Shapes.OfType<CircleShape>().Where(c => InnerKeys.Contains(c.Layer)).ToList();
+        Assert.Equal(InnerKeys[..7], inner.Select(c => c.Layer));
+        Assert.All(inner, c => Assert.Equal(300_000, c.R));
+        Assert.Empty(Generate(("PadLayer", Bottom), ("ViaFrom", Top)).Shapes.OfType<CircleShape>().Where(c => InnerKeys.Contains(c.Layer)));
+    }
+
+    [Fact]
+    public void ImpedanceTool_ReportsEachUnusedLand_AndTheyAddWhatTheModelSays()
+    {
+        // Test 6's line and pad, with every inner conductor drawn as a plane round a 0.94 mm antipad holding a 0.6 mm land.
+        var shapes = new List<LayoutShape>
+        {
+            new RectShape { Layer = TopKey, X1 = 0, Y1 = -65_000, X2 = 20_000_000, Y2 = 65_000 },
+            new CircleShape { Layer = TopKey, Cx = 20_000_000, Cy = 0, R = 300_000 },
+            new ViaShape { Layer = ThroughDrill, X = 20_000_000, Y = 0, PadSize = 600_000, DrillSize = 300_000 },
+            new CircleShape { Layer = BottomKey, Cx = 20_000_000, Cy = 0, R = 750_000 },
+        };
+        long[] hole = [.. Enumerable.Range(0, 64).SelectMany(k => new[]
+        {
+            20_000_000 + (long)Math.Round(470_000 * Math.Cos(-k * Math.PI / 32)), (long)Math.Round(470_000 * Math.Sin(-k * Math.PI / 32)),
+        })];
+        foreach (var k in InnerKeys)
+        {
+            shapes.Add(new PolygonShape { Layer = k, Xy = [15_000_000, -5_000_000, 25_000_000, -5_000_000, 25_000_000, 5_000_000, 15_000_000, 5_000_000], Holes = [hole] });
+            shapes.Add(new CircleShape { Layer = k, Cx = 20_000_000, Cy = 0, R = 300_000 });
+        }
+        var report = TraceImpedanceAnalysis.Analyze(shapes, _tech, LayoutUnits.DefaultDbuPerMicron,
+                                                    new TraceImpedanceOptions { Layers = [TopKey] });
+        Assert.True(report.Ok, report.Refusal);
+        var shunt = Assert.Single(report.Layers.SelectMany(l => l.Traces).SelectMany(t => t.PadShunts));
+
+        Assert.Equal(8, shunt.UnusedPads!.Count);
+        Assert.Contains("CAM option", shunt.Text);
+        double model = ExtractedModel(("Drill", "0.3"), ("InnerPadD", "0.6"), ("AntipadD", "0.94")).Geometry.InnerPadCapacitance;
+        Assert.InRange(shunt.UnusedPadCapacitance, 0.9 * model, 1.1 * model);   // the land and antipad are measured, to 5-10 µm
+    }
+
+    // ── brief-dfr26-8 R3/R4: the Palace size estimate and an edge port on the air box ─────────────
+
+    /// <summary>A 4 mm square of the ten-layer board: every inner conductor a plane round a 0.94 mm antipad holding a
+    /// 0.6 mm land, a through via, a line from the board edge on Top and a 1.5 mm pad on Bottom; an edge port where the
+    /// line meets the edge, with no air-box padding at the sides.</summary>
+    private (EmSetup Setup, CircuitRF.Engine.Em3d.Em3dProblem Problem) Fixture(string cem)
+    {
+        const long c = 2_000_000;
+        long[] hole = [.. Enumerable.Range(0, 64).SelectMany(k => new[]
+        {
+            c + (long)Math.Round(470_000 * Math.Cos(-k * Math.PI / 32)), c + (long)Math.Round(470_000 * Math.Sin(-k * Math.PI / 32)),
+        })];
+        var view = new LayoutView();
+        view.Shapes.Add(new RectShape { Layer = TopKey, X1 = 0, Y1 = c - 65_000, X2 = c, Y2 = c + 65_000, Net = "SIG" });
+        view.Shapes.Add(new CircleShape { Layer = TopKey, Cx = c, Cy = c, R = 300_000, Net = "SIG" });
+        view.Shapes.Add(new CircleShape { Layer = BottomKey, Cx = c, Cy = c, R = 750_000, Net = "SIG" });
+        foreach (var k in InnerKeys)
+        {
+            view.Shapes.Add(new PolygonShape { Layer = k, Xy = [0, 0, 4_000_000, 0, 4_000_000, 4_000_000, 0, 4_000_000], Holes = [hole], Net = "GND" });
+            view.Shapes.Add(new CircleShape { Layer = k, Cx = c, Cy = c, R = 300_000, Net = "SIG" });
+        }
+        view.Shapes.Add(new ViaShape { Layer = ThroughDrill, X = c, Y = c, PadSize = 600_000, DrillSize = 300_000, LandingLayer = TopKey, Net = "SIG" });
+        view.Shapes.Add(new LabelShape { Layer = TopKey, X = 0, Y = c, Text = "P1", Height = 100_000, IsPort = true,
+                                         PortDirection = LayoutRotation.R0, PortLayer = TopKey, PortKind = PlanarPortKind.Edge });
+        Directory.CreateDirectory(_root);
+        string path = Path.Combine(_root, Guid.NewGuid().ToString("N")[..8] + ".cem");
+        File.WriteAllText(path, cem);
+        var setup = EmSetupPersistence.LoadFromFile(path);
+        var g = CircuitRF.Design.Layout.Em3d.Em3dGenerator.Generate(setup, new EmLayoutSource("fixture.clay", view, _tech, view.DbuPerMicron), _tech);
+        Assert.True(g.Ok, g.Refusal);
+        return (setup, g.Problem!);
+    }
+
+    /// <summary>R-dfr26-8-3 — an electrostatic estimate is in Palace's scalar unknowns, sized as the script sizes a static
+    /// mesh. Pinned to one run of this fixture (Gmsh 4.15.2, Palace 0.18.1, Standard): 81,052 tetrahedra and 125,324
+    /// unknowns at order 2, 1.8 GB; priced as a driven problem's it read several times that.</summary>
+    [Fact]
+    public void PalaceEstimate_OfAStaticMultilayerFixture_IsWithinTwiceGmshAndPalace()
+    {
+        var (setup, p) = Fixture("""
+            { "FormatVersion": 1, "Name": "es", "LayoutRef": "fixture.clay", "Solver3D": "Palace", "Problem3D": "Electrostatic",
+              "Terminals3D": [ { "Name": "SIG", "Net": "SIG" } ], "Ground3D": "GND",
+              "Palace": { "Quality": "Standard", "AdaptiveMaxIterations": 0 } }
+            """);
+        var est = CircuitRF.Design.Em3d.Em3dRunService.EstimatePalace(p, CircuitRF.Design.Layout.Em.PalaceSettings.Resolve(setup.Palace))!;
+        Assert.InRange(est.Unknowns / 125_324.0, 0.5, 2.0);
+        Assert.InRange(est.Tetrahedra / 81_052.0, 0.5, 2.0);
+    }
+
+    /// <summary>R-dfr26-8-4 — an edge port at a board edge the air box meets with no padding lies IN the box face; it is
+    /// claimed before the faces, or the face takes its sheet and the run is refused ("selected nothing in the mesh").
+    /// This fixture was refused so before, and solved after.</summary>
+    [Fact]
+    public void ALumpedPortOnAnAirBoxFace_IsClaimedBeforeTheFace()
+    {
+        var (setup, p) = Fixture("""
+            { "FormatVersion": 1, "Name": "drv", "LayoutRef": "fixture.clay", "Solver3D": "Palace",
+              "Frequency": { "StartExpr": "1", "StopExpr": "3", "StepExpr": "", "NumPoints": 3, "Mode": "PointCount", "Kind": "Linear",
+                             "StartUnit": "GHz", "StopUnit": "GHz", "StepUnit": "Hz" },
+              "Palace": { "Quality": "Draft" },
+              "AirBox": { "XMin": { "PaddingUm": 0, "Boundary": "Absorbing" }, "XMax": { "PaddingUm": 0, "Boundary": "Absorbing" },
+                          "YMin": { "PaddingUm": 0, "Boundary": "Absorbing" }, "YMax": { "PaddingUm": 0, "Boundary": "Absorbing" },
+                          "ZMin": { "PaddingUm": 4000, "Boundary": "Absorbing" }, "ZMax": { "PaddingUm": 4000, "Boundary": "Absorbing" } } }
+            """);
+        string geo = CircuitRF.Design.Em3d.GmshGeoWriter.Write(p, CircuitRF.Design.Layout.Em.PalaceSettings.Resolve(setup.Palace)).Geo!;
+        Assert.True(geo.IndexOf("q0[] = ", StringComparison.Ordinal) is var port and >= 0
+                    && port < geo.IndexOf("// air box", StringComparison.Ordinal), "the port is claimed after the air-box faces");
+    }
 }

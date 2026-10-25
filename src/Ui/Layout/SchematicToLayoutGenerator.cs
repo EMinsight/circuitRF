@@ -1233,7 +1233,7 @@ public static class SchematicToLayoutGenerator
             // a dimension left empty follows the technology, which the generator resolves itself.
             if (comp.Symbol == SymbolKind.TestPad)
             {
-                if (p.Name is not ("D" or "FeedW" or "Drill" or "ClearD"))
+                if (p.Name is not ("D" or "FeedW" or "Drill" or "ClearD" or "InnerPadD" or "AntipadD"))
                 {
                     if (p.Expression.Trim() is { Length: > 0 } word) resolved[p.Name] = PCellValue.Text(word);
                     continue;

@@ -17,6 +17,21 @@ public sealed record TestPadFace(StackupLayer Plane, double HeightMeters, double
 /// rather than the via's own antipad.</param>
 public sealed record TestPadBarrelPlane(StackupLayer Plane, double PositionMeters, double LengthMeters, double EpsR, bool Cleared);
 
+/// <summary>Where an unused pad on a test pad's via would sit, and what is next to it on each side (brief-dfr26-8
+/// R-dfr26-8-1). Its diameter and antipad are the component's (<c>InnerPadD</c>, <c>AntipadD</c>) or, read from
+/// artwork, what is drawn.</summary>
+/// <param name="Conductor">The conductor the via passes.</param>
+/// <param name="PositionMeters">Mid-plane distance from the via's pin-1 conductor.</param>
+/// <param name="ThicknessMeters">The conductor's copper thickness.</param>
+/// <param name="EpsR">The dielectric to each neighbouring conductor, thickness-weighted.</param>
+/// <param name="GapAMeters">The dielectric to the next conductor towards pin 1.</param>
+/// <param name="SideA">What that conductor is.</param>
+/// <param name="GapBMeters">The dielectric to the next conductor towards the pad.</param>
+/// <param name="SideB">What that conductor is.</param>
+public sealed record TestPadInnerPadSlot(
+    StackupLayer Conductor, double PositionMeters, double ThicknessMeters, double EpsR,
+    double GapAMeters, CircuitRF.Core.Devices.TestPadSide SideA, double GapBMeters, CircuitRF.Core.Devices.TestPadSide SideB);
+
 /// <summary>
 /// A test pad resolved against a technology's stackup — what both its model and the impedance tool's pad report
 /// are built from (brief-dfr26-7 R-dfr26-7-4/5).
@@ -25,12 +40,17 @@ public sealed record TestPadBarrelPlane(StackupLayer Plane, double PositionMeter
 /// <param name="Via">The via's span from <c>ViaFrom</c> to the pad's conductor, or null for a side-fed pad.</param>
 /// <param name="Faces">The plane the pad faces on each side that has one.</param>
 /// <param name="Planes">The planes the via passes (empty for a side-fed pad).</param>
+/// <param name="InnerPads">Where the via would carry an unused pad: every conductor it passes that <c>ClearLayers</c>
+/// does not name (empty for a side-fed pad). Whether there IS one is the component's <c>InnerPadD</c>.</param>
 public sealed record ResolvedTestPad(
     StackupLayer Pad,
     ResolvedViaSpan? Via,
     IReadOnlyList<TestPadFace> Faces,
-    IReadOnlyList<TestPadBarrelPlane> Planes)
+    IReadOnlyList<TestPadBarrelPlane> Planes,
+    IReadOnlyList<TestPadInnerPadSlot>? InnerPads = null)
 {
+    public IReadOnlyList<TestPadInnerPadSlot> InnerPadSlots => InnerPads ?? [];
+
     public double ViaLengthMeters => Via?.LengthMeters ?? 0.0;
 }
 
@@ -131,7 +151,47 @@ public static partial class SubstrateResolver
             if (t > 0)
                 planes.Add(new TestPadBarrelPlane(l, Math.Abs(z[p] - z[iFrom]), t, (tA * erA + tB * erB) / (tA + tB), Cleared(l)));
         }
-        return (new ResolvedTestPad(pad, span, faces, planes), null, warn);
+        var inner = InnerPadSlots(technology, span.From, pad, l => !Cleared(l));
+        return (new ResolvedTestPad(pad, span, faces, planes, inner), null, warn);
+    }
+
+    /// <summary>
+    /// The unused-pad slots of a via from <paramref name="from"/> to <paramref name="to"/> (brief-dfr26-8
+    /// R-dfr26-8-1): each conductor strictly between them for which <paramref name="carriesPad"/> holds, with where
+    /// it sits along the via, its copper, and what its neighbouring conductor on each side is — the via's own end,
+    /// a conductor carrying a pad, or a plane with only the barrel in its antipad.
+    /// </summary>
+    public static IReadOnlyList<TestPadInnerPadSlot> InnerPadSlots(
+        Technology technology, StackupLayer from, StackupLayer to, Func<StackupLayer, bool> carriesPad)
+    {
+        var layers = technology.Stackup.Layers;
+        int iFrom = layers.IndexOf(from), iTo = layers.IndexOf(to);
+        if (iFrom < 0 || iTo < 0) return [];
+        int lo = Math.Min(iFrom, iTo), hi = Math.Max(iFrom, iTo), toward = iFrom < iTo ? -1 : 1;
+        var z = MidPlanes(layers);
+        var slots = new List<TestPadInnerPadSlot>();
+        for (int p = lo + 1; p < hi; p++)
+        {
+            var l = layers[p];
+            if (l.Kind != StackupKind.Conductor || !carriesPad(l)) continue;
+            (double Gap, double EpsR, CircuitRF.Core.Devices.TestPadSide Side) Neighbour(int step)
+            {
+                int n = p;
+                for (int i = p + step; i >= lo && i <= hi; i += step) { n = i; if (layers[i].Kind == StackupKind.Conductor) break; }
+                var (t, er) = Dielectric(layers, p, n);
+                var side = n == iFrom || n == iTo ? CircuitRF.Core.Devices.TestPadSide.ViaEnd
+                         : carriesPad(layers[n]) ? CircuitRF.Core.Devices.TestPadSide.Pad
+                         : CircuitRF.Core.Devices.TestPadSide.Plane;
+                return (t, er, side);
+            }
+            var a = Neighbour(toward);
+            var b = Neighbour(-toward);
+            double tSum = a.Gap + b.Gap;
+            slots.Add(new TestPadInnerPadSlot(l, Math.Abs(z[p] - z[iFrom]), DbuToMeters(l.ThicknessDbu, FallbackDbuPerMicron),
+                                              tSum > 0 ? (a.Gap * a.EpsR + b.Gap * b.EpsR) / tSum : 1.0,
+                                              a.Gap, a.Side, b.Gap, b.Side));
+        }
+        return slots;
     }
 
     /// <summary>The lowest conductor that is not a ground reference — a test point's usual place, the board's far

@@ -61,4 +61,41 @@ public class TestPadModelTests
         }));
         Assert.Equal([2.5e-3, 0.9e-3], model.Geometry.Planes.Select(p => p.Clearance));
     }
+
+    // ── brief-dfr26-8: unused inner pads ────────────────────────────────────────────────────────
+
+    /// <summary>The unscreened inner-pad term against an axisymmetric finite-difference solve of one pad on an 18 µm
+    /// plane between planes 69 and 460 µm away, every plane cleared to the same antipad (fixed reference data,
+    /// computed outside circuitRF; εr 4.4).</summary>
+    [Theory]
+    [InlineData(0.60e-3, 0.94e-3, 0.3e-3, 45.21e-15)]
+    [InlineData(0.75e-3, 1.20e-3, 0.3e-3, 67.76e-15)]
+    [InlineData(0.45e-3, 0.80e-3, 0.3e-3, 16.06e-15)]
+    [InlineData(0.60e-3, 0.94e-3, 0.2e-3, 64.29e-15)]
+    public void InnerPad_MatchesTheFieldSolve_WithinTwentyPercent(double pad, double antipad, double drill, double solved)
+        => Assert.InRange(TestPadFormulas.InnerPadCapacitance(pad, antipad, drill, 18e-6, 4.4), 0.8 * solved, 1.2 * solved);
+
+    [Fact]
+    public void InnerPads_JoinTheLadder_AndAPadNoNarrowerThanItsAntipadCountsNothing()
+    {
+        var p = new Dictionary<string, Value>
+        {
+            ["D"] = new(1.5e-3), ["Hpad"] = new(71e-6), ["Erpad"] = new(4.4), ["Hvia"] = new(1.6e-3), ["Drill"] = new(0.3e-3),
+            ["InnerPadD"] = new(0.6e-3), ["AntipadD"] = new(0.94e-3), ["InnerPads"] = new(2.0),
+            ["Zq1"] = new(0.5e-3), ["Tq1"] = new(18e-6), ["Erq1"] = new(4.4), ["Hqa1"] = new(460e-6), ["Kqa1"] = new(2.0), ["Hqb1"] = new(69e-6), ["Kqb1"] = new(1.0),
+            ["Zq2"] = new(0.6e-3), ["Tq2"] = new(18e-6), ["Erq2"] = new(4.4), ["Hqa2"] = new(69e-6), ["Kqa2"] = new(1.0), ["Hqb2"] = new(460e-6), ["Kqb2"] = new(2.0),
+        };
+        var model = Assert.IsType<TestPadModel>(ComponentModelFactory.TryCreate("TESTPAD", p));
+        var g = model.Geometry;
+        // Each keeps its open side and 46 % of the side it shares with the other.
+        Assert.InRange(g.InnerPadCapacitance, 2 * 0.70 * 39e-15, 2 * 0.76 * 46e-15);
+
+        // Well below resonance, pin 1 with pin 2 open looks like everything capacitive hanging off it.
+        double w = 2 * Math.PI * 1e6;
+        var (y11, y12, y22) = model.Admittance(w);
+        Assert.Equal(g.StubCapacitance, (y11 - y12 * y12 / y22).Imaginary / w, g.StubCapacitance * 1e-4);
+
+        p["InnerPadD"] = new(0.94e-3);
+        Assert.Equal(0.0, Assert.IsType<TestPadModel>(ComponentModelFactory.TryCreate("TESTPAD", p)).Geometry.InnerPadCapacitance);
+    }
 }

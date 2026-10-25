@@ -337,12 +337,23 @@ public static partial class GmshGeoWriter
             (box.Min.X, box.Min.Y, box.Min.Z, box.Max.X, box.Max.Y, box.Min.Z),
             (box.Min.X, box.Min.Y, box.Max.Z, box.Max.X, box.Max.Y, box.Max.Z),
         };
-        void ClaimPorts(bool wave)
+        // brief-dfr26-8 R-dfr26-8-4 — a lumped port whose sheet lies IN an air-box face: an edge port at a board edge the
+        // box meets with no padding (a cropped board's). Claimed after the faces, the face took its sheet and the port
+        // selected nothing.
+        bool OnBoxFace(Em3dPort p)
+        {
+            const double tol = 1e-9;
+            static bool Flat(double lo, double hi, double boxLo, double boxHi)
+                => hi - lo <= tol && (Math.Abs(lo - boxLo) <= tol || Math.Abs(hi - boxHi) <= tol);
+            return Flat(p.Min.X, p.Max.X, box.Min.X, box.Max.X) || Flat(p.Min.Y, p.Max.Y, box.Min.Y, box.Max.Y)
+                || Flat(p.Min.Z, p.Max.Z, box.Min.Z, box.Max.Z);
+        }
+        void ClaimPorts(Func<Em3dPort, bool> which)
         {
             foreach (int k in portIndex)
             {
                 var p = problem.Ports[k];
-                if (!problem.IsStatic && (p.Kind == Em3dPortKind.Wave) != wave) continue;
+                if (!which(p)) continue;
                 L($"// {Comment(p.Name)}");
                 if (p.Kind == Em3dPortKind.Wave)
                 {
@@ -365,8 +376,13 @@ public static partial class GmshGeoWriter
         // coaxial source can lie on the face its line ends at (Palace's own way to feed a coax). A driven
         // problem keeps its order, and its script its bytes. brief-em3d-23 — a WAVE port lies on an air-box
         // face by definition, so it is claimed before the faces too.
-        if (problem.IsStatic) ClaimPorts(wave: false);
-        else if (problem.HasWavePorts) ClaimPorts(wave: true);
+        bool Lumped(Em3dPort p) => p.Kind != Em3dPortKind.Wave;
+        if (problem.IsStatic) ClaimPorts(_ => true);
+        else
+        {
+            if (problem.HasWavePorts) ClaimPorts(p => !Lumped(p));
+            ClaimPorts(p => Lumped(p) && OnBoxFace(p));
+        }
         // brief-em3d-49 — a face boundary is claimed before the air-box faces, so one lying ON the box (a cavity whose
         // walls are its dielectric's faces) keeps its own surfaces.
         for (int k = 0; k < faceBoundaries.Count; k++)
@@ -379,7 +395,7 @@ public static partial class GmshGeoWriter
             L($"// air box {FaceKeys[k]}");
             Claim(g, $"f{k}", [Query(faceQuery[k], 0)], []);
         }
-        if (!problem.IsStatic) ClaimPorts(wave: false);
+        if (!problem.IsStatic) ClaimPorts(p => Lumped(p) && !OnBoxFace(p));
         // Sheets: smallest bounding box first, for the same reason the conductors below are ordered that
         // way. A sheet is recovered by the surfaces inside its WORLD bound, and one sheet's box can sit
         // entirely inside another's on the same plane (a piece of a winding inside the box of the whole

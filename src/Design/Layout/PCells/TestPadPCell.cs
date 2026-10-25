@@ -14,7 +14,9 @@ namespace CircuitRF.Design.Layout.PCells;
 /// schematic and the ratsnest alike.</para>
 ///
 /// <para><b>Built as <see cref="ViaPCell"/> builds a via</b>: the drill on the stackup's via layer for the span,
-/// copper on the two conductors it joins and none on the layers between (the via component's rule).</para>
+/// copper on the two conductors it joins and none on the layers between (the via component's rule) — unless
+/// <c>InnerPadD</c> is set, when each conductor between outside <c>ClearLayers</c> gets the unused pad the model
+/// counts (brief-dfr26-8). <c>AntipadD</c> is the via's antipad a pour cuts in each plane it passes.</para>
 ///
 /// <para><b>The cut-outs are declared, not drawn.</b> <c>ClearLayers</c> and <c>ClearD</c> are read by
 /// <see cref="GroundPourPlanner"/>, which cuts the disc out of each plane it pours, and by the Cut Clearances into
@@ -58,7 +60,8 @@ public static class TestPadPCell
         double ClearD,
         bool CentreIsPort,
         int? PortNum,
-        IReadOnlyList<string> Notes)
+        IReadOnlyList<string> Notes,
+        double InnerPadD = 0)
     {
         public bool ViaFed => Stack?.Via is not null;
     }
@@ -95,6 +98,13 @@ public static class TestPadPCell
         double clearD = parameters.Real("ClearD", d + DefaultClearRingMeters);
         if (!(clearD > 0)) clearD = d + DefaultClearRingMeters;
 
+        double innerPadD = parameters.Real("InnerPadD", 0.0);
+        if (!(innerPadD > 0)) innerPadD = 0;
+        double antipad = parameters.Real("AntipadD", viaPad + ViaDefaultsSi.AntipadRing);
+        if (!(antipad > 0)) antipad = viaPad + ViaDefaultsSi.AntipadRing;
+        if (innerPadD > 0 && innerPadD >= antipad)
+            notes.Add($"InnerPadD ({innerPadD * 1e3:0.###} mm) is no smaller than AntipadD ({antipad * 1e3:0.###} mm): each unused pad would touch its plane");
+
         double feedW = parameters.Real("FeedW", double.NaN);
         if (!(feedW > 0)) feedW = FiftyOhmWidth(technology, stack?.Pad.Name) ?? 0.3e-3;
 
@@ -114,7 +124,7 @@ public static class TestPadPCell
         }
 
         return new Resolved(stack, padLayer, d, viaFed ? ViaFeed : feed.ToUpperInvariant(), feedW, drill, viaPad,
-                            viaPad + ViaDefaultsSi.AntipadRing, fromLayer, drillLayer, clear, clearD, port, portNum, notes);
+                            antipad, fromLayer, drillLayer, clear, clearD, port, portNum, notes, innerPadD);
     }
 
     /// <summary>The microstrip width that is 50 Ω on <paramref name="conductor"/>, or null when the stackup gives it
@@ -146,6 +156,15 @@ public static class TestPadPCell
             shapes.Add(new ViaShape { Layer = r.DrillLayer, X = 0, Y = 0, PadSize = viaPad, DrillSize = drill });
             shapes.Add(new CircleShape { Layer = from, Cx = 0, Cy = 0, R = viaPad / 2 });
             pins.Add(new PCellPin("1", 0, 0, from, viaPad, 0.0));
+            // The unused pads the model counts (brief-dfr26-8): one on each conductor the via passes outside
+            // ClearLayers, so the artwork and the model stay one statement.
+            if (r.InnerPadD > 0 && r.Stack is { } st)
+            {
+                long innerR = PCellUnits.MetresToDbu(r.InnerPadD, dbuPerMicron) / 2;
+                foreach (var slot in st.InnerPadSlots)
+                    if (slot.Conductor.DrawingLayers.Count > 0)
+                        shapes.Add(new CircleShape { Layer = slot.Conductor.DrawingLayers[0], Cx = 0, Cy = 0, R = innerR });
+            }
         }
         else
         {
