@@ -1,27 +1,52 @@
 # src/Design — resolved findings (detail, off the CLAUDE.md growth path)
 
-## The background was cut with one multi-tool difference, and OCC landed a wrong region (2026-10-20)
+## The background is one multi-tool difference again (2026-10-20, amended 2026-10-24 by brief-em3d-137)
 
-Reported against a stack of overlapping dielectric slabs and conductor pieces: the mesh stage refused the run
-because a solid's volume had lost its tag in the fragment (`'<solid>' lost 1 volume(s) in the fragment`), and
-the background did not match the solids it was meant to exclude.
+Reported 2026-10-20 against a stack of overlapping dielectric slabs and conductor pieces: the mesh stage refused the
+run because a solid's volume had lost its tag in the fragment (`'<solid>' lost 1 volume(s) in the fragment`), and the
+background did not match the solids it was meant to exclude. The fix then (`859dda96`) cut the background one solid at
+a time — the box, then one two-solid `BooleanDifference` per solid — on the reading that OCC's multi-tool difference
+self-intersects on a stack of overlapping tools.
 
-### The rule the fix encodes
+**What the failure was.** brief-dfr26-1 (below, 2026-10-24) found an OCC failure with the same symptoms and a different
+cause: a planar extrusion whose hole is wound clockwise against its outline — Clipper's convention, so every extracted
+plane with an antipad — EMPTIES the solid it is cut from whenever a second tool is in the same cut. A multi-tool
+difference is exactly such a cut. That is fixed at the source (`GmshGeoWriter.PlanarRings` winds every hole like its
+outline), and chaining had only hidden it: the DFR26-1 board failed chained too, in the disjoint-by-order step, where
+cuts are still multi-tool. The originally reported workspace is not available to re-run; the symptoms are the winding
+failure's, and every case that is available builds right as one difference (below).
 
-The background is what no solid claims inside the air box, so it is built from the box minus every solid. It
-was written as ONE `BooleanDifference` carrying every solid as a tool. On a stack of overlapping slabs OCC's
-multi-tool Difference self-intersects and can land a wrong region; the volume the wrong region swallowed then
-had no tag. The script now starts the background as `{bx}` and subtracts one solid per step, in construction
-order, so every step is a plain two-solid cut. The resulting shape is the one the un-chained form was meant to
-produce; only the operation is decomposed. The line count is one per solid.
+**What chaining cost.** Each step re-processes the whole background, which by then holds the region below the stack
+and a cavity for every conductor, so a 0.6 mm via pad cost ~9 s to cut, the same as a whole plane. On a ten-layer board
+cropped to a 12 mm RF path (152 solids), measured with a CPU stamp after each boolean (Gmsh 4.15.2, one thread):
 
-**Not changed:** the order of the cuts (metal over dielectric, then construction order, §6.3a), and the
-conductors' own void deletion.
+| Background construction | Background CPU | Geometry CPU | Entity table |
+|---|---:|---:|---|
+| one cut per solid (`859dda96`) | 580 s | ~650 s | — |
+| **one multi-tool difference** | **8 s** | **90 s** | identical |
+| dielectrics one at a time, then the conductors in one cut | 289 s | 375 s | identical |
+| the conductors in one cut, then the dielectrics one at a time | 57 s | 150 s | identical |
+| `BooleanUnion` of every solid, then one difference | 11 s | 131 s | differs: touching faces merge |
+| one fragment of the box and every solid, background = what no solid claims | — | 45 s | 19 single-sided faces unclassified |
 
-Gate: `PalaceBackendTests.TheBackgroundIsCutOneSolidAtATime` (the script's chained cuts, no Gmsh), and the
-writer goldens regenerated deliberately: `PalaceBackendTests.Gate1_TheWritersOutput_IsByteForByteTheCommittedGolden`
-(microstrip, via) and `PalaceStaticTests.Gate1_TheTwoTerminalConfig_IsTheCommittedGolden_AndValidatesAgainstTheSchema`
-(static-es, static-ms).
+`Geometry.OCCParallel = 1` gains no wall time (93 s against 91 s with one difference; 781 s on the chain) and costs
+CPU; `OCCBooleanPreserveNumbering = 0` saves nothing and changes the volume tags the groups are built on. The whole
+Gmsh run, meshing included, went from **705 s to 129 s**; the entity table is byte-identical, the mesh differs by 5
+nodes and 1 element of ~411,000 / ~395,000 (the cut's B-rep is not bit-identical), and peak memory went from 3.1 to
+3.35 GB. The remaining ~80 s are the disjoint-by-order cuts (~19 s), deleting the conductors (~19 s) and the fragment
+(~40 s); getting under them needs a different construction, which was not attempted.
+
+**Re-tested on the fixed winding:** the reduced case `859dda96` added (`PalaceBackendTests.NestedSheets`, meshed in 3D)
+and all four writer goldens give the same entity table as one difference as they did chained, and so does every Palace
+script the shipped examples lower to (25 setups across the `.c3d` and `.cem` examples, kernel solids included, each
+run old and new to the geometry step: every table byte-identical, none with an unclassified face). The EMerge driver never
+chained (it fragments everything once) and the thermal writer builds no background, so neither changed.
+
+Gate: `PalaceBackendTests.TheBackgroundIsOneDifference` (the background step emits one `BooleanDifference`, carrying
+every solid, whatever the solid count; no Gmsh), and the writer goldens regenerated deliberately:
+`PalaceBackendTests.Gate1_TheWritersOutput_IsByteForByteTheCommittedGolden` (microstrip, via) and
+`PalaceStaticTests.Gate1_TheTwoTerminalConfig_IsTheCommittedGolden_AndValidatesAgainstTheSchema` (static-es,
+static-ms).
 
 ## A sheet took the faces of a smaller coplanar sheet inside its bounding box (2026-10-20)
 

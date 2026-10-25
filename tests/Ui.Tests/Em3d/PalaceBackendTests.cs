@@ -174,7 +174,7 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
         Assert.True(new FileInfo(Path.Combine(dir, GmshGeoWriter.MeshFile)).Length > 0);
     }
 
-    // ── 4b. Background cut order ────────────────────────────────────────────────────────────────
+    // ── 4b. The background ──────────────────────────────────────────────────────────────────────
 
     /// <summary>Two slabs meeting at z = 0.25 mm, and two coplanar sheets on that shared plane: the
     /// smaller wholly inside the larger's world bound, and listed AFTER it. The larger's bounding-box
@@ -215,19 +215,20 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
         return (problem, PalaceSettings.Resolve(new CemPalace()));
     }
 
-    [Fact]
-    public void TheBackgroundIsCutOneSolidAtATime()
+    /// <summary>brief-em3d-137 — the background is the box minus every solid in ONE difference, whatever the solid
+    /// count: cut one solid at a time, each step re-processed the whole background (580 s of a board's 650 s).</summary>
+    [Theory]
+    [InlineData("nested")]
+    [InlineData("via")]
+    public void TheBackgroundIsOneDifference(string name)
     {
-        var (problem, settings) = NestedSheets();
+        var (problem, settings) = name == "nested" ? NestedSheets() : Lowerable(name);
         var low = GmshGeoWriter.Write(problem, settings);
         Assert.True(low.Ok, low.Refusal);
 
-        var lines = low.Geo!.Split('\n');
-        Assert.Contains("bg[] = {bx};", lines);
-        Assert.Equal(problem.Solids.Count,
-                     lines.Count(l => l.StartsWith("bg[] = BooleanDifference{ Volume{bg[]}; Delete; }",
-                                                   StringComparison.Ordinal)));
-        Assert.DoesNotContain(lines, l => l.Contains("Volume{s0[], s1[]}", StringComparison.Ordinal));
+        var lines = low.Geo!.Split('\n').Where(l => l.StartsWith("bg[] = ", StringComparison.Ordinal)).ToList();
+        string every = string.Join(", ", Enumerable.Range(0, problem.Solids.Count).Select(i => $"s{i}[]"));
+        Assert.Equal([$"bg[] = BooleanDifference{{ Volume{{bx}}; Delete; }}{{ Volume{{{every}}}; }};"], lines);
     }
 
     // ── 4c. Sheet claim order ───────────────────────────────────────────────────────────────────

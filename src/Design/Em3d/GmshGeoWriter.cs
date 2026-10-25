@@ -15,7 +15,7 @@
 //   1. Every solid is cut by every higher-precedence solid it overlaps (Em3dPrecedence: metal over
 //      dielectric, then construction order), so the volumes are disjoint BEFORE any fragment. A conductor is then deleted: it is a VOID whose
 //      surface carries Palace's conductivity boundary. What no solid claims inside the box is the
-//      background, which is air.
+//      background, which is air: the box minus every solid, in ONE BooleanDifference (brief-em3d-137).
 //   2. Sheets and port sheets are plane surfaces, and ONE BooleanFragments imprints them and the
 //      shared faces. It splits no volume, and with OCCBooleanPreserveNumbering every volume keeps its
 //      tag — so a VOLUME group is its construction tags, checked to have survived.
@@ -280,15 +280,10 @@ public static partial class GmshGeoWriter
         L($"bx = newv; Box(bx) = {{{Um(box.Min.X)}, {Um(box.Min.Y)}, {Um(box.Min.Z)}, " +
           $"{Um(box.Max.X - box.Min.X)}, {Um(box.Max.Y - box.Min.Y)}, {Um(box.Max.Z - box.Min.Z)}}};");
         string allSolids = string.Join(", ", Enumerable.Range(0, problem.Solids.Count).Select(i => $"s{i}[]"));
-        // One tool per difference, not one difference with every tool in it. OCC's multi-tool Difference
-        // self-intersects on a stack of overlapping slabs and lands a wrong region. Chained, each step is 
-        // a plain two-solid cut and the same model builds clean. The line count is one per solid, and each 
-        // step's shape is the one the un-chained form would have produced.
-        L($"bg[] = {{bx}};");
-        for (int i = 0; i < problem.Solids.Count; i++)
-            L($"bg[] = BooleanDifference{{ Volume{{bg[]}}; Delete; }}{{ Volume{{s{i}[]}}; }};");
-        if (problem.Solids.Count == 0)
-            L($"bg[] = BooleanDifference{{ Volume{{bx}}; Delete; }}{{ Volume{{{allSolids}}}; }};");
+        // brief-em3d-137 — ONE difference with every solid as a tool. Cut one solid at a time (859dda96), every step
+        // re-processed the whole background, cavities and all: 580 s of a ten-layer board's 650 s of geometry, against
+        // 8 s for this. The wrong region that chaining was meant to avoid was a plane's clockwise hole (PlanarRings).
+        L($"bg[] = BooleanDifference{{ Volume{{bx}}; Delete; }}{{ Volume{{{allSolids}}}; }};");
         var conductors = Enumerable.Range(0, problem.Solids.Count)
                                    .Where(i => problem.Solids[i].Role == Em3dRole.Conductor).ToList();
         if (conductors.Count > 0)

@@ -38,10 +38,7 @@ s1[] = BooleanDifference{ Volume{s1[]}; Delete; }{ Volume{s2[]}; };
 
 // ---- the air box, and the background: what no solid claims inside it --------------------
 bx = newv; Box(bx) = {-37474.05725, -38024.05725, 35, 84948.1145, 76048.1145, 38017.05725};
-bg[] = {bx};
-bg[] = BooleanDifference{ Volume{bg[]}; Delete; }{ Volume{s0[]}; };
-bg[] = BooleanDifference{ Volume{bg[]}; Delete; }{ Volume{s1[]}; };
-bg[] = BooleanDifference{ Volume{bg[]}; Delete; }{ Volume{s2[]}; };
+bg[] = BooleanDifference{ Volume{bx}; Delete; }{ Volume{s0[], s1[], s2[]}; };
 // Conductors are voids: their surfaces carry Palace's conductivity boundary.
 Recursive Delete { Volume{s2[]}; }
 
