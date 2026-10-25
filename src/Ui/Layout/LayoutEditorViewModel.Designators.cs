@@ -406,16 +406,25 @@ public sealed partial class LayoutEditorViewModel
         if (instances.Count == 0) return;
 
         var taken = new HashSet<string>(TakenDesignators(), StringComparer.OrdinalIgnoreCase);
+        // A LINKED part collides only with another PLACEMENT of its name (designer report, round 26). The schematic's
+        // own names are in `taken` too, and the one a linked part carries is always there — it is the component the
+        // part is linked to — so testing against `taken` re-minted every Cut then Paste in a cell with a schematic:
+        // the part came back under a new name, unlinked, with no rats. Its own component is not a second claim on it.
+        var placed = new HashSet<string>(DesignatorPool.NamesIn(Model), StringComparer.OrdinalIgnoreCase);
+        var unlinked = new List<string>();
 
         foreach (var inst in instances)
         {
             if (inst.DisplayRefDes is not { Length: > 0 } existing) continue;   // nothing to collide
-            if (taken.Add(existing)) continue;                                  // free — a Cut, or a foreign document
+            bool free = inst.SchematicId is { Length: > 0 } ? placed.Add(existing) : taken.Add(existing);
+            if (free) { taken.Add(existing); placed.Add(existing); continue; }  // a Cut, a deleted original, or a foreign document
 
             string? sourceComponent = inst.SchematicId;
             inst.SchematicId = null;   // it is NOT the component the source is; the source still is
             inst.RefDes      = FootprintLabel.SeedDesignator(taken, PastePrefixFor(inst, existing));
-            if (inst.DisplayRefDes is { Length: > 0 } minted) taken.Add(minted);
+            if (inst.DisplayRefDes is { Length: > 0 } minted) { taken.Add(minted); placed.Add(minted); }
+            if (sourceComponent is { Length: > 0 })
+                unlinked.Add($"{existing} copied as {inst.DisplayRefDes ?? "a part with no designator"}");
 
             // A copy of a LINKED part is still that kind of part (field report, 2026-09-27: a copied
             // resistor never reached the schematic). The source carried no PartKind — the schematic
@@ -426,6 +435,12 @@ public sealed partial class LayoutEditorViewModel
                 && SiblingComponentKind(sourceComponent) is { } kind && FootprintDefaults.IsDiscreteRlc(kind))
                 inst.PartKind = LayoutPartKind.Name(kind);
         }
+
+        // Designer report, round 26: the copy of a linked part came out under a new name with no rats and nothing
+        // said why. One line says it, so a pasted copy is never mistaken for the part the schematic places.
+        if (unlinked.Count > 0)
+            _messageSink?.Info(string.Join(", ", unlinked)
+                + (unlinked.Count == 1 ? " — not in the schematic, so it has no rats" : " — not in the schematic, so they have no rats"));
     }
 
     /// <summary>

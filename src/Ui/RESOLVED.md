@@ -40454,3 +40454,40 @@ the board never is; no marquee or click reaches a hidden or locked layer, and th
 layers. The command now says so: shapes whose box overlaps the selection without being in it are counted, split into
 hidden/locked and reaching-past, in the confirmation and in Messages, with Crop to Rectangle as the way to take a
 region whole. Gates: `tests/Ui.Tests/Layout/CropBoardRound26Tests.cs`.
+
+## The layout ratsnest follows a part through copy, paste and rotate (brief DFR26-4, 2026-10-24)
+
+Designer report on the cropped ten-layer board: rats missing for the parts from the imported schematic, designators
+that did not match until a second Update Layout, copy/paste resetting the designator, rotation disconnecting rats,
+rats stuck while parts moved, and a loose rat that could not be selected. Two causes, one in each half.
+
+**Cut then Paste re-minted the part (the designator and the "second update" findings).** `ResolvePastedInstanceIdentities`
+re-mints a pasted placement whose name is taken, and its taken set is `TakenDesignators()` — the layout's names AND
+the sibling schematic's. A linked part's own name is always in the schematic half: it is the component the part is
+linked to. So in any cell with a schematic, a Cut then Paste (a move) came back as `C211`, unlinked, with no rats, and
+the next Update Layout found `C209` without a placement and added it again — which is what read as "the update gave
+the right designators the second time". A synthetic layout with no sibling schematic hides it, which is why the
+original gate passed. A linked part now collides only with another PLACEMENT of its name (or one earlier in the same
+batch); an unlinked one still collides with the schematic's names as before, since claiming one would be a false link.
+A copy pasted while the original is placed is re-minted as before and Messages says so in one line ("C1 copied as C2 —
+not in the schematic, so it has no rats"). The designer's workspaces stop before the imported-schematic stage, so the
+first-update claim was matched to this sequence from the report's own wording, not replayed on their file.
+
+**The rats were drawn where the last READ put the pins (rotate, stuck, and the old rat left behind).** Since round 25
+the copper read runs off the UI thread, ~20 s on that board, and until it lands the overlay drew the previous answer's
+pins at their read positions — only a live drag was offset. A rotated part's rat ended on its unrotated pin, a moved or
+pasted part's rat stayed at the old place, a deleted part's was still drawn, and an answer read under a later edit is
+dropped, so on a board edited faster than it reads the rats never caught up. Inline (every test's seam) none of this
+shows. Each draw now puts every read pin through its placement's transform AS IT IS NOW: the pin's cell-local point is
+recovered through the placement as it was read (`InverseTransformPoint`) and re-placed through the current one. The
+placement is found by object (a move edits in place), else by designator and cell among placements no read holds (a
+rotation, mirror or properties edit REPLACES the instance; Cut then Paste is a new object of the same part). Gone, or
+flipped to the other side (its pins come from another view), draws nothing until the read lands. A moved pin keeps its
+copper group only when its whole group moved — the rule the drag already used — and pins of one placement that shared
+a group still share one, since that placement's own artwork moved with them. Only the copper groups wait for the read.
+
+**Rats are not selectable anywhere** — `LayoutRenderer.DrawRatsnest` draws them and no hit test reads them, by design
+(an overlay, never artwork, R-L5h-3). "Cannot select a loose rat" was the stale case above.
+
+Gates: `tests/Ui.Tests/Layout/RatsnestRound26Tests.cs` — Cut then Paste fails on the old taken-set rule, and the
+held-back-read test fails on the old overlay.

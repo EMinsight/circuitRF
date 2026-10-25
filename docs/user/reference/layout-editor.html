@@ -612,9 +612,15 @@ rather than stored (see <a href="pcells.html">PCells</a>).</li>
 to Messages and skipped</strong>, not silently omitted.</li>
 <li>Instances are placed in a packed, non-overlapping arrangement, roughly following schematic order.</li>
 <li>A <strong>ratsnest</strong> is shown: thin straight lines between pins that share a net and are not yet joined by
-copper, each net drawn as the shortest set of lines that connects it. It follows a part as you drag
-it, and a net's lines disappear once copper joins its pins. It is drawn over the layout, never into
-it — nothing is selectable, saved or exported. <strong>View ▸ Show Ratsnest</strong> turns it on and off.</li>
+copper, each net drawn as the shortest set of lines that connects it. It follows a part as you drag,
+rotate, mirror or flip it, a deleted part's lines go with it, and a net's lines disappear once copper
+joins its pins. A part keeps its lines through <strong>Cut then Paste</strong>, which is the same part placed
+again, and through a Copy pasted after the original was deleted. A <strong>Copy pasted while the original
+is still placed</strong> is a second part the schematic does not have: it is given the next free designator,
+has no lines, and Messages says so (&quot;C1 copied as C2 — not in the schematic, so it has no
+rats&quot;); the original keeps its own. Undo puts the lines back with the part. The ratsnest is drawn
+over the layout, never into it — nothing is selectable, saved or exported. <strong>View ▸ Show
+Ratsnest</strong> turns it on and off.</li>
 </ol>
 <div class="callout warn">
 <span class="label">There is no auto-router, and there is not going to be one</span>

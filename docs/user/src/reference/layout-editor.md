@@ -387,9 +387,15 @@ layout:
    to Messages and skipped**, not silently omitted.
 3. Instances are placed in a packed, non-overlapping arrangement, roughly following schematic order.
 4. A **ratsnest** is shown: thin straight lines between pins that share a net and are not yet joined by
-   copper, each net drawn as the shortest set of lines that connects it. It follows a part as you drag
-   it, and a net's lines disappear once copper joins its pins. It is drawn over the layout, never into
-   it &mdash; nothing is selectable, saved or exported. **View ▸ Show Ratsnest** turns it on and off.
+   copper, each net drawn as the shortest set of lines that connects it. It follows a part as you drag,
+   rotate, mirror or flip it, a deleted part's lines go with it, and a net's lines disappear once copper
+   joins its pins. A part keeps its lines through **Cut then Paste**, which is the same part placed
+   again, and through a Copy pasted after the original was deleted. A **Copy pasted while the original
+   is still placed** is a second part the schematic does not have: it is given the next free designator,
+   has no lines, and Messages says so ("C1 copied as C2 &mdash; not in the schematic, so it has no
+   rats"); the original keeps its own. Undo puts the lines back with the part. The ratsnest is drawn
+   over the layout, never into it &mdash; nothing is selectable, saved or exported. **View ▸ Show
+   Ratsnest** turns it on and off.
 
 <div class="callout warn">
 <span class="label">There is no auto-router, and there is not going to be one</span>
