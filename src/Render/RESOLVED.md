@@ -5410,3 +5410,43 @@ Copy Table Data; the tab-text export takes it in `PlotExporter.WriteTabText`.
   it, which moved the plot box, while the axes and curves were still drawn. The cutoff is gone and the legend draws at
   any size, as the axis text does.
 - Gate: `Ui.Tests/DataDisplay/FloatingLegendTests`.
+
+## A plated via's pads speckled through its bore; a copper layer's top edge drew a lit dashed line (2026-10-25)
+
+Three artefacts on a 10-layer board in the 3D editor, two in the default view and one in the realistic view.
+
+- **The pads were carved at the BORE, so every one lay on the barrel.** `Scene3DBores` carved a dielectric at the barrel's
+  outside (2026-10-04) but left metal at the bore, so each pad's hole wall coincided with the tube's inner wall and each
+  outer pad's cap with the tube's end ring — nine layers of coincident faces per via, kept apart only by the via's
+  constant depth bias (−4). Perspective views held; an ORTHOGRAPHIC view at an angle did not (the editor opens
+  orthographic): inner-layer copper speckled through the bore, and the end ring broke up against the bottom copper.
+  Metal is now carved at the barrel's outside too, so the bore shows the plating alone and the rings meet the pads edge
+  to edge. A pad too narrow for the barrel's outside keeps the bore's hole rather than being drawn over it. **A via on the
+  board's edge still speckled at its end ring**: half its circle lies outside the plane, so no hole fitted and the plane
+  was drawn whole over it. A bore that clips a polygon's edge, or one of its holes, is now subtracted from it with
+  Clipper2 (`Scene3DBores.Notched`, in picometres, every original and ring vertex mapped back exactly so the notch meets
+  the tube's own vertices); each wall on one of the primitive's own edges keeps that edge's face. What still
+  coincides — a pad's hole wall on the tube's OUTER wall — is visible only through a translucent dielectric, and no
+  sweep view showed it fighting.
+- **The realistic dashes were the bias itself, not a crack.** Every slab's side wall is one quad with the same endpoints
+  as its neighbour's, so there is no T-junction. A copper layer reaching the board's side is embedded in its slab, and
+  its top face meets the slab's wall along that edge; `Behind`'s polygon offset pushed the wall back by 4 steps plus
+  2 × its slope, and the hidden top face won every pixel centre within that band — lit from above in PBR, so a light
+  dashed line along each copper's top. The default view had the same band, invisible because a conductor's top and side
+  are one flat colour there. The leak scaled exactly with the slope factor (2 → 14,919 px over 15 views, 1 → 7,765,
+  0.5 → 3,885, … 1/32 → 235), and at 0 the coincident copper side faces fought the wall again; 1/128 was already
+  fight-free on Metal. **`BehindSlopeScale` is now 1/16**, 8× that, for rasterisers with coarser sub-pixel precision
+  (Vulkan only guarantees 4 bits). The shadow pass, which took `DepthBias(Behind)`, keeps its 2 as `ShadowSlopeScale`:
+  acne wants the larger factor and nothing leaks there.
+- **Seen first through a build that had not been rebuilt.** A before/after A/B restored the fixed source and rendered
+  with `--no-build`, so a later sweep drew the OLD geometry and looked like a new artefact; every rebuild was clean. An A/B
+  that swaps a source file needs its rebuild in the same step as the swap.
+- **`tools/UiSnapshot --c3d`** came out of this: the editor's own view model on the platform's GPU backend, the stored
+  camera from `.cwsuser`, Export Picture's `CapturePicture` — the owner's exact view, reproducible from a shell. A scratch
+  harness built from the problem directly drew the realistic view in the wrong colours (no per-user appearances), which is
+  why the tool goes through the view model.
+
+Gates: `MetalPrecedenceTests.TheRealisticView_ShowsNoHiddenCopperTop_AlongTheBoardsSide` (the CPU realistic picture, which
+applies the same polygon offset: 318 px came through at slope 2, none at 1/16) and
+`PlatedViaAndPerspectiveTests.APlatedBarrel_IsDrawnAsATube_ThroughAHoleInItsPad` (the pad's hole at the barrel's outside,
+the narrow pad's at the bore, the edge pad's notch).

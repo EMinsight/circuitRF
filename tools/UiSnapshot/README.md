@@ -54,6 +54,29 @@ dotnet run --project tools/UiSnapshot --no-build -- --tuning <file.csch> -o out.
 After every step it prints which control holds the keyboard and each row's value, so what a key did is read
 rather than guessed from pixels. Default size 420x500.
 
+**The 3D editor** draws a `.c3d` on the platform's own GPU backend (Metal, D3D11 or Vulkan — what the application
+picks), through the editor's view model and Export Picture's own `CapturePicture`. No window is opened, so this mode
+starts no Avalonia platform at all:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --c3d <file.c3d> -o out.png [--size WxH] [--realistic] \
+    [--fit] [--ortho|--perspective] [--yaw deg] [--pitch deg] [--distance mm] [--target x,y,z] \
+    [--only a+b] [--hide a+b] [--list]
+```
+
+| Option | Means |
+|---|---|
+| (none) | The camera the workspace's `.cwsuser` stored for this view — the one its owner left it at, projection included. |
+| `--fit` | The editor's opening fit instead of the stored camera. |
+| `--yaw`, `--pitch` | Degrees, as the camera holds them (pitch > 0 is above the target). Applied after the stored camera or the fit. |
+| `--distance` | Millimetres from the target; in orthographic it is also the zoom (half the view's height is distance × tan(0.35)). |
+| `--target x,y,z` | Millimetres, in the scene-local frame `--list` prints. |
+| `--realistic` | The realistic view, once its environment is made. |
+| `--only`, `--hide` | Objects by substring of their name, `+` between several — what unticking them in the tree does. |
+| `--list` | Every object's name, kind and scene-local bounds (mm). Alone, it writes no picture. |
+
+Every run prints the camera it drew from, so a picture can be reproduced and nudged. The default size is 1200x800.
+
 **Input steps run in the order given**, as real pointer and key events through the window, before the final
 capture. Coordinates are window DIPs — take them from a first capture.
 

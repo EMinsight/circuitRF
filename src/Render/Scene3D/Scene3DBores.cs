@@ -6,8 +6,9 @@
 // VIEW ONLY. Nothing here reaches a solver, the document or a picture's geometry beyond the triangles the 3D view draws:
 // the problem keeps its cylinder and its air core, bit for bit. What the view asks for instead is the surface the
 // precedence rule leaves — the barrel as a tube, and a hole the bore's size in each metal polygon it passes right
-// through. Only that case is carved: a vertical air cylinder spanning a conductor's whole height, lying wholly inside it.
-// A bore that stops part-way, clips an edge or overlaps another hole is left to the precedence rule alone, as before.
+// through. Only that case is carved: a vertical air cylinder spanning a conductor's whole height. One lying wholly inside
+// the polygon is a hole; one that clips its edge (a via on the board's edge) or overlaps a hole of its own is cut out as a
+// notch (2026-10-25). A bore that stops part-way is left to the precedence rule alone, as before.
 //
 // A DIELECTRIC is carved the same way (2026-09-30): a non-plated hole is an air cylinder with no barrel around it, so an
 // uncarved substrate showed no hole at all. A PLATED via's bore carves it too (2026-10-04, owner report): 2026-09-30 left
@@ -17,7 +18,14 @@
 // would be one surface drawn twice, in two colours. Cost: one more ring per via in the slab's caps, which the
 // triangulator's z-order index keeps from going quadratic. A box-shaped slab (no board outline) is carved as its
 // rectangle extruded, its faces given back the box's own.
+//
+// The PADS a plated barrel passes through are carved at its outside too (2026-10-25, owner report): at the bore, each pad's
+// hole wall lay on the tube's inner wall and its caps on the tube's end rings, nine layers of coincident faces per via kept
+// apart only by the via's constant depth bias — which an orthographic view at an angle defeats, so the pads speckled through
+// the bore and round its end rings. At the barrel's outside the bore shows the plating alone and the rings meet the pads
+// edge to edge. A bare hole through metal (no barrel) is still carved at the bore.
 
+using Clipper2Lib;
 using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Render.Scene3D;
@@ -28,14 +36,21 @@ internal sealed class Scene3DBores
     /// <summary>Metres: geometry closer than this is the same place (the generator writes both from one number).</summary>
     private const double Tol = 1e-9;
 
-    /// <param name="Outer">The radius a DIELECTRIC is carved at: the barrel's outside when the bore is a plated via's, else
+    /// <param name="Outer">The radius a polygon is carved at: the barrel's outside when the bore is a plated via's, else
     /// <paramref name="R"/> — a bare hole.</param>
     private readonly record struct Bore(double X, double Y, double R, double Z0, double Z1, int Priority, double Outer);
 
     private readonly Bore[] _bores;   // by X
     private readonly Em3dPrecedence _precedence;
+    /// <summary>The largest radius a polygon is carved at: how far outside its own x-range a bore's centre can lie and still cut it.</summary>
+    private readonly double _reach;
 
-    private Scene3DBores(Bore[] bores, Em3dPrecedence precedence) { _bores = bores; _precedence = precedence; }
+    private Scene3DBores(Bore[] bores, Em3dPrecedence precedence)
+    {
+        _bores = bores;
+        _precedence = precedence;
+        _reach = bores.Max(b => b.Outer);
+    }
 
     /// <summary>The problem's bores, or null when it has none (the ordinary problem, which then costs nothing).</summary>
     public static Scene3DBores? Of(Em3dProblem problem)
@@ -106,28 +121,30 @@ internal sealed class Scene3DBores
     {
         double minX = double.MaxValue, maxX = double.MinValue;
         foreach (var p in e.Outline) { minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X); }
-        List<Bore>? taken = null;
-        bool dielectric = s.Role == Em3dRole.Dielectric;
-        foreach (var bore in Near(minX, maxX))
+        List<Bore>? taken = null, crossing = null;
+        foreach (var bore in Near(minX - _reach, maxX + _reach))
         {
-            // A dielectric is carved at the barrel's outside; metal at the bore.
-            var b = dielectric ? bore with { R = bore.Outer } : bore;
-            if (b.Priority <= priority || !Spans(b, e.ZBottom, e.ZTop)) continue;
-            var centre = new Point2(b.X, b.Y);
-            if (!Inside(e.Outline, centre) || Clearance(e.Outline, centre) < b.R - Tol) continue;
-            if (e.Holes.Any(h => Inside(h, centre) || Clearance(h, centre) < b.R - Tol)) continue;
-            if (taken?.Any(o => Math.Sqrt((o.X - b.X) * (o.X - b.X) + (o.Y - b.Y) * (o.Y - b.Y)) < o.R + b.R) == true) continue;
-            (taken ??= []).Add(b);
+            // Carved at the barrel's outside, metal and dielectric alike: at the bore, a pad's hole wall would be the tube's inner
+            // wall drawn a second time and its cap would lie on the tube's end ring, two coincident faces apart only by a depth bias.
+            // A pad too narrow for the barrel's outside is still carved at the bore, as it was, rather than drawn over it.
+            if (bore.Priority <= priority || !Spans(bore, e.ZBottom, e.ZTop)) continue;
+            var centre = new Point2(bore.X, bore.Y);
+            var b = Fits(e, centre, bore.Outer) ? bore with { R = bore.Outer } : bore;
+            if (Fits(e, centre, b.R) && taken?.Any(o => Math.Sqrt((o.X - b.X) * (o.X - b.X) + (o.Y - b.Y) * (o.Y - b.Y)) < o.R + b.R) != true)
+                (taken ??= []).Add(b);
+            // A bore across the polygon's edge (a via on the board's edge) or into one of its holes is cut out of it as a notch.
+            else if (Touches(e, centre, bore.Outer)) (crossing ??= []).Add(bore with { R = bore.Outer });
         }
-        if (taken is null) return null;
+        if (taken is null && crossing is null) return null;
+        if (crossing is not null) return Notched(s, e, [.. taken ?? [], .. crossing], face);
 
         var holes = new List<IReadOnlyList<Point2>>(e.Holes);
-        holes.AddRange(taken.Select(b => Ring(b)));
+        holes.AddRange(taken!.Select(b => Ring(b)));
         var drawn = e with { Holes = holes };
         int ownEdges = e.Outline.Count + e.Holes.Sum(h => h.Count);
         string solidName = s.Name;
         var key = new BoredKey(e, face is not null,
-                               string.Join(";", taken.Select(b => FormattableString.Invariant($"{b.X:R},{b.Y:R},{b.R:R}"))));
+                               string.Join(";", taken!.Select(b => FormattableString.Invariant($"{b.X:R},{b.Y:R},{b.R:R}"))));
         return (key, () =>
         {
             var mesh = Em3dTessellation.Of(new Em3dSolid(solidName, s.Material, s.Role, drawn, s.Order));
@@ -138,6 +155,112 @@ internal sealed class Scene3DBores
                                              : face is not null && t.Face >= 0 ? t with { Face = face(t.Face) } : t)]);
         });
     }
+
+    /// <summary>
+    /// The polygon with every bore's circle subtracted (Clipper2, in picometres), when one crosses its edge or a hole of its own —
+    /// what a hole cannot be. The pieces are extruded one by one; a vertex that was the polygon's or a bore ring's comes back
+    /// exactly, so a notch still meets the tube's own vertices. Each wall lying on one of the primitive's own edges keeps that
+    /// edge's face, as a hole's carving does; a bore's arc is no face.
+    /// </summary>
+    private static (object Key, Func<Em3dTriangleMesh> Make) Notched(Em3dSolid s, Em3dExtrudedPolygon e, List<Bore> bores, Func<int, int>? face)
+    {
+        var key = new BoredKey(e, face is not null,
+                               "cut;" + string.Join(";", bores.Select(b => FormattableString.Invariant($"{b.X:R},{b.Y:R},{b.R:R}"))));
+        return (key, () =>
+        {
+            const double Scale = 1e12;
+            var exact = new Dictionary<Point64, Point2>();
+            Path64 Path(IReadOnlyList<Point2> ring, bool positive)
+            {
+                var path = new Path64(ring.Count);
+                foreach (var q in ring)
+                {
+                    var at = new Point64(Math.Round(q.X * Scale), Math.Round(q.Y * Scale));
+                    exact.TryAdd(at, q);
+                    path.Add(at);
+                }
+                if (Clipper.IsPositive(path) != positive) path.Reverse();
+                return path;
+            }
+            var clipper = new Clipper64 { PreserveCollinear = true };
+            clipper.AddSubject(Path(e.Outline, positive: true));
+            foreach (var h in e.Holes) clipper.AddSubject(Path(h, positive: false));
+            foreach (var b in bores) clipper.AddClip(Path(Ring(b), positive: true));
+            var tree = new PolyTree64();
+            clipper.Execute(ClipType.Difference, FillRule.NonZero, tree);
+
+            List<Point2> Back(Path64 path) => [.. path.Select(q => exact.TryGetValue(q, out var p) ? p : new Point2(q.X / Scale, q.Y / Scale))];
+            var pieces = new List<Em3dExtrudedPolygon>();
+            void Walk(PolyPath64 node)
+            {
+                for (int i = 0; i < node.Count; i++)
+                {
+                    var outer = (PolyPath64)node[i];
+                    var holes = new List<IReadOnlyList<Point2>>();
+                    for (int j = 0; j < outer.Count; j++)
+                    {
+                        var hole = (PolyPath64)outer[j];
+                        holes.Add(Back(hole.Polygon!));
+                        Walk(hole);
+                    }
+                    pieces.Add(e with { Outline = Back(outer.Polygon!), Holes = holes });
+                }
+            }
+            Walk(tree);
+
+            IReadOnlyList<Point2>[] own = [e.Outline, .. e.Holes];
+            int OwnFace(Point2 a, Point2 b)
+            {
+                int start = 0;
+                foreach (var ring in own)
+                {
+                    for (int i = 0; i < ring.Count; i++)
+                        if (OnSegment(a, ring[i], ring[(i + 1) % ring.Count]) && OnSegment(b, ring[i], ring[(i + 1) % ring.Count])) return 2 + start + i;
+                    start += ring.Count;
+                }
+                return -1;
+            }
+            var vertices = new List<Point3>();
+            var triangles = new List<Em3dTriangle>();
+            foreach (var piece in pieces)
+            {
+                var mesh = Em3dTessellation.Of(new Em3dSolid(s.Name, s.Material, s.Role, piece, s.Order));
+                var edges = new List<(Point2 A, Point2 B)>();
+                foreach (var ring in (IReadOnlyList<Point2>[])[piece.Outline, .. piece.Holes])
+                    for (int i = 0; i < ring.Count; i++) edges.Add((ring[i], ring[(i + 1) % ring.Count]));
+                var walls = new Dictionary<int, int>();
+                int at = vertices.Count;
+                vertices.AddRange(mesh.Vertices);
+                foreach (var t in mesh.Triangles)
+                {
+                    int f = t.Face;
+                    if (f >= 2 && !walls.TryGetValue(f, out f)) walls[t.Face] = f = OwnFace(edges[t.Face - 2].A, edges[t.Face - 2].B);
+                    if (face is not null && f >= 0) f = face(f);
+                    triangles.Add(t with { A = t.A + at, B = t.B + at, C = t.C + at, Face = f });
+                }
+            }
+            return new Em3dTriangleMesh(vertices, triangles);
+        });
+    }
+
+    /// <summary>Whether a disc of radius <paramref name="r"/> at <paramref name="centre"/> overlaps the polygon's area at all.</summary>
+    private static bool Touches(Em3dExtrudedPolygon e, Point2 centre, double r)
+        => (Inside(e.Outline, centre) || Clearance(e.Outline, centre) < r - Tol)
+        && !e.Holes.Any(h => Inside(h, centre) && Clearance(h, centre) >= r - Tol);
+
+    private static bool OnSegment(Point2 p, Point2 a, Point2 b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y, len2 = dx * dx + dy * dy;
+        double t = len2 > 0 ? Math.Clamp(((p.X - a.X) * dx + (p.Y - a.Y) * dy) / len2, 0, 1) : 0;
+        double ex = a.X + t * dx - p.X, ey = a.Y + t * dy - p.Y;
+        return ex * ex + ey * ey <= Tol * Tol;
+    }
+
+    /// <summary>Whether a hole of radius <paramref name="r"/> at <paramref name="centre"/> lies wholly inside the polygon's outline
+    /// and clear of its own holes.</summary>
+    private static bool Fits(Em3dExtrudedPolygon e, Point2 centre, double r)
+        => Inside(e.Outline, centre) && Clearance(e.Outline, centre) >= r - Tol
+        && !e.Holes.Any(h => Inside(h, centre) || Clearance(h, centre) < r - Tol);
 
     private sealed record TubeKey(Em3dCylinder Cylinder, double Bore);
 

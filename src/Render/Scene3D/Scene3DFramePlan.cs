@@ -306,8 +306,12 @@ public sealed class Scene3DFramePlan
     /// <summary>3D editor round 3 — the depth bias a <see cref="Scene3DDraw.Behind"/> draw takes: a constant, in the depth
     /// format's smallest resolvable steps, and a slope factor — a polygon offset pushing the dielectric AWAY from the eye, so a
     /// coincident metal face passes LessEqual and the dielectric's does not. Small enough that a dielectric genuinely in
-    /// front of a metal (a passivation over a trace) still covers it at any zoom the depth range allows.</summary>
-    public const float BehindDepthBias = 4, BehindSlopeScale = 2;
+    /// front of a metal (a passivation over a trace) still covers it at any zoom the depth range allows.
+    /// <para>The slope factor is also how far the metal's OWN hidden faces come through at an edge: a copper layer reaching the
+    /// board's side is embedded in its slab, and its top face, meeting the slab's wall along that edge, wins every pixel within
+    /// the bias of the wall — a lit line along each copper's top in the realistic view. At 2 that line was continuous; 1/16
+    /// leaves a few dots, and a coincident wall needed only 1/128 on Metal (0 fights), so it keeps 8× for coarser rasterisers.</para></summary>
+    public const float BehindDepthBias = 4, BehindSlopeScale = 1f / 16;
 
     /// <summary>The same bias as the CPU picks apply it (Scene3DPicking, Scene3DIdPatch): added to a Behind object's NDC
     /// depth (and, relative, to its ray distance) — a few float steps at depth 1, so exactly coincident faces resolve to
@@ -865,8 +869,12 @@ public sealed class Scene3DFramePlan
     public ShadowWindow ShadowWindow { get; private set; }
 
     /// <summary>R-em3d107-1c — the polygon offset the shadow pass draws with: the existing helper's push AWAY from the eye — here, from the
-    /// light — so a lit face never shadows itself. The receiver-plane slope in fs_pbr handles the filter's wider reach.</summary>
-    public static (float Constant, float Slope, float Clamp) ShadowBias => DepthBias(Scene3DDepthTie.Behind);
+    /// light — so a lit face never shadows itself. The receiver-plane slope in fs_pbr handles the filter's wider reach. Its own
+    /// slope factor: acne wants the larger one, and <see cref="BehindSlopeScale"/> was made small for what it leaks at an edge.</summary>
+    public static (float Constant, float Slope, float Clamp) ShadowBias => (BehindDepthBias, ShadowSlopeScale, 0);
+
+    /// <summary>The shadow pass's slope factor (<see cref="ShadowBias"/>).</summary>
+    public const float ShadowSlopeScale = 2;
 
     private bool[] _caster = [];
 

@@ -36,6 +36,9 @@ using CircuitRF.Ui.Views.Tuning;
 // window; --tab 1 shows the second preview tab (EVM, Pulse or Frequency). --standalone opens it as Tools ▸ Signal
 // Designer does, on no MOD_Source; --iq then reads an I/Q file through Load custom.
 
+// --c3d is the 3D editor's picture: no Avalonia window, so it branches off before the headless platform starts (Snapshot3D.cs).
+if (args.Contains("--c3d")) return Snapshot3D.Run(args);
+
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null;
 bool standalone = false;
 var signal = new List<string>();

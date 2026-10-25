@@ -32,7 +32,7 @@ public sealed class PlatedViaAndPerspectiveTests
                                new Em3dFrequency(1e9, 10e9, 10, Em3dSweepKind.Linear), 20);
     }
 
-    /// <summary>The barrel is drawn as a tube and the pad with a hole the bore's size; a problem with no bore costs nothing.</summary>
+    /// <summary>The barrel is drawn as a tube and the pad with a hole the barrel's size; a problem with no bore costs nothing.</summary>
     [Fact]
     public void APlatedBarrel_IsDrawnAsATube_ThroughAHoleInItsPad()
     {
@@ -46,6 +46,25 @@ public sealed class PlatedViaAndPerspectiveTests
         // Nothing of the pad's top covers the bore's centre; its own faces keep their numbers, the bore wall is no face.
         Assert.DoesNotContain(pad.Triangles.Where(t => t.Face == 1), t => Covers(pad, t, 0, 0));
         Assert.Contains(pad.Triangles, t => t.Face == -1);
+        // The hole is the BARREL'S outside (0.15 mm), which the tube fills: at the bore's 0.125 mm the pad's hole wall lay on the
+        // tube's inner wall and its top on the tube's end ring, and the two speckled at an angle (owner report, 2026-10-25).
+        Assert.Contains(pad.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + v.Y * v.Y) - 0.15 * Mm) < 1e-12);
+        Assert.DoesNotContain(pad.Vertices, v => Math.Sqrt(v.X * v.X + v.Y * v.Y) < 0.149 * Mm);
+        // A pad too narrow for the barrel's outside keeps the bore's hole rather than being drawn over it.
+        Point2[] narrow = [new(-0.14 * Mm, -0.14 * Mm), new(0.14 * Mm, -0.14 * Mm), new(0.14 * Mm, 0.14 * Mm), new(-0.14 * Mm, 0.14 * Mm)];
+        var small = problem.Solids[0] with { Primitive = new Em3dExtrudedPolygon(narrow, [], 0.5 * Mm, 0.535 * Mm) };
+        var smallPad = Scene3DBores.Of(problem with { Solids = [small, .. problem.Solids.Skip(1)] })!.Carved(small)!.Value.Make();
+        Assert.Contains(smallPad.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + v.Y * v.Y) - 0.125 * Mm) < 1e-12);
+        // A via on the board's edge: the pad's edge runs through the bore's centre, so no hole fits and the barrel's circle is
+        // cut out of the pad as a notch — its top no longer lies on the tube's end ring (owner report, 2026-10-25).
+        Point2[] edge = [new(-1 * Mm, -1 * Mm), new(1 * Mm, -1 * Mm), new(1 * Mm, 0), new(-1 * Mm, 0)];
+        var half = problem.Solids[0] with { Primitive = new Em3dExtrudedPolygon(edge, [], 0.5 * Mm, 0.535 * Mm) };
+        var notched = Scene3DBores.Of(problem with { Solids = [half, .. problem.Solids.Skip(1)] })!.Carved(half)!.Value.Make();
+        Assert.DoesNotContain(notched.Triangles.Where(t => t.Face == 1), t => Covers(notched, t, 0, -0.14 * Mm));
+        Assert.Contains(notched.Triangles.Where(t => t.Face == 1), t => Covers(notched, t, 0, -0.16 * Mm));
+        Assert.Contains(notched.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + v.Y * v.Y) - 0.15 * Mm) < 1e-12);
+        // Its own four edges keep their faces (2…5), the notch's arc is no face.
+        Assert.Equal([-1, 0, 1, 2, 3, 4, 5], notched.Triangles.Select(t => t.Face).Distinct().Order());
         // The barrel has vertices on the bore's radius, and its top is an annulus that does not reach the axis.
         Assert.Contains(tube.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + v.Y * v.Y) - 0.125 * Mm) < 1e-12);
         Assert.DoesNotContain(tube.Vertices, v => Math.Sqrt(v.X * v.X + v.Y * v.Y) < 0.1 * Mm);
