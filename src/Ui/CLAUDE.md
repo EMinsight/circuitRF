@@ -25,6 +25,10 @@ view, Data Display, dialogs, theming — the whole Avalonia application). Read w
 > `HISTORY.md`, not here. This file should only ever gain durable, still-true content: an invariant, a
 > current default, a refusal, a trap with a name — never a phase-by-phase write-up.
 
+**To look at a view without the GUI** (it cannot start from a shell): `tools/UiSnapshot` hosts the real
+Avalonia views headlessly and writes a PNG — a `.cdd`'s canvas, a plot's trace cards or the whole display, after
+scripted clicks, drags and keys. See its `README.md`.
+
 **macOS `NativeMenu` invariant:** a window's `NativeMenu` instance is fixed for its lifetime — change
 its `Items`, never the instance (`NativeMenu.SetMenu` a second time on the same window throws, and can
 crash on a later dispatcher-queued reset even when the throw itself is swallowed). See

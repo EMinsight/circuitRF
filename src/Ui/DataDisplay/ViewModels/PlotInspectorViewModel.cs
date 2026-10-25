@@ -465,7 +465,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     // The three segments of the legend button group on the Freq row — one active at a time.
     public bool IsLegendOff    => _plot.Legend == LegendPlacement.Off;
-    public bool IsLegendInside => _plot.Legend == LegendPlacement.Inside;
+    /// <summary>"Legend On": in the plot box's corner, or dragged out of the plot onto the display — one segment for
+    /// both, since a moved legend is the same legend somewhere else.</summary>
+    public bool IsLegendOn     => _plot.Legend is LegendPlacement.Inside or LegendPlacement.Floating;
     public bool IsLegendBelow  => _plot.Legend == LegendPlacement.Below;
 
     /// <summary>Where the legend is drawn — <see cref="Plot.Legend"/>, off by default. A structure change
@@ -479,7 +481,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
             _plot.Legend = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsLegendOff));
-            OnPropertyChanged(nameof(IsLegendInside));
+            OnPropertyChanged(nameof(IsLegendOn));
             OnPropertyChanged(nameof(IsLegendBelow));
             PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
             PlotStructureChanged?.Invoke(this, EventArgs.Empty);
@@ -575,6 +577,20 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// <summary>Asks the host to redraw. For a card setting that changes what is DRAWN without
     /// changing what any trace resolves to.</summary>
     internal void RequestRedraw() => PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>Set by the owning container: records a card edit on the display's undo stack.</summary>
+    internal Action<IUndoableCommand>? PushUndo { get; set; }
+
+    /// <summary>Set by the owning container: rebuilds its marker boxes, whose text is laid out once.</summary>
+    internal Action? MarkerBoxesStale { get; set; }
+
+    /// <summary>A trace's label changed (DFR27-3): the legend, axis titles and label strips redraw, and the
+    /// marker boxes are rebuilt because each names its trace.</summary>
+    internal void OnTraceLabelChanged()
+    {
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        MarkerBoxesStale?.Invoke();
+    }
 
     private void ApplyRadialChange()
     {
@@ -1007,7 +1023,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public IRelayCommand SetPlotTypeSurfaceCommand { get; }
 
     public IRelayCommand SetLegendOffCommand    { get; }
-    public IRelayCommand SetLegendInsideCommand { get; }
+    public IRelayCommand SetLegendOnCommand     { get; }
     public IRelayCommand SetLegendBelowCommand  { get; }
 
     /// <summary>True when the selected data source is a loadpull result eligible for contour authoring.</summary>
@@ -1060,7 +1076,12 @@ public partial class PlotInspectorViewModel : ViewModelBase
         SetPlotTypeSurfaceCommand = Gesture.Command("plotType=Surface3D", () => PlotType = PlotType.Surface3D);
 
         SetLegendOffCommand    = Gesture.Command("legend=Off",    () => Legend = LegendPlacement.Off);
-        SetLegendInsideCommand = Gesture.Command("legend=Inside", () => Legend = LegendPlacement.Inside);
+        // On leaves a legend that is already on where it is — in the corner or wherever it was dragged — and turns any
+        // other one on in the corner.
+        SetLegendOnCommand     = Gesture.Command("legend=On", () =>
+        {
+            if (!IsLegendOn) Legend = LegendPlacement.Inside;
+        });
         SetLegendBelowCommand  = Gesture.Command("legend=Below",  () => Legend = LegendPlacement.Below);
 
         SurfaceViewIsoCommand       = Gesture.Command("surfaceView=iso",       () => SetSurfaceView(SurfaceStandardView.Isometric));

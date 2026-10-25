@@ -122,6 +122,52 @@ internal sealed class RemoveMarkerCommand : IUndoableCommand
     public void Undo()    => _display.InternalAddMarker(_marker, _trace, _container);
 }
 
+// ---- Legend placement -------------------------------------------------
+
+/// <summary>A plot's legend moved between placements — lifted out of the plot as a floating box, or turned off by Delete
+/// — together with the floating position it had or takes. The placement goes through the inspector, so the plot, its
+/// strips and its legend box are rebuilt exactly as a click on the legend buttons rebuilds them.</summary>
+internal sealed class SetLegendCommand : IUndoableCommand
+{
+    private readonly PlotContainerViewModel _c;
+    private readonly LegendPlacement _old, _new;
+    private readonly PlotPoint _oldPos, _newPos;
+
+    public SetLegendCommand(PlotContainerViewModel c, LegendPlacement oldPlacement, PlotPoint oldPos,
+                            LegendPlacement newPlacement, PlotPoint newPos)
+    {
+        _c = c; _old = oldPlacement; _oldPos = oldPos; _new = newPlacement; _newPos = newPos;
+    }
+
+    public void Execute() => Apply(_new, _newPos);
+    public void Undo()    => Apply(_old, _oldPos);
+
+    private void Apply(LegendPlacement placement, PlotPoint pos)
+    {
+        _c.IsLegendSelected = false;
+        _c.PlotVM.Plot.LegendPos = pos;
+        _c.Inspector.Legend = placement;
+        _c.RebuildLegendBox();
+    }
+}
+
+// ---- Trace label (DFR27-3) -------------------------------------------
+
+/// <summary>A trace card's Label box committed: one step whichever way it went — set, changed or cleared.</summary>
+internal sealed class SetTraceLabelCommand : IUndoableCommand
+{
+    private readonly TraceRowViewModel _row;
+    private readonly string? _old, _new;
+
+    public SetTraceLabelCommand(TraceRowViewModel row, string? oldLabel, string? newLabel)
+    {
+        _row = row; _old = oldLabel; _new = newLabel;
+    }
+
+    public void Execute() => _row.ApplyTraceLabel(_new);
+    public void Undo()    => _row.ApplyTraceLabel(_old);
+}
+
 // ---- Move plots / InfoBoxes ------------------------------------------
 
 /// <summary>
@@ -136,7 +182,7 @@ internal readonly record struct PlotMoveSnapshot(
 /// Snapshot of a single marker info-box position before and after a drag.
 /// </summary>
 internal readonly record struct InfoBoxMoveSnapshot(
-    MarkerInfoBoxViewModel Vm,
+    CanvasBoxViewModel Vm,
     double StartLogLeft, double StartLogTop,
     double EndLogLeft,   double EndLogTop);
 

@@ -72,6 +72,34 @@ public partial class PlotContainerViewModel : ViewModelBase
 
     [ObservableProperty] private bool _isSelected;
 
+    /// <summary>This plot's DOCKED legend (Inside or Below) is selected — outlined in the plot, and turned off by Delete.
+    /// A floating legend's selection is its <see cref="LegendBoxViewModel"/>'s.</summary>
+    [ObservableProperty] private bool _isLegendSelected;
+
+    partial void OnIsLegendSelectedChanged(bool value) => RequestPlotRedraw();
+
+    /// <summary>Asks the display to give this plot the legend box its placement calls for.</summary>
+    public void RebuildLegendBox() => _parent.RebuildLegendBoxForContainer(this);
+
+    // ---- The docked legend's gestures, from the PlotControl ----------
+
+    /// <summary>A point on this plot's canvas (PlotControl pixels) in Data Display logical coordinates.</summary>
+    public (double X, double Y) CanvasToLogical(double px, double py)
+    {
+        double z = _parent.ZoomLevel > 0 ? _parent.ZoomLevel : 1.0;
+        return (Left + px / z, Top - TopLabelExtraLogical + py / z);
+    }
+
+    /// <summary>A press on the docked legend selects it, on its own.</summary>
+    public void SelectDockedLegend() => _parent.SelectDockedLegend(this);
+
+    /// <summary>The press became a drag: the legend leaves the plot as a floating box whose top-left is at
+    /// (<paramref name="left"/>, <paramref name="top"/>), dragged from the press's window point.</summary>
+    public void LiftLegend(double left, double top, Point pressWindowPt) => _parent.LiftLegend(this, left, top, pressWindowPt);
+
+    public void UpdateBoxDrag(Point windowPt) => _parent.UpdateInfoBoxGroupDrag(windowPt);
+    public void EndBoxDrag()                  => _parent.EndInfoBoxGroupDrag();
+
     // ---- Theme / library (propagated from DataDisplayViewModel) -----
 
     [ObservableProperty] private RenderTheme             _theme   = RenderTheme.Light;
@@ -195,9 +223,11 @@ public partial class PlotContainerViewModel : ViewModelBase
         OnPropertyChanged(nameof(ViewTop));          // TopLabelExtraLogical depends on Width
         OnPropertyChanged(nameof(LabelStripMargin)); // both extras depend on Width
         NotifyStripTransforms();
+        _parent?.RefreshLegendBox(this);             // a floating legend reads at its plot's size
     }
     partial void OnHeightChanged(double value)
     {
+        _parent?.RefreshLegendBox(this);
         OnPropertyChanged(nameof(ViewHeight));
         // StripLogicalWidth depends on Height, so all strip-derived properties change too.
         OnPropertyChanged(nameof(ViewTotalWidth));
@@ -250,6 +280,8 @@ public partial class PlotContainerViewModel : ViewModelBase
         _parent   = parent;
         // A trace card's Statistics ▸ Contributions adds a Pareto plot beside this one (brief-yield-9 R-ya9-5).
         Inspector.AddPresetPlot = pc => parent.AddPresetPlotAsync(pc);
+        Inspector.PushUndo         = PushUndoCommand;
+        Inspector.MarkerBoxesStale = RequestInfoBoxRebuild;
 
         UpdateLabelStrips();
         SyncTableWidth();    // size the box correctly if this container starts as a Table plot
@@ -264,6 +296,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         {
             PlotNeedsRedraw?.Invoke(this, e);
             RefreshStripAutoLabels();
+            _parent.RefreshLegendBox(this);
             foreach (var st in LeftLabelStrips)  st.AppearanceRevision++;
             foreach (var st in RightLabelStrips) st.AppearanceRevision++;
         };
@@ -271,6 +304,7 @@ public partial class PlotContainerViewModel : ViewModelBase
         {
             CoerceAspectForPlotType();
             UpdateLabelStrips();
+            _parent.RebuildLegendBoxForContainer(this);
             EnsureInfoBoxesShownForTable();
             OnPropertyChanged(nameof(IsSquareAspect));
             NotifyViewProperties();
@@ -766,6 +800,9 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// </summary>
     public IReadOnlyList<MarkerInfoBoxViewModel> GetMarkerInfoBoxes() =>
         _parent.MarkerInfoBoxes.Where(m => m.Container == this).ToList();
+
+    /// <summary>This plot's floating legend box, or null — for PlotExporter, which draws it as it draws the info boxes.</summary>
+    public LegendBoxViewModel? GetLegendBox() => _parent.LegendBoxes.FirstOrDefault(b => b.Container == this);
 
     /// <summary>
     /// Returns the markers belonging to this container whose InfoBoxes are selected.

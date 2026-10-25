@@ -2522,3 +2522,36 @@ skipped by the sentinel re-point, is never stale, and `TraceResolve.ResolveCubeT
 from the values it holds instead of looking it up (the treatment `IsAnnotation` traces already got,
 without also removing them from markers). Test
 `SmithOverlayTests.SelectingADataSource_DoesNotRedrawTheNetworksOwnCurves`.
+
+## A cube-bound S trace on the default group read S(1,1) in its picker (2026-10-25)
+
+The default group's `S` is offered only as the network items (`RebuildSignals` skips it as a cube item, and
+`AddNetworkParamElementItems` serves named groups only), so a cube-bound trace on it matched no cube candidate and
+fell through to `AvailableSignals.FirstOrDefault()`: every such card read **S(1,1)** whatever it drew. Such traces
+come from `circuitrf plot` over a `circuitrf sparam -o` result, and from typing `dB20(S[:, 2, 1])` on a simulated
+source. The rebuild guard kept the trace's data intact, so only the picker was wrong, but a later pick from it would
+have used that wrong element. Fix: with no cube match, `DefaultGroupPortPosition` turns the trace's `i`/`j` pins
+(number − 1, DFR27-2) into positions on the cube's own axes, and the network item at that Row/Col is the match. Gate:
+`NetworkParamElementPickerTests.DefaultGroupSCubeTrace_SelectsItsOwnPortPair`.
+
+## Floating legends share the info box's machinery (2026-10-25)
+
+A dragged legend is a canvas box like a marker info box, so the info box's position, size, zoom, drag and selection
+moved into `CanvasBoxViewModel`, which both `MarkerInfoBoxViewModel` and `LegendBoxViewModel` derive from.
+`DataDisplayViewModel.Boxes` is both lists, and every selection, rectangle-select, group-drag and move-undo path
+iterates it. Do not add a third box kind with its own copies of those loops.
+
+- A DOCKED legend (Inside/Below) has no box: its selection is `PlotContainerViewModel.IsLegendSelected`, outlined by
+  `PlotControl`'s draw op from `LegendRenderer.DockedBounds`. Every path that clears selection clears it too.
+- The lift is one undo step: `LiftLegend` records the placement it came from, and `EndInfoBoxGroupDrag` pushes one
+  `SetLegendCommand` (docked → Floating at the drop point) instead of a move. Delete pushes a `SetLegendCommand` to
+  Off. Both go through `Inspector.Legend`, so the plot, its strips and its box rebuild as the legend buttons rebuild
+  them.
+- **The second legend button is "Legend On", lit for Inside AND Floating.** Lit for Inside alone, it went dark when
+  the legend was dragged, leaving no button lit; owner decision: keep three buttons, no fourth for Floating.
+  `IsLegendOn` is raised by the same `Legend` setter the lift and the undo commands go through, so it follows a drag.
+  Pressing On while the legend is on (in the corner or moved) changes nothing; from Off or Below it puts it Inside.
+- `Back` is bound beside `Delete`, because the Mac delete key sends `Back`. A focused text box handles `Back` itself,
+  so editing in the inspector deletes characters, not the selected plot (checked headlessly with `tools/UiSnapshot`).
+- Deleting a box that holds keyboard focus leaves focus outside `DataDisplayView`, so its `Meta+Z` binding does not
+  fire. This was already true of a deleted info box; the shell's undo serves Cmd+Z there.

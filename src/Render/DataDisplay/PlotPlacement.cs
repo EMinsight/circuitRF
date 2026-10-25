@@ -59,6 +59,20 @@ public static class PlotPlacement
             boxes.Add(new PlacedMarkerBox(m, t, freqUnit, bx, by, w, h, plot.Traces));
         }
 
+        // A floating legend sits where it was put, in the same logical space as the info boxes; one nobody placed goes
+        // where the Inside box would be (LegendRenderer.DefaultFloatingPosition, the window's rule too).
+        PlacedLegend? legend = null;
+        if (LegendRenderer.Floats(plot))
+        {
+            double canvasH = height + topX + botX;
+            double lw      = LegendRenderer.LineWidthFor(width, canvasH);
+            var    pos     = double.IsNaN(plot.LegendPos.X) || double.IsNaN(plot.LegendPos.Y)
+                ? LegendRenderer.DefaultFloatingPosition(plot, width, canvasH, left, top - topX, aliasFor, hasMultipleSources)
+                : plot.LegendPos;
+            var (w, h) = LegendRenderer.MeasureFloating(plot, lw, aliasFor, hasMultipleSources);
+            legend = new PlacedLegend(pos.X, pos.Y, w, h, lw);
+        }
+
         return new PlacedPlot
         {
             Plot                = plot,
@@ -71,6 +85,7 @@ public static class PlotPlacement
             LeftLabelStrips     = leftStrips,
             RightLabelStrips    = rightStrips,
             MarkerBoxes         = boxes,
+            Legend              = legend,
             ShowFilePrefix      = hasMultipleSources,
             AlwaysShowSource    = hasMultipleSources,
             AliasFor            = aliasFor,

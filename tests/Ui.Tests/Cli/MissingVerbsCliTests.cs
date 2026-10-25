@@ -332,6 +332,26 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
             trace.CubeSlice.Select(s => (s.AxisName, s.Role, s.Index)).ToArray());
     }
 
+    /// <summary>
+    /// <c>label=</c> names the trace (DFR27-3) and <c>--write-cdd</c> writes it, so the CLI and the GUI author the same
+    /// document. Quoted, a label may hold a comma; the quotes are the spelling, not the name.
+    /// </summary>
+    [Fact]
+    public void ALabel_IsWrittenToTheCdd_CommaAndAll()
+    {
+        string dir = Dir("label");
+        string cdd = Path.Combine(dir, "one.cdd");
+
+        Assert.Equal(0, RunCli("plot", Sparam(dir), "-o", Path.Combine(dir, "p.svg"), "--write-cdd", cdd,
+                               "--trace", "cube=S,i=2,j=1,y=db20,label=\"As built, rev B\"",
+                               "--trace", "cube=S,i=1,j=1,y=db20").ExitCode);
+
+        var traces = JsonSerializer.Deserialize<DataDisplayConfig>(
+            File.ReadAllText(cdd), DataDisplayJson.Options)!.Tabs[0].Plots[0].Traces;
+        Assert.Equal("As built, rev B", traces[0].Label);
+        Assert.Null(traces[1].Label);
+    }
+
     /// <summary>An empty plot is a valid picture that exports cleanly and looks exactly like a
     /// measurement that came back empty (R-rnd4-4). A plot with no trace is that picture, and it is
     /// refused rather than drawn.</summary>

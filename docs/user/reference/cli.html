@@ -3325,6 +3325,10 @@ own folder, which is right for <code>circuitrf netlist filter.cnl --to-schematic
 <td><code>left</code> (the default) or <code>right</code>.</td>
 </tr>
 <tr>
+<td><code>label</code></td>
+<td>The trace's own name, quoted when it holds a comma: <code>label=&quot;As built, rev B&quot;</code>. It replaces the generated name in the legend, the axis title and the marker box, exactly as the trace card's Label box does, and <code>--write-cdd</code> writes it.</td>
+</tr>
+<tr>
 <td><code>cut</code></td>
 <td>An antenna pattern cut: a bearing in degrees pins the cube's <code>phi</code> axis and sweeps <code>theta</code>; <code>all</code> keeps every <code>phi</code> as a curve family. The verb prints the φ it landed on.</td>
 </tr>

@@ -1076,7 +1076,8 @@ internal static class ToolCatalog
                           + "(cube=mag(Pout)) work too; i and j pin the cube's i/j axes by PORT NUMBER and are "
                           + "refused alongside a bracketed slice. y is db20 (S, V, I), db10 (power), mag, phase, real or "
                           + "imag; a bare db is refused as ambiguous. "
-                          + "axis is left (default) or right. At least one is required — a plot with no trace is "
+                          + "axis is left (default) or right. label=\"As built\" names the trace: it replaces the "
+                          + "generated name in the legend, the axis title and the marker box. At least one is required — a plot with no trace is "
                           + "refused, not drawn empty."),
                         new("type", "--type", OptKind.Str,
                             "rect (default), smith, polar or table."),

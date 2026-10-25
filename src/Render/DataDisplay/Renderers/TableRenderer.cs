@@ -558,7 +558,7 @@ namespace CircuitRF.Render.DataDisplay
                 //    model does not apply — emit an (X, Y) column PAIR per curve instead.
                 if (trace.IsCubeBound && trace.IsVersus && trace.IsFamily && trace.FamilyCurves.Count > 0)
                 {
-                    string  vBase        = trace.CubeShorthand ?? trace.ShortDescription;
+                    string  vBase        = trace.HasLabel ? trace.Label! : trace.CubeShorthand ?? trace.ShortDescription;
                     string  vXHeader     = trace.CubeXAxisName is { Length: > 0 } vx ? vx : "X";
                     string? vFamilyName  = trace.FamilyAxisName;
                     string? vFamilyUnit  = trace.FamilyAxisUnit;
@@ -611,7 +611,7 @@ namespace CircuitRF.Render.DataDisplay
                     {
                         Kind            = TableColKind.TraceValue,
                         FirstTraceIndex = ti,
-                        Header          = trace.CubeShorthand ?? trace.ShortDescription,
+                        Header          = trace.HasLabel ? trace.Label! : trace.CubeShorthand ?? trace.ShortDescription,
                         XValues         = new[] { 0.0 },
                     });
 
@@ -713,7 +713,7 @@ namespace CircuitRF.Render.DataDisplay
                 if (isFamilyPath)
                 {
                     // Emit one TraceValue column per family curve.
-                    string  baseShorthand  = trace.CubeShorthand ?? trace.ShortDescription;
+                    string  baseShorthand  = trace.HasLabel ? trace.Label! : trace.CubeShorthand ?? trace.ShortDescription;
                     string? familyAxisName = trace.FamilyAxisName;
                     string? familyUnit     = trace.FamilyAxisUnit;
                     bool    familyIsFreq   = IsFreqUnit(familyUnit);
@@ -739,7 +739,8 @@ namespace CircuitRF.Render.DataDisplay
                 else
                 {
                     // Single TraceValue column.
-                    string valHeader = !trace.IsCubeBound   ? trace.ShortDescription
+                    string valHeader = trace.HasLabel       ? trace.Label!
+                                     : !trace.IsCubeBound   ? trace.ShortDescription
                                      : sharedCorner is not null ? WithoutCorner(trace)
                                      :                            trace.CubeShorthand ?? trace.ShortDescription;
                     result.Add(new TableColumn
@@ -1537,6 +1538,10 @@ namespace CircuitRF.Render.DataDisplay
                         // (SummaryColumns.AutoHeader). Use it verbatim — the placeholder SNP's
                         // ShortDescription would wrongly read "dB(S(1,1))".
                         label = col.Header;
+                    }
+                    else if (trace.HasLabel)
+                    {
+                        label = col.Header;   // the designer's label is the whole name — no source prefix (DFR27-3)
                     }
                     else if (col.FamilyCurveIndex >= 0)
                     {

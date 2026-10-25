@@ -715,6 +715,17 @@ namespace CircuitRF.Render.DataDisplay
         public string? QuantityName { get; set; }
 
         /// <summary>
+        /// The name a designer typed for this trace (DFR27-3). When set it is the WHOLE name wherever the
+        /// trace is named — legend, Y-axis title, marker box, table header, exported column — with no
+        /// source prefix and no quantity after it. Null or empty means the generated name, exactly as before.
+        /// Persisted in the <c>.cdd</c> only when set.
+        /// </summary>
+        public string? Label { get; set; }
+
+        /// <summary>Whether <see cref="Label"/> replaces the generated name.</summary>
+        public bool HasLabel => !string.IsNullOrEmpty(Label);
+
+        /// <summary>
         /// A cloud of points rather than a curve: samples not ordered along X — a bias plane's (Vds, Vgs) — so a marker
         /// is the NEAREST POINT in two dimensions, in canvas pixels wherever a pointer is involved, rather than the sample
         /// of nearest X. On such a trace the X-only rule a curve uses lands on the first point of the nearest column,
@@ -1535,6 +1546,7 @@ namespace CircuitRF.Render.DataDisplay
         /// </remarks>
         public string ReadoutDescription(bool showFilePrefix)
         {
+            if (HasLabel) return Label!;
             string prefix = showFilePrefix && SourcePath != null
                 ? System.IO.Path.GetFileNameWithoutExtension(SourcePath) + ".."
                 : "";
@@ -1826,6 +1838,7 @@ namespace CircuitRF.Render.DataDisplay
             IsPointCloud    = src.IsPointCloud;
             PointLabels     = src.PointLabels;
             MarkerValueName = src.MarkerValueName;
+            Label           = src.Label;
             _cubeXValues       = src._cubeXValues;
             _cubeComplexValues = src._cubeComplexValues;
             _cubeRealValues    = src._cubeRealValues;

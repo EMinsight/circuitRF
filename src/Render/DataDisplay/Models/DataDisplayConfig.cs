@@ -141,6 +141,15 @@ public sealed class PlotContainerConfig
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public LegendPlacement      Legend                { get; set; }
 
+    /// <summary>A floating legend's position (<c>Plot.LegendPos</c>), in Data Display logical coordinates. Written only
+    /// for <see cref="LegendPlacement.Floating"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double?              LegendLeft            { get; set; }
+
+    /// <inheritdoc cref="LegendLeft"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double?              LegendTop             { get; set; }
+
     // ---- The 3D pattern surface (ANT-10 §2) ---------------------------------
     //
     //  Two angles and a zoom, not a matrix — see PatternCamera for why. Defaults are
@@ -353,6 +362,11 @@ public sealed class TraceConfig
 
     /// <summary>Absolute path of the X side's data source; null = the same source as the Y side.</summary>
     public string?               XSourcePath   { get; set; }
+
+    /// <summary>The designer's own name for the trace — see <see cref="Trace.Label"/>. Not written when empty, so a
+    /// display with no labels saves the bytes it saved before the field existed (DFR27-3).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Label { get; set; }
 
     public TracePropertiesConfig   Properties { get; set; } = new();
     public List<MarkerConfig>      Markers    { get; set; } = new();

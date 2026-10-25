@@ -22,6 +22,9 @@
         <KeyBinding Gesture="Ctrl+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
         <KeyBinding Gesture="Meta+T"        Command="{Binding ViewModel.Window.NewTabCommand}"/>
         <KeyBinding Gesture="Delete"        Command="{Binding ViewModel.Window.DeleteSelectedCommand}"/>
+        <!-- The key a Mac keyboard labels "delete" sends Back; the schematic editor takes both, and so does this. A
+             focused text box handles Back itself, so typing in the inspector deletes characters, not plots. -->
+        <KeyBinding Gesture="Back"          Command="{Binding ViewModel.Window.DeleteSelectedCommand}"/>
         <!-- Page Up/Down scroll the SELECTED table by a whole page (owner, 2026-08-21). Bound at the
              document level like Delete, so the keystroke works wherever focus sits in the display. -->
         <KeyBinding Gesture="PageUp"        Command="{Binding ViewModel.Window.ScrollTablePageUpCommand}"/>

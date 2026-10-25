@@ -75,6 +75,9 @@ namespace CircuitRF.Render.DataDisplay
                 string? src = sources[i];
                 string  qty = quantities[i];
 
+                // A designer's own label is the whole name: no source, no quantity (DFR27-3).
+                if (traces[i].HasLabel) { result[i] = traces[i].Label!; continue; }
+
                 result[i] = (showSource && !string.IsNullOrEmpty(src))
                     ? $"{src}·{qty}"
                     : qty;

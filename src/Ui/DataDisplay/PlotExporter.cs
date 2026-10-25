@@ -298,6 +298,9 @@ namespace CircuitRF.Ui.DataDisplay
                 RightLabelStrips    = c.RightLabelStrips
                                        .Select(s => new PlacedLabelStrip(s.Trace, s.CustomLabel, s.ShowFilePrefix, s.AutoLabel))
                                        .ToList(),
+                Legend              = c.GetLegendBox() is { } lb
+                                       ? new PlacedLegend(lb.ViewLeft, lb.ViewTop, lb.BoxWidth, lb.BoxHeight, lb.Lw)
+                                       : null,
                 MarkerBoxes         = c.GetMarkerInfoBoxes()
                                        .Select(b => new PlacedMarkerBox(
                                            b.Marker, b.Trace, b.FreqUnit,
@@ -408,7 +411,7 @@ namespace CircuitRF.Ui.DataDisplay
             foreach (var trace in plot.Traces)
             {
                 sb.Append('\t');
-                sb.Append(showFilePrefix ? trace.Description : trace.ShortDescription);
+                sb.Append(trace.HasLabel ? trace.Label : showFilePrefix ? trace.Description : trace.ShortDescription);
             }
             sb.AppendLine();
 

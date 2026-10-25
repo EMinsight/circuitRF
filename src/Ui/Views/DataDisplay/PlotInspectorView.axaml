@@ -479,7 +479,8 @@
                            ItemsSource="{x:Static vm:PlotInspectorViewModel.AllFreqUnits}"
                            SelectedItem="{Binding FreqUnit, Mode=TwoWay}"/>
 
-                <!-- R-dfr26-6-2: the legend — off, in the plot box's corner, or under the plot. Never
+                <!-- R-dfr26-6-2: the legend — off, on (in the plot box's corner, or wherever on the display it was
+                     dragged), or under the plot. Never
                      on a Table, so it never shares the row with Font Size. -->
                 <StackPanel Grid.Column="5"
                             Orientation="Horizontal"
@@ -493,16 +494,16 @@
                         <ctl:LegendGlyphControl Kind="Off" Width="16" Height="16"/>
                     </Button>
                     <Button Classes="seg-btn"
-                            Classes.active="{Binding IsLegendInside}"
-                            Command="{Binding SetLegendInsideCommand}"
-                            ToolTip.Tip="Legend inside the plot">
+                            Classes.active="{Binding IsLegendOn}"
+                            Command="{Binding SetLegendOnCommand}"
+                            ToolTip.Tip="Legend on — drag it to move it anywhere">
                         <ctl:LegendGlyphControl Kind="Inside" Width="16" Height="16"/>
                     </Button>
                     <Button Classes="seg-btn"
                             Classes.active="{Binding IsLegendBelow}"
                             Command="{Binding SetLegendBelowCommand}"
                             Margin="0"
-                            ToolTip.Tip="Legend below the plot">
+                            ToolTip.Tip="Legend below">
                         <ctl:LegendGlyphControl Kind="Below" Width="16" Height="16"/>
                     </Button>
                 </StackPanel>
@@ -1736,6 +1737,24 @@
                                                     ToolTip.Tip="Back to the reference the run published. Not the same as typing that number in: this clears the override, so a later re-run at a different reference is followed.">
                                                 <mi:MaterialIcon Kind="Restore" Width="13" Height="13"/>
                                             </Button>
+                                        </Grid>
+
+                                        <!-- ── Label (DFR27-3): the trace's own name. Free text with no list of right
+                                             answers, so a text box; watermarked with the generated name it replaces. -->
+                                        <Grid ColumnDefinitions="34,*" Margin="0,2,0,0">
+                                            <TextBlock Grid.Column="0"
+                                                       Text="Label"
+                                                       Classes="label"
+                                                       VerticalAlignment="Center"/>
+                                            <TextBox Grid.Column="1"
+                                                     Name="TraceLabelEdit"
+                                                     Text="{Binding TraceLabel, Mode=OneWay}"
+                                                     PlaceholderText="{Binding TraceLabelWatermark}"
+                                                     FontSize="{StaticResource FontSize}"
+                                                     Padding="4,2"
+                                                     LostFocus="OnTraceLabelLostFocus"
+                                                     KeyDown="OnTraceLabelKeyDown"
+                                                     ToolTip.Tip="This trace's name in the legend, the axis title and the marker box. Leave it empty for the generated name."/>
                                         </Grid>
 
                                         <!-- ── Line row ──────────────────────────────────────────

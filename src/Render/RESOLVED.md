@@ -5335,3 +5335,57 @@ end onto the last port, which is how a deleted Term went on showing data.
   Designer's 0-based `i` axis, and the test fixtures with a single `i = 0`, keep the positional reading.
 - Gate: `Ui.Tests/PortNumberTraceTests` (`S[:, 10, 9]` reads 1009 from a 100·i + j cube; `S[:, 4, 3]` refused naming
   1, 2, 9, 10; one trace resolved against a re-run without port 9, then one renumbered 1…4, is invalid both times).
+
+## A trace's own label (brief DFR27-3, 2026-10-25)
+
+`Trace.Label` (persisted as `TraceConfig.Label`, written only when set) replaces the generated name wherever a trace
+is named. Two methods carry it to nearly every reader. `TraceLabeler.ComputeMinimalLabels` feeds the legend, the Rect
+Y-axis titles and the label strips. `Trace.ReadoutDescription` feeds every marker-box value row, multi and delta rows,
+the stem readout and the marker editor line. Table headers take it in `TableRenderer.BuildColumns`, which also feeds
+Copy Table Data; the tab-text export takes it in `PlotExporter.WriteTabText`.
+
+- **It is not `QuantityName`.** That one replaces only the quantity and keeps the transform suffix and the source
+  prefix. A label is the whole name, so a labelled trace gets no source component even when the source is forced on.
+- **`Description`/`ShortDescription` are untouched.** `BuildPickerYExpression` reads `ShortDescription` as an
+  expression fallback, so a label there would be parsed as a cube spec.
+- **`RectYLabel` still appends its status suffixes** (`<invalid…>`, `dimension mismatch`, `@ Z0=`) after a label,
+  because they say something is wrong or re-referenced, not what the curve is called.
+- Contour and summary-column traces ignore it: `PlotConfigLoader` returns before reading it, and both have their own
+  titles. A pattern cut's back branch (`plot`, `cut=` on a dB polar plot) keeps its own generated label, as before.
+- **The legend had no hit-testing.** Its row arithmetic moved into `LegendRenderer.Layout`, which both `Draw` and the
+  new `HitEntry` call (legend Rename…). Renders of unlabelled documents (inside legend with a marker box, below
+  legend, table, in PNG and SVG) were byte-identical between this build and the pre-change `HEAD` build.
+- **A trace-card edit had no undo path.** The container now hands its inspector `PushUndo` and `MarkerBoxesStale`.
+  The second hook exists because a marker info box lays out its text once, so only a rebuild picks up a new name.
+- The Label box's watermark is `TraceLabeler.QuantityFor`, which ignores the label, so it always shows the name
+  being replaced.
+- `PlotInspectorView.FocusSpecTextBox` focused the first visible `TextBox` bound to the row. On a network trace,
+  whose spec box is hidden, that would have been the new Label box, so it now skips it by name.
+- CLI: `SplitFields` keeps quotes in a field, so `label=` strips one surrounding pair.
+- Gate: `Ui.Tests/DataDisplay/TraceLabelTests` (byte-for-byte round trip through `BuildTraceConfig` and the loader;
+  legend, minimal labels, marker box and table header) and `MissingVerbsCliTests.ALabel_IsWrittenToTheCdd_CommaAndAll`.
+
+## Legends: Below spans the plotting region; Floating is a canvas box (2026-10-25)
+
+- **Below** used to lay its cells from the canvas edge (`pad`) to the far edge, reaching under the Y-axis labels. It is
+  now laid across `PlotRenderer.PlotRegionX`, the plot box on Rect or the disc on Smith/Polar, read from the viewport
+  BEFORE any band is taken out of it. Bands only take height, so there is no circularity: the region decides the
+  columns, the columns decide the band, and the band decides the viewport's bottom. The width-only `BelowBandPx`
+  overload (`PlotCanvasGeometry`, before a Smith canvas exists) uses a square canvas, which has the same disc width.
+- **`LegendPlacement.Floating`** (appended; stored by name) is the Inside box lifted onto the Data Display canvas.
+  `Plot.LegendPos` is in the same logical space as `Marker.InfoBoxPos` and is persisted as `LegendLeft`/`LegendTop`,
+  written only when floating; paste offsets it like an info box. `Draws` is false for it, so the plot neither draws
+  it nor reserves a band; `Floats` says it is the host's to draw.
+- Its size is `MeasureFloating` at `LineWidthFor(the plot canvas's logical size)`, the unit the docked box is
+  measured at, so lifting it keeps its text size. It is not cut to 60 % of the plot width as the docked box is.
+  `DrawFloating` scales that box to the pixels it is shown at, as `DrawInfoBox` does, so it zooms with the canvas.
+- Exports: `PlacedPlot.Legend`, set by `PlotPlacement` (headless, with `DefaultFloatingPosition` for a file that
+  names Floating without a position) and by `PlotExporter` (from the box). `PlotComposer` frames and draws it over its
+  plot and under the marker boxes, the order the window stacks them in.
+- The Inside path draws through the same `Layout`/`DrawFrame`/`DrawRows` as before. Unlabelled Inside renders were
+  byte-identical before and after (DFR27-3's comparison); Below changes on purpose.
+- **A docked legend vanished when the Data Display was zoomed out.** Every path returned early below a 4 px font. The
+  docked font is in screen pixels and scales with the zoom, so zooming out dropped the legend, and a Below band with
+  it, which moved the plot box, while the axes and curves were still drawn. The cutoff is gone and the legend draws at
+  any size, as the axis text does.
+- Gate: `Ui.Tests/DataDisplay/FloatingLegendTests`.

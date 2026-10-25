@@ -227,6 +227,16 @@ namespace CircuitRF.Render.DataDisplay
             };
         }
 
+        /// <summary>The plotting region's left and right edges in canvas pixels — the plot box on a Rect plot, the disc
+        /// on a Smith or Polar one. Read from the viewport BEFORE any band is taken out of it, because the bands only
+        /// ever take height: a Below legend is laid out across this, and its band then decides the viewport's
+        /// bottom.</summary>
+        public static (double Left, double Right) PlotRegionX(Plot plot, (double W, double H) canvasSize)
+        {
+            var v = ComputeViewportCore(plot, canvasSize);
+            return (v.X * canvasSize.W, (v.X + v.Width) * canvasSize.W);
+        }
+
         private static PlotRect ComputeViewport(Plot plot, (double W, double H) canvasSize)
         {
             var v = ComputeViewportCore(plot, canvasSize);

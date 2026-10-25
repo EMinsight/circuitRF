@@ -116,6 +116,12 @@ and branch rows. A net label and a VProbe both count as naming a node, so both a
 
 **Spec** — the transform, and the shorthand text box (below).
 
+**Label** — the trace's own name. Typed here, it replaces the generated name everywhere the trace is named:
+the legend, the Y-axis title, the marker box and its multi-marker rows, a table's column header and the
+column of copied or exported table data. It is the whole name, with no source and no quantity added to it.
+Empty, the box shows the generated name it would replace, and that name is what is drawn. Enter or
+clicking away commits it, as one undo step.
+
 **Style** — line, symbol, per-port Z0 for a network trace, and the number format on a Table.
 
 **Derived metrics.** Beneath the matrix elements the item selector also offers quantities *computed*
@@ -222,10 +228,18 @@ efficiency in per cent share one frame legibly. Autoscale is on until you set a 
 it off for that axis, so a figure you have framed deliberately does not re-frame itself on the next run.
 
 The three **legend** buttons to the right of **Freq** in the Plot Inspector draw a box naming each trace
-beside a short sample of its line, in its colour and line style. **Inside** puts it in the top-right corner
-of the plot; **Below** puts it in a band under the plot. It is **Off** to begin with, on every plot type: a rectangular plot already names
+beside a short sample of its line, in its colour and line style. **On** puts it in the top-right corner
+of the plot; **Below** puts it in a band under the plotting region. It is **Off** to begin with, on every plot type: a rectangular plot already names
 its traces on the Y axis, and a Smith or polar plot on the label strips beside the chart and the rows
 under it. The setting is saved in the `.cdd`, and `circuitrf render` and `circuitrf plot` draw it too.
+Right-click an entry and choose **Rename…** to open its trace card at the [Label](#trace-card) box.
+
+**Drag a legend to put it anywhere on the display** — off the curves, or out of the plot altogether. It
+lifts out as a box that moves like a marker info box: click to select it, Ctrl/Cmd-click to add it to a
+selection, and it moves with the plots selected with it. **On** stays lit wherever you put it; **Below** puts it
+back in the plot.
+Select a legend and press **Delete** to turn it off for that plot. Each of these is one undo step, and
+where you left it is saved in the `.cdd`.
 
 ## The decibel floor {#db-floor}
 

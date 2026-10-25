@@ -2683,6 +2683,7 @@ One plot, one axis pair, without writing a data display first.
 | `i`, `j` | The **port numbers** of a matrix cube — `i=2,j=1` is S21. Refused together with a bracketed slice: they are the convenience over writing one. |
 | `y` | `db20` (20·log₁₀ — S-parameters, voltages, currents, a probe margin), `db10` (10·log₁₀ — powers), `mag`, `phase`, `real`, `imag` or `conj`. A bare `db` is refused as ambiguous (`plot.trace.db-ambiguous`): in a data display it means 10·log₁₀, while a measurement's `dB()` is 20·log₁₀, and the wrong one draws an S-parameter at half its depth. |
 | `axis` | `left` (the default) or `right`. |
+| `label` | The trace's own name, quoted when it holds a comma: `label="As built, rev B"`. It replaces the generated name in the legend, the axis title and the marker box, exactly as the trace card's Label box does, and `--write-cdd` writes it. |
 | `cut` | An antenna pattern cut: a bearing in degrees pins the cube's `phi` axis and sweeps `theta`; `all` keeps every `phi` as a curve family. The verb prints the φ it landed on. |
 | `port` | The **port number** on a cube's `port` axis — not an index. A port the run does not hold is refused, listing the ones it does. |
 | `freq` | Pins a `freq` axis to its nearest sample. Takes an SI suffix: `2.45G`. |

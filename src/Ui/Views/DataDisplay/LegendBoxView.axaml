@@ -1,0 +1,14 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.DataDisplay.ViewModels"
+             x:Class="CircuitRF.Ui.Views.DataDisplay.LegendBoxView"
+             x:DataType="vm:LegendBoxViewModel"
+             Width="{Binding BoxWidth}"
+             Height="{Binding BoxHeight}"
+             Background="Transparent">
+
+    <!-- A floating legend: rendered entirely in Skia (LegendRenderer.DrawFloating), sized from
+         LegendRenderer.MeasureFloating so the hit bounds match the box. Background="Transparent"
+         is what makes a UserControl with no visual children hit-testable — see MarkerInfoBoxView. -->
+
+</UserControl>

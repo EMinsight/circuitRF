@@ -122,7 +122,30 @@ public partial class PlotInspectorView : UserControl
             if (targetVm is null) return;
             foreach (var tb in this.GetVisualDescendants().OfType<TextBox>())
             {
-                if (tb.IsVisible && ReferenceEquals(tb.DataContext, targetVm))
+                if (tb.IsVisible && ReferenceEquals(tb.DataContext, targetVm) && tb.Name != "TraceLabelEdit")
+                {
+                    tb.Focus();
+                    tb.SelectAll();
+                    return;
+                }
+            }
+        }, DispatcherPriority.Render);
+    }
+
+    /// <summary>Focuses trace <paramref name="traceIndex"/>'s Label box with its text selected — the legend
+    /// entry's Rename… (DFR27-3).</summary>
+    public void FocusTraceLabel(int traceIndex)
+    {
+        if (traceIndex < 0 || _vm is null) return;
+        ScrollToTrace(traceIndex);
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            var targetVm = _vm.Traces.ElementAtOrDefault(traceIndex);
+            if (targetVm is null) return;
+            foreach (var tb in this.GetVisualDescendants().OfType<TextBox>())
+            {
+                if (tb.Name == "TraceLabelEdit" && tb.IsVisible && ReferenceEquals(tb.DataContext, targetVm))
                 {
                     tb.Focus();
                     tb.SelectAll();
@@ -199,5 +222,27 @@ public partial class PlotInspectorView : UserControl
             _specPristine = vm.SpecShorthand;    // committed — this is the new pristine baseline
             e.Handled = true;
         }
+    }
+
+    // ---- Label box (DFR27-3): committed on Enter or focus loss, one undo step per commit ----
+
+    private void OnTraceLabelLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb && tb.DataContext is TraceRowViewModel vm) CommitTraceLabel(tb, vm);
+    }
+
+    private void OnTraceLabelKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && sender is TextBox tb && tb.DataContext is TraceRowViewModel vm)
+        {
+            CommitTraceLabel(tb, vm);
+            e.Handled = true;
+        }
+    }
+
+    private static void CommitTraceLabel(TextBox tb, TraceRowViewModel vm)
+    {
+        vm.CommitTraceLabel(tb.Text);
+        tb.Text = vm.TraceLabel;   // the committed spelling — trimmed, or empty for the generated name
     }
 }

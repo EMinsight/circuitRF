@@ -2,9 +2,11 @@
 //  LegendRenderer.cs  —  a plot's legend (brief-dfr26-6 R-dfr26-6-2)
 //
 //  One entry per trace: a short sample of its line, in its colour and
-//  line style, beside the name its Y axis gives it. Two placements:
-//  INSIDE, a box in the plot box's top-right corner, and BELOW, a band
-//  under the plot laid out as a grid of equal cells.
+//  line style, beside the name its Y axis gives it. Two placements in
+//  the plot's own canvas: INSIDE, a box in the plot box's top-right
+//  corner, and BELOW, a band under the plotting region laid out as a
+//  grid of equal cells. A third, FLOATING, is the Inside box dragged
+//  out onto the Data Display canvas; its host places and draws it.
 //
 //  The band's HEIGHT depends only on the trace count and the canvas,
 //  never on the label text. It decides where the plot box ends, and
@@ -34,11 +36,19 @@ namespace CircuitRF.Render.DataDisplay
                 if (!t.IsContourTrace && !t.ExcludeFromAxisLabels) yield return t;
         }
 
-        /// <summary>Whether <paramref name="plot"/> draws a legend at all: it asks for one, it is a kind
-        /// that has a plot box, and something is listed.</summary>
+        /// <summary>Whether <paramref name="plot"/> draws a legend INSIDE ITS OWN CANVAS: it asks for one docked there
+        /// (Inside or Below), it is a kind that has a plot box, and something is listed. A
+        /// <see cref="LegendPlacement.Floating"/> legend is drawn by its host on the canvas around the plots instead —
+        /// see <see cref="Floats"/>.</summary>
         public static bool Draws(Plot plot)
+            => plot.Legend is LegendPlacement.Inside or LegendPlacement.Below && Lists(plot);
+
+        /// <summary>Whether <paramref name="plot"/>'s legend is a FLOATING box — dragged out of the plot onto the Data
+        /// Display canvas, where it is placed and drawn like a marker info box.</summary>
+        public static bool Floats(Plot plot) => plot.Legend == LegendPlacement.Floating && Lists(plot);
+
+        private static bool Lists(Plot plot)
         {
-            if (plot.Legend == LegendPlacement.Off) return false;
             if (plot.PlotType is not (PlotType.Rect or PlotType.Smith or PlotType.Polar)) return false;
             foreach (var _ in Listed(plot)) return true;
             return false;
@@ -51,48 +61,203 @@ namespace CircuitRF.Render.DataDisplay
 
         /// <summary><see cref="BelowBandPx(Plot, ValueTuple{double, double})"/> at a stated line-width
         /// unit — what <see cref="PlotCanvasGeometry"/> sizes a Smith or Polar canvas with, before that
-        /// canvas exists.</summary>
+        /// canvas exists. The disc's width does not depend on how much taller than wide the canvas is, so a
+        /// square canvas of <paramref name="width"/> stands in for it.</summary>
         public static double BelowBandPx(Plot plot, double width, double lw)
         {
             if (plot.Legend != LegendPlacement.Below || !Draws(plot)) return 0;
             var m = Metrics.For(plot, lw);
-            if (m.FontPx < 4.0) return 0;
-            var (_, rows) = Grid(m, width, Count(plot));
+            var (x0, x1) = PlotRenderer.PlotRegionX(plot, (width, width));
+            var (_, rows) = Grid(m, x1 - x0, Count(plot));
             return rows * m.RowH + m.Pad;
         }
 
+        /// <remarks>Drawn at ANY size. It used to stop below a 4 px font, which is where a plot lands when the Data
+        /// Display is zoomed out, so the legend vanished — and a Below band with it, moving the plot box — while the
+        /// axes and the curves it names were still drawn.</remarks>
         public static void Draw(
             SKCanvas canvas, (double W, double H) canvasSize, Plot plot, TransformSet tf, RenderTheme theme,
             Func<Trace, string?>? aliasFor, bool? alwaysShowSource)
         {
             if (!Draws(plot)) return;
             var m = Metrics.For(plot, Math.Min(canvasSize.W, canvasSize.H) / 200.0);
-            if (m.FontPx < 4.0) return;
-
-            var entries = Entries(plot, alwaysShowSource ?? AppSettings.Current.AlwaysDisplayDataSourcePrefix, aliasFor);
 
             using var font     = new SKFont(SkiaFonts.PlexRegular, (float)m.FontPx);
             using var fallback = new SKFont(SkiaFonts.DejaVuRegular, font.Size);
-            using var text     = new SKPaint { IsAntialias = true, Color = theme.TextColor };
+
+            var (rows, box) = Layout(canvasSize, plot, tf, m, font, fallback, aliasFor, alwaysShowSource);
+            if (box is { } b) DrawFrame(canvas, b, theme, AppSettings.Current.MarkerBoxTransparentBackground);
+            DrawRows(canvas, rows, m, font, fallback, theme);
+        }
+
+        /// <summary>
+        /// The trace whose legend entry is under canvas point (<paramref name="x"/>, <paramref name="y"/>), or null —
+        /// for the entry's context menu (DFR27-3 Rename…). Laid out by <see cref="Layout"/>, the arithmetic
+        /// <see cref="Draw"/> draws with, so a click lands on the entry it sees.
+        /// </summary>
+        public static Trace? HitEntry(
+            (double W, double H) canvasSize, Plot plot, TransformSet tf, double x, double y,
+            Func<Trace, string?>? aliasFor, bool? alwaysShowSource)
+        {
+            foreach (var r in DockedRows(canvasSize, plot, tf, aliasFor, alwaysShowSource))
+                if (r.Hit.Contains((float)x, (float)y)) return r.Trace;
+            return null;
+        }
+
+        /// <summary>
+        /// The rectangle a docked legend occupies on its plot's canvas — the box when Inside, the cells of the band when
+        /// Below — or null when it draws none. What a press on the legend hits, what its selection outline is drawn
+        /// around, and where a legend dragged out of the plot starts from.
+        /// </summary>
+        public static SKRect? DockedBounds(
+            (double W, double H) canvasSize, Plot plot, TransformSet tf,
+            Func<Trace, string?>? aliasFor, bool? alwaysShowSource)
+        {
+            if (!Draws(plot)) return null;
+            var m = Metrics.For(plot, Math.Min(canvasSize.W, canvasSize.H) / 200.0);
+            using var font     = new SKFont(SkiaFonts.PlexRegular, (float)m.FontPx);
+            using var fallback = new SKFont(SkiaFonts.DejaVuRegular, font.Size);
+            var (rows, box) = Layout(canvasSize, plot, tf, m, font, fallback, aliasFor, alwaysShowSource);
+            if (box is { } b) return b;
+            if (rows.Count == 0) return null;
+            var u = rows[0].Hit;
+            foreach (var r in rows) u = SKRect.Union(u, r.Hit);
+            return u;
+        }
+
+        private static List<Row> DockedRows(
+            (double W, double H) canvasSize, Plot plot, TransformSet tf,
+            Func<Trace, string?>? aliasFor, bool? alwaysShowSource)
+        {
+            if (!Draws(plot)) return [];
+            var m = Metrics.For(plot, Math.Min(canvasSize.W, canvasSize.H) / 200.0);
+            using var font     = new SKFont(SkiaFonts.PlexRegular, (float)m.FontPx);
+            using var fallback = new SKFont(SkiaFonts.DejaVuRegular, font.Size);
+            return Layout(canvasSize, plot, tf, m, font, fallback, aliasFor, alwaysShowSource).Rows;
+        }
+
+        // ---- Floating -------------------------------------------------------
+        //
+        //  A floating legend is the INSIDE box lifted off the plot: the same rows, sample and frame, measured in
+        //  Data Display LOGICAL units at the line-width unit the plot's own canvas has, so it reads at the size it
+        //  had when docked and scales with the canvas zoom exactly as a marker info box does. Its text is not cut
+        //  to 60 % of the plot width as the docked box's is — off the plot there is nothing for it to cover.
+
+        /// <summary>The line-width unit of a plot canvas <paramref name="canvasW"/> x <paramref name="canvasH"/> logical
+        /// units — what the docked legend's metrics are derived from.</summary>
+        public static double LineWidthFor(double canvasW, double canvasH) => Math.Min(canvasW, canvasH) / 200.0;
+
+        /// <summary>A floating legend's size in logical units, for a plot canvas of line-width unit <paramref name="lw"/>.
+        /// (0, 0) when the plot floats no legend.</summary>
+        public static (double W, double H) MeasureFloating(
+            Plot plot, double lw, Func<Trace, string?>? aliasFor, bool? alwaysShowSource)
+        {
+            if (!Floats(plot)) return (0, 0);
+            var m = Metrics.For(plot, lw);
+            using var font     = new SKFont(SkiaFonts.PlexRegular, (float)m.FontPx);
+            using var fallback = new SKFont(SkiaFonts.DejaVuRegular, font.Size);
+            var entries = Entries(plot, alwaysShowSource ?? AppSettings.Current.AlwaysDisplayDataSourcePrefix, aliasFor);
+            float widest = 0f;
+            foreach (var e in entries)
+                widest = Math.Max(widest, RendererText.MeasureTextWithFallback(e.Label, font, fallback));
+            return (m.Pad * 2 + m.SampleW + m.Gap + widest, entries.Count * m.RowH + m.Pad);
+        }
+
+        /// <summary>
+        /// Draws a floating legend at (0, 0) filling <paramref name="size"/> — the box <see cref="MeasureFloating"/>
+        /// measured, scaled to the pixels it is shown at. With <paramref name="isSelected"/> it is outlined as a selected
+        /// marker info box is.
+        /// </summary>
+        public static void DrawFloating(
+            SKCanvas canvas, (double W, double H) size, Plot plot, double lw, RenderTheme theme,
+            Func<Trace, string?>? aliasFor, bool? alwaysShowSource, bool transparentBackground,
+            bool isSelected = false, SKColor selectionColor = default)
+        {
+            var (lw0, lh0) = MeasureFloating(plot, lw, aliasFor, alwaysShowSource);
+            if (lw0 <= 0 || lh0 <= 0 || size.W <= 0 || size.H <= 0) return;
+            var m = Metrics.For(plot, lw);
+
+            canvas.Save();
+            canvas.Scale((float)(size.W / lw0), (float)(size.H / lh0));
+            using (var font     = new SKFont(SkiaFonts.PlexRegular, (float)m.FontPx))
+            using (var fallback = new SKFont(SkiaFonts.DejaVuRegular, font.Size))
+            {
+                var box     = SKRect.Create(0, 0, (float)lw0, (float)lh0);
+                var entries = Entries(plot, alwaysShowSource ?? AppSettings.Current.AlwaysDisplayDataSourcePrefix, aliasFor);
+                float rowH = (float)m.RowH, pad = (float)m.Pad;
+                float room = (float)(lw0 - m.Pad * 2 - m.SampleW - m.Gap);
+                var rows = new List<Row>(entries.Count);
+                for (int i = 0; i < entries.Count; i++)
+                {
+                    float cy = pad * 0.5f + rowH * (i + 0.5f);
+                    rows.Add(new Row(entries[i].Trace, entries[i].Label, pad, cy, room, SKRect.Create(0, cy - rowH * 0.5f, box.Width, rowH)));
+                }
+                DrawFrame(canvas, box, theme, transparentBackground);
+                DrawRows(canvas, rows, m, font, fallback, theme);
+            }
+            canvas.Restore();
+
+            if (isSelected)
+                DrawSelection(canvas, SKRect.Create(0, 0, (float)size.W, (float)size.H), selectionColor);
+        }
+
+        /// <summary>The selection outline a selected legend — floating or docked — is drawn with: the marker info box's.</summary>
+        public static void DrawSelection(SKCanvas canvas, SKRect rect, SKColor color)
+        {
+            using var hl = new SKPaint { Color = color, StrokeWidth = 3.1f, Style = SKPaintStyle.Stroke, IsAntialias = false };
+            canvas.DrawRect(rect, hl);
+        }
+
+        /// <summary>
+        /// Where a floating legend nobody has placed goes, in logical coordinates: where the INSIDE box would be, against
+        /// the plot box's top-right corner. A <c>.cdd</c> written by the application always carries a position; this is
+        /// the rule for one that does not, shared by the window and a headless render so the two agree.
+        /// </summary>
+        public static PlotPoint DefaultFloatingPosition(
+            Plot plot, double canvasW, double canvasH, double canvasLeft, double canvasTop,
+            Func<Trace, string?>? aliasFor, bool? alwaysShowSource)
+        {
+            double lw = LineWidthFor(canvasW, canvasH);
+            var (w, _) = MeasureFloating(plot, lw, aliasFor, alwaysShowSource);
+            var tf  = PlotRenderer.BuildTransforms(plot, (canvasW, canvasH));
+            var m   = Metrics.For(plot, lw);
+            double right = (tf.Viewport.X + tf.Viewport.Width) * canvasW;
+            return new PlotPoint(canvasLeft + right - m.Pad - w, canvasTop + tf.Viewport.Y * canvasH + m.Pad);
+        }
+
+        // ---- Shared layout and drawing --------------------------------------
+
+        /// <summary>One legend entry as laid out: where its sample starts, its centre line, the room its text has,
+        /// and the rectangle a click on it hits.</summary>
+        private readonly record struct Row(Trace Trace, string Label, float X, float Cy, float TextRoom, SKRect Hit);
+
+        private static (List<Row> Rows, SKRect? Box) Layout(
+            (double W, double H) canvasSize, Plot plot, TransformSet tf, Metrics m, SKFont font, SKFont fallback,
+            Func<Trace, string?>? aliasFor, bool? alwaysShowSource)
+        {
+            var entries = Entries(plot, alwaysShowSource ?? AppSettings.Current.AlwaysDisplayDataSourcePrefix, aliasFor);
+            var rows    = new List<Row>(entries.Count);
 
             float w = (float)canvasSize.W, h = (float)canvasSize.H;
             float rowH = (float)m.RowH, pad = (float)m.Pad, sample = (float)m.SampleW, gap = (float)m.Gap;
-            float baseline = font.Size * 0.35f;
 
             if (plot.Legend == LegendPlacement.Below)
             {
+                // ACROSS THE PLOTTING REGION, not the canvas: the band names the curves in the plot box above it, and
+                // reaching out under the Y-axis labels made it read as belonging to the whole frame.
+                var (x0, x1) = PlotRenderer.PlotRegionX(plot, canvasSize);
                 float band = (float)BelowBandPx(plot, canvasSize);
-                var (cols, _) = Grid(m, canvasSize.W, entries.Count);
-                float availW = w - 2f * pad;
-                float cellW  = availW / cols;
+                var (cols, _) = Grid(m, x1 - x0, entries.Count);
+                float cellW  = (float)(x1 - x0) / cols;
                 for (int i = 0; i < entries.Count; i++)
                 {
                     int   r  = i / cols, c = i % cols;
-                    float x  = pad + c * cellW;
+                    float x  = (float)x0 + c * cellW;
                     float cy = h - band + pad * 0.5f + rowH * (r + 0.5f);
-                    DrawEntry(entries[i], x, cy, cellW - gap - sample - gap);
+                    rows.Add(new Row(entries[i].Trace, entries[i].Label, x, cy, cellW - gap - sample - gap,
+                                     SKRect.Create(x, cy - rowH * 0.5f, cellW, rowH)));
                 }
-                return;
+                return (rows, null);
             }
 
             // INSIDE: a box against the plot box's top-right corner, one entry per row.
@@ -106,25 +271,40 @@ namespace CircuitRF.Render.DataDisplay
             float boxW = pad * 2f + sample + gap + widest;
             float boxH = entries.Count * rowH + pad;
             var   box  = SKRect.Create(vpRight - pad - boxW, vpTop + pad, boxW, boxH);
-            // Dressed as a marker info box is, and by the same setting: no fill unless the user has turned the
-            // boxes' transparent background off. The plot itself paints no background — the host or the export
-            // decides it — so a box with a fill of its own is a white patch on any page that is not white.
-            if (!AppSettings.Current.MarkerBoxTransparentBackground)
+            // The text's room is the width the box was sized from, not one worked back out of the box: in
+            // floats that comes back a hair short of the widest label and cut every one of them short.
+            for (int i = 0; i < entries.Count; i++)
+            {
+                float cy = box.Top + pad * 0.5f + rowH * (i + 0.5f);
+                rows.Add(new Row(entries[i].Trace, entries[i].Label, box.Left + pad, cy, maxText,
+                                 SKRect.Create(box.Left, cy - rowH * 0.5f, boxW, rowH)));
+            }
+            return (rows, box);
+        }
+
+        /// <summary>The box's frame. Dressed as a marker info box is, and by the same setting: no fill unless the user has
+        /// turned the boxes' transparent background off. The plot itself paints no background — the host or the export
+        /// decides it — so a box with a fill of its own is a white patch on any page that is not white.</summary>
+        private static void DrawFrame(SKCanvas canvas, SKRect box, RenderTheme theme, bool transparentBackground)
+        {
+            if (!transparentBackground)
                 using (var fill = new SKPaint { Style = SKPaintStyle.Fill,
                                                 Color = RenderTheme.WithOpacity(theme.BackgroundColor, 0.90) })
                     canvas.DrawRect(box, fill);
             using (var edge = new SKPaint { Style = SKPaintStyle.Stroke, StrokeWidth = 1.1f, Color = theme.BorderColor })
                 canvas.DrawRect(box, edge);
-            // The text's room is the width the box was sized from, not one worked back out of the box: in
-            // floats that comes back a hair short of the widest label and cut every one of them short.
-            for (int i = 0; i < entries.Count; i++)
-                DrawEntry(entries[i], box.Left + pad, box.Top + pad * 0.5f + rowH * (i + 0.5f), maxText);
+        }
 
-            void DrawEntry((Trace Trace, string Label) e, float x, float cy, float textRoom)
+        private static void DrawRows(SKCanvas canvas, List<Row> rows, Metrics m, SKFont font, SKFont fallback, RenderTheme theme)
+        {
+            using var text = new SKPaint { IsAntialias = true, Color = theme.TextColor };
+            float sample = (float)m.SampleW, gap = (float)m.Gap;
+            float baseline = font.Size * 0.35f;
+            foreach (var r in rows)
             {
-                DrawSample(canvas, e.Trace, x, x + sample, cy, (float)m.Lw, theme);
-                string s = Fit(e.Label, textRoom, font, fallback);
-                RendererText.DrawLeftTextWithFallback(canvas, s, x + sample + gap, cy + baseline, font, fallback, text);
+                DrawSample(canvas, r.Trace, r.X, r.X + sample, r.Cy, (float)m.Lw, theme);
+                string s = Fit(r.Label, r.TextRoom, font, fallback);
+                RendererText.DrawLeftTextWithFallback(canvas, s, r.X + sample + gap, r.Cy + baseline, font, fallback, text);
             }
         }
 
@@ -163,13 +343,13 @@ namespace CircuitRF.Render.DataDisplay
             return n;
         }
 
-        /// <summary>Columns and rows of the BELOW grid: as many equal cells across as leave each room
-        /// for a sample and about fifteen characters.</summary>
+        /// <summary>Columns and rows of the BELOW grid across a plotting region <paramref name="width"/> wide: as many
+        /// equal cells as leave each room for a sample and about fifteen characters.</summary>
         private static (int Cols, int Rows) Grid(Metrics m, double width, int n)
         {
             if (n <= 0) return (1, 0);
             double cell = m.SampleW + m.Gap + m.FontPx * 8.0;
-            int    cols = (int)Math.Clamp(Math.Floor((width - 2 * m.Pad) / cell), 1, n);
+            int    cols = (int)Math.Clamp(Math.Floor(width / cell), 1, n);
             return (cols, (n + cols - 1) / cols);
         }
 

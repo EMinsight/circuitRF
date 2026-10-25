@@ -48,6 +48,7 @@ internal static class PlotVerb
         public string? YText;
         public bool    Secondary;
         public string  Raw = "";       // the whole --trace argument, for refusals
+        public string? Label;          // label="As built": the trace's own name (DFR27-3)
 
         // WSProbe (WSP-4 R-wsp4-12). `probe=` is what turns a `cube=wsp` trace into a probe metric;
         // everything else here is the option some metrics read.
@@ -272,6 +273,7 @@ internal static class PlotVerb
         {
             var (tc, refusal) = BuildTrace(o.Traces[i], data, Path.GetFileName(o.Result), i, o.Type);
             if (refusal is { } r) return r;
+            tc!.Label = o.Traces[i].Label;
             var (perCorner, cornerRefusal) = PinCorners(o.Traces[i], tc!, data, i);
             if (cornerRefusal is { } cr) return cr;
             foreach (var one in perCorner!)
@@ -371,6 +373,7 @@ internal static class PlotVerb
             "                     [--radial linear|db] [--db-floor -40] [--db-ring 10]\n" +
             "                     [--db-ref peak|<dB>] [--db-unit dBi]\n" +
             "  a trace spec is comma-separated key=value: cube=S i=2 j=1 y=db20 axis=left|right\n" +
+            "                      label=\"As built\" names the trace in the legend, axis and marker box\n" +
             "  an antenna pattern: cube=farfield.U cut=<phi deg>|all [port=<n>] [freq=2.45G] y=db10\n" +
             "                      cut=<deg> is the PLANE at that phi — theta swept, and the phi+180\n" +
             "                      branch drawn at -theta, on a --radial db polar plot\n" +
@@ -659,6 +662,11 @@ internal static class PlotVerb
             switch (key)
             {
                 case "cube": spec.Text  = value; break;
+                case "label":
+                    // Quoted so a label may hold a comma; the quotes are the spelling, not the name.
+                    if (value.Length >= 2 && value[0] == '"' && value[^1] == '"') value = value[1..^1];
+                    spec.Label = value.Length == 0 ? null : value;
+                    break;
                 case "y":
                     // A bare `db` is refused rather than read: here it would be 10·log10, while
                     // `dB()` in a measurement is 20·log10, and the wrong one on an S-parameter

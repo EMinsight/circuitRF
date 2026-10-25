@@ -3241,6 +3241,16 @@ public partial class TraceRowViewModel : ViewModelBase
                     ? candidates.FirstOrDefault()
                     : candidates.FirstOrDefault(s => NetworkParamSliceMatches(s.Slice, _trace.Slice))
                       ?? candidates.FirstOrDefault();
+
+            // The DEFAULT group's S has no cube item — it is offered as the network items above — so a
+            // cube-bound S trace there (`circuitrf plot` over a `sparam -o` result, a typed S[:, 2, 1]) matched
+            // nothing and fell through to the first item: every such card read S(1,1). It is the network item at
+            // the trace's own port pair.
+            if (match is null && DefaultGroupPortPosition() is var (row, col))
+                match = _allSignals.FirstOrDefault(s =>
+                    !s.IsCubeBound && !s.IsBroken && s.Derived == DerivedParameters.None
+                    && string.Equals(s.Entry.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase)
+                    && s.Row == row && s.Col == col);
         }
         else if (_trace.Data != null)
         {
@@ -3764,6 +3774,27 @@ public partial class TraceRowViewModel : ViewModelBase
         return itemI is not null && itemI == traceI && itemJ is not null && itemJ == traceJ;
     }
 
+    /// <summary>The matrix positions a cube-bound trace on the default group's <c>S</c> pins, or null for any other
+    /// trace. The pins hold port number − 1 (DFR27-2), so each is looked up on the cube's own axis.</summary>
+    private (int Row, int Col)? DefaultGroupPortPosition()
+    {
+        if (_trace.CubeName != "S" || MatrixType != MatrixType.S || _trace.Slice is not { } slice) return null;
+        var entry = _parent.LibraryEntries.FirstOrDefault(e =>
+            string.Equals(e.FilePath, _trace.SourcePath, StringComparison.OrdinalIgnoreCase));
+        if (entry?.Data is not { } ds || !ds.Contains("S")) return null;
+        var cube = ds["S"];
+        int? row = null, col = null;
+        foreach (var s in slice)
+        {
+            if (s.Role != AxisRole.PinToIndex || s.AxisName is not ("i" or "j")) continue;
+            var axis = cube.Axes.FirstOrDefault(a => a.Name == s.AxisName);
+            if (axis is null) return null;
+            int pos = PortSlices.PinPosition(axis, s.Index);
+            if (s.AxisName == "i") row = pos; else col = pos;
+        }
+        return row is { } r && col is { } c ? (r, c) : null;
+    }
+
     /// <summary>True when a slice pins both an "i" and a "j" axis — i.e. it identifies a network-
     /// parameter element item, one of the N² sharing a single CubeName (§4).</summary>
     private static bool HasPortPair(AxisSlice[]? slice) =>
@@ -3942,8 +3973,36 @@ public partial class TraceRowViewModel : ViewModelBase
     //  that originated from OnSelectedSignalChanged, causing Avalonia's ComboBox
     //  to reset its SelectedItem to null (the revert bug).
 
+    // ---- The trace's own label (DFR27-3) -------------------------------------------------------
+
+    /// <summary>The designer's name for this trace; empty for the generated one.</summary>
+    public string TraceLabel => _trace.Label ?? "";
+
+    /// <summary>The generated name the label replaces — the box's watermark, so a designer sees what they are
+    /// replacing.</summary>
+    public string TraceLabelWatermark => TraceLabeler.QuantityFor(_trace);
+
+    /// <summary>Commits the label box (Enter or focus loss) as one undo step. Blank goes back to the generated
+    /// name; an unchanged value records nothing.</summary>
+    public void CommitTraceLabel(string? text)
+    {
+        string? next = string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+        if (next == _trace.Label) { OnPropertyChanged(nameof(TraceLabel)); return; }
+        var cmd = new SetTraceLabelCommand(this, _trace.Label, next);
+        cmd.Execute();
+        _parent.PushUndo?.Invoke(cmd);
+    }
+
+    internal void ApplyTraceLabel(string? label)
+    {
+        _trace.Label = label;
+        OnPropertyChanged(nameof(TraceLabel));
+        _parent.OnTraceLabelChanged();
+    }
+
     public void RefreshDescription()
     {
+        OnPropertyChanged(nameof(TraceLabelWatermark));
         RefreshWspSection();   // WSP-4: the probe pickers and the readout are card state like the rest
         OnPropertyChanged(nameof(IsContourTrace));
         OnPropertyChanged(nameof(IsSummaryColumn));

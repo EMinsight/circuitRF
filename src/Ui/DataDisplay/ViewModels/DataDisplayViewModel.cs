@@ -55,6 +55,14 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     private readonly ObservableCollection<MarkerInfoBoxViewModel> _markerInfoBoxes = new();
     public  ObservableCollection<MarkerInfoBoxViewModel> MarkerInfoBoxes => _markerInfoBoxes;
 
+    /// <summary>The plots' floating legends (<see cref="LegendPlacement.Floating"/>) — boxes on the canvas beside the info
+    /// boxes, and selected, dragged and moved with them.</summary>
+    private readonly ObservableCollection<LegendBoxViewModel> _legendBoxes = new();
+    public  ObservableCollection<LegendBoxViewModel> LegendBoxes => _legendBoxes;
+
+    /// <summary>Every box on the canvas: the info boxes and the floating legends.</summary>
+    private IEnumerable<CanvasBoxViewModel> Boxes => _markerInfoBoxes.Concat<CanvasBoxViewModel>(_legendBoxes);
+
     // ---- Selection --------------------------------------------------
 
     [ObservableProperty]
@@ -70,7 +78,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// Used to gate the Delete command and similar multi-select operations.
     /// </summary>
     public bool HasAnySelection =>
-        _plots.Any(p => p.IsSelected) || _markerInfoBoxes.Any(m => m.IsSelected);
+        _plots.Any(p => p.IsSelected || p.IsLegendSelected) || Boxes.Any(m => m.IsSelected);
 
     /// <summary>True when at least one marker InfoBox is selected.</summary>
     public bool HasSelectedInfoBoxes => _markerInfoBoxes.Any(m => m.IsSelected);
@@ -102,8 +110,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
 
     private void PropagateViewProperties()
     {
-        foreach (var p in _plots)           p.NotifyViewProperties();
-        foreach (var m in _markerInfoBoxes) m.NotifyViewProperties();
+        foreach (var p in _plots) p.NotifyViewProperties();
+        foreach (var m in Boxes)  m.NotifyViewProperties();
     }
 
     /// <summary>
@@ -308,6 +316,86 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         for (int i = _markerInfoBoxes.Count - 1; i >= 0; i--)
             if (_markerInfoBoxes[i].Container == container)
                 _markerInfoBoxes.RemoveAt(i);
+        for (int i = _legendBoxes.Count - 1; i >= 0; i--)
+            if (_legendBoxes[i].Container == container)
+                _legendBoxes.RemoveAt(i);
+    }
+
+    // ---- Floating legends -------------------------------------------
+
+    /// <summary>
+    /// Gives <paramref name="container"/> the legend box its plot's placement asks for: one when the legend floats, none
+    /// otherwise. Called whenever the plot's structure changes — a placement chosen, a trace added or removed — and when
+    /// the container joins the display. A floating legend nobody has placed is put where the Inside box would be.
+    /// </summary>
+    internal void RebuildLegendBoxForContainer(PlotContainerViewModel container)
+    {
+        var plot = container.PlotVM.Plot;
+        var existing = _legendBoxes.FirstOrDefault(b => b.Container == container);
+        if (!LegendRenderer.Floats(plot))
+        {
+            if (existing is not null) { _legendBoxes.Remove(existing); RefreshSelection(); }
+            return;
+        }
+        if (double.IsNaN(plot.LegendPos.X) || double.IsNaN(plot.LegendPos.Y))
+            plot.LegendPos = LegendRenderer.DefaultFloatingPosition(
+                plot, container.Width, container.ViewHeight / (_zoomLevel > 0 ? _zoomLevel : 1.0),
+                container.Left, CanvasTopLogical(container),
+                _library is { } lib ? t => lib.AliasFor(t.EffectiveSourcePath) : null,
+                AppSettingsViewModel.Instance.EffectiveShowFilePrefix(_library?.HasMultipleSources ?? false));
+        if (existing is not null
+            && existing.LogicalLeft == plot.LegendPos.X && existing.LogicalTop == plot.LegendPos.Y)
+        {
+            existing.RefreshSize();
+            return;
+        }
+        bool wasSelected = existing?.IsSelected ?? false;
+        if (existing is not null) _legendBoxes.Remove(existing);
+        var box = new LegendBoxViewModel(container, this, plot.LegendPos.X, plot.LegendPos.Y);
+        if (wasSelected) box.IsSelected = true;
+        _legendBoxes.Add(box);
+    }
+
+    /// <summary>The logical Y of the top of a container's plot canvas, which sits above <c>Top</c> by the title clearance.</summary>
+    private double CanvasTopLogical(PlotContainerViewModel c)
+        => (c.ViewTop - _viewOffsetY) / (_zoomLevel > 0 ? _zoomLevel : 1.0);
+
+    /// <summary>A plot's legend text changed (a trace renamed, a source added): its floating box is re-measured.</summary>
+    internal void RefreshLegendBox(PlotContainerViewModel container)
+    {
+        foreach (var b in _legendBoxes)
+            if (b.Container == container) b.RefreshSize();
+    }
+
+    /// <summary>
+    /// Lifts <paramref name="container"/>'s docked legend out of the plot as a floating box whose top-left is at
+    /// (<paramref name="left"/>, <paramref name="top"/>) and starts dragging it from <paramref name="windowPt"/>, as a
+    /// press on an info box starts its drag. The whole gesture — lift and move — is one undo step, recorded when it
+    /// ends (<see cref="EndInfoBoxGroupDrag"/>).
+    /// </summary>
+    internal void LiftLegend(PlotContainerViewModel container, double left, double top, Point windowPt)
+    {
+        var plot = container.PlotVM.Plot;
+        _pendingLift = (container, plot.Legend);
+        plot.LegendPos = new PlotPoint(left, top);
+        container.Inspector.Legend = LegendPlacement.Floating;   // the structure change builds the box
+        RebuildLegendBoxForContainer(container);
+        if (_legendBoxes.FirstOrDefault(b => b.Container == container) is { } box)
+        {
+            SelectOnly(box);
+            StartInfoBoxGroupDrag(windowPt);
+        }
+    }
+
+    private (PlotContainerViewModel Container, LegendPlacement From)? _pendingLift;
+
+    /// <summary>Selects a DOCKED legend — one drawn in its plot — so Delete can turn it off.</summary>
+    internal void SelectDockedLegend(PlotContainerViewModel container)
+    {
+        foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
+        foreach (var m in Boxes)  m.IsSelected = false;
+        container.IsLegendSelected = true;
+        RefreshSelection();
     }
 
     /// <summary>
@@ -370,6 +458,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         _plots.Add(container);
         RebuildMarkerInfoBoxesForContainer(container);
+        RebuildLegendBoxForContainer(container);
         if (selectIt) SelectOnly(container);
         else          RefreshSelection();
     }
@@ -403,7 +492,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     // EndMoveOperation creates and pushes a MovePlotsCommand with start+end pairs.
 
     private List<(PlotContainerViewModel Vm, double Left, double Top)>?   _moveStartPlots;
-    private List<(MarkerInfoBoxViewModel  Vm, double Left, double Top)>?   _moveStartInfoBoxes;
+    private List<(CanvasBoxViewModel      Vm, double Left, double Top)>?   _moveStartInfoBoxes;
 
     /// <summary>
     /// Called at the start of a move gesture (threshold first crossed).
@@ -413,8 +502,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     {
         _moveStartPlots    = _plots.Where(p => p.IsSelected)
                                    .Select(p => (p, p.Left, p.Top)).ToList();
-        _moveStartInfoBoxes = _markerInfoBoxes.Where(m => m.IsSelected)
-                                               .Select(m => (m, m.LogicalLeft, m.LogicalTop)).ToList();
+        _moveStartInfoBoxes = Boxes.Where(m => m.IsSelected)
+                                   .Select(m => (m, m.LogicalLeft, m.LogicalTop)).ToList();
     }
 
     /// <summary>
@@ -427,7 +516,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         if (_moveStartPlots is null && _moveStartInfoBoxes is null) return;
 
         var startPlots    = _moveStartPlots    ?? new List<(PlotContainerViewModel, double, double)>();
-        var startInfoBoxes = _moveStartInfoBoxes ?? new List<(MarkerInfoBoxViewModel, double, double)>();
+        var startInfoBoxes = _moveStartInfoBoxes ?? new List<(CanvasBoxViewModel, double, double)>();
 
         var plotSnaps = startPlots.Select(s => new PlotMoveSnapshot(
             s.Vm, s.Left, s.Top, s.Vm.Left, s.Vm.Top)).ToList();
@@ -908,6 +997,13 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         foreach (var box in _markerInfoBoxes.Where(m => m.IsSelected))
             cmds.Add(new RemoveMarkerCommand(box.Marker, box.Trace, box.Container, this));
 
+        // A selected legend — floating, or docked in its plot — is turned OFF for that plot (owner, 2026-10-25). Its plot
+        // stays; a plot selected as well goes with its legend, so only the survivors' legends are recorded.
+        foreach (var c in _plots.Where(p => !p.IsSelected
+                     && (p.IsLegendSelected || _legendBoxes.Any(b => b.IsSelected && b.Container == p))))
+            cmds.Add(new SetLegendCommand(c, c.PlotVM.Plot.Legend, c.PlotVM.Plot.LegendPos,
+                                          LegendPlacement.Off, new PlotPoint(double.NaN, double.NaN)));
+
         // Collect plot-remove commands (one per selected container).
         var toRemove = _plots.Where(p => p.IsSelected).ToList();
         if (toRemove.Count > 0)
@@ -971,8 +1067,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void SelectOnly(PlotContainerViewModel? vm)
     {
-        foreach (var p in _plots)           p.IsSelected = false;
-        foreach (var m in _markerInfoBoxes) m.IsSelected = false;
+        foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
+        foreach (var m in Boxes)  m.IsSelected = false;
         if (vm is not null)
         {
             vm.IsSelected = true;
@@ -994,8 +1090,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void DeselectAll()
     {
-        foreach (var p in _plots)           p.IsSelected = false;
-        foreach (var m in _markerInfoBoxes) m.IsSelected = false;
+        foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
+        foreach (var m in Boxes)  m.IsSelected = false;
         RefreshSelection();
     }
 
@@ -1003,8 +1099,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// info box.</summary>
     public void SelectAll()
     {
-        foreach (var p in _plots)           p.IsSelected = true;
-        foreach (var m in _markerInfoBoxes) m.IsSelected = true;
+        foreach (var p in _plots) p.IsSelected = true;
+        foreach (var m in Boxes)  m.IsSelected = true;
         RefreshSelection();
     }
 
@@ -1014,6 +1110,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void ToggleSelect(PlotContainerViewModel vm)
     {
+        vm.IsLegendSelected = false;
         vm.IsSelected = !vm.IsSelected;
         if (vm.IsSelected) vm.ZIndex = _nextZIndex++;
         RefreshSelection();
@@ -1025,10 +1122,10 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// Selects only <paramref name="vm"/> (or nothing if null) and deselects
     /// all plots and all InfoBoxes — the "regular click" path.
     /// </summary>
-    public void SelectOnly(MarkerInfoBoxViewModel? vm)
+    public void SelectOnly(CanvasBoxViewModel? vm)
     {
-        foreach (var p in _plots)           p.IsSelected = false;
-        foreach (var m in _markerInfoBoxes) m.IsSelected = false;
+        foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
+        foreach (var m in Boxes)  m.IsSelected = false;
         if (vm is not null) vm.IsSelected = true;
         RefreshSelection();
     }
@@ -1037,7 +1134,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// Toggles <paramref name="vm"/> selection without disturbing any other
     /// selected items — the Ctrl+click path.
     /// </summary>
-    public void ToggleSelect(MarkerInfoBoxViewModel vm)
+    public void ToggleSelect(CanvasBoxViewModel vm)
     {
         vm.IsSelected = !vm.IsSelected;
         OnPropertyChanged(nameof(HasAnySelection));
@@ -1050,7 +1147,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void SelectAllMarkersForContainer(PlotContainerViewModel container)
     {
-        foreach (var p in _plots)           p.IsSelected = false;
+        foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
+        foreach (var b in _legendBoxes) b.IsSelected = false;
         foreach (var m in _markerInfoBoxes) m.IsSelected = m.Container == container;
         RefreshSelection();
     }
@@ -1081,7 +1179,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             }
         }
 
-        foreach (var m in _markerInfoBoxes)
+        foreach (var m in Boxes)
         {
             var itemRect      = new Rect(m.ViewLeft, m.ViewTop, m.BoxWidth, m.BoxHeight);
             bool shouldSelect = screenRect.Intersects(itemRect);
@@ -1113,7 +1211,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             p.Left += dx;
             p.Top  += dy;
         }
-        foreach (var m in _markerInfoBoxes.Where(m => m.IsSelected))
+        foreach (var m in Boxes.Where(m => m.IsSelected))
             m.TranslateLogical(dx, dy);
     }
 
@@ -1125,25 +1223,37 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     internal void StartInfoBoxGroupDrag(Point windowPt)
     {
         // Capture pre-drag logical positions for undo before the drag starts.
-        _moveStartInfoBoxes = _markerInfoBoxes
+        _moveStartInfoBoxes = Boxes
             .Where(m => m.IsSelected)
             .Select(m => (m, m.LogicalLeft, m.LogicalTop))
             .ToList();
 
-        foreach (var m in _markerInfoBoxes)
+        foreach (var m in Boxes)
             if (m.IsSelected) m.StartDrag(windowPt);
     }
 
     internal void UpdateInfoBoxGroupDrag(Point windowPt)
     {
-        foreach (var m in _markerInfoBoxes)
+        foreach (var m in Boxes)
             if (m.IsSelected) m.UpdateDrag(windowPt);
     }
 
     internal void EndInfoBoxGroupDrag()
     {
-        foreach (var m in _markerInfoBoxes)
+        foreach (var m in Boxes)
             if (m.IsSelected) m.EndDrag();
+
+        // A legend just lifted out of its plot: the lift and the move are ONE step, from the docked placement to the
+        // floating box where it was dropped — undo puts it back in the plot rather than leaving it floating there.
+        if (_pendingLift is { } lift)
+        {
+            _pendingLift = null;
+            _moveStartInfoBoxes = null;
+            var plot = lift.Container.PlotVM.Plot;
+            UndoRedo.Push(new SetLegendCommand(lift.Container, lift.From, new PlotPoint(double.NaN, double.NaN),
+                                               LegendPlacement.Floating, plot.LegendPos));
+            return;
+        }
 
         // Push an undo command if anything actually moved.
         if (_moveStartInfoBoxes is { Count: > 0 })
@@ -1404,6 +1514,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         foreach (var c in _plots) c.PlotNeedsRedraw -= OnContainerRedraw;
         _plots.Clear();
         _markerInfoBoxes.Clear();
+        _legendBoxes.Clear();
         RefreshSelection();
 
         foreach (var pc in tabConfig.Plots)
@@ -1454,6 +1565,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         };
         _plots.Add(container);
         RebuildMarkerInfoBoxesForContainer(container);
+        RebuildLegendBoxForContainer(container);
         return container;
     }
 
@@ -1550,6 +1662,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             PolarAngleLabels            = plot.ShowPolarAngleLabels,
             SmithAdmittanceGrid         = plot.ShowSmithAdmittanceGrid,
             Legend                      = plot.Legend,
+            LegendLeft                  = FloatingLegendCoord(plot, plot.LegendPos.X),
+            LegendTop                   = FloatingLegendCoord(plot, plot.LegendPos.Y),
             SpecLines                   = plot.ShowSpecLines,
             SurfaceAzimuthDeg           = plot.SurfaceCamera.AzimuthDeg,
             SurfaceElevationDeg         = plot.SurfaceCamera.ElevationDeg,
@@ -1680,6 +1794,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             XSourcePath   = t.XSourcePath is { Length: > 0 } xp
                 ? ComputeSourceKey(xp, library)
                 : null,
+            Label         = t.HasLabel ? t.Label : null,
             Properties       = new TracePropertiesConfig
             {
                 LineEnabled      = t.Properties.LineEnabled,
@@ -1796,6 +1911,11 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
     /// Used to keep non-finite marker coordinates out of the JSON serializer, which rejects NaN/±∞.</summary>
     private static double Finite(double v, double fallback = 0.0) => double.IsFinite(v) ? v : fallback;
 
+    /// <summary>A floating legend's coordinate, or null — not written — for any other placement and for one not yet placed
+    /// (JSON cannot carry a NaN).</summary>
+    private static double? FloatingLegendCoord(Plot plot, double v) =>
+        plot.Legend == LegendPlacement.Floating && double.IsFinite(v) ? v : null;
+
     /// <summary>float overload of <see cref="Finite(double,double)"/>.</summary>
     private static float Finite(float v, float fallback = 0f) => float.IsFinite(v) ? v : fallback;
 
@@ -1834,6 +1954,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                     mc.InfoBoxX += PasteOffset;
                     mc.InfoBoxY += PasteOffset;
                 }
+            if (pc.LegendLeft is { } ll) pc.LegendLeft = ll + PasteOffset;
+            if (pc.LegendTop  is { } lt) pc.LegendTop  = lt + PasteOffset;
 
             var container = await LoadPlotContainerConfigAsync(pc, configDir: "");
 
@@ -1861,8 +1983,8 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         // deselect everything else first.
         if (pastedContainers.Count > 0)
         {
-            foreach (var p in _plots)           p.IsSelected = false;
-            foreach (var m in _markerInfoBoxes) m.IsSelected = false;
+            foreach (var p in _plots) { p.IsSelected = false; p.IsLegendSelected = false; }
+            foreach (var m in Boxes)  m.IsSelected = false;
 
             foreach (var c in pastedContainers)
             {
@@ -1871,7 +1993,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             }
 
             var pastedSet = pastedContainers.ToHashSet();
-            foreach (var m in _markerInfoBoxes)
+            foreach (var m in Boxes)
                 if (pastedSet.Contains(m.Container))
                     m.IsSelected = true;
 

@@ -281,6 +281,15 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private Point    _lastRightClickPos;
         private Marker?  _rightClickedMarker;
         private Trace?   _rightClickedTrace;
+        private Trace?   _rightClickedLegendTrace;   // a legend entry under the right-press (DFR27-3)
+
+        // A left-press on a DOCKED legend: it is selected at once, and a drag past the click threshold lifts it out of
+        // the plot as a floating box (LegendPlacement.Floating) that the rest of the drag moves.
+        private bool    _legendPressed;
+        private bool    _legendLifted;
+        private SKRect  _legendPressRect;
+        private Point   _legendPressWindowPt;
+        private ContextMenu? _legendContextMenu;
         private MenuItem? _addMarkerMenuItem;
         private MenuItem? _addAsGoalMenuItem;
         private MenuItem? _trialMenuItem;
@@ -956,7 +965,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             _addAsGoalMenuItem.Items.Clear();
             var traces = _plot?.Traces.Where(t => !t.IsAnnotation).ToList() ?? [];
             var items = _plot is null || _plot.PlotType == PlotType.Surface3D
-                ? [] : traces.Select(t => AddAsGoalItem(t, t.Description)).ToList();
+                ? [] : traces.Select(t => AddAsGoalItem(t, t.HasLabel ? t.Label! : t.Description)).ToList();
             foreach (var item in items) _addAsGoalMenuItem.Items.Add(item);
             // Lit only when some curve can be added: a lit row whose every curve is greyed — the whole menu, where there is
             // no schematic to add a goal to, such as the Model Composer's plots — offers an action that does nothing.
@@ -1086,7 +1095,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             {
                 if (t.IsAnnotation) continue;
 
-                var sub      = new MenuItem { Header = t.Description };
+                var sub      = new MenuItem { Header = t.HasLabel ? t.Label! : t.Description };
                 var captured = t;
                 sub.Click += (_, _) => AddMarkerAtCanvasPoint(captured, _lastRightClickPos);
                 _addMarkerMenuItem.Items.Add(sub);
@@ -1133,6 +1142,12 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             bool alwaysShowSource = AppSettingsViewModel.Instance.EffectiveShowFilePrefix(
                 _library?.HasMultipleSources ?? false);
 
+            // A selected docked legend is outlined in the plot as a selected info box is; the colour is resolved here, on
+            // the UI thread, for the reason the info box gives.
+            SkiaSharp.SKColor legendSel = ContainerProvider?.Invoke()?.IsLegendSelected == true
+                ? PlotAccentColor.GetTransparentAccent(RenderTheme.SelectionAlpha)
+                : default;
+
             context.Custom(new PlotDrawOperation(
                 new Rect(Bounds.Size),
                 // A SNAPSHOT, never the live plot: this method only records the draw operation —
@@ -1152,7 +1167,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 // this frame needs, taken HERE alongside the trace snapshot above, so the chrome and
                 // the curves beneath it come from the same pointer position (IPlotOverlay.CaptureFrame).
                 // The theme stays an argument, so it is the draw op's own.
-                Overlay?.CaptureFrame()));
+                Overlay?.CaptureFrame(),
+                legendSel));
         }
 
         // ============================================================
@@ -1173,6 +1189,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             private readonly Func<Trace, string?>? _aliasFor;
             private readonly bool _alwaysShowSource;
             private readonly Action<SKCanvas, TransformSet, RenderTheme>? _overlay;
+            private readonly SKColor _legendSelection;
 
             public PlotDrawOperation(
                 Rect             bounds,
@@ -1186,8 +1203,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 VswrReadout?     vswrReadout     = null,
                 Func<Trace, string?>? aliasFor   = null,
                 bool alwaysShowSource = false,
-                Action<SKCanvas, TransformSet, RenderTheme>? overlay = null)
+                Action<SKCanvas, TransformSet, RenderTheme>? overlay = null,
+                SKColor legendSelection = default)
             {
+                _legendSelection = legendSelection;
                 _bounds          = bounds;
                 _plot            = plot;
                 _theme           = theme;
@@ -1240,6 +1259,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     // remembered — ContourRenderer once drew every contour on every Smith plot to
                     // the first target it had been handed.
                     overlay: _overlay is { } ov ? (c, tf) => ov(c, tf, _theme) : null);
+                if (_legendSelection != default
+                    && LegendRenderer.DockedBounds(canvasSize, _plot, PlotRenderer.BuildTransforms(_plot, canvasSize),
+                                                   _aliasFor, _alwaysShowSource) is { } legendRect)
+                    LegendRenderer.DrawSelection(canvas, legendRect, _legendSelection);
                 canvas.Restore();
             }
 
@@ -1250,6 +1273,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         // question the last frame answered. Built the same way Render() builds them (see the note
         // there on why the alias resolver is captured as a plain delegate); they reach the hit test
         // because the caption block's HEIGHT depends on them, and the scene is what is left over.
+        /// <summary>The pointer in window coordinates — the frame a box's drag is measured in (see CanvasBoxViewModel).</summary>
+        private Point WindowPoint(PointerEventArgs e)
+            => TopLevel.GetTopLevel(this) is { } root ? e.GetPosition(root) : e.GetPosition(this);
+
         private Func<Trace, string?>? AliasForTrace()
             => _library is { } lib ? t => lib.AliasFor(t.EffectiveSourcePath) : null;
 
@@ -1469,6 +1496,24 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     return;
                 }
 
+                // THE DOCKED LEGEND, under the markers and over the curves, so tested after the markers. Handled, so the
+                // container neither moves nor selects the plot: the press is the legend's.
+                if (ContainerProvider?.Invoke() is { } legendHost
+                    && LegendRenderer.DockedBounds((Bounds.Width, Bounds.Height), _plot,
+                           PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height)),
+                           AliasForTrace(), AlwaysShowSourceForRender()) is { } legendRect
+                    && legendRect.Contains((float)_dragStartScreen.X, (float)_dragStartScreen.Y))
+                {
+                    legendHost.SelectDockedLegend();
+                    _legendPressed       = true;
+                    _legendLifted        = false;
+                    _legendPressRect     = legendRect;
+                    _legendPressWindowPt = WindowPoint(e);
+                    e.Pointer.Capture(this);
+                    e.Handled = true;
+                    return;
+                }
+
                 // A click on a family member, a scatter point or a histogram bar selects its trial(s) in that
                 // source, in every display (brief-yield-9 R-ya9-6). NOT handled: the plot is still selected and
                 // dragged exactly as before — a trial pick rides along with the click rather than replacing it.
@@ -1500,6 +1545,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 _rightDragOccurred = false;
                 _lastRightClickPos = _dragStartScreen;
 
+                _rightClickedLegendTrace = null;
                 var markerHit = HitTestMarker(_dragStartScreen);
                 if (markerHit.HasValue)
                 {
@@ -1509,6 +1555,13 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
                 _rightClickedMarker = null;
                 _rightClickedTrace  = null;
+
+                // A legend entry is under the markers and over the curves, so it is tested after the markers.
+                _rightClickedLegendTrace = LegendRenderer.HitEntry(
+                    (Bounds.Width, Bounds.Height), _plot,
+                    PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height)),
+                    _dragStartScreen.X, _dragStartScreen.Y, AliasForTrace(), AlwaysShowSourceForRender());
+                if (_rightClickedLegendTrace is not null) return;
 
                 if (_plot.Axes.ShowSecondary)
                 {
@@ -1531,6 +1584,22 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (_plot is null) return;
 
             var current = e.GetPosition(this);
+
+            // ---- A docked legend dragged out of the plot ----
+            if (_legendPressed && ContainerProvider?.Invoke() is { } legendHost)
+            {
+                if (!_legendLifted)
+                {
+                    double ddx = current.X - _dragStartScreen.X, ddy = current.Y - _dragStartScreen.Y;
+                    if (Math.Sqrt(ddx * ddx + ddy * ddy) < ClickSelectThreshold) { e.Handled = true; return; }
+                    var (lx, ly) = legendHost.CanvasToLogical(_legendPressRect.Left, _legendPressRect.Top);
+                    legendHost.LiftLegend(lx, ly, _legendPressWindowPt);
+                    _legendLifted = true;
+                }
+                legendHost.UpdateBoxDrag(WindowPoint(e));
+                e.Handled = true;
+                return;
+            }
 
             // ---- The overlay's own drag (R-smith5-6) ----
             //
@@ -1736,6 +1805,16 @@ namespace CircuitRF.Ui.DataDisplay.Controls
 
         private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
         {
+            // ---- The docked legend's press ends: a click left it selected, a drag dropped it on the canvas ----
+            if (_legendPressed)
+            {
+                if (_legendLifted) ContainerProvider?.Invoke()?.EndBoxDrag();
+                _legendPressed = _legendLifted = false;
+                e.Pointer.Capture(null);
+                e.Handled = true;
+                return;
+            }
+
             // ---- The overlay's drag ends (R-smith5-8) ----
             //
             //  ON RELEASE is where the undo entry is pushed, by the overlay, carrying the value it
@@ -1872,6 +1951,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             {
                 if (_rightClickedMarker is not null && _rightClickedTrace is not null)
                     ShowMarkerContextMenu(_rightClickedMarker, _rightClickedTrace);
+                else if (_rightClickedLegendTrace is { } legendTrace)
+                    ShowLegendContextMenu(legendTrace);
                 else
                 {
                     _contextMenu ??= BuildContextMenu();
@@ -1883,10 +1964,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 }
             }
 
-            _rightButtonDown    = false;
-            _rightDragOccurred  = false;
-            _rightClickedMarker = null;
-            _rightClickedTrace  = null;
+            _rightButtonDown         = false;
+            _rightDragOccurred       = false;
+            _rightClickedMarker      = null;
+            _rightClickedTrace       = null;
+            _rightClickedLegendTrace = null;
         }
 
         // ============================================================
@@ -2612,6 +2694,27 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 });
             menu.Items.Add(new Separator());
             menu.Items.Add(AddAsGoalItem(trace, "Add as Goal…"));
+            menu.Close(); // a second right-click while the menu is still up replaces, not re-opens
+            menu.Open(this);
+        }
+
+        /// <summary>A legend entry's menu (DFR27-3): Rename… opens the trace's card at its Label box.</summary>
+        private void ShowLegendContextMenu(Trace trace)
+        {
+            if (_plot is null) return;
+            _legendContextMenu ??= new ContextMenu();
+            var menu = _legendContextMenu;
+            menu.Items.Clear();
+
+            var rename = new MenuItem { Header = "Rename…", IsEnabled = CanEditPlotProperties };
+            rename.Click += (_, _) =>
+            {
+                int idx = _plot.Traces.IndexOf(trace);
+                if (idx < 0) return;
+                ShowPlotInspector(idx);
+                _inspectorView?.FocusTraceLabel(idx);
+            };
+            menu.Items.Add(rename);
             menu.Close(); // a second right-click while the menu is still up replaces, not re-opens
             menu.Open(this);
         }

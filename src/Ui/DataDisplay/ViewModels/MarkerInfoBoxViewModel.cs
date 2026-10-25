@@ -4,80 +4,28 @@
 //  ViewModel for a single draggable MarkerInfoBox overlay.
 //  One instance per (Marker, Trace) pair, owned by DataDisplayViewModel.
 //
-//  Position is stored in DataDisplay logical coordinates — the same
-//  coordinate system as PlotContainerViewModel.Left/Top.  This means
-//  the info box is independent of which plot it was created from and
-//  does not move when a plot container is repositioned.
-//
-//  ViewLeft / ViewTop (screen pixels in the DataDisplay canvas) are
-//  computed on demand: logicalPos * ZoomLevel + ViewOffset.
-//  DataDisplayViewModel calls NotifyViewProperties() whenever zoom
-//  or pan changes.
-//
-//  Drag uses window-relative positions so the reference frame is
-//  stable regardless of the overlay element's own position.
+//  Position, size, zoom, drag and selection are CanvasBoxViewModel's,
+//  shared with a floating legend; this adds the marker, its readout and
+//  its menu actions. The position is written back to Marker.InfoBoxPos.
 // ================================================================
 
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Avalonia;
-using CommunityToolkit.Mvvm.ComponentModel;
 using RfCore;
 using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
-public partial class MarkerInfoBoxViewModel : ViewModelBase
+public partial class MarkerInfoBoxViewModel : CanvasBoxViewModel
 {
     // ---- Model references -------------------------------------------
 
     public Marker                  Marker    { get; }
     public Trace                   Trace     { get; }
-    public PlotContainerViewModel  Container { get; }
 
     private readonly Func<FreqUnit>       _getFreqUnit;
     private readonly Func<RenderTheme>    _getTheme;
-    private readonly DataDisplayViewModel _parent;
-
-    // ---- Position in DataDisplay logical coordinates ----------------
-    //  logical_x * ZoomLevel + ViewOffsetX  →  screen Canvas.Left
-    //  logical_y * ZoomLevel + ViewOffsetY  →  screen Canvas.Top
-
-    private double _logicalLeft;
-    private double _logicalTop;
-
-    // ---- Screen position (what Canvas.Left/Top bind to) -------------
-
-    public double ViewLeft => _logicalLeft * _parent.ZoomLevel + _parent.ViewOffsetX;
-    public double ViewTop  => _logicalTop  * _parent.ZoomLevel + _parent.ViewOffsetY;
-
-    // ---- Logical position (DataDisplay coordinate space, zoom-independent) ----
-    //  Read by PlotExporter to compute export-canvas position without needing
-    //  the current zoom level or view offset.
-
-    public double LogicalLeft => _logicalLeft;
-    public double LogicalTop  => _logicalTop;
-
-    // ---- Control dimensions — stored as logical pixels, exposed as screen pixels ------
-    //  BoxWidth/BoxHeight bind to the view's Width/Height.  The view lives on the
-    //  DataDisplay canvas alongside plots whose sizes also scale with ZoomLevel, so
-    //  the info box must grow/shrink with zoom just as ViewLeft/ViewTop do.
-    //  DrawInfoBox derives its font size from the screen-pixel control height rather
-    //  than a fixed value, so text stays proportional at any zoom level.
-
-    private double _logicalBoxWidth  = 120;
-    private double _logicalBoxHeight =  60;
-
-    public double BoxWidth  => _logicalBoxWidth  * _parent.ZoomLevel;
-    public double BoxHeight => _logicalBoxHeight * _parent.ZoomLevel;
-
-    // ---- Drag state -------------------------------------------------
-
-    private bool   _isDragging;
-    private Point  _dragStartWindowPt;
-    private double _logicalLeftAtDragStart;
-    private double _logicalTopAtDragStart;
 
     // ---- Constructor ------------------------------------------------
 
@@ -90,18 +38,17 @@ public partial class MarkerInfoBoxViewModel : ViewModelBase
         DataDisplayViewModel   parent,
         double                 logicalLeft,
         double                 logicalTop)
+        : base(container, parent, logicalLeft, logicalTop)
     {
         Marker       = marker;
         Trace        = trace;
-        Container    = container;
         _getFreqUnit = getFreqUnit;
         _getTheme    = getTheme;
-        _parent      = parent;
-        _logicalLeft = logicalLeft;
-        _logicalTop  = logicalTop;
 
         RefreshSize();
     }
+
+    protected override void CommitPosition(double left, double top) => Marker.InfoBoxPos = new PlotPoint(left, top);
 
     // ---- Called when marker data changes (symbol dragged) -----------
 
@@ -189,56 +136,6 @@ public partial class MarkerInfoBoxViewModel : ViewModelBase
         _parent.OnContainerPlotChanged(Container);
     }
 
-    // ---- Called by DataDisplayViewModel when zoom/pan changes -------
-
-    public void NotifyViewProperties()
-    {
-        OnPropertyChanged(nameof(ViewLeft));
-        OnPropertyChanged(nameof(ViewTop));
-        OnPropertyChanged(nameof(BoxWidth));
-        OnPropertyChanged(nameof(BoxHeight));
-    }
-
-    // ---- Drag: window-relative positions, delta converted to logical ----
-
-    public void StartDrag(Point windowPt)
-    {
-        _isDragging             = true;
-        _dragStartWindowPt      = windowPt;
-        _logicalLeftAtDragStart = _logicalLeft;
-        _logicalTopAtDragStart  = _logicalTop;
-    }
-
-    public void UpdateDrag(Point windowPt)
-    {
-        if (!_isDragging) return;
-        double zoom  = _parent.ZoomLevel > 0 ? _parent.ZoomLevel : 1.0;
-        _logicalLeft = _logicalLeftAtDragStart + (windowPt.X - _dragStartWindowPt.X) / zoom;
-        _logicalTop  = _logicalTopAtDragStart  + (windowPt.Y - _dragStartWindowPt.Y) / zoom;
-        OnPropertyChanged(nameof(ViewLeft));
-        OnPropertyChanged(nameof(ViewTop));
-    }
-
-    public void EndDrag()
-    {
-        if (!_isDragging) return;
-        _isDragging        = false;
-        Marker.InfoBoxPos  = new PlotPoint(_logicalLeft, _logicalTop);
-    }
-
-    /// <summary>
-    /// Directly sets the logical position and syncs Marker.InfoBoxPos.
-    /// Called by <see cref="MovePlotsCommand"/> during undo/redo of a move.
-    /// </summary>
-    internal void SetLogicalPosition(double left, double top)
-    {
-        _logicalLeft      = left;
-        _logicalTop       = top;
-        Marker.InfoBoxPos = new PlotPoint(left, top);
-        OnPropertyChanged(nameof(ViewLeft));
-        OnPropertyChanged(nameof(ViewTop));
-    }
-
     // ---- Helpers ----------------------------------------------------
 
     // True when the file prefix should appear in the marker info box and context menu.
@@ -262,52 +159,13 @@ public partial class MarkerInfoBoxViewModel : ViewModelBase
     private void RefreshSize()
     {
         var (w, h) = MarkerRenderer.MeasureInfoBox(Marker, Trace, _getFreqUnit(), ShowFilePrefix, PlotTraces);
-        _logicalBoxWidth  = w;
-        _logicalBoxHeight = h;
-        OnPropertyChanged(nameof(BoxWidth));
-        OnPropertyChanged(nameof(BoxHeight));
+        SetLogicalSize(w, h);
     }
 
     public FreqUnit    FreqUnit => _getFreqUnit();
     public RenderTheme Theme    => _getTheme();
     public PlotType    PlotType => Container.PlotVM.Plot.PlotType;
 
-    // ---- Selection --------------------------------------------------
-    //  IsSelected is a true observable property so that [ObservableProperty]
-    //  fires PropertyChanged automatically and the view's InvalidateVisual
-    //  subscription fires on every change.
-
-    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty]
-    private bool _isSelected;
-
     // When selection state changes, the marker symbol in the PlotControl must also redraw.
-    partial void OnIsSelectedChanged(bool value) => Container.RequestPlotRedraw();
-
-    /// <summary>Selects only this InfoBox (regular click — clears everything else).</summary>
-    public void SelectOnly()    => _parent.SelectOnly(this);
-
-    /// <summary>Toggles this InfoBox in the selection (Ctrl+click — leaves other items alone).</summary>
-    public void ToggleSelect()  => _parent.ToggleSelect(this);
-
-    // ---- Coordinated move (plot-drag path) --------------------------
-
-    /// <summary>
-    /// Moves the info box by a logical-coordinate delta.  Called by
-    /// DataDisplayViewModel.MoveSelected when a plot drag also carries
-    /// selected InfoBoxes.
-    /// </summary>
-    public void TranslateLogical(double dx, double dy)
-    {
-        _logicalLeft += dx;
-        _logicalTop  += dy;
-        Marker.InfoBoxPos = new PlotPoint(_logicalLeft, _logicalTop);
-        OnPropertyChanged(nameof(ViewLeft));
-        OnPropertyChanged(nameof(ViewTop));
-    }
-
-    // ---- InfoBox group drag (absolute window-position path) ---------
-
-    public void StartGroupDrag(Point windowPt)  => _parent.StartInfoBoxGroupDrag(windowPt);
-    public void UpdateGroupDrag(Point windowPt)  => _parent.UpdateInfoBoxGroupDrag(windowPt);
-    public void EndGroupDrag()                   => _parent.EndInfoBoxGroupDrag();
+    protected override void OnSelectionChanged() => Container.RequestPlotRedraw();
 }

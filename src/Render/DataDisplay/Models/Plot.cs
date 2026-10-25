@@ -97,7 +97,10 @@ namespace CircuitRF.Render.DataDisplay
 
     /// <summary>Where a plot draws its legend (R-dfr26-6-2): nowhere, in the plot box's top-right
     /// corner, or in a band under the plot.</summary>
-    public enum LegendPlacement { Off, Inside, Below }
+    /// <summary>Where a plot's legend is drawn. <see cref="Floating"/> is a box the user dragged out of the plot: it sits on
+    /// the Data Display canvas at <see cref="Plot.LegendPos"/>, as a marker info box does. Appended, so a stored name
+    /// keeps its meaning.</summary>
+    public enum LegendPlacement { Off, Inside, Below, Floating }
 
     public static class PlotTypeExtensions
     {
@@ -365,6 +368,14 @@ namespace CircuitRF.Render.DataDisplay
         /// A property of the plot, for <see cref="ShowSmithAdmittanceGrid"/>'s reason.
         /// </summary>
         public LegendPlacement Legend { get; set; }
+
+        /// <summary>
+        /// Where a <see cref="LegendPlacement.Floating"/> legend's box sits, in Data Display LOGICAL coordinates — the
+        /// space a plot container's Left/Top and a marker's <see cref="Marker.InfoBoxPos"/> are in — so it stays put
+        /// when the plot is moved, exactly as an info box does. NaN for any other placement, and for a floating legend
+        /// nobody has placed (a hand-written file), which <see cref="LegendRenderer.DefaultFloatingPosition"/> places.
+        /// </summary>
+        public PlotPoint LegendPos { get; set; } = new(double.NaN, double.NaN);
 
         /// <summary>
         /// Draw the limits of the goals this plot's traces draw (brief-yield-8 R-ya8-3). <b>Null is the default:

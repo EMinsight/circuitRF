@@ -76,6 +76,10 @@ public sealed record PlacedMarkerBox(
 /// One plot's placement on the canvas — everything <c>PlotContainerViewModel</c> exposed to the
 /// exporter and nothing else.
 /// </summary>
+/// <summary>A floating legend (<see cref="LegendPlacement.Floating"/>), positioned in the same screen space as the plots.
+/// <paramref name="Lw"/> is its plot canvas's line-width unit in LOGICAL units, which its text is measured at.</summary>
+public sealed record PlacedLegend(double ViewLeft, double ViewTop, double BoxWidth, double BoxHeight, double Lw);
+
 public sealed class PlacedPlot
 {
     public required Plot   Plot         { get; init; }
@@ -97,6 +101,9 @@ public sealed class PlacedPlot
     public IReadOnlyList<PlacedLabelStrip> LeftLabelStrips  { get; init; } = Array.Empty<PlacedLabelStrip>();
     public IReadOnlyList<PlacedLabelStrip> RightLabelStrips { get; init; } = Array.Empty<PlacedLabelStrip>();
     public IReadOnlyList<PlacedMarkerBox>  MarkerBoxes      { get; init; } = Array.Empty<PlacedMarkerBox>();
+
+    /// <summary>This plot's legend when it floats on the canvas; null when it is docked in the plot or off.</summary>
+    public PlacedLegend?                   Legend           { get; init; }
 
     /// <summary>Whether a trace label carries its source's name — the library-count heuristic, already resolved.</summary>
     public bool ShowFilePrefix   { get; init; }
@@ -185,6 +192,14 @@ public static class PlotComposer
             bndL = Math.Min(bndL, c.ViewLeft);
             bndR = Math.Max(bndR, c.ViewLeft + c.ViewWidth);
 
+            if (c.Legend is { } lg)
+            {
+                bndL = Math.Min(bndL, lg.ViewLeft);
+                bndT = Math.Min(bndT, lg.ViewTop);
+                bndR = Math.Max(bndR, lg.ViewLeft + lg.BoxWidth);
+                bndB = Math.Max(bndB, lg.ViewTop  + lg.BoxHeight);
+            }
+
             foreach (var box in c.MarkerBoxes)
             {
                 bndL = Math.Min(bndL, box.ViewLeft);
@@ -269,6 +284,17 @@ public static class PlotComposer
                 alwaysShowSource: c.AlwaysShowSource,
                 overlay: c.Overlay is { } ov ? (cv, tf) => ov(cv, tf, theme) : null);
             canvas.Restore();
+
+            // A floating legend — over its plot, under the marker boxes, as the window stacks them.
+            if (c.Legend is { } legend)
+            {
+                canvas.Save();
+                canvas.Translate(margin + padX + (float)(legend.ViewLeft - bndL) * S,
+                                 margin + padY + (float)(legend.ViewTop  - bndT) * S);
+                LegendRenderer.DrawFloating(canvas, (legend.BoxWidth * S, legend.BoxHeight * S), plot, legend.Lw, theme,
+                    c.AliasFor, c.AlwaysShowSource, settings.MarkerBoxTransparentBackground);
+                canvas.Restore();
+            }
 
             // Marker info boxes
             foreach (var box in c.MarkerBoxes)

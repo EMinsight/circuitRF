@@ -65,6 +65,8 @@ public static class PlotConfigLoader
         plot.ShowPolarAngleLabels        = pc.PolarAngleLabels;
         plot.ShowSmithAdmittanceGrid     = pc.SmithAdmittanceGrid;
         plot.Legend                      = pc.Legend;
+        plot.LegendPos                   = pc.Legend == LegendPlacement.Floating && pc.LegendLeft is { } ll && pc.LegendTop is { } lt
+                                           ? new PlotPoint(ll, lt) : new PlotPoint(double.NaN, double.NaN);
         plot.ShowSpecLines               = pc.SpecLines;
         plot.SurfaceCamera               = PatternCamera.New(pc.SurfaceAzimuthDeg, pc.SurfaceElevationDeg, pc.SurfaceZoom);
         plot.SurfaceColorMap             = pc.SurfaceColorMap;
@@ -313,6 +315,7 @@ public static class PlotConfigLoader
         // (never the "Selected" sentinel: an X side belongs to one dataset, not to whichever
         // source happens to be selected).
         trace.XSpec = traceConfig.XSpec;
+        trace.Label = string.IsNullOrEmpty(traceConfig.Label) ? null : traceConfig.Label;
         if (!string.IsNullOrEmpty(traceConfig.XSourcePath))
             trace.XSourcePath = sources.ResolveAbs(traceConfig.XSourcePath);
         trace.MatrixFormat          = traceConfig.MatrixFormat;

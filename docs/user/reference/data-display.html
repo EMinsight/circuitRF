@@ -335,6 +335,11 @@ what a <a href="plot-types.html#table">Table</a> is for.</p>
 ones you named, and every device-port branch beyond your IProbes. It is one control shared by the node
 and branch rows. A net label and a VProbe both count as naming a node, so both are visible without it.</p>
 <p><strong>Spec</strong> — the transform, and the shorthand text box (below).</p>
+<p><strong>Label</strong> — the trace's own name. Typed here, it replaces the generated name everywhere the trace is named:
+the legend, the Y-axis title, the marker box and its multi-marker rows, a table's column header and the
+column of copied or exported table data. It is the whole name, with no source and no quantity added to it.
+Empty, the box shows the generated name it would replace, and that name is what is drawn. Enter or
+clicking away commits it, as one undo step.</p>
 <p><strong>Style</strong> — line, symbol, per-port Z0 for a network trace, and the number format on a Table.</p>
 <p><strong>Derived metrics.</strong> Beneath the matrix elements the item selector also offers quantities <em>computed</em>
 from the S-matrix rather than read out of it — stability factors, maximum gain, passivity, group delay,
@@ -505,10 +510,17 @@ assigned to a <strong>secondary (right-hand) Y axis</strong> on a rectangular pl
 efficiency in per cent share one frame legibly. Autoscale is on until you set a limit; setting one turns
 it off for that axis, so a figure you have framed deliberately does not re-frame itself on the next run.</p>
 <p>The three <strong>legend</strong> buttons to the right of <strong>Freq</strong> in the Plot Inspector draw a box naming each trace
-beside a short sample of its line, in its colour and line style. <strong>Inside</strong> puts it in the top-right corner
-of the plot; <strong>Below</strong> puts it in a band under the plot. It is <strong>Off</strong> to begin with, on every plot type: a rectangular plot already names
+beside a short sample of its line, in its colour and line style. <strong>On</strong> puts it in the top-right corner
+of the plot; <strong>Below</strong> puts it in a band under the plotting region. It is <strong>Off</strong> to begin with, on every plot type: a rectangular plot already names
 its traces on the Y axis, and a Smith or polar plot on the label strips beside the chart and the rows
-under it. The setting is saved in the <code>.cdd</code>, and <code>circuitrf render</code> and <code>circuitrf plot</code> draw it too.</p>
+under it. The setting is saved in the <code>.cdd</code>, and <code>circuitrf render</code> and <code>circuitrf plot</code> draw it too.
+Right-click an entry and choose <strong>Rename…</strong> to open its trace card at the <a href="#trace-card">Label</a> box.</p>
+<p><strong>Drag a legend to put it anywhere on the display</strong> — off the curves, or out of the plot altogether. It
+lifts out as a box that moves like a marker info box: click to select it, Ctrl/Cmd-click to add it to a
+selection, and it moves with the plots selected with it. <strong>On</strong> stays lit wherever you put it; <strong>Below</strong> puts it
+back in the plot.
+Select a legend and press <strong>Delete</strong> to turn it off for that plot. Each of these is one undo step, and
+where you left it is saved in the <code>.cdd</code>.</p>
 <h2 id="db-floor">The decibel floor</h2>
 <p><strong>A decibel trace bottoms out at −250 dB.</strong> Below that the curve is drawn flat at −250, and a readout
 says so with the inequality rather than a bare number — a marker info box reads <code>dB(S(1,1)) ≤ -250.00</code>,

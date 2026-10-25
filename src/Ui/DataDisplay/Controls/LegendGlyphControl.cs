@@ -7,7 +7,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls;
 /// <summary>
 /// Draws the legend-placement glyphs of the Plot Inspector's legend button group: a plot frame with a
 /// curve, plus the legend where <see cref="LegendPlacement"/> puts it — nothing (Off), a small box in
-/// the frame's top-right corner (Inside), or entry rows under a shortened frame (Below). Geometry is
+/// the frame's top-right corner (On), or entry rows under a shortened frame (Below). Geometry is
 /// laid out on a 16-unit grid and scaled to the control, so all of it lives here for owner tweaking.
 /// </summary>
 public class LegendGlyphControl : Control

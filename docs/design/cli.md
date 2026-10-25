@@ -2513,6 +2513,7 @@ they carry is full of commas.
 | `i`, `j` | pin the cube's axes named `i` and `j` by **port number**. Refused alongside a bracketed slice. |
 | `y` | `db`, `db10`, `db20`, `mag`, `phase`, `real`, `imag`, `conj` — folded in as the transform prefix, so there is one table of those names and it is the parser's. |
 | `axis` | `left` (default) or `right`. |
+| `label` | the trace's own name — `label="As built"`, quoted when it holds a comma. It replaces the generated name in the legend, the Y-axis title, the marker box and a table header, with no source prefix and no quantity after it; `--write-cdd` writes it as the trace's `Label`. |
 | `probe` | the WSProbe a metric is taken at, by the LABEL `__WspProbes` carries. Turns the trace into a probe metric. |
 | `with` | the second probe of a pair, for the `wsp_block_calc` metrics. |
 | `set` | the ordered probe set for Ohtomo, semicolon separated. Order is part of the answer. |

@@ -203,6 +203,38 @@ public sealed class NetworkParamElementPickerTests : IDisposable
         Assert.Equal("S(3,2)", typedRow.SelectedSignal?.Label);
     }
 
+    /// <summary>
+    /// A cube-bound <c>S</c> trace on the DEFAULT group — what <c>circuitrf plot</c> writes over a <c>circuitrf sparam
+    /// -o</c> result, or a typed <c>dB20(S[:, 2, 1])</c>. That group's S is offered as the network items, so no cube item
+    /// matched and every such card fell through to the first item, reading S(1,1) whatever it drew.
+    /// </summary>
+    [Fact]
+    public async Task DefaultGroupSCubeTrace_SelectsItsOwnPortPair()
+    {
+        string p = WriteNpy(GroupedRun(DataSet.DefaultGroup, nPorts: 4));
+        var lib = new DataSourceLibraryViewModel();
+        await lib.LoadFileAsync(p);
+        await lib.SelectDataSourceAsync(p);
+
+        var plot = new Plot(PlotType.Rect, FreqUnit.GHz);
+        foreach (var (i, j) in new[] { (1, 0), (3, 2) })
+        {
+            var t = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db)
+            {
+                SourcePath = p, CubeName = "S", Transform = CubeTransform.dB20,
+                Slice = [new AxisSlice("freq", AxisRole.KeepAsX, 0),
+                         new AxisSlice("i", AxisRole.PinToIndex, i), new AxisSlice("j", AxisRole.PinToIndex, j)],
+            };
+            t.Expression = t.BuildPickerExpression();
+            plot.Traces.Add(t);
+        }
+        var inspector = new PlotInspectorViewModel(plot, () => { }, lib);
+        inspector.RebuildAndNotify();
+
+        Assert.Equal(new[] { "S(2,1)", "S(4,3)" }, inspector.Traces.Select(r => r.SelectedSignal?.Label).ToArray());
+        Assert.Equal("S[:, 4, 3]", plot.Traces[1].Expression?.Replace("dB20(", "").TrimEnd(')'));   // the trace is untouched
+    }
+
     [Fact]
     public async Task TwoPortSource_OffersFourElementItems_NoPairPickerSubstitute()
     {
