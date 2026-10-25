@@ -130,6 +130,44 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.Empty(Directory.EnumerateFiles(viaCli, "*.ctech", SearchOption.AllDirectories));
     }
 
+    /// <summary>--crop is the layout editor's Crop to Rectangle on what an import produced (designer report, round 26:
+    /// a board was cut down by hand, layer by layer). Everything left lies inside the rectangle, and something was cut.</summary>
+    [Fact]
+    public void Crop_LeavesOnlyWhatIsInsideTheRectangle()
+    {
+        string set = Path.Combine(_root, "set");
+        CircuitRF.Ui.Diagnostics.Fixtures.DocGerberFixtures.WriteSixCopperSet(set);
+        var whole = GerberImport.Import(GerberImportEntry.FilesIn(set), Path.Combine(_root, "whole"), "set", null, Dbu,
+                                        resolveDrillFormat: (_, _, _, _) => new GerberImport.DrillFormatChoice(null, ApplyToAll: true));
+        var all = LayoutPersistence.LoadFromFile(Directory.EnumerateFiles(whole.CellDir!, "*.clay", SearchOption.AllDirectories).Single());
+        var boxes = all.Shapes.Where(sh => sh is not LabelShape).Select(LayoutGeometry.BboxOf).ToList();
+        long x0 = boxes.Min(b => b.MinX), x1 = boxes.Max(b => b.MaxX), y0 = boxes.Min(b => b.MinY), y1 = boxes.Max(b => b.MaxY);
+        long xm = (x0 + x1) / 2;
+        string Mm(long dbu) => (dbu / (Dbu * 1000.0)).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture) + "mm";
+
+        string target = Path.Combine(_root, "cropped");
+        var (code, stdout, stderr) = RunCli("convert", set, "-o", target, "--to", "clay", "--accept-inferred-drill-format",
+                                            "--crop", $"{Mm(x0)},{Mm(y0)},{Mm(xm)},{Mm(y1)}");
+        Assert.True(code == 0, stderr);
+        Assert.Contains("[circuitRF] crop:", stderr);
+
+        var cut = LayoutPersistence.LoadFromFile(Directory.EnumerateFiles(stdout.Trim(), "*.clay", SearchOption.AllDirectories).Single());
+        Assert.All(cut.Shapes.Where(sh => sh is not LabelShape).Select(LayoutGeometry.BboxOf),
+                   b => Assert.True(b.MaxX <= xm + 1 && b.MinX >= x0 - 1, $"{b.MinX}..{b.MaxX} leaves ..{xm}"));
+        Assert.True(cut.Shapes.Count < all.Shapes.Count);
+    }
+
+    [Fact]
+    public void Crop_OnAClaySource_IsRefused()
+    {
+        Directory.CreateDirectory(_root);
+        string clay = Path.Combine(_root, "a.clay");
+        File.WriteAllText(clay, "{}");
+        var (code, _, stderr) = RunCli("convert", clay, "-o", Path.Combine(_root, "a.gds"), "--crop", "0mm,0mm,1mm,1mm");
+        Assert.Equal(1, code);
+        Assert.Contains("--crop cuts what an import produced", stderr);
+    }
+
     [Fact]
     public void IntoTech_TogetherWithTech_IsRefused()
     {

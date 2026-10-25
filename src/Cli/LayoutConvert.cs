@@ -107,6 +107,10 @@ public static class LayoutConvert
         // --region: a glTF target's region name, or a picture source's pixel rectangle (brief-img-11 R-im11-1).
         public string? Region;
 
+        // --crop: the layout editor's Crop to Rectangle (brief-dfr26-2), applied to what an import produced —
+        // x0,y0,x1,y1, every coordinate with its unit, as render --window takes them.
+        public string? Crop;
+
         // brief-img-11 R-im11-1 — a picture source: the Create Layout from Image dialog's fields, one flag each.
         public readonly PictureFlags Picture = new();
     }
@@ -232,6 +236,7 @@ public static class LayoutConvert
                 case "--gltf-assembly": o.GltfAssembly = o.GltfFlags = true; break;
                 case "--gltf-field" when i + 1 < args.Length: o.GltfField = args[++i]; o.GltfFlags = true; break;
                 case "--region" when i + 1 < args.Length: o.Region = args[++i]; break;
+                case "--crop" when i + 1 < args.Length: o.Crop = args[++i]; break;
                 case "--schema" when i + 1 < args.Length:
                     o.StepExportFlags = true;
                     switch (args[++i].ToLowerInvariant())
@@ -346,6 +351,11 @@ public static class LayoutConvert
         if (from == Fmt.Clay && to == Fmt.Clay)
             return JsonRun.Fail(CliDiagnostics.ConvertClayToClay());
 
+        // A crop cuts what an IMPORT produced, in the cell folder the import wrote. A .clay source is the
+        // caller's own document, which convert never rewrites: the layout editor's Crop to Rectangle is its tool.
+        if (o.Crop is not null && from == Fmt.Clay)
+            return JsonRun.Fail(CliDiagnostics.ConvertCropNeedsImport());
+
         // R-aut12-4. A clay target is a DIRECTORY — the import writes one cell folder per structure
         // and a technology beside them, which is why `--to clay` simply stops after the import. A
         // file-shaped path used to become a DIRECTORY of that name with the real `.clay` two levels
@@ -363,6 +373,7 @@ public static class LayoutConvert
         {
             var src = LoadSource(o, from, to.Value, ref scratch);
             if (src is null) return 1;
+            if (o.Crop is { } crop && ApplyCrop(crop, src) is { } cropRefusal) return cropRefusal;
 
             // R-gc2-2/3: exporting a `.clay` exports the parts it places — rebuilt into the
             // workspace's folder where missing, or refused. An importer produces no generated cells.
@@ -1048,6 +1059,47 @@ public static class LayoutConvert
         return tech;
     }
 
+    /// <summary>
+    /// <c>--crop</c>: <see cref="LayoutCrop.Crop"/> — the function the layout editor's Crop to Rectangle calls — on
+    /// the imported cell, written back to the cell folder the import produced, so an export target exports the crop
+    /// and a clay target is the crop. Instances follow their origin, bitmaps are left alone, as in the editor.
+    /// </summary>
+    private static int? ApplyCrop(string text, Source src)
+    {
+        var parts = text.Split(',');
+        if (parts.Length != 4) return JsonRun.Fail(CliDiagnostics.ConvertCropMalformed(text));
+        var v = new long[4];
+        for (int i = 0; i < 4; i++)
+        {
+            string t = parts[i].Trim();
+            if (t.Length == 0 || !char.IsLetter(t[^1])) return JsonRun.Fail(CliDiagnostics.ConvertCropNeedsUnit(text));
+            if (!LayoutUnits.TryParse(t, LayoutUnit.Um, src.DbuPerMicron, out v[i]))
+                return JsonRun.Fail(CliDiagnostics.ConvertCropMalformed(text));
+        }
+        var rect = new Bbox(Math.Min(v[0], v[2]), Math.Min(v[1], v[3]), Math.Max(v[0], v[2]), Math.Max(v[1], v[3]));
+        if (rect.MaxX <= rect.MinX || rect.MaxY <= rect.MinY) return JsonRun.Fail(CliDiagnostics.ConvertCropMalformed(text));
+
+        var view = src.View;
+        var plan = LayoutCrop.Crop(view.Shapes, view.Instances, rect, src.Tech);
+        var replaced = plan.ReplacedIndices.ToHashSet();
+        var kept = view.Shapes.Where((_, i) => !replaced.Contains(i)).ToList();   // the bitmaps
+        view.Shapes.Clear();
+        view.Shapes.AddRange(kept);
+        view.Shapes.AddRange(plan.Shapes);
+        foreach (int i in plan.RemovedInstances.OrderDescending()) view.Instances.RemoveAt(i);
+
+        var primary = CellFolder.ResolvePrimary(src.CellDir, ViewType.Layout);
+        string clay = Path.Combine(CellFolder.SubFolderPath(src.CellDir, ViewType.Layout), primary.ResolvedName!);
+        LayoutPersistence.SaveToFile(clay, view);
+
+        int inside = plan.Layers.Where(l => !l.IsOutline).Sum(l => l.Inside);
+        int cut = plan.Layers.Sum(l => l.Cut), gone = plan.Layers.Sum(l => l.Removed);
+        Console.Error.WriteLine($"[circuitRF] crop: {plan.Layers.Count} layer(s) — {inside} shapes kept, {cut} cut at the edge, " +
+                                $"{gone} removed; instances {plan.KeptInstances} kept, {plan.RemovedInstances.Count} removed" +
+                                (plan.Layers.Any(l => l.IsOutline) ? "; board outline redrawn to the crop" : ""));
+        return null;
+    }
+
     private static Source? Finish(string cellDir, Technology? tech, IReadOnlyList<string> createdCellDirs)
     {
         var primary = CellFolder.ResolvePrimary(cellDir, ViewType.Layout);
@@ -1371,6 +1423,7 @@ public static class LayoutConvert
         Console.Error.WriteLine("              --group <name> (\"\" for none)  --list-parts  every row and what it would import as, writing nothing");
         Console.Error.WriteLine("       step target (-o <file>.step; from a .c3d, .clay, cell folder or any format above):");
         Console.Error.WriteLine("              --assembly  --as-drawn  --thicken-sheets  --include-airbox  --schema ap214|ap242  --view 3d|layout  --tech <path.ctech>");
+        Console.Error.WriteLine("       an import:  --crop x0,y0,x1,y1 (each with its unit: Crop to Rectangle on what was imported)");
         Console.Error.WriteLine("       gltf target (-o <file>.glb; from a .c3d):  --gltf-assembly  --gltf-field <plot>  --region <name>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
         Console.Error.WriteLine("       --arc-tolerance <len>  a gerber source's arc flattening, with its unit (default 1um)");

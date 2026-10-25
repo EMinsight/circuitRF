@@ -161,6 +161,7 @@ public static class Em3dLayoutSolids
         private readonly Dictionary<int, (double Bottom, double Top)> _dielZ = [];
         private readonly Dictionary<int, List<PlanarPolygon>> _filmPolys = [];
         private readonly List<PlanarPolygon> _outline = [];
+        private readonly List<PlanarPolygon> _closedOutlineStrokes = [];
         private readonly List<(TechBody Body, double ZBottom, double ZTop, List<PlanarPolygon> Polys)> _bodies = [];
         private readonly List<(LayoutShape Shape, StackupLayer Entry, PlanarExtractor.StackBand Top,
                                PlanarExtractor.StackBand Bottom)> _viaSpans = [];
@@ -230,6 +231,7 @@ public static class Em3dLayoutSolids
             var viaShapes       = new List<(LayoutShape Shape, StackupLayer Entry)>();
             var holeShapes      = new List<(LayoutShape Shape, StackupLayer Entry)>();
             var outlineShapes   = new List<LayoutShape>();
+            var outlinePaths    = new List<LayoutShape>();
             int outlineStrokes  = 0, zeroWidthPaths = 0;
 
             foreach (var s in geometry.Shapes)
@@ -239,7 +241,7 @@ public static class Em3dLayoutSolids
 
                 if (outlineLayers.Contains(s.Layer))
                 {
-                    if (s is PathShape) outlineStrokes++;
+                    if (s is PathShape) outlinePaths.Add(s);
                     else outlineShapes.Add(s);
                     continue;
                 }
@@ -261,6 +263,35 @@ public static class Em3dLayoutSolids
             if (zeroWidthPaths > 0)
                 Notes.Add($"{zeroWidthPaths} zero-width path(s) are centrelines, not artwork, and are not " +
                           "in the 3D problem.");
+            // A stroke that closes on itself (alone or with the strokes it touches) is a line drawn round the board, and
+            // BoardRegions reads its hole as the board — which is how Crop to Rectangle redraws a stroked outline. Strokes
+            // that close nothing bound no region and stay out, as before: read as regions they would be slivers of board.
+            // A single stroke whose ends meet is read along its CENTRE LINE — the edge a Gerber profile draws on and the
+            // line Crop to Rectangle redraws the outline along — not along the inside of its ink, which put copper cut
+            // at the crop line half a stroke over air.
+            var openPaths = new List<LayoutShape>();
+            foreach (var path in outlinePaths.Cast<PathShape>())
+            {
+                var xy = path.Xy;
+                bool closed = path.Edges is null && xy.Length >= 8 && xy[0] == xy[^2] && xy[1] == xy[^1];
+                if (!closed) { openPaths.Add(path); continue; }
+                var ring = new List<EmPoint>(xy.Length / 2 - 1);
+                for (int i = 0; i + 3 < xy.Length; i += 2) ring.Add(new EmPoint(xy[i] * _perDbu, xy[i + 1] * _perDbu));
+                double twice = 0;   // counter-clockwise, as every other outer ring here
+                for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++) twice += ring[j].X * ring[i].Y - ring[i].X * ring[j].Y;
+                if (twice < 0) ring.Reverse();
+                _closedOutlineStrokes.Add(new PlanarPolygon(ring));
+            }
+            if (openPaths.Count > 0)
+            {
+                foreach (var (shape, _) in PlanarExtractor.MergeOverlapping(
+                             [.. openPaths.Select(s => (s, 0))], tech, out _, out _, touching: true))
+                {
+                    var polys = PlanarExtractor.ToPolygons(shape, tech, _perDbu).ToList();
+                    if (polys.Any(q => q.HoleRings.Count > 0)) _closedOutlineStrokes.AddRange(polys.Where(q => q.HoleRings.Count > 0));
+                    else outlineStrokes++;
+                }
+            }
             if (outlineStrokes > 0)
                 Notes.Add($"{outlineStrokes} shape(s) on the board-outline layer are strokes, which bound " +
                           "no region; only closed shapes there give the board its outline.");
@@ -389,12 +420,13 @@ public static class Em3dLayoutSolids
             }
 
             // ── Board outline (R-em3d3-5c) ────────────────────────────────────────────────────
-            if (outlineShapes.Count > 0)
+            if (outlineShapes.Count > 0 || _closedOutlineStrokes.Count > 0)
             {
-                var drawnOutline = new List<PlanarPolygon>();
-                foreach (var (shape, _) in PlanarExtractor.MergeOverlapping(
-                             [.. outlineShapes.Select(s => (s, 0))], tech, out _, out _))
-                    drawnOutline.AddRange(PlanarExtractor.ToPolygons(shape, tech, _perDbu));
+                var drawnOutline = new List<PlanarPolygon>(_closedOutlineStrokes);
+                if (outlineShapes.Count > 0)
+                    foreach (var (shape, _) in PlanarExtractor.MergeOverlapping(
+                                 [.. outlineShapes.Select(s => (s, 0))], tech, out _, out _))
+                        drawnOutline.AddRange(PlanarExtractor.ToPolygons(shape, tech, _perDbu));
                 var drills = _viaSpans.Select(v => Drill(v.Shape)).Concat(_holeSpans.Select(h => Drill(h.Shape)))
                                       .OfType<(double X, double Y, double R)>().ToList();
                 int drilledAway = 0;

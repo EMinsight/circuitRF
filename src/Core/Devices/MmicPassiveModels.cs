@@ -356,7 +356,7 @@ internal sealed class LumpedValidityWarning(string token, string what, double le
         _reported = true;
         _pending.Add(($"{token}-validity:{instancePath}",
             $"{instancePath}: this {token}'s {what} is {length * 1e6:G4} µm long, a twentieth of a wavelength at " +
-            $"{Limit / 1e9:G4} GHz. Above that its lumped model is an extrapolation (this run reaches " +
+            $"{Limit / 1e9:G4} GHz. Above that its lumped model is an extrapolation (this run goes past it, from " +
             $"{freqHz / 1e9:G4} GHz); an EM extraction of the drawn part is the reference there."));
     }
 

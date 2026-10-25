@@ -225,7 +225,7 @@ public static partial class AnalysisDirectiveSchema
             new("Stop",                  Summary: "Last value of the swept range."),
             new("Step",                  Summary: "Step size. Mutually exclusive with Npts; Npts wins when both are given."),
             new("Npts",                  Summary: "Point count."),
-            new("Unit",  Default: "",    Summary: "Unit the Start/Stop/Step numbers are written in. Absent = base SI."),
+            new("Unit",  Default: "",    Summary: "Unit the Start/Stop/Step numbers, or the Values list, are written in. Absent = base SI."),
             new("log",   Default: "false", Summary: "Logarithmic spacing. Also accepted as the bare word 'log'."),
         ], BareWords: ["log"], RequiredOneOf: [["Values", "Start"], ["Values", "Stop"]]),
 

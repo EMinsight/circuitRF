@@ -23242,3 +23242,19 @@ usable for this: the line alone came back at |S11| 0.49. Standard runs needed ~5
 
 Gates: `tests/Ui.Tests/Layout/TestPadRound26Tests.cs` (artwork, pour cut-outs, Cut Clearances as one undo, the EM port
 seen / not seen / duplicate refused, the face walk, impedance tool = model) and `tests/Core.Tests/Devices/TestPadModelTests.cs`.
+
+## Round-26 board study: drill files by layer pair into a used technology; a closed outline stroke bounds the 3D board (2026-10-24)
+
+- **Importing a Gerber set drilled by layer pair INTO a technology was refused.** Every drill file resolved by name to
+  the technology's one drill layer ("Drill"); the first took it and the rest were minted layers of their own, which no
+  via entry binds, so `UseRefusal` stopped the import — on the shipped ten-layer technology, made from this very
+  board's stackup, whose via layers are named "Laser 1-2" etc. `GerberImport.BindDrillsBySpan` now maps a drill file
+  whose NAME states its pair (`DrillSpanFromName`) to the via entry spanning those two conductors, when the
+  technology has the set's conductor count; a non-plated entry or one stating no span is never matched. Reported per
+  file in the import's messages.
+- **A board outline drawn as a closed PATH was dropped by the 3D builder** ("strokes, which bound no region"), and
+  Crop to Rectangle redraws a stroked outline as exactly that — so every cropped board's substrate filled the whole
+  air box, out to its padding. `Em3dLayoutSolids` now reads a single closed stroke along its CENTRE LINE (the edge a
+  Gerber profile draws on, and the crop line), wound counter-clockwise as every other outer ring; strokes that close
+  only together still go through the merge and `BoardRegions`' line rule, and strokes that close nothing stay out.
+  Reading the merged ring's hole instead would have left 100 µm of copper over air at every crop edge.

@@ -3826,3 +3826,12 @@ identity with the junction-only stamp).
 - A via-fed pad also warns once per instance above the via's lumped limit (a twentieth of a wavelength in its densest
   dielectric, `ViaFormulas.LumpedValidityFrequency`), as a placed `VIA` does; `ViaEpsR` was injected for this and
   had been read by nothing.
+
+## `Values=` with `Unit=` on a parametric sweep; the lumped-validity note's frequency (2026-10-24)
+
+- **`analysis … type=parametric_sweep Values=1.9,2.5 Unit=mm` swept metres.** `Unit` was applied to Start/Stop/Step
+  only, and accepted without a word on a list; the result axis even said "metre" over 1.9 … 3.5. The reader now scales
+  a `Values=` list by `Unit` too (an unknown unit is an error), so the stored values are base SI as the list form
+  always assumed. The schema's summary says so.
+- **"this run reaches X GHz"** in the TESTPAD, VIA and MMIC-passive validity notes named the FIRST frequency past the
+  limit, not the sweep's top (a 1-6 GHz run "reached 4.25 GHz"). It now reads "this run goes past it, from X GHz".

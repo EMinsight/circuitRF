@@ -483,6 +483,44 @@ public class Gi5NetlistCompanionTests : IDisposable
         Assert.Equal((1, 3), GerberLayerCascade.DrillSpanFromName("Via_1_2_3.drl"));
     }
 
+    /// <summary>Designer report, round 26: a set drilled by layer pair, imported INTO a technology whose via layers are
+    /// named for their spans ("Laser 1-2", not the file's name). Every drill file took the technology's one name-matched
+    /// drill layer or a minted one no via entry binds, so the import was refused; each now lands on the via entry
+    /// spanning the pair its name states.</summary>
+    [Fact]
+    public void IntoATechnology_ADrillFileNamedForItsPair_LandsOnTheViaEntryOfThatSpan()
+    {
+        string dir = Folder("into-pairs");
+        Write(dir, "l1.gtl", Pads("Copper,L1,Top,Signal", (2, 2), (4, 4)));
+        Write(dir, "l2.g2", Pads("Copper,L2,Inr,Signal", (2, 2), (4, 4)));
+        Write(dir, "l3.g3", Pads("Copper,L3,Inr,Signal", (2, 2), (4, 4)));
+        Write(dir, "l4.gbl", Pads("Copper,L4,Bot,Signal", (2, 2), (4, 4)));
+        Write(dir, "board-1-4.drl", Drill((2, 2)));
+        Write(dir, "board-1-2-laser.drl", Drill((4, 4)));
+
+        // The technology the first import mints, with its via layers renamed as a shipped technology names them.
+        var minted = Import(dir, "minted", Folder("minted-into"));
+        var tech = TechOf(minted);
+        foreach (var via in tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via))
+        {
+            var layer = tech.Layers.Single(l => l.Key == via.DrawingLayers[0]);
+            layer.Name = $"Via {via.SpanFromLayer}-{via.SpanToLayer}";
+        }
+        string techPath = Path.Combine(_root, "renamed.ctech");
+        TechPersistence.SaveToFile(techPath, tech);
+
+        var into = GerberImport.Import(FilesIn(dir), Folder("into"), "into", null, Dbu,
+                                       target: GerberTechnologyTarget.Use(techPath));
+
+        Assert.True(into.Refusal is null, into.Refusal);
+        var used = TechPersistence.LoadFromFile(techPath);
+        var bound = Cell(into).Shapes.OfType<ViaShape>().Select(v => v.Layer)
+            .Concat(Cell(into).Shapes.OfType<CircleShape>().Select(c => c.Layer)).ToHashSet();
+        var viaLayers = used.Stackup.Layers.Where(l => l.Kind == StackupKind.Via).Select(l => l.DrawingLayers[0]).ToHashSet();
+        Assert.Equal(2, viaLayers.Count);
+        Assert.Equal(viaLayers, bound.Where(viaLayers.Contains).ToHashSet());
+    }
+
     /// <summary>Designer report, round 25: a span the drill file's own FileFunction attribute states reaches the via's
     /// stackup entry too. It used to set only the landing layer, and the entry still spanned the whole board.</summary>
     [Fact]

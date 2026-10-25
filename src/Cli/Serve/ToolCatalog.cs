@@ -837,6 +837,9 @@ internal static class ToolCatalog
                         .. PictureTraceOptions,
                         new("region",     "--region",      OptKind.Str,
                             "A picture: trace only x0,y0,x1,y1, each in pixels with px. A gltf target: the region to export."),
+                        new("crop",       "--crop",        OptKind.Str,
+                            "An import (gerber, gdsii, oasis, dxf, board): Crop to Rectangle on what was imported, x0,y0,x1,y1, " +
+                            "every coordinate with its unit (124mm,114.5mm,129.3mm,119.5mm). A .clay source is refused."),
                         PictureUnderlay,
                         PictureOverlayPath,
                         Summary,

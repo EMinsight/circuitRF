@@ -135,7 +135,7 @@ public sealed class TestPadModel : ComponentModel, IReportsWarnings
         _pending.Add(($"TESTPAD-validity:{instancePath}",
             $"{instancePath}: the test pad's via is {F(Geometry.ViaLength * 1e3)} mm long, a twentieth of the wavelength in " +
             $"its densest dielectric (εr {F(Geometry.ViaEpsR)}) at {F(Geometry.ValidityHz / 1e9)} GHz. Above that its lumped " +
-            $"model is an extrapolation (this run reaches {F(freqHz / 1e9)} GHz); an EM setup of the pad is the reference there."));
+            $"model is an extrapolation (this run goes past it, from {F(freqHz / 1e9)} GHz); an EM setup of the pad is the reference there."));
     }
 
     private void Note(string instancePath)

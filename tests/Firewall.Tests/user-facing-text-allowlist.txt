@@ -235,6 +235,7 @@ src/Core/Match/NortonTransform.cs|The pair did not become adjacent.
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': Npts={nptsStr} must be a positive integer.
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': Start/Stop form requires Step= or Npts=.
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': Step= must be > 0 (got {step}).
+src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': Unit={valuesUnit} is not a unit circuitRF knows.
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': Values= must contain at least one value.
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': cannot parse Start='{startStr}'.
 src/Core/Netlist/CnlReader.cs|Parametric sweep '{analysisName}': cannot parse Step='{stepStr}'.

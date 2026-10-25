@@ -3277,3 +3277,21 @@ Gate: `EnvelopeExportCliTests`.
 - **MCP `run analysis=env`.** The envelope had no MCP entry. Its `--json` default now carries only cubes of at most
   10,000 values (`JsonRun.InlineCubeLimit`): the time waveforms (`V`) and spectrum (`PSD`) of an NR run reach
   hundreds of MB of JSON. The shape still lists them, and `--all`, `--only` or `--group` bring them in.
+
+## Round-26 board study: `convert --crop`, `sparam` sweeps, static matrix digits, `--layer-colors` alpha (2026-10-24)
+
+Found while solving the designer's TP149 test-point problem headlessly.
+
+- **`convert --crop x0,y0,x1,y1`** (every coordinate with its unit) applies `LayoutCrop.Crop` — the function the
+  layout editor's Crop to Rectangle calls — to what an import produced, and writes the cropped `.clay` back into the
+  cell folder the import made, so a clay target IS the crop and an export target exports it. A `.clay` source is
+  refused: it is the caller's own document and convert never rewrites one. Without it the only headless way to cut a
+  ten-layer board down to an EM-sized region was editing JSON. Cropping the designer's whole set took 9 s.
+- **`sparam` dropped a wrapping `parametric_sweep` in silence.** It read the first `SParameterAnalysis` and ran it
+  once; `hb`/`lp`/`lpp` already dispatch at the sweep through `ChainSelector`. It now does the same
+  (`RunSparamSweep`, `ParametricSweepEngine`), measurements named after the inner analysis as the GUI names them. A
+  Touchstone target is refused for a swept run — the format has no axis for the sweep — naming the `.npy` spelling.
+  `--freq` names no directive and keeps the plain run.
+- **The static matrix printed `-0.00 pF`** for a coupling of a few femtofarads; three decimals now.
+- **`--layer-colors name=#rrggbbff` left the layer at its own 35 % fill.** The alpha was read off the parsed value,
+  where `ff` cannot be told from the six-digit form; it is now whether eight digits were written.

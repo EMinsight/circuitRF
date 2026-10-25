@@ -1498,6 +1498,8 @@ public static class GerberImport
                     : ", so the numeric prefix in the file names was used instead. The order used, top to ") +
                 "bottom, is: " + string.Join(", ", copperTopToBottom.Select(c => c.LayerName)) + ".");
 
+        BindDrillsBySpan(drillIdentities, copperTopToBottom.Count, tech, messages);
+
         // ── 7. Source layers, and the one reconciliation (R-L4g-0, R-L4g-7, R-L4g-11) ───────────
         var allIdentities = new List<GerberLayerIdentity>(identities);
         allIdentities.AddRange(drillIdentities);
@@ -2261,6 +2263,45 @@ public static class GerberImport
             "that numbers its copper from the top carries no separate word for the outer layers, and on " +
             "a two-layer board this layer is usually the ground plane. The stack ORDER is unchanged — " +
             "only the name is.");
+    }
+
+    /// <summary>
+    /// A drill file whose NAME states its layer pair (<c>board-1-2-laser.drl</c>, <c>board-3-8.drl</c>) lands on the
+    /// destination technology's via entry spanning those same two conductors, rather than on whichever drawing layer
+    /// its name resembles. Without this every drill file of a set drilled by layer pair named the technology's
+    /// "Drill" layer: the first took it and the rest were minted layers of their own, which no via entry binds — so
+    /// importing a board into the very technology made from its own stackup was refused (designer report, round 26).
+    /// Only when the technology has exactly the set's conductor count, since a span counts conductors from the top;
+    /// a via entry that states no span, or a non-plated one, is never matched.
+    /// </summary>
+    private static void BindDrillsBySpan(
+        List<GerberLayerIdentity> drillIdentities, int copperCount, Technology? tech, List<string> messages)
+    {
+        if (tech is null || copperCount < 2) return;
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).Select(l => l.Name).ToList();
+        if (conductors.Count != copperCount) return;
+
+        var bySpan = new Dictionary<(int, int), StackupLayer>();
+        foreach (var v in tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Via && l.Plated != false && l.DrawingLayers.Count > 0))
+        {
+            int a = v.SpanFromLayer is { } f ? conductors.IndexOf(f) : -1;
+            int b = v.SpanToLayer is { } t ? conductors.IndexOf(t) : -1;
+            if (a < 0 || b < 0) continue;
+            bySpan.TryAdd((Math.Min(a, b) + 1, Math.Max(a, b) + 1), v);
+        }
+
+        for (int i = 0; i < drillIdentities.Count; i++)
+        {
+            var d = drillIdentities[i];
+            if (GerberLayerCascade.DrillSpanFromName(d.FilePath) is not { } span || !bySpan.TryGetValue(span, out var entry))
+                continue;
+            var key = entry.DrawingLayers[0];
+            if (d.DestLayer == key) continue;
+            string name = tech.Layers.FirstOrDefault(l => l.Key == key)?.Name ?? entry.Name;
+            drillIdentities[i] = d with { DestLayer = key, LayerName = name };
+            messages.Add($"{d.FileName}: its name gives the layer pair {span.From}-{span.To}, so it was mapped to " +
+                         $"'{name}', the via layer of '{entry.Name}' ({entry.SpanFromLayer} to {entry.SpanToLayer}).");
+        }
     }
 
     /// <summary>The extensions that identify exactly ONE file in this set — the only ones that can

@@ -222,6 +222,11 @@ internal static class CliDiagnostics
     /// accurate "expected magic \x93NUMPY". Writing format A to a path named B is the one option
     /// worth removing.</para>
     /// </summary>
+    public static Diagnostic SparamSweepNeedsDataFormat(string sweep, string suggestion) => Diagnostic.Create(
+        "sparam.sweep.needs-data-format", DiagnosticSeverity.Error,
+        "'{sweep}' sweeps this S-parameter analysis, and a Touchstone file has no axis for the sweep. " +
+        "Write the result as cubes: -o {suggestion} (.npy, .mat or .txt).", ("sweep", sweep), ("suggestion", suggestion));
+
     public static Diagnostic SparamUnsupportedExportFormat(string path, string extension) => Diagnostic.Create(
         "sparam.export.unsupported-format",
         DiagnosticSeverity.Error,
@@ -528,6 +533,21 @@ internal static class CliDiagnostics
     public static Diagnostic ConvertClayToClay() => new(
         "convert.clay-to-clay", DiagnosticSeverity.Error,
         "clay to clay is a file copy, not a conversion — nothing to do.");
+
+    public static Diagnostic ConvertCropNeedsImport() => new(
+        "convert.crop.needs-import", DiagnosticSeverity.Error,
+        "--crop cuts what an import produced; a .clay source is your own document, which convert never rewrites. " +
+        "Crop it with the layout editor's Crop to Rectangle, or crop while importing the Gerber, GDSII, DXF or board file.");
+
+    public static Diagnostic ConvertCropMalformed(string text) => Diagnostic.Create(
+        "convert.crop.malformed", DiagnosticSeverity.Error,
+        "--crop '{text}' is not a rectangle. Give x0,y0,x1,y1 with a unit on each, e.g. 124mm,114.5mm,129.3mm,119.5mm.",
+        ("text", text));
+
+    public static Diagnostic ConvertCropNeedsUnit(string text) => Diagnostic.Create(
+        "convert.crop.needs-unit", DiagnosticSeverity.Error,
+        "--crop '{text}': every coordinate carries its unit (um, mm, mil), zero included — a bare number could be DBU, um or mm.",
+        ("text", text));
 
     /// <summary>
     /// R-aut12-4. A <c>clay</c> target is a DIRECTORY of cell folders, and asking for

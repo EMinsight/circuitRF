@@ -233,7 +233,7 @@ internal sealed class ViaValidityWarning(ViaGeometry geometry)
         _pending.Add(($"VIA-validity:{instancePath}",
             $"{instancePath}: this via's barrel is {lengthMm:G4} mm long, a twentieth of the wavelength in its " +
             $"densest dielectric (εr {geometry.EpsRMax:G4}) at {limit / 1e9:G4} GHz. Above that its lumped model is " +
-            $"an extrapolation (this run reaches {freqHz / 1e9:G4} GHz); an EM solve of the via is the reference there."));
+            $"an extrapolation (this run goes past it, from {freqHz / 1e9:G4} GHz); an EM solve of the via is the reference there."));
     }
 
     public IReadOnlyList<(string Key, string Message)> Drain()

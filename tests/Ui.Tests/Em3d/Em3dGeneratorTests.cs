@@ -344,6 +344,29 @@ public sealed class Em3dGeneratorTests
         Assert.False(board[1].Contains(0, 0));
     }
 
+    /// <summary>Crop to Rectangle redraws a stroked outline as ONE closed path along the crop line. The 3D builder dropped
+    /// every path on the outline layer as "strokes, which bound no region", so a cropped board's substrate filled the whole
+    /// air box (designer report, round 26). A closed stroke is read along its centre line, which is the crop line.</summary>
+    [Fact]
+    public void AClosedOutlineStroke_BoundsTheBoardAlongItsCentreLine()
+    {
+        var (setup, source) = Microstrip();
+        source.View.Shapes.Add(new PathShape
+        {
+            Layer = new LayerKey(8, 0), Width = 200_000,
+            Xy = [-1_000_000, -2_000_000, 11_000_000, -2_000_000, 11_000_000, 2_000_000, -1_000_000, 2_000_000, -1_000_000, -2_000_000],
+        });
+
+        var r = Em3dGenerator.Generate(setup, source, source.Technology!);
+        Assert.True(r.Ok, r.Refusal);
+        Assert.DoesNotContain(r.Notes, n => n.Contains("bound no region", StringComparison.Ordinal));
+        var substrate = Assert.IsType<Em3dExtrudedPolygon>(
+            r.Problem!.Solids.First(sd => sd.Role == Em3dRole.Dielectric).Primitive);
+        Assert.Equal(-1e-3, substrate.Outline.Min(q => q.X), 9);
+        Assert.Equal(11e-3, substrate.Outline.Max(q => q.X), 9);
+        Assert.Equal(2e-3, substrate.Outline.Max(q => q.Y), 9);
+    }
+
     /// <summary>A fabricator's target: a disc on the outline layer with a drill of its own size through it. It is no board — as
     /// substrate it was a solid disc over the barrel whose facets striped through the copper wall (owner report, 2026-10-12).</summary>
     [Fact]

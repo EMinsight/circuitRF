@@ -1085,8 +1085,10 @@ internal static class Render
             if (!Rgba.TryParseHex(value, out var rgba))
                 return (colors, JsonRun.Fail(CliDiagnostics.RenderLayerColorBadValue(name, value)));
 
-            colors[key] = new TechnologyLayerSelection.LayerAppearance(
-                rgba, rgba.A == 255 ? null : rgba.A / 255.0);
+            // Whether the alpha was WRITTEN, not whether it is 255: `#rrggbbff` asks for an opaque fill, and read off the
+            // value it was indistinguishable from `#rrggbb` and left the layer at its own (35 %) opacity.
+            bool statedAlpha = value.TrimStart('#').Length == 8;
+            colors[key] = new TechnologyLayerSelection.LayerAppearance(rgba, statedAlpha ? rgba.A / 255.0 : null);
         }
         return (colors, null);
     }

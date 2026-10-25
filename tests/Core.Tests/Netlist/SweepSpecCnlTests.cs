@@ -48,6 +48,18 @@ public sealed class SweepSpecCnlTests
         Assert.Equal(SweepKind.Linear,       psa.Spec.Kind);
     }
 
+    // ── Values= with Unit= ────────────────────────────────────────────────────
+
+    [Fact]
+    public void CnlReader_ValuesWithUnit_ScaledToBaseSi()
+    {
+        // `Values=1.9,2.5 Unit=mm` was accepted and ran in metres (designer report, round 26).
+        var psa = ReadPsa("SW1 type=parametric_sweep Var=ClearD Values=1.9,2.5 Unit=mm Inner=HB1");
+
+        Assert.Equal(0.0019, psa.SweepValues[0], precision: 12);
+        Assert.Equal(0.0025, psa.SweepValues[1], precision: 12);
+    }
+
     // ── CnlReader_StartStopNpts ───────────────────────────────────────────────
 
     [Fact]

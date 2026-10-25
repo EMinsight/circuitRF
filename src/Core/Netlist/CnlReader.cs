@@ -1500,6 +1500,15 @@ public sealed class CnlReader
                 throw new InvalidOperationException(
                     $"Parametric sweep '{analysisName}': Values= must contain at least one value.");
 
+            // Unit= scales the list as it scales Start/Stop/Step, so `Values=1.9,2.5 Unit=mm` sweeps millimetres. It was
+            // accepted and ignored: the list ran as base SI, 1.9 m, with nothing said (designer report, round 26).
+            if (kv.TryGetValue("Unit", out var valuesUnit) && !string.IsNullOrEmpty(valuesUnit))
+            {
+                double m = CircuitRF.Core.Expressions.Units.Scale(valuesUnit) ?? throw new InvalidOperationException(
+                    $"Parametric sweep '{analysisName}': Unit={valuesUnit} is not a unit circuitRF knows.");
+                values = [.. values.Select(v => v * m)];
+            }
+
             result = new CircuitRF.Core.Design.ParametricSweepAnalysis(
                 analysisName, varName, values, innerName);
         }

@@ -343,6 +343,14 @@ static int RunSparam(string[] args)
         var nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
 
+        // A parametric_sweep wrapping the S-parameter analysis is dispatched at the SWEEP, as `hb`, `lp`
+        // and `lpp` dispatch theirs: running the inner alone silently drops the sweep axis and returns
+        // one point (designer report, round 26). --freq names no directive, so it keeps the plain run.
+        if (!freqExplicit &&
+            SelectTop(tb, null, a => a is SParameterAnalysis, "S-parameter", "analysis <name> type=sparam ...",
+                      out _) is ParametricSweepAnalysis sweep)
+            return RunSparamSweep(sweep, lib, tb, nl, shown, refBase, input, output);
+
         // Prefer typed SParameterAnalysis from the netlist unless --freq was explicitly given.
         double[] freqs;
         var spa = tb.Analyses.OfType<SParameterAnalysis>().FirstOrDefault();
@@ -453,6 +461,39 @@ static int RunSparam(string[] args)
     {
         return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message));
     }
+}
+
+/// <summary>
+/// <c>sparam</c> on a chain topped by a parametric_sweep: <see cref="ParametricSweepEngine"/>, the measurements over
+/// the whole result named after the inner analysis (as the GUI names a swept result), and an export through
+/// <see cref="DataSetExporter"/>. A Touchstone file has no axis for the sweep, so it is refused rather than written
+/// from one point.
+/// </summary>
+static int RunSparamSweep(ParametricSweepAnalysis sweep, Library lib, TestBench tb, ElaboratedNetlist nl,
+                          (int Notes, int Warnings) shown, string? refBase, string input, string? output)
+{
+    if (output is null || IsTouchstonePath(output))
+        return JsonRun.Fail(CliDiagnostics.SparamSweepNeedsDataFormat(sweep.Name, output ?? Path.ChangeExtension(input, ".npy")));
+    if (SparamDataFormat(output) is not { } format)
+        return JsonRun.Fail(CliDiagnostics.SparamUnsupportedExportFormat(output, Path.GetExtension(output)));
+
+    Console.Error.WriteLine(
+        $"S-parameter sweep '{sweep.Name}': {sweep.SweepValues.Length} point(s) over {sweep.SweepVarName}");
+    var ds = ParametricSweepEngine.Run(sweep, lib, tb, settings: null, baseDirectory: refBase,
+                                       control: RunHost.Control, diagnosticsInto: nl);
+    PrintWarnings(nl, shown);
+    JsonRun.Analysis = sweep.Name;
+
+    var inner = BaseOfChain(sweep, tb);
+    var measDs = inner is not null ? EvaluateMeasurements(tb, nl, inner.Name, ds, run: null) : null;
+    var exportDs = measDs is { Cubes.Count: > 0 } ? MergeForExport(ds, measDs) : ds;
+    JsonRun.Data = exportDs;
+
+    EnsureOutputDirectory(output);
+    DataSetExporter.Export(exportDs, output, format, new ExportOptions(Format: format));
+    Console.WriteLine($"Wrote {output}");
+    JsonRun.AddOutput(JsonRun.KindOf(output), output);
+    return 0;
 }
 
 // ── DC operating point ────────────────────────────────────────────────────────
@@ -1844,7 +1885,8 @@ static void PrintStaticMatrix(RfCore.Data.DataSet data, EmSetup setup)
     Console.WriteLine(new string(' ', width) + string.Concat(names.Select(x => x.PadLeft(width))));
     for (int i = 0; i < n; i++)
         Console.WriteLine(("  " + names[i]).PadRight(width) + string.Concat(Enumerable.Range(0, n).Select(j =>
-            (v[i * n + j] * scale).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture).PadLeft(width))));
+            // Three decimals: at two, a coupling of a few femtofarads to a neighbour printed as -0.00 pF.
+            (v[i * n + j] * scale).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture).PadLeft(width))));
 }
 
 /// <summary>
