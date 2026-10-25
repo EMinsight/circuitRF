@@ -121,7 +121,7 @@ public static class TraceExpression
                         if (xDim >= 0) { error = $"'{info.RefStr}': more than one X axis."; return false; }
                         xDim = d; break;
                     case SliceTokenParser.Kind.PinIndex:
-                        args[d] = t.Index; break;
+                        args[d] = PortSlices.PinPosition(axis, t.Index); break;
                     case SliceTokenParser.Kind.Family:
                         error = $"'{info.RefStr}': the family marker '~' is only valid in single-cube picker specs, not multi-cube expressions."; return false;
                     default:
@@ -448,7 +448,7 @@ public static class TraceExpression
                 {
                     case SliceTokenParser.Kind.KeepWhole: args[d] = Range.All; break;
                     case SliceTokenParser.Kind.KeepRange: args[d] = new Range(t.RangeStart, t.RangeEndExclusive); break;
-                    case SliceTokenParser.Kind.PinIndex:  args[d] = t.Index; break;
+                    case SliceTokenParser.Kind.PinIndex:  args[d] = PortSlices.PinPosition(axis, t.Index); break;
                     case SliceTokenParser.Kind.Family:
                         error = $"'{info.RefStr}': the family marker '~' is only valid in single-cube picker specs, not expressions."; return false;
                     default:

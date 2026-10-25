@@ -261,7 +261,8 @@ namespace RfCore.Data
             for (int k = 0; k < axis.Values.Length; k++)
                 if ((int)Math.Round(axis.Values[k]) == portNumber) return k;
             throw new ArgumentException(
-                $"Port {portNumber} not found on axis '{axisName}' of cube '{cubeName}'.");
+                $"Port {portNumber} not found on axis '{axisName}' of cube '{cubeName}' " +
+                $"(the result's ports are {string.Join(", ", axis.Values.Select(v => (int)Math.Round(v)))}).");
         }
 
         // ── Node-voltage / branch-current accessors ───────────────────────────
@@ -353,6 +354,67 @@ namespace RfCore.Data
             var portVals = new double[n];
             for (int p = 0; p < n; p++) portVals[p] = p + 1;
             return new DataCube(new[] { new Axis("port", portVals, "port") }, z0PerPort);
+        }
+
+        /// <summary>
+        /// The same cube with every port axis (<c>i</c>, <c>j</c>, <c>port</c>) carrying
+        /// <paramref name="portNumbers"/> as its coordinates instead of 1…N (DFR27-2 R-dfr27-2-1).
+        /// A circuit's Terms numbered 1, 2, 9, 10 give a 4×4 matrix whose ports ARE 1, 2, 9, 10 —
+        /// writing 1…4 renumbered them, so <c>S(4,3)</c> silently meant Terms 10 and 9. Values and
+        /// every other axis are untouched; the numbers must be in the matrix's own row order.
+        /// </summary>
+        public static DataCube WithPortNumbers(DataCube cube, IReadOnlyList<int> portNumbers)
+        {
+            var vals = portNumbers.Select(n => (double)n).ToArray();
+            var axes = cube.Axes.Select(a => a.Name is "i" or "j" or "port" && a.Length == vals.Length
+                ? new Axis(a.Name, vals, a.Unit) : a).ToArray();
+            var renumbered = cube.DataKind == DataKind.Complex
+                ? new DataCube(axes, cube.ComplexValues) : new DataCube(axes, cube.RealValues);
+            renumbered.Unit = cube.Unit;
+            return renumbered;
+        }
+
+        /// <summary>
+        /// The ports a network-parameter cube's row axis is missing from 1…max, ascending — empty
+        /// when they are contiguous from 1, which is the only shape Touchstone can say. Touchstone
+        /// numbers its ports by POSITION, so writing a result whose Terms are 1, 2, 9, 10 as a
+        /// <c>.s4p</c> would renumber 9 and 10 to 3 and 4 in silence (DFR27-2 R-dfr27-2-3).
+        /// </summary>
+        public static int[] MissingPortNumbers(DataCube cube)
+        {
+            var axis = cube.Axes.FirstOrDefault(a => a.Name == "i")
+                    ?? cube.Axes.FirstOrDefault(a => a.Name == "port");
+            if (axis is null || axis.Length == 0) return [];
+            var present = axis.Values.Select(v => (int)Math.Round(v)).ToHashSet();
+            int max = present.Max();
+            return Enumerable.Range(1, Math.Max(0, max)).Where(n => !present.Contains(n)).ToArray();
+        }
+
+        /// <summary>The refusal every Touchstone writer gives for a gapped result, worded once so the
+        /// CLI, the Data Display's export and the file writer cannot disagree.</summary>
+        public static string GappedPortsRefusal(DataCube cube)
+        {
+            var axis = cube.Axes.FirstOrDefault(a => a.Name == "i") ?? cube.Axes.First(a => a.Name == "port");
+            var present = axis.Values.Select(v => (int)Math.Round(v)).ToArray();
+            var missing = MissingPortNumbers(cube);
+            return $"Cannot write Touchstone: the result's ports are {string.Join(", ", present)} and " +
+                   $"{FormatPortRuns(missing)} {(missing.Length == 1 ? "is" : "are")} missing. " +
+                   "Touchstone numbers ports 1…N by position, so writing it would renumber them. " +
+                   "Renumber the Terms 1…" + present.Length + " and run again, or export .npy/.mat, which keep the numbers.";
+        }
+
+        /// <summary>"3–8", "3, 5", "3–5, 7" — consecutive runs collapsed, for a refusal a person reads.</summary>
+        public static string FormatPortRuns(IReadOnlyList<int> sorted)
+        {
+            var parts = new List<string>();
+            for (int k = 0; k < sorted.Count;)
+            {
+                int start = sorted[k], end = start;
+                while (k + 1 < sorted.Count && sorted[k + 1] == end + 1) { end++; k++; }
+                k++;
+                parts.Add(end == start ? $"{start}" : end == start + 1 ? $"{start}, {end}" : $"{start}–{end}");
+            }
+            return string.Join(", ", parts);
         }
 
         /// <summary>

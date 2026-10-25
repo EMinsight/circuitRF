@@ -144,6 +144,19 @@ public static class SliceTokenParser
             // The WSProbe matrix's row/col are the same case and must read the same way: the cube's
             // own axis VALUES are 1-based (WspCubePacker writes k+1), so the document's wsp(1,1) is
             // wsp[:, 1, 1] with no index arithmetic between the paper and the card.
+            //
+            // DFR27-2: an S matrix's ports are NOT always 1…N — they are the Terms' own numbers, so a
+            // bench with Terms 1, 2, 9, 10 has i = [1, 2, 9, 10]. The number is checked against the
+            // axis VALUES and the token still carries number − 1: that is the slice's identity for a
+            // port, which PortSlices.ToPositions turns into a position against whichever cube the
+            // trace is resolved on — so a re-run that drops Term 9 makes S[:, 10, 9] invalid instead
+            // of quietly reading whatever now sits at that position.
+            if (axisValues is not null && PortSlices.IsPortNumberAxis(axisName, axisValues) && !PortSlices.IsOneToN(axisValues))
+            {
+                if (PortSlices.PositionOf(axisValues, index) < 0)
+                { error = PortSlices.NotAPort(index, axisName, axisValues); return new Token(Kind.Invalid); }
+                return new Token(Kind.PinIndex, Index: index - 1);
+            }
             if (axisName is "i" or "j" or "row" or "col")
             {
                 if (index < 1 || index > axisLength)

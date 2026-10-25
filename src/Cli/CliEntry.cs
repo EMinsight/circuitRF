@@ -448,6 +448,11 @@ static int RunSparam(string[] args)
         if (!ds.Contains("S"))
             return JsonRun.Fail(CliDiagnostics.SparamNoSParameters(output ?? Path.ChangeExtension(input, ".sNp")));
 
+        if (RfCore.Data.DataSetBuilder.MissingPortNumbers(ds["S"]).Length > 0)
+            return JsonRun.Fail(CliDiagnostics.SparamGappedPorts(
+                output ?? Path.ChangeExtension(input, $".s{ds["S"].Axes[1].Length}p"),
+                RfCore.Data.DataSetBuilder.GappedPortsRefusal(ds["S"])));
+
         var snp = RfCore.Data.DataSetBuilder.ToSnp(ds);
 
         var outPath = output ?? Path.ChangeExtension(input, $".s{snp.Ports}p");

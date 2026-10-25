@@ -239,6 +239,18 @@ internal static class CliDiagnostics
     /// (brief-wsprobe-1 R-wsp1-6, R-wsp1-12(a)). Refused naming the spellings that DO carry the
     /// result, because the run is not empty: its wsp cubes are exactly what a cube file holds.
     /// </summary>
+    /// <summary>
+    /// DFR27-2 R-dfr27-2-3: the result's ports are the Terms' own numbers, and they are not 1…N.
+    /// Touchstone numbers ports by position, so writing one would renumber them in silence; the
+    /// sentence is <see cref="RfCore.Data.DataSetBuilder.GappedPortsRefusal"/>, shared with every
+    /// other Touchstone writer.
+    /// </summary>
+    public static Diagnostic SparamGappedPorts(string path, string reason) => Diagnostic.Create(
+        "sparam.export.gapped-ports",
+        DiagnosticSeverity.Error,
+        "sparam: {reason} Nothing was written to '{path}'.",
+        ("reason", reason), ("path", path));
+
     public static Diagnostic SparamNoSParameters(string path) => Diagnostic.Create(
         "sparam.export.no-s-parameters",
         DiagnosticSeverity.Error,

@@ -2745,17 +2745,19 @@ public sealed class Elaborator
                 numToPath[num] = ec.InstancePath;
         }
 
-        // Check for gaps in the port numbering (e.g. {1,3} is missing 2).
+        // Gaps in the port numbering (e.g. {1,3} is missing 2) — ONE line, not one per number
+        // (DFR27-2 R-dfr27-2-2). The result keeps the Terms' own numbers, so nothing is renumbered;
+        // what a gap costs is the Touchstone export, which numbers ports by position.
         if (numToPath.Count > 0)
         {
-            int maxNum = numToPath.Keys.Max();
-            for (int n = 1; n <= maxNum; n++)
-            {
-                if (!numToPath.ContainsKey(n))
-                    netlist.AddWarning(
-                        $"S-parameter port Num={n} is missing; Terms are numbered " +
-                        $"{string.Join(", ", numToPath.Keys.OrderBy(k => k))}.");
-            }
+            int maxNum  = numToPath.Keys.Max();
+            var missing = Enumerable.Range(1, Math.Max(0, maxNum)).Where(n => !numToPath.ContainsKey(n)).ToList();
+            if (missing.Count > 0)
+                netlist.AddWarning(
+                    $"S-parameter ports are numbered {string.Join(", ", numToPath.Keys.OrderBy(k => k))}; " +
+                    $"{(missing.Count == 1 ? "Num" : "Nums")} {RfCore.Data.DataSetBuilder.FormatPortRuns(missing)} " +
+                    $"{(missing.Count == 1 ? "is" : "are")} missing. Results keep these numbers, but a " +
+                    "Touchstone export will be refused until the Terms are numbered 1…N.");
         }
     }
 }

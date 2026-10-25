@@ -969,6 +969,11 @@ namespace CircuitRF.Render.DataDisplay
         /// SourceZ0IsUnusual, compute uses these values directly (no renorm).</summary>
         public Complex[]? SourceZ0PerPort { get; set; }
 
+        /// <summary>The port NUMBER each <see cref="SourceZ0PerPort"/> entry belongs to, from the same
+        /// Z0 cube's <c>port</c> axis — 1, 2, 9, 10 on a bench whose Terms have gaps (DFR27-2). Null ⇒
+        /// entry k is port k+1, which is every Touchstone file and every contiguous bench.</summary>
+        public int[]? SourcePortNumbers { get; set; }
+
         /// <summary>True when the source reference is non-uniform-across-ports OR complex
         /// (set by the owner from DataSetBuilder.ClassifyZ0).  Drives compute path + textbox
         /// gating.</summary>
@@ -1861,6 +1866,7 @@ namespace CircuitRF.Render.DataDisplay
             _f0ByX             = src._f0ByX;
             // Per-port Z0 (Phase 7.2f).
             SourceZ0PerPort   = src.SourceZ0PerPort;
+            SourcePortNumbers = src.SourcePortNumbers;
             SourceZ0IsUnusual = src.SourceZ0IsUnusual;
             // Family axis name (Phase 7.3b).
             FamilyAxisName = src.FamilyAxisName;
@@ -3945,16 +3951,18 @@ namespace CircuitRF.Render.DataDisplay
                 : DbFloor.Label("impedance", m.FormatImpedanceComplex(Z)) + " Ω";
         }
 
-        /// <summary>The 0-based port index a cube-bound reflection element (S(i,i)) reads; -1 when
-        /// the trace is not one. The pinned "i" slice index IS the port index (the axis is 1-based
-        /// port numbers, the slice holds the 0-based position).</summary>
+        /// <summary>The 0-based position in <see cref="SourceZ0PerPort"/> of the port a cube-bound
+        /// reflection element (S(i,i)) reads; -1 when the trace is not one. The pinned "i" slice holds
+        /// the port NUMBER − 1 (DFR27-2), which is the position only when the ports are 1…N — so it is
+        /// looked up in <see cref="SourcePortNumbers"/> when the source said which ports it has.</summary>
         private int CubeReflectionPortIndex
         {
             get
             {
                 if (!IsCubeReflectionElement || Slice is null) return -1;
                 foreach (var s in Slice)
-                    if (s.AxisName == "i") return s.Index;
+                    if (s.AxisName == "i")
+                        return SourcePortNumbers is { } nums ? Array.IndexOf(nums, s.Index + 1) : s.Index;
                 return -1;
             }
         }

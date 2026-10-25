@@ -5315,3 +5315,23 @@ triangle and name sit ABOVE the data point, so a marker on a trace running along
 and its whole glyph clipped away. `MarkerRenderer.GlyphClip` raises the clip's top by the glyph's height when the data
 point is inside the box, and returns the box unchanged otherwise. Gate:
 `PanAndMarkerLabelTests.MarkerGlyph_PointInViewAtTheTopEdge_DrawsAboveTheBox` (fails with the plain box clip).
+
+## A trace's i/j pin is a port NUMBER, looked up at every resolve (brief DFR27-2, 2026-10-25)
+
+The `S` cube's port axes now carry the Terms' own numbers (see `src/Core/RESOLVED.md`), so a pin has to be looked up
+by number, not position. A pinned `i`/`j` `AxisSlice` keeps storing **number − 1** in `Index`, the convention the spec
+shorthand, `TraceGoalReader` and the labels already read back as `Index + 1`. `PortSlices.TryToPositions` turns that
+into a position on the cube being resolved, in `TraceResolve.SetCubeDataFromCore` next to the labelled-pin rebind.
+Only the local copy is positional; `t.Slice` keeps the number, so after a re-run that drops the Term the next draw is
+invalid ("Port 9 is not a port of this result … (it has 1, 2, 10)"). Before, the resolve clamped an index past the
+end onto the last port, which is how a deleted Term went on showing data.
+
+- `SliceTokenParser` checks the number against the axis values when the axis is not 1…N. `TraceExpression` turns the
+  token into a position with `PortSlices.PinPosition`. The picker's S(i,j) items carry the axis's numbers, and
+  `BuildCarriedSliceFromCube` no longer clamps a port pin.
+- A marker's per-port Z0 lookup used the pin as an array index. `Trace.SourcePortNumbers` (stamped from the Z0 cube's
+  `port` axis beside `SourceZ0PerPort`) maps the number back to its entry.
+- **Only port-NUMBER axes are translated**: an `i`/`j` axis whose values are distinct positive integers. The Signal
+  Designer's 0-based `i` axis, and the test fixtures with a single `i = 0`, keep the positional reading.
+- Gate: `Ui.Tests/PortNumberTraceTests` (`S[:, 10, 9]` reads 1009 from a 100·i + j cube; `S[:, 4, 3]` refused naming
+  1, 2, 9, 10; one trace resolved against a re-run without port 9, then one renumbered 1…4, is invalid both times).

@@ -3901,3 +3901,28 @@ identity with the junction-only stamp).
 - Gates: `TestPadRound26Tests.PadCapacitance_FallsWithClearD_FromTheUnclearedPad_ToTheFieldSolve` (non-increasing over
   0…3·D in 0.1 mm, `ClearD = 0` equal to the uncut pad, 0.575 pF ±25 % at D + 0.5 mm);
   `TestPadModelTests.ClearD_NoWiderThanTheAntipad_ClearsNothing_AndTheNoteNamesThePlane`.
+
+## A port's number is its identity — no silent renumbering (brief DFR27-2, 2026-10-25)
+
+- **Symptom**: after deleting two of twelve Terms and re-running, a trace naming a deleted port still showed about
+  −35 dB instead of reading as invalid.
+- **Cause**: `SParameterEngine` sorted the Terms by `Num` and built the result through `DataSetBuilder.FromSnp`, which
+  writes port axes 1…N. Terms 1, 2, 9, 10 became ports 1…4, so `S(4,3)` meant Terms 10 and 9, and every trace, goal and
+  measurement keyed by number pointed at a different pair after an edit. The elaborator warned once per missing number
+  and the gaps were then closed up.
+- **Fix**: the `S` cube's `i`/`j` axes and the `Z0` cube's `port` axis carry each Term's `Num`
+  (`DataSetBuilder.WithPortNumbers`). Contiguous 1…N skips the rewrite, so those runs produce byte-identical `.sNp` and
+  `.npy` (checked against the previous build). If two Terms share a number the axes stay 1…N, because a coordinate
+  naming two ports cannot be looked up and the elaborator already reports the duplicate.
+- `DataSet.S(i, j)` (expressions, goals, measurements) and the evaluator's `ResolvePin` already looked ports up by axis
+  value, so they now find the right pair. A missing port's message lists the ports the result has.
+- The elaborator gives **one** warning: the numbers present, the missing ones collapsed into runs ("3–8"), and that a
+  Touchstone export is refused until the Terms are 1…N.
+- **Touchstone writers refuse a gapped result**, because Touchstone numbers ports by position. That covers
+  `TouchstoneExporter.Export` (new status `GappedPorts`, with the sentence in `Message`; the Data Display's export
+  dialog shows it) and the CLI `sparam -o x.sNp` (exit 1, `sparam.export.gapped-ports`). The wording comes from one
+  place, `DataSetBuilder.GappedPortsRefusal`. `.npy`/`.mat` keep the real numbers and are not refused. `SnP` blocks
+  reading a file are unaffected.
+- Gates: `Engine.Tests/PortNumberIdentityTests` (axes [1, 2, 9, 10], `S(10,9)` = 0.5, `S(4,3)` refused naming the
+  ports, a single warning); `Ui.Tests/Cli/GappedPortsCliTests` (exit 1 naming 3–8, `.npy` written, the exporter's
+  `GappedPorts`).

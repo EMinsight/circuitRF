@@ -1396,6 +1396,7 @@ public partial class TraceRowViewModel : ViewModelBase
             // below (brief-dd-z0-renormalization.md §1) — this reset just avoids showing a stale
             // network-trace value in between.
             _trace.SourceZ0PerPort   = null;
+            _trace.SourcePortNumbers = null;
             _trace.SourceZ0IsUnusual = false;
 
             // A freshly-picked network-param cube trace (S/Z/Y element) seeds Z0 at the source's OWN
@@ -1542,11 +1543,13 @@ public partial class TraceRowViewModel : ViewModelBase
         if (entry.Z0PerPort is { Count: > 0 } z0PerPort)
         {
             trace.SourceZ0PerPort   = z0PerPort as System.Numerics.Complex[] ?? z0PerPort.ToArray();
+            trace.SourcePortNumbers = null;
             trace.SourceZ0IsUnusual = entry.HasUnusualZ0;
         }
         else
         {
             trace.SourceZ0PerPort   = null;
+            trace.SourcePortNumbers = null;
             trace.SourceZ0IsUnusual = false;
         }
     }
@@ -3316,6 +3319,7 @@ public partial class TraceRowViewModel : ViewModelBase
         else
         {
             _trace.SourceZ0PerPort   = null;
+            _trace.SourcePortNumbers = null;
             _trace.SourceZ0IsUnusual = false;
             _sourceZ0Kind = null;
         }
@@ -3683,14 +3687,20 @@ public partial class TraceRowViewModel : ViewModelBase
                       && (!isComplexPlot || cube.DataKind == DataKind.Complex);
         AxisSlice[] baseSlice = BuildDefaultSlice(cube);
 
+        // DFR27-2: the items name the Terms' own numbers (1, 2, 9, 10 on a gapped bench) — a pinned
+        // i/j slice stores number − 1, which PortSlices turns into a position at every resolve.
+        var iAxis = cube.Axes[iDim];
+        int PortNumber(int k) => PortSlices.IsPortNumberAxis(iAxis) ? (int)Math.Round(iAxis.Values[k]) : k + 1;
+
         for (int i = 0; i < nPorts; i++)
         for (int j = 0; j < nPorts; j++)
         {
+            int pi = PortNumber(i), pj = PortNumber(j);
             var slice = (AxisSlice[])baseSlice.Clone();
-            slice[iDim] = new AxisSlice("i", AxisRole.PinToIndex, i);
-            slice[jDim] = new AxisSlice("j", AxisRole.PinToIndex, j);
+            slice[iDim] = new AxisSlice("i", AxisRole.PinToIndex, pi - 1);
+            slice[jDim] = new AxisSlice("j", AxisRole.PinToIndex, pj - 1);
 
-            string label = $"{bareName}({i + 1},{j + 1})";
+            string label = $"{bareName}({pi},{pj})";
             _allSignals.Add(new TraceDataItem(entry, qualified, slice, label, isEnabled)
                             { Group = cubeGroup,
                               DisabledReason = shapeReason ?? RealOnComplexPlotReason(isEnabled) });
@@ -3886,8 +3896,13 @@ public partial class TraceRowViewModel : ViewModelBase
 
             if (old.TryGetValue(ax.Name, out var prev))
             {
-                int idx  = Math.Clamp(prev.Index, 0, Math.Max(0, len - 1));
                 var role = prev.Role;
+                // A pinned port keeps its NUMBER (DFR27-2): clamping it onto this cube's length would
+                // turn port 10 of a bench that lost Terms into port 4, which is the silent renumbering
+                // the resolve now refuses. TraceResolve reports a port the cube does not have.
+                int idx  = role == AxisRole.PinToIndex && PortSlices.IsPortNumberAxis(ax)
+                    ? prev.Index
+                    : Math.Clamp(prev.Index, 0, Math.Max(0, len - 1));
                 string lbl = (role == AxisRole.PinToIndex && ax.Labels is { Length: > 0 } && idx < ax.Labels.Length)
                     ? ax.Labels[idx] : "";
                 result[d] = new AxisSlice(ax.Name, role, idx, Label: lbl);

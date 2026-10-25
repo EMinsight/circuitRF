@@ -572,6 +572,19 @@ public static class TraceResolve
         }
         slice = t.Slice!;
 
+        // DFR27-2 R-dfr27-2-4: a pinned i/j entry carries a PORT NUMBER, looked up on THIS cube every
+        // resolve — never remembered as a position. Only the local copy is positional; t.Slice keeps
+        // the number, so after a re-run that removes the Term the next draw reads invalid instead of
+        // its last good data (or, clamped, the last port's).
+        if (!PortSlices.TryToPositions(slice, cube, out slice, out string portErr))
+        {
+            t.ExpressionError = portErr;
+            t.InvalidSpecText = t.Expression ?? t.CubeName;
+            t.Points.Clear();
+            t.FamilyCurves.Clear();
+            return;
+        }
+
         // ANT-7 §2 — the cube's own VALUE unit, which is what a pattern plot's radial numbers are in.
         // Stamped here rather than passed through SetCubeData beside the AXIS unit, because it is a
         // property of the cube and not of the slice, and because every SetCubeData call site below
@@ -889,6 +902,9 @@ public static class TraceResolve
 
         var z0Cube = ds[z0Spec];
         t.SourceZ0PerPort   = z0Cube.ComplexValues;
+        t.SourcePortNumbers = z0Cube.Rank == 1 && !PortSlices.IsOneToN(z0Cube.Axes[0].Values)
+            ? z0Cube.Axes[0].Values.Select(v => (int)Math.Round(v)).ToArray()
+            : null;
         t.SourceZ0IsUnusual = RfCore.Data.DataSetBuilder.ClassifyZ0(z0Cube) != RfCore.Data.Z0Kind.UniformReal;
         return true;
     }

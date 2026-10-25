@@ -92,7 +92,7 @@ public static class SParameterEngine
                                     + (prep.MnaPassive?.Factorizations ?? 0),
             prep.BackSubstitutions,
             prep.Mna.PatternBuilds);
-        return (BuildDataSet(netlist, freqsHz, sMatrices, prep.Z0PerPort, prep.Probes, wsp, nd, settings), stats);
+        return (BuildDataSet(netlist, freqsHz, sMatrices, prep.Z0PerPort, PortNumbers(prep), prep.Probes, wsp, nd, settings), stats);
     }
 
     /// <summary>
@@ -326,8 +326,8 @@ public static class SParameterEngine
             for (int i = 0; i < extras.Length; i++)
                 if (extras[i] is { } copy) netlist.MergeDiagnosticsFrom(copy);
 
-            return BuildDataSet(netlist, freqsHz, sMatrices, preps[0]!.Z0PerPort, preps[0]!.Probes,
-                                wsp, nd, settings);
+            return BuildDataSet(netlist, freqsHz, sMatrices, preps[0]!.Z0PerPort, PortNumbers(preps[0]!),
+                                preps[0]!.Probes, wsp, nd, settings);
         }
         finally
         {
@@ -400,6 +400,7 @@ public static class SParameterEngine
         double[]          freqsHz,
         Mat<Complex>[]   sMatrices,
         Complex[]         z0PerPort,
+        int[]             portNumbers,
         WspProbeSite[]    probes,
         Complex[][,]?     wsp,
         NdfOutput?        ndf,
@@ -412,6 +413,17 @@ public static class SParameterEngine
             var snp   = new SNP(freqsHz, sMatrices, MatrixType.S, MatrixFormat.RI, refZ0);
             ds = DataSetBuilder.FromSnp(snp);                    // S cube + uniform Z0 placeholder
             ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0PerPort)); // overwrite with per-port truth
+
+            // DFR27-2 R-dfr27-2-1: the port axes carry the Terms' own numbers. FromSnp writes 1…N,
+            // which renumbered Terms 1, 2, 9, 10 to 1…4 — so S(4,3) silently meant Terms 10 and 9.
+            // Contiguous numbering is the same axis either way and is left byte-identical. Duplicate
+            // numbers keep 1…N: a coordinate that names two ports cannot be looked up, and the
+            // elaborator has already said the assignment is ambiguous.
+            if (!IsOneToN(portNumbers) && portNumbers.Distinct().Count() == portNumbers.Length)
+            {
+                ds.Add("S",  DataSetBuilder.WithPortNumbers(ds["S"],  portNumbers));
+                ds.Add("Z0", DataSetBuilder.WithPortNumbers(ds["Z0"], portNumbers));
+            }
         }
         else
         {
@@ -447,6 +459,14 @@ public static class SParameterEngine
             }
         }
         return ds;
+    }
+
+    private static int[] PortNumbers(Prepared prep) => prep.Ports.Select(p => p.PortNum).ToArray();
+
+    private static bool IsOneToN(int[] nums)
+    {
+        for (int k = 0; k < nums.Length; k++) if (nums[k] != k + 1) return false;
+        return true;
     }
 
     /// <summary>

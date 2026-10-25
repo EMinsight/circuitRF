@@ -327,6 +327,11 @@ public partial class DataExporterDialog : Window
             Path.GetFileNameWithoutExtension(path));
 
         var result = vm.ExportTouchstone(baseNoExt);
+        if (result.Status == TouchstoneExportStatus.GappedPorts)
+        {
+            await ShowErrorAsync(result.Message ?? "The result's port numbers are not 1…N.");
+            return;
+        }
         if (result.Status == TouchstoneExportStatus.NameCollision)
         {
             await ShowErrorAsync($"Name collision: {string.Join(", ", result.CollidingNames)}");
@@ -349,6 +354,11 @@ public partial class DataExporterDialog : Window
 
         var result = vm.ExportTouchstone(basePath);
 
+        if (result.Status == TouchstoneExportStatus.GappedPorts)
+        {
+            await ShowErrorAsync(result.Message ?? "The result's port numbers are not 1…N.");
+            return;
+        }
         if (result.Status == TouchstoneExportStatus.NameCollision)
         {
             await ShowErrorAsync($"Filename collision — two sweep combinations map to the same name:\n" +

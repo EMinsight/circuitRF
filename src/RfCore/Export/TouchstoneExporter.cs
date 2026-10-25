@@ -34,14 +34,18 @@ public sealed record TouchstoneExportOptions(
     MatrixFormat MatrixFormat,
     IReadOnlyList<string>? HeaderComments = null);
 
-public enum TouchstoneExportStatus { Ok, NoSCube, NameCollision }
+/// <summary><see cref="GappedPorts"/>: the S cube's ports are not 1…N (Terms 1, 2, 9, 10), which
+/// Touchstone cannot say — it numbers ports by position — so nothing is written (DFR27-2 R-dfr27-2-3).
+/// <see cref="TouchstoneExportResult.Message"/> carries the sentence naming the missing numbers.</summary>
+public enum TouchstoneExportStatus { Ok, NoSCube, NameCollision, GappedPorts }
 
 public sealed record TouchstoneExportResult(
     TouchstoneExportStatus   Status,
     IReadOnlyList<string>    WrittenPaths,
     IReadOnlyList<string>    CollidingNames,
     Z0Kind                   SourceZ0Kind,
-    bool                     Renormalized);
+    bool                     Renormalized,
+    string?                  Message = null);
 
 public sealed record TouchstoneInspectResult(
     IReadOnlyList<Axis> SweepAxes,
@@ -108,6 +112,12 @@ public static class TouchstoneExporter
                 TouchstoneExportStatus.NoSCube,
                 Array.Empty<string>(), Array.Empty<string>(),
                 Z0Kind.UniformReal, false);
+
+        if (DataSetBuilder.MissingPortNumbers(sCube).Length > 0)
+            return new TouchstoneExportResult(
+                TouchstoneExportStatus.GappedPorts,
+                Array.Empty<string>(), Array.Empty<string>(),
+                Z0Kind.UniformReal, false, DataSetBuilder.GappedPortsRefusal(sCube));
 
         // Locate network axes by name
         int freqDim = FindDim(sCube, "freq");
