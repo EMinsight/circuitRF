@@ -221,9 +221,9 @@ assigned to a **secondary (right-hand) Y axis** on a rectangular plot, which is 
 efficiency in per cent share one frame legibly. Autoscale is on until you set a limit; setting one turns
 it off for that axis, so a figure you have framed deliberately does not re-frame itself on the next run.
 
-**Legend** in the Plot Inspector draws a box naming each trace beside a short sample of its line, in
-its colour and line style. **Inside** puts it in the top-right corner of the plot; **Below** puts it in a
-band under the plot. It is **Off** to begin with, on every plot type: a rectangular plot already names
+The three **legend** buttons to the right of **Freq** in the Plot Inspector draw a box naming each trace
+beside a short sample of its line, in its colour and line style. **Inside** puts it in the top-right corner
+of the plot; **Below** puts it in a band under the plot. It is **Off** to begin with, on every plot type: a rectangular plot already names
 its traces on the Y axis, and a Smith or polar plot on the label strips beside the chart and the rows
 under it. The setting is saved in the `.cdd`, and `circuitrf render` and `circuitrf plot` draw it too.
 

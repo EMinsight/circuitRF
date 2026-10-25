@@ -463,8 +463,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// <summary>The Legend control is offered on every plot kind that draws one (R-dfr26-6-2).</summary>
     public bool ShowLegendControl => IsRectPlot || IsSmithPlot || IsPolarPlot;
 
-    public static IReadOnlyList<LegendPlacement> LegendPlacements { get; } =
-        [LegendPlacement.Off, LegendPlacement.Inside, LegendPlacement.Below];
+    // The three segments of the legend button group on the Freq row — one active at a time.
+    public bool IsLegendOff    => _plot.Legend == LegendPlacement.Off;
+    public bool IsLegendInside => _plot.Legend == LegendPlacement.Inside;
+    public bool IsLegendBelow  => _plot.Legend == LegendPlacement.Below;
 
     /// <summary>Where the legend is drawn — <see cref="Plot.Legend"/>, off by default. A structure change
     /// as well as a redraw: Below makes a Smith or Polar canvas taller, as the rows under it do.</summary>
@@ -476,6 +478,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
             if (_plot.Legend == value) return;
             _plot.Legend = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsLegendOff));
+            OnPropertyChanged(nameof(IsLegendInside));
+            OnPropertyChanged(nameof(IsLegendBelow));
             PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
             PlotStructureChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -1001,6 +1006,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
     public IRelayCommand SetPlotTypeTableCommand { get; }
     public IRelayCommand SetPlotTypeSurfaceCommand { get; }
 
+    public IRelayCommand SetLegendOffCommand    { get; }
+    public IRelayCommand SetLegendInsideCommand { get; }
+    public IRelayCommand SetLegendBelowCommand  { get; }
+
     /// <summary>True when the selected data source is a loadpull result eligible for contour authoring.</summary>
     public bool CanAddContourTrace =>
         _library?.SelectedEntry is { } e && IsLoadpullSource(e);
@@ -1049,6 +1058,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
         SetPlotTypePolarCommand = Gesture.Command("plotType=Polar", () => PlotType = PlotType.Polar);
         SetPlotTypeTableCommand = Gesture.Command("plotType=Table", () => PlotType = PlotType.Table);
         SetPlotTypeSurfaceCommand = Gesture.Command("plotType=Surface3D", () => PlotType = PlotType.Surface3D);
+
+        SetLegendOffCommand    = Gesture.Command("legend=Off",    () => Legend = LegendPlacement.Off);
+        SetLegendInsideCommand = Gesture.Command("legend=Inside", () => Legend = LegendPlacement.Inside);
+        SetLegendBelowCommand  = Gesture.Command("legend=Below",  () => Legend = LegendPlacement.Below);
 
         SurfaceViewIsoCommand       = Gesture.Command("surfaceView=iso",       () => SetSurfaceView(SurfaceStandardView.Isometric));
         SurfaceViewBroadsideCommand = Gesture.Command("surfaceView=broadside", () => SetSurfaceView(SurfaceStandardView.Broadside));

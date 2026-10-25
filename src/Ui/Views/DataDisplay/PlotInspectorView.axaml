@@ -44,7 +44,13 @@
         <Style Selector="Button.seg-btn.active mi|MaterialIcon">
             <Setter Property="Foreground" Value="White"/>
         </Style>
+        <Style Selector="Button.seg-btn ctl|LegendGlyphControl">
+            <Setter Property="Stroke" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
         <Style Selector="Button.seg-btn.active ctl|PlotTypeGlyphControl">
+            <Setter Property="Stroke" Value="White"/>
+        </Style>
+        <Style Selector="Button.seg-btn.active ctl|LegendGlyphControl">
             <Setter Property="Stroke" Value="White"/>
         </Style>
 
@@ -247,15 +253,6 @@
                       FontSize="11" Margin="0,0,8,2"
                       ToolTip.Tip="Draw the limits of the goals these traces show"/>
 
-            <!-- R-dfr26-6-2: the legend — off, in the plot box's corner, or under the plot. -->
-            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowLegendControl}">
-                <TextBlock Text="Legend" FontSize="11" VerticalAlignment="Center"/>
-                <ComboBox ItemsSource="{Binding LegendPlacements}"
-                          SelectedItem="{Binding Legend, Mode=TwoWay}"
-                          Width="96" Padding="5,3" FontSize="11"
-                          ToolTip.Tip="A box naming each trace beside a sample of its line"/>
-            </StackPanel>
-
             <WrapPanel IsVisible="{Binding HasPatternControls}">
 
                 <!-- The mode switch is the POLAR plot's; a surface's radius is dB by construction and
@@ -434,8 +431,8 @@
                           ToolTip.Tip="Colour ramp — the contour plot's own set"/>
             </StackPanel>
 
-            <!-- ── §B Row 2: + Trace (left) / Freq + Font Size (right) ─── -->
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto">
+            <!-- ── §B Row 2: + Trace (left) / Freq + Legend + Font Size (right) ─── -->
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto,Auto">
 
                 <!-- Hidden, not greyed, on a fixed trace set — see the trash button's own note. -->
                 <Button Grid.Column="0"
@@ -481,10 +478,38 @@
                            ItemsSource="{x:Static vm:PlotInspectorViewModel.AllFreqUnits}"
                            SelectedItem="{Binding FreqUnit, Mode=TwoWay}"/>
 
-                <TextBlock Grid.Column="5" Text="Font Size"
+                <!-- R-dfr26-6-2: the legend — off, in the plot box's corner, or under the plot. Never
+                     on a Table, so it never shares the row with Font Size. -->
+                <StackPanel Grid.Column="5"
+                            Orientation="Horizontal"
+                            Margin="10,0,0,0"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding ShowLegendControl}">
+                    <Button Classes="seg-btn"
+                            Classes.active="{Binding IsLegendOff}"
+                            Command="{Binding SetLegendOffCommand}"
+                            ToolTip.Tip="Legend off">
+                        <ctl:LegendGlyphControl Kind="Off" Width="16" Height="16"/>
+                    </Button>
+                    <Button Classes="seg-btn"
+                            Classes.active="{Binding IsLegendInside}"
+                            Command="{Binding SetLegendInsideCommand}"
+                            ToolTip.Tip="Legend inside the plot">
+                        <ctl:LegendGlyphControl Kind="Inside" Width="16" Height="16"/>
+                    </Button>
+                    <Button Classes="seg-btn"
+                            Classes.active="{Binding IsLegendBelow}"
+                            Command="{Binding SetLegendBelowCommand}"
+                            Margin="0"
+                            ToolTip.Tip="Legend below the plot">
+                        <ctl:LegendGlyphControl Kind="Below" Width="16" Height="16"/>
+                    </Button>
+                </StackPanel>
+
+                <TextBlock Grid.Column="6" Text="Font Size"
                            Classes="label" Margin="10,0,4,0"
                            IsVisible="{Binding IsTablePlot}"/>
-                <NumericUpDown Grid.Column="6"
+                <NumericUpDown Grid.Column="7"
                                Value="{Binding FontSize, Mode=TwoWay}"
                                Minimum="6" Maximum="32" Increment="1"
                                Width="40"
