@@ -183,6 +183,23 @@ shapes that was, along with any bitmaps and placed instances, which are not geom
 clipped. All four are a single undo.</p>
 </div>
 
+### Crop to Rectangle {#crop}
+
+**Crop to Rectangle…** (right-click menu) cuts the whole cell down to one box, on **every** layer, in one step.
+Choose it, then drag the box; <kbd>Esc</kbd> cancels. It is the command for keeping one corner of an imported
+board.
+
+- Every shape is cut to the box, including those on layers you have hidden or switched selection off for. A plane
+  keeps its holes, and a shape cut at the edge keeps its layer and net.
+- Vias, drills and labels are kept when their point is inside the box, and removed otherwise.
+- A placed instance is kept when its origin is inside the box, and removed otherwise. It is never cut.
+- The board outline is redrawn as the old outline's board intersected with the box. It keeps its line width, so
+  the 3D view's board and air box match the crop.
+- Bitmaps are left as they are.
+
+Before anything changes, a confirmation lists each layer, marked when it is hidden or locked, with how many
+shapes it keeps, cuts at the edge and removes, then the instance counts. **Crop** applies it as a single undo.
+
 <div class="callout note">
 <span class="label">The two "flatten" commands are different operations</span>
 <p><strong>Flatten to Polygon</strong> turns a curve into a polygon and always asks for the tolerance.

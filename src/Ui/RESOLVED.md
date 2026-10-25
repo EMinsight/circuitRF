@@ -40412,3 +40412,45 @@ export; the Model Composer example is the one that shows a document and its data
 
 The pulse bench runs 3 ms (three whole PRIs, so DE_pct counts the storage capacitor's recharge) in ~105 s. A `PW` sweep
 was not built: a carrier is a quoted description, which a sweep variable cannot reach into.
+
+## Crop to Rectangle, and Group into Cell's technology reference and missing fills (brief DFR26-2, 2026-10-24)
+
+A designer needed one 12 × 25 mm corner of an imported ten-layer board, every layer, clean edge; it took a rectangle
+plus Difference layer by layer, twice. §1, measured on a full ten-layer import (36,828 shapes, 23 layers; every copper
+layer arrives COMPOSITED for polarity, so each plane is one polygon with hundreds to ~1,450 holes per layer):
+
+- **The geometry was never the problem.** `LayoutBooleans.Clip` against a rectangle, per shape, on every layer: holes
+  that fall inside stay holes, holes across the edge become notches, nets and layers are kept, 0.43 s for the whole
+  board. No shape kind on the board is outside the clip operand set.
+- **The outline is.** An imported outline is ONE stroke round the board (`PathShape`, 0.2 mm, closed). Clipped, it
+  keeps only the stretches of line that cross the rectangle — none at all for a crop inside the board — so the crop
+  had no board for the 3D view. `LayoutCrop` rebuilds it instead: the board the 3D view reads
+  (`Em3dLayoutSolids.Builder.BoardRegions`, the same rule, so the two cannot disagree), grown by half the line width
+  because a Gerber profile is drawn ON the edge, intersected with the box, and redrawn as a closed line of the old
+  width (or as a region, when the outline was drawn as one).
+- **The "trouble on copper" was the gesture, read from the code** (the session itself was not reproducible from the
+  files). On copper every right-click lands on metal — a plane covers the whole board — and `FindClipStencil` takes
+  the TOPMOST clippable shape under the click, so the stencil was the plane or a trace unless the drawn rectangle
+  happened to be on top; a rectangle drawn ON a copper layer is itself copper and survives as artwork, because a
+  stencil is never consumed. Difference, the command they fell back to, folds the selection into ONE region on the
+  first operand's layer and clears differing nets, which on a copper layer destroys traces. Drill, mask and paste
+  layers have no board-sized shape to win the hit, which is why those went fine. Crop to Rectangle has no stencil:
+  the box is a drag (the EM solve region's gesture), so nothing is picked and nothing is left behind.
+- **Every layer, not the visible ones.** Clip All keeps the 2026-09-15 rule (it is Select All then Clip). Crop names
+  the whole board as its scope; the confirmation, which lists every layer marked hidden/locked with its kept/cut/
+  removed counts, is what replaces the gate. `ApplyCrop` refuses a plan whose shapes are no longer at their indices
+  (the confirmation is a window).
+- **Cost, Release:** 0.43 s cold (0.40 s computing, 0.03 s applying one `ReplaceShapesCommand`), 0.17 s warm, undo
+  0.05 s.
+
+**Group into Cell wrote a `TechRef` that pointed one folder off.** It copied the parent's string, which is relative to
+the PARENT's layout folder; the new cell lives at a different depth. It is now written from the parent's resolved
+technology path, relative to the new cell's layout folder. A parent with no `TechRef` (the workspace default) stays
+null, which the new cell resolves the same way.
+
+**The ground fills Group into Cell "did not take" were never selected.** `CommitGroupIntoCell` takes every selected
+shape of every kind and always did. A left-to-right marquee takes only shapes WHOLLY inside it, and a fill spanning
+the board never is; no marquee or click reaches a hidden or locked layer, and that board had 344 shapes on such
+layers. The command now says so: shapes whose box overlaps the selection without being in it are counted, split into
+hidden/locked and reaching-past, in the confirmation and in Messages, with Crop to Rectangle as the way to take a
+region whole. Gates: `tests/Ui.Tests/Layout/CropBoardRound26Tests.cs`.

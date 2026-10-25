@@ -144,7 +144,9 @@ public sealed class LayoutGroupIntoCellTests : IDisposable
 
         string layoutPath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), "Grouped.clay");
         var newCellView = LayoutPersistence.LoadFromFile(layoutPath);
-        Assert.Equal(model.TechRef, newCellView.TechRef);           // inherited verbatim
+        // brief-dfr26-2: the same technology, written to resolve from the new cell's own folder.
+        Assert.Equal(Path.GetFullPath(CircuitRF.Core.RefPath.Resolve(_workspaceDir, model.TechRef!)),
+                     Path.GetFullPath(CircuitRF.Core.RefPath.Resolve(Path.GetDirectoryName(layoutPath)!, newCellView.TechRef!)));
         Assert.Equal(model.DbuPerMicron, newCellView.DbuPerMicron); // inherited verbatim
 
         Assert.Empty(model.Shapes);

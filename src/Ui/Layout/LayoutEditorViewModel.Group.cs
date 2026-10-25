@@ -33,7 +33,8 @@ public sealed partial class LayoutEditorViewModel
     /// geometry never visibly moves (R-L3c-5): <see cref="LayoutGroup.BuildContents"/> picks the
     /// selection's own bbox-minimum as the new cell's local origin, and the replacement instance is
     /// placed at that exact point in the parent, R0/no-mirror/Mag 1. The new cell inherits the
-    /// PARENT's <c>TechRef</c> and <c>DbuPerMicron</c> verbatim (§4 — same technology means R-L3c-3's
+    /// PARENT's technology (its <c>TechRef</c> rewritten to resolve from the new cell's own folder —
+    /// <see cref="TechRefFrom"/>) and <c>DbuPerMicron</c> (§4 — same technology means R-L3c-3's
     /// reconciliation never fires for a freshly grouped cell, and identical resolution means no
     /// rescale, which is exactly why inheriting beats defaulting). A selected INSTANCE moves into the
     /// new cell as an instance, unchanged apart from the translate — grouping does not flatten.
@@ -56,6 +57,7 @@ public sealed partial class LayoutEditorViewModel
             return false;
         }
 
+        string? leftOut = GroupIntoCellLeftOutText;   // before the selection is replaced by the new instance
         var shapes = _selectedIndices.Select(i => Model.Shapes[i]).ToList();
         var instances = _selectedInstanceIndices.Select(i => Model.Instances[i]).ToList();
 
@@ -99,20 +101,20 @@ public sealed partial class LayoutEditorViewModel
             return false;
         }
 
-        var newView = new LayoutView
-        {
-            DbuPerMicron = Model.DbuPerMicron,
-            DisplayUnit = Model.DisplayUnit,
-            SnapDbu = Model.SnapDbu,
-            TechRef = Model.TechRef,
-        };
-        newView.Shapes.AddRange(contents.Shapes);
-
         // A selected INSTANCE's own CellRef was resolved relative to THIS document's InstanceBaseDir —
         // moving it into the new cell's own layout/ directory (a different directory) means it must be
         // rebased, exactly like a cross-directory paste already rebases (LayoutFragment.RebaseInstances) —
         // never left pointing at a path that only happened to be correct in the OLD location.
         string newCellLayoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+
+        var newView = new LayoutView
+        {
+            DbuPerMicron = Model.DbuPerMicron,
+            DisplayUnit = Model.DisplayUnit,
+            SnapDbu = Model.SnapDbu,
+            TechRef = TechRefFrom(newCellLayoutDir),
+        };
+        newView.Shapes.AddRange(contents.Shapes);
         foreach (var inst in contents.Instances)
         {
             inst.CellRef = LayoutFlatten.RebaseCellRef(inst.CellRef, effectiveParentDir, newCellLayoutDir);
@@ -158,7 +160,60 @@ public sealed partial class LayoutEditorViewModel
         _messageSink?.Success(
             $"Group into Cell: created '{cellName}' ({contents.Shapes.Count} shape(s), {contents.Instances.Count} instance(s)). " +
             "Undo restores this selection but does not delete the cell folder.");
+        if (leftOut is { } note) _messageSink?.Info("Group into Cell: " + note);
         return true;
+    }
+
+    /// <summary>
+    /// brief-dfr26-2 R-dfr26-2-2: the new cell's <c>TechRef</c>, written from the technology the parent RESOLVED and
+    /// relative to <paramref name="newLayoutDir"/>. The parent's own string is relative to the parent's folder, and
+    /// the new cell is at a different depth, so copying it verbatim pointed one level off — <c>Technology file not
+    /// found</c> on every open. A parent with no <c>TechRef</c> takes the workspace default, which the new cell (in
+    /// the same workspace) resolves the same way, so it stays null.
+    /// </summary>
+    private string? TechRefFrom(string newLayoutDir)
+    {
+        if (Model.TechRef is null) return null;
+        string? techPath = ResolvedTechPath
+            ?? (InstanceBaseDir.Length > 0 ? RefPath.Resolve(InstanceBaseDir, Model.TechRef) : null);
+        if (techPath is null) return Model.TechRef;
+        try { return RefPath.ToStored(Path.GetRelativePath(Path.GetFullPath(newLayoutDir), Path.GetFullPath(techPath))); }
+        catch { return Model.TechRef; }
+    }
+
+    /// <summary>
+    /// brief-dfr26-2 R-dfr26-2-3: what overlaps the selection without being in it, said rather than left behind in
+    /// silence. Group into Cell takes every selected shape of every kind; what a designer finds missing afterwards
+    /// (a ground fill) was never SELECTED — a left-to-right marquee takes only shapes wholly inside it, a fill
+    /// spanning the board never is, and no marquee or click reaches a hidden or locked layer. Null when nothing was
+    /// left out. Bounding boxes, so a fill whose box covers the selection counts even where it has a hole.
+    /// </summary>
+    public string? GroupIntoCellLeftOutText
+    {
+        get
+        {
+            if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0) return null;
+            var box = Bbox.Empty;
+            foreach (var i in _selectedIndices) box = box.Union(LayoutGeometry.BboxOf(Model.Shapes[i]));
+            foreach (var i in _selectedInstanceIndices) box = box.Union(CellHierarchy.InstanceBbox(Model.Instances[i], InstanceBaseDir));
+            if (box.IsEmpty) return null;
+
+            var selected = _selectedIndices.ToHashSet();
+            int hidden = 0, beyond = 0;
+            for (int i = 0; i < Model.Shapes.Count; i++)
+            {
+                if (selected.Contains(i) || !LayoutGeometry.BboxOf(Model.Shapes[i]).Intersects(box)) continue;
+                var def = ResolveLayerDef(Model.Shapes[i].Layer);
+                if (!def.Visible || !def.Selectable) hidden++; else beyond++;
+            }
+            if (hidden + beyond == 0) return null;
+
+            var parts = new List<string>();
+            if (hidden > 0) parts.Add($"{hidden} on hidden or locked layers");
+            if (beyond > 0) parts.Add($"{beyond} reaching past the selection (a ground fill is one)");
+            return $"{hidden + beyond} shape(s) overlapping the selection are not in it and stay where they are — " +
+                   $"{string.Join(", ", parts)}. To take a region whole, Crop to Rectangle first.";
+        }
     }
 
     private static void TryDeleteCellFolder(string cellDir)

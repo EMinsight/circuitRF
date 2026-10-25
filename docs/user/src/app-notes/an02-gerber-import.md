@@ -226,6 +226,12 @@ The cell opens in the layout editor:
 
 {{ui: an02-imported-layout}}
 
+**Cutting a region out of an imported board.** Right-click the layout, choose
+[**Crop to Rectangle…**](../reference/layout-editor.html#crop) and drag a box around the part you mean to keep: a
+connector and its feed, say. Every layer is cut to the box in one step, hidden and locked layers included, and
+the board outline is redrawn to match. The confirmation lists each layer's counts first, and one undo puts the
+whole board back.
+
 Every shape that came in as a filled region is a polygon: Gerber has no rectangle, so a rectangle drawn in the
 design that produced these files is a polygon here, and the summary counts them (23 on this board). The line
 arrives as one polygon per stretch of copper, overlapping where the stretches meet:

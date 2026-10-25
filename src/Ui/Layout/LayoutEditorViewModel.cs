@@ -3623,6 +3623,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // The EM solve-region drag, armed from a .cem editor, owns the press on the same terms.
         if (_emRegionPick is not null) { EmRegionPress(wx, wy); return; }
 
+        // brief-dfr26-2: Crop to Rectangle's drag, armed from the context menu, on the same terms.
+        if (_cropArmed) { CropPress(wx, wy); return; }
+
         // brief-artsch-8: Create Schematic from Artwork's Ground ▸ Pick on layout, on the same terms.
         if (_artworkPointPick is not null) { ArtworkPointPress(wx, wy); return; }
 
@@ -3702,6 +3705,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_rulerLabelMove is not null) { UpdateRulerLabelMove(wx, wy); return; }
 
         if (_emRegionPick is not null) { EmRegionMove(wx, wy, leftDown); return; }
+
+        if (_cropArmed) { CropMove(wx, wy, leftDown); return; }
 
         if (ImpedanceScopeArmed) { ImpedanceScopeMove(wx, wy, leftDown); return; }
 
@@ -3807,6 +3812,8 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     {
         if (_emRegionPick is not null) { EmRegionRelease(wx, wy); return; }
 
+        if (_cropArmed) { CropRelease(wx, wy); return; }
+
         if (ImpedanceScopeArmed) { ImpedanceScopeRelease(wx, wy); return; }
 
         if (ActiveTool == Tool.Select) { HandleSelectRelease(wx, wy); return; }
@@ -3861,6 +3868,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_emRegionPick is not null)
         {
             if (key == Key.Escape) CancelEmRegionPick();
+            return;
+        }
+
+        if (_cropArmed)
+        {
+            if (key == Key.Escape) CancelCropPick();
             return;
         }
 
@@ -4362,7 +4375,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         LayoutMarquee? marquee = _selectDragKind == SelectDragKind.Marquee
             ? new LayoutMarquee(_selectPressWX, _selectPressWY, _marqueeCurX, _marqueeCurY)
-            : EmRegionRubberBand;
+            : EmRegionRubberBand ?? CropRubberBand;
 
         // brief-L3a-followups.md §2/R-fix-2: Move now covers BOTH kinds together (no more separate
         // MoveInstance drag kind) — this block and the shape one just below it are independent `if`s,

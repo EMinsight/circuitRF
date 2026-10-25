@@ -1551,6 +1551,17 @@ public sealed class LayoutCanvas : Control
         return result == SaveChangesResult.Save;
     }
 
+    private async Task<bool> ConfirmCropAsync(LayoutCropResult plan, string summary)
+    {
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return false;
+        var dialog = new SaveChangesDialog(summary + "\n\nUndo restores everything.",
+            saveLabel: "Crop", dontSaveLabel: null, cancelLabel: "Cancel", title: "Crop to Rectangle", destructive: true);
+        bool ok = await dialog.ShowDialog<SaveChangesResult>(owner) == SaveChangesResult.Save;
+        InvalidateVisual();
+        return ok;
+    }
+
     private async Task ShowGroupIntoCellAsync()
     {
         if (_viewModel is null) return;
@@ -1572,6 +1583,7 @@ public sealed class LayoutCanvas : Control
         // the cell folder just created — say so up front, not only after the fact.
         var confirm = new SaveChangesDialog(
             $"Create cell '{name}' from the current selection {_viewModel.GroupIntoCellOutcomeText ?? ""}. " +
+            (_viewModel.GroupIntoCellLeftOutText is { } leftOut ? leftOut + " " : "") +
             "Undoing this afterward will restore the selection but will not delete the cell folder.",
             saveLabel: "Create", dontSaveLabel: null, cancelLabel: "Cancel", title: "Group into Cell");
         if (await confirm.ShowDialog<SaveChangesResult>(owner) != SaveChangesResult.Save) return;
@@ -1666,6 +1678,13 @@ public sealed class LayoutCanvas : Control
         var clipAllAvail = _viewModel.ClipAllAvailability(wx, wy, clipTol);
         AddClipItem("Clip All", clipAllAvail, _viewModel.ClipAllTooltip, cutOut: false, i => _viewModel.ApplyClipAll(i));
         AddClipItem("Cut Out All", clipAllAvail, _viewModel.ClipAllTooltip, cutOut: true, i => _viewModel.ApplyCutOutAll(i));
+
+        // brief-dfr26-2: the whole board, every layer, cut to a box dragged after the click — no stencil to
+        // right-click and no visible-layer gate; the confirmation lists every layer instead.
+        var cropItem = AddAvailItem("Crop to Rectangle…", _viewModel.CropToRectangleAvailability);
+        if (_viewModel.CropToRectangleAvailability.CanExecute)
+            ToolTip.SetTip(cropItem, "Drag a box: every shape on every layer, hidden and locked ones included, is cut to it");
+        cropItem.Click += (_, _) => _viewModel.ArmCropToRectangle(ConfirmCropAsync);
 
         Sep();
         AddAvailItem("Offset…", _viewModel.OffsetAvailability).Click += async (_, _) => await ShowOffsetDialogAsync();
