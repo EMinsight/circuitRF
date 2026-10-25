@@ -1,7 +1,7 @@
 // ================================================================
 //  SignalSpec.cs  —  the description of a modulated test signal
 //
-//  A signal is a list of carriers (LTE, NR, CW, pulsed CW or an
+//  A signal is a list of carriers (LTE, NR, CW, pulsed CW, FSK or an
 //  imported I/Q file), each with its own bandwidth, modulation, frequency offset
 //  from the source's centre frequency and relative power, plus record
 //  length, clipping and spectral-shaping settings.  The spec is plain
@@ -21,7 +21,7 @@ using System.Text.Json.Serialization;
 
 namespace RfCore.Signals
 {
-    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw }
+    public enum CarrierStandard { Lte, Nr, Cw, File, Pcw, Fsk }
 
     public enum QamOrder { Qpsk = 2, Qam16 = 4, Qam64 = 6, Qam256 = 8, Qam1024 = 10 }
 
@@ -59,14 +59,29 @@ namespace RfCore.Signals
         public double? MeasureStart { get; init; }
         public double? MeasureEnd { get; init; }
 
+        // An FSK carrier's settings; null = the default Fsk.Resolve applies, for the same reason as the pulse's.
+        /// <summary>Bit (chip) rate, b/s.</summary>
+        public double? BitRateBps { get; init; }
+        /// <summary>Peak frequency deviation (Hz): a 1 sits at +Dev, a 0 at -Dev.</summary>
+        public double? DeviationHz { get; init; }
+        /// <summary>The Gaussian filter's bandwidth-time product; null or 0 = no filter (rectangular CPFSK).</summary>
+        public double? GaussianBt { get; init; }
+        /// <summary>PN9, PN15, or a fixed pattern of 0s and 1s; the record is one period of it.</summary>
+        public string? Data { get; init; }
+
         public string Label => Standard switch
         {
             CarrierStandard.Lte => $"LTE {BandwidthHz / 1e6:0.#} MHz {ModName(Modulation)}",
             CarrierStandard.Nr => $"NR {BandwidthHz / 1e6:0.#} MHz {ScsHz / 1e3:0} kHz {ModName(Modulation)}",
             CarrierStandard.Cw => "CW",
             CarrierStandard.Pcw => $"pCW {PulsedCw.FormatTime(PulsedCw.Resolve(this).Width)} / {PulsedCw.FormatTime(PulsedCw.Resolve(this).Pri)}",
+            CarrierStandard.Fsk => FskLabel(Fsk.Resolve(this)),
             _ => $"File {System.IO.Path.GetFileName(FilePath ?? "")}",
         };
+
+        private static string FskLabel(FskShape s)
+            => $"{s.Kind} {Fsk.FormatBitRate(s.BitRate)} ±{Fsk.FormatHz(s.Deviation)}{(s.Bt > 0 ? $" BT {s.Bt.ToString("0.###", CultureInfo.InvariantCulture)}" : "")} "
+             + (s.Data is "PN9" or "PN15" ? s.Data : $"{s.Bits}-bit pattern");
 
         public static string ModName(QamOrder m) => m switch
         {
@@ -176,9 +191,10 @@ namespace RfCore.Signals
         /// Parses the compact inline carrier form used in netlists:
         /// <c>"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=3"</c>, or for an imported I/Q file
         /// <c>"FILE;File=iq/capture.txt;Fs=122.88MHz;Off=0;P=0"</c>, or for a pulse train
-        /// <c>"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"</c>. BW, SCS, Fs and Off take Hz, kHz,
+        /// <c>"PCW;PRI=100us;PW=50us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"</c>, or for FSK
+        /// <c>"FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0"</c>. BW, SCS, Fs, Dev and Off take Hz, kHz,
         /// MHz or GHz after the number; a bare number is Hz (<c>BW=20e6</c>). PRI, PW, Rise, Fall and Delay take s, ms,
-        /// us (or µs) or ns; a bare number is seconds.
+        /// us (or µs) or ns; a bare number is seconds. Rb takes bps, kbps or Mbps; a bare number is b/s.
         /// </summary>
         public static CarrierSpec ParseCarrier(string text)
         {
@@ -193,7 +209,8 @@ namespace RfCore.Signals
                     "CW" => CarrierStandard.Cw,
                     "FILE" => CarrierStandard.File,
                     "PCW" => CarrierStandard.Pcw,
-                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW or FILE)"),
+                    "FSK" => CarrierStandard.Fsk,
+                    _ => throw new FormatException($"unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK or FILE)"),
                 },
             };
             foreach (var p in parts.Skip(1))
@@ -219,12 +236,47 @@ namespace RfCore.Signals
                     "DELAY" => c with { DelaySeconds = PulseField(c, k, v) },
                     "MEASURESTART" => c with { MeasureStart = PulseFraction(c, k, v) },
                     "MEASUREEND" => c with { MeasureEnd = PulseFraction(c, k, v) },
+                    "RB" => c with { BitRateBps = FskField(c, k, () => ParseBitRate(k, v)) },
+                    "DEV" => c with { DeviationHz = FskField(c, k, () => ParseHz(k, v)) },
+                    "BT" => c with { GaussianBt = FskField(c, k, Num) },
+                    "DATA" => c with { Data = FskField(c, k, () => v) },
                     _ => throw new FormatException($"unknown carrier field '{k}'"),
                 };
             }
             // A pulse's bandwidth is its edges', never the 20 MHz a CarrierSpec defaults to.
             if (c.Standard == CarrierStandard.Pcw) c = c with { BandwidthHz = PulsedCw.BandwidthHz(PulsedCw.Validate(c)) };
+            // an FSK carrier's is Carson's, from its rate and deviation
+            if (c.Standard == CarrierStandard.Fsk) c = c with { BandwidthHz = Fsk.BandwidthHz(Fsk.Validate(c)) };
             return c;
+        }
+
+        private static T FskField<T>(CarrierSpec c, string key, Func<T> read)
+        {
+            if (c.Standard != CarrierStandard.Fsk) throw new FormatException($"carrier field {key} belongs to an FSK carrier");
+            return read();
+        }
+
+        private static readonly (string Unit, string Exponent)[] BitRateUnits = [("Mbps", "e6"), ("kbps", "e3"), ("bps", "")];
+
+        /// <summary>A bit rate: a number, optionally followed by bps, kbps or Mbps, read as <see cref="ParseHz"/> reads a
+        /// frequency.</summary>
+        private static double ParseBitRate(string key, string v)
+        {
+            string num = v, exp = "";
+            foreach (var (unit, e) in BitRateUnits)
+                if (v.EndsWith(unit, StringComparison.Ordinal)) { num = v[..^unit.Length].TrimEnd(); exp = e; break; }
+            bool hasExponent = num.Contains('e', StringComparison.OrdinalIgnoreCase);
+            if (!double.TryParse(hasExponent ? num : num + exp, NumberStyles.Float, CultureInfo.InvariantCulture, out double bps))
+                throw new FormatException($"carrier field {key}={v} is not a bit rate: a number with bps, kbps or Mbps");
+            return hasExponent && exp.Length > 0 ? bps * Math.Pow(10, int.Parse(exp[1..], CultureInfo.InvariantCulture)) : bps;
+        }
+
+        /// <summary>Writes <paramref name="bps"/> in kbps when that reads back as the same double, and as plain b/s otherwise.</summary>
+        private static string FormatBitRate(double bps)
+        {
+            var inv = CultureInfo.InvariantCulture;
+            string scaled = (bps / 1e3).ToString("R", inv);
+            return !scaled.Contains('E') && ParseBitRate("", scaled + "kbps") == bps ? scaled + "kbps" : bps.ToString("R", inv);
         }
 
         private static double PulseField(CarrierSpec c, string key, string v)
@@ -342,10 +394,17 @@ namespace RfCore.Signals
                 if (c.MeasureStart is double ms) sb.Append(";MeasureStart=").Append(ms.ToString("R", inv));
                 if (c.MeasureEnd is double me) sb.Append(";MeasureEnd=").Append(me.ToString("R", inv));
             }
+            if (c.Standard == CarrierStandard.Fsk)
+            {
+                if (c.BitRateBps is double rb) sb.Append(";Rb=").Append(FormatBitRate(rb));
+                if (c.DeviationHz is double dev) sb.Append(";Dev=").Append(FormatHz(dev, "kHz"));
+                if (c.GaussianBt is double bt) sb.Append(";BT=").Append(bt.ToString("R", inv));
+                if (c.Data is { } data) sb.Append(";Data=").Append(data);
+            }
             sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));
             sb.Append(";P=").Append(c.PowerDb.ToString("R", inv));
-            // a pulse draws no random symbols
-            if (c.Standard != CarrierStandard.Pcw) sb.Append(";Seed=").Append(c.Seed.ToString(inv));
+            // a pulse and an FSK carrier's PN data draw no random symbols
+            if (c.Standard is not (CarrierStandard.Pcw or CarrierStandard.Fsk)) sb.Append(";Seed=").Append(c.Seed.ToString(inv));
             return sb.ToString();
         }
     }

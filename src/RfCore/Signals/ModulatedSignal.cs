@@ -180,23 +180,24 @@ namespace RfCore.Signals
     }
 
     /// <summary>
-    /// The rate a periodic record is stepped at. Every generated record lasts whole 0.5 ms slots, which the LTE / NR
+    /// The rate a periodic record is stepped at. Every generated OFDM record lasts whole 0.5 ms slots, which the LTE / NR
     /// ladder (1.92 MHz x 2^k) always divides. An imported I/Q file lasts N / fs, which that ladder need not divide
-    /// (12,345 samples at 100 MS/s); its own rate x 2^k always does, giving N x 2^k whole samples.
+    /// (12,345 samples at 100 MS/s); its own rate x 2^k always does, giving N x 2^k whole samples. An FSK record is one
+    /// data period, 511 bits / Rb for PN9, and is the same case: its native rate x 2^k always divides it.
     /// </summary>
     public static class SignalRate
     {
         public const double LadderBaseHz = 1.92e6;
 
         /// <summary>The smallest ladder rate at or above <paramref name="needHz"/> that gives every signal a whole number
-        /// of samples per record; failing that, the smallest imported file rate x 2^k that does; failing both (two files
-        /// at unrelated rates), the ladder rate, which the caller refuses as it always has.</summary>
+        /// of samples per record; failing that, the smallest imported file or FSK native rate x 2^k that does; failing
+        /// both (two files at unrelated rates), the ladder rate, which the caller refuses as it always has.</summary>
         public static double AtLeast(double needHz, IReadOnlyCollection<ModulatedSignal> signals)
         {
             double ladder = Climb(LadderBaseHz, needHz);
             if (signals.All(s => Divides(s, ladder))) return ladder;
             var fileRates = signals.SelectMany(s => s.Carriers)
-                                   .Where(c => c.Spec.Standard == CarrierStandard.File)
+                                   .Where(c => c.Spec.Standard is CarrierStandard.File or CarrierStandard.Fsk)
                                    .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r);
             foreach (double fs in fileRates)
             {
@@ -226,9 +227,11 @@ namespace RfCore.Signals
         {
             if (spec.Carriers.Count == 0) throw new ArgumentException("a signal needs at least one carrier");
             var pulse = PulseOf(spec);
+            var fsk = FskOf(spec);
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
-            double record = pulse?.Pri ?? iq?.DurationSeconds ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
+            double record = pulse?.Pri ?? fsk?.RecordSeconds ?? iq?.DurationSeconds
+                            ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
             int halfMs = (int)Math.Round(record / 0.5e-3);
 
             var raw = new List<(CarrierSpec s, Complex[] x, double rate, double occ)>();
@@ -263,6 +266,14 @@ namespace RfCore.Signals
                         var shape = pulse!;
                         double rate = PulsedCw.NativeRateHz(shape), bw = PulsedCw.BandwidthHz(shape);
                         raw.Add((c with { BandwidthHz = bw }, PulsedCw.Generate(shape, rate), rate, 0.9 * bw));
+                        break;
+                    }
+                    case CarrierStandard.Fsk:
+                    {
+                        // constant envelope: unit power at every sample, so it is unit mean power as it stands
+                        var shape = fsk!;
+                        double rate = Fsk.NativeRateHz(shape), bw = Fsk.BandwidthHz(shape);
+                        raw.Add((c with { BandwidthHz = bw }, Fsk.Generate(shape, rate).Samples, rate, 0.9 * bw));
                         break;
                     }
                     default:
@@ -310,6 +321,20 @@ namespace RfCore.Signals
             if (spec.ClipPaprDb is not null)
                 throw new ArgumentException("a pulsed-CW (PCW) carrier is not clipped: remove Clip from the source");
             return PulsedCw.Validate(pcw);
+        }
+
+        /// <summary>The FSK carrier's settings (null when there is none), refused — as a pulse is — when it shares the
+        /// source with another carrier, since its record is one period of its data and no other carrier's, or when it is
+        /// clipped: its envelope is constant, so there is no peak to clip.</summary>
+        public static FskShape? FskOf(SignalSpec spec)
+        {
+            var c = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.Fsk);
+            if (c is null) return null;
+            if (spec.Carriers.Count > 1)
+                throw new ArgumentException("an FSK carrier must be the source's only carrier");
+            if (spec.ClipPaprDb is not null)
+                throw new ArgumentException("an FSK carrier has a constant envelope and is not clipped: remove Clip from the source");
+            return Fsk.Validate(c);
         }
     }
 

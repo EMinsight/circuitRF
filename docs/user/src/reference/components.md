@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, MOD_Source, modulated, LTE, NR, OFDM, pulsed CW, pCW, radar pulse, FSK, GFSK, GMSK, PN9, wireless M-Bus
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -356,7 +356,7 @@ owns the mixing grid, and the source just supplies power at those frequencies.
 
 {{symbol: modsource}}
 
-A **modulated** RF source — LTE, NR, CW, a pulsed-CW train or an imported I/Q waveform — for the
+A **modulated** RF source — LTE, NR, CW, a pulsed-CW train, FSK or an imported I/Q waveform — for the
 [Envelope analysis](simulations.html#envelope): ACLR/ACPR, EVM-style error, CCDF, AM-AM/AM-PM and
 two-carrier intermodulation with real signals rather than tones. One MOD_Source holds any number of
 **carriers** around its centre frequency `Fc`; `Pavg` is the total average available power behind the
@@ -372,7 +372,11 @@ source impedance `Z`.
   the width (50 % to 50 %), the 10–90 % edge times and the off-time before the rising edge (centred in
   the PRI when absent). Its time fields take `s`, `ms`, `us` (or `µs`) or `ns`; a bare number is in
   seconds. A `PCW` carrier must be the source's only carrier, and **`Pavg` is then the pulse-top power**,
-  not the record average: see [Pulsed CW](signal-designer.html#pulse).
+  not the record average: see [Pulsed CW](signal-designer.html#pulse). An `FSK` carrier is binary
+  continuous-phase FSK, `"FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0"`: the bit rate (`bps`,
+  `kbps` or `Mbps`), the peak deviation, the Gaussian filter's BT (absent: no filter) and the data — `PN9`,
+  `PN15` or a fixed pattern such as `10110100`, one period of which is the record. It too must be the
+  source's only carrier: see [FSK](signal-designer.html#fsk).
 - `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
   clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
   `Shaping` — out-of-channel spectral floor (dBc), or `off`.

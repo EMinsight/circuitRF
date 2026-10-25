@@ -10153,6 +10153,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         Views.Match.MatchDesignerWindow.ShowStandalone(CurrentWorkspaceRoot, ResolveOwner(null));
 
     /// <summary>
+    /// Tools ▸ Signal Designer: the Designer on no MOD_Source, to design a signal — or read an I/Q file — preview it and
+    /// export it. Needs no workspace; opens unowned and cascaded as the standalone Match Designer does.
+    /// </summary>
+    [RelayCommand]
+    private void NewSignalDesigner() => Views.Signals.SignalDesignerWindow.ShowStandalone(ResolveOwner(null));
+
+    /// <summary>
     /// Opens a blank wBond editor — wbond.md §10's third entry point.
     ///
     /// <para><b>No workspace and no layout context required</b>, deliberately: that entry point exists

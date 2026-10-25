@@ -459,7 +459,7 @@ public class SignalDesignerTests
             Assert.Equal((61.44e6, 61_440), (back.SampleRateHz, back.Samples.Length));
 
             // File rate: the file's own rate, offered while it is loaded, exports it without resampling.
-            d.SampleRate = d.SampleRates.Single(o => o.IsFile);
+            d.SampleRate = d.SampleRates.Single(o => o.IsOwn);
             Assert.Equal("File rate (30.72 MS/s)", d.SampleRate.Label);
             Assert.True(await d.ExportSignalAsync(exported), d.Status);
             back = IqFile.Read(exported);
@@ -474,7 +474,7 @@ public class SignalDesignerTests
 
             d.RemoveCustomCommand.Execute(null);
             Assert.False(d.IsCustom);
-            Assert.DoesNotContain(d.SampleRates, o => o.IsFile);
+            Assert.DoesNotContain(d.SampleRates, o => o.IsOwn);
             Assert.Equal(0, d.SampleRate.Hz);                                       // a selected File rate falls back to Auto
             Assert.Equal(["NR", "LTE"], d.Carriers.Select(c => c.Standard));      // the carriers it had before
             d.ApplyCommand.Execute(null);
@@ -550,7 +550,7 @@ public class SignalDesignerTests
         using var d = Open(vm, s);
         await d.PreviewAsync();
         Assert.Equal(2, d.CcdfPlot.Traces.Count);                        // the train's CCDF is as true as any signal's
-        var t = Assert.Single(d.PulsePlot.Traces);
+        var t = Assert.Single(d.TimePlot.Traces);
         Assert.Equal("Pulse", t.CubeName);
         Assert.Equal("Pulse", d.SecondTabHeader);
         Assert.StartsWith("pCW   PRI 100 µs", d.Stats);
@@ -566,5 +566,79 @@ public class SignalDesignerTests
         d.PresetPulseCommand.Execute(null);
         Assert.True(d.IsPulse);
         Assert.Equal("Pulse", d.SecondTabHeader);
+    }
+
+    // ── FSK ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Fsk_PresetCardApplyAndPreview()
+    {
+        var (vm, s) = Bench(fc: "2", fcUnit: "GHz");
+        using var d = Open(vm, s);
+        d.PresetWmbusC1Command.Execute(null);
+        Assert.Equal("0.86895", d.FcText);                                    // a number moves to the mode's channel
+        var c = Assert.Single(d.Carriers);
+        Assert.Equal(("FSK", 100.0, 45.0, true, "PN9"), (c.Standard, c.BitRateKbps, c.DeviationKHz, c.IsGaussian, c.Data));
+        Assert.True(d.IsFsk);
+        Assert.False(d.CanEditRecord || d.CanClip || d.CanShape || d.CanAddCarrier);
+        Assert.Equal("Frequency", d.SecondTabHeader);
+        Assert.Equal("h = 0.9  ·  GFSK  ·  511 bits  ·  record 5.11 ms", c.FskInfoText);
+        Assert.Equal(3.2e6, Assert.Single(d.SampleRates, o => o.IsOwn).Hz);  // no standard rate divides 511 bits
+
+        c.DataChoice = "Fixed bits";                                          // the card's pattern, at once
+        Assert.Equal("10110100", c.Data);
+        c.BitsText = "1021";                                                  // not bits: marked, the data stays
+        Assert.True(c.HasBitsError);
+        Assert.Equal("10110100", c.Data);
+        c.BitsText = "1100";
+        Assert.Equal("1100", c.Data);
+        d.ApplyCommand.Execute(null);
+        Assert.Equal("\"FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=1100;Off=0;P=0\"",
+                     s.Parameters.Single(p => p.Name == "Carrier[1]").Expression);
+
+        await d.PreviewAsync();
+        Assert.Equal("Frequency", Assert.Single(d.TimePlot.Traces).CubeName);
+        Assert.StartsWith("GFSK   Rb 100 kb/s", d.Stats);
+
+        var (vm2, s2) = Bench();                                              // an expression Fc stays as typed
+        using var e = new SignalDesignerViewModel();
+        e.SetTarget(vm2, s2, preview: false);
+        e.PresetWmbusT2Command.Execute(null);
+        Assert.Equal("RFfreq", e.FcText);
+    }
+
+    // ── Tools ▸ Signal Designer ─────────────────────────────────────────────
+
+    /// <summary>Opened from Tools it belongs to no MOD_Source: nothing to Apply to, and a signal it designs or reads
+    /// leaves through Export signal. Both hand-mirrored Tools menus open it.</summary>
+    [Fact]
+    public async Task Standalone_DesignsReadsAndExports_WithNothingToApplyTo()
+    {
+        using var d = new SignalDesignerViewModel();
+        d.SetStandalone(preview: false);
+        Assert.False(d.IsAttached);
+        Assert.Equal("Signal Designer", d.Title);
+        Assert.Equal("LTE", Assert.Single(d.Carriers).Standard);
+        d.ApplyCommand.Execute(null);                                         // no source: a no-op, never a throw
+
+        string dir = System.IO.Directory.CreateTempSubdirectory("crf-sd-standalone-").FullName;
+        try
+        {
+            d.PresetWmbusT1Command.Execute(null);
+            string iq = System.IO.Path.Combine(dir, "t1.txt");
+            Assert.True(await d.ExportSignalAsync(iq));
+            d.LoadCustomFile(iq);                                             // read back, by its full path
+            Assert.True(d.IsCustom);
+            Assert.Equal(iq, d.Carriers[0].FilePath);
+            await d.PreviewAsync();
+            Assert.Equal("Ready", d.Status[..5]);
+            Assert.NotEmpty(d.PsdPlot.Traces);
+        }
+        finally { System.IO.Directory.Delete(dir, recursive: true); }
+
+        var dirInfo = new System.IO.DirectoryInfo(System.AppContext.BaseDirectory);
+        while (!System.IO.File.Exists(System.IO.Path.Combine(dirInfo.FullName, "circuitRF.slnx"))) dirInfo = dirInfo.Parent!;
+        string shell = System.IO.File.ReadAllText(System.IO.Path.Combine(dirInfo.FullName, "src", "Ui", "Views", "WorkspaceWindow.axaml"));
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(shell, "\\{Binding NewSignalDesignerCommand\\}").Count);
     }
 }

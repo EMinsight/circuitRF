@@ -40608,3 +40608,28 @@ held-back-read test fails on the old overlay.
     box's, the unit combo's and the layer picker's tooltip, and it leads the name box's (`NameTooltip`), which is never
     disabled. `SetDisabledByMode` takes the reason as an optional argument.
 - `ViaFrom`'s description now starts from the layer the trace arrives on.
+
+## Signal Designer: FSK carrier, and a missing Record read as 0 (2026-10-25)
+
+- **A MOD_Source with no `Record` parameter opened with Record 0 ms.** `SetTarget`'s `Num` helper returned its default
+  unscaled (1e-3, meant in seconds) into a field in ms. The default is now scaled like a stored value. Seen only once a
+  headless render showed the disabled field; no test read it.
+- **The second preview tab's plot is the TIME plot** (`TimeContainer`/`TimePlot`, was `PulseContainer`/`PulsePlot`): a
+  pulse's |envelope| or an FSK carrier's instantaneous frequency. `HasTimePlot` decides which half of the tab shows.
+- **The Sample rate list's own-rate entry (`SampleRateOption.IsOwn`, was `IsFile`) also serves FSK.** A 511-bit record
+  divides by none of the 1.92 MHz x 2^k rates, so without a Native rate entry every fixed choice was refused;
+  `SignalRate.AtLeast` falls back to an FSK carrier's native rate x 2^k, as it does to an I/Q file's.
+- **Card row properties that end in neither `Text` nor `Error` re-preview on change** (`OnRowChanged`). A derived
+  read-out must be listed there, as `FskRefusal`, `IsGaussian`, `IsFixedBits` and `DataChoice` are, or every read of it
+  schedules a regeneration.
+- **The Export and Help buttons lost their top edge** because the "Signal" header sat inside the left pane's
+  ScrollViewer: a focus that brought a lower carrier field into view scrolled the header with it. The header is now
+  docked above the ScrollViewer. The Match Designer's identical buttons were never affected; their strip does not scroll.
+- **Tools ▸ Signal Designer** opens the Designer on no MOD_Source (`SetStandalone`, `SignalDesignerWindow.ShowStandalone`),
+  unowned and cascaded as the standalone Match Designer is. `IsAttached` hides Apply and Apply & Close. Load custom
+  stores a full path (`SnpPathPolicy.ToStored` with no workspace root keeps it absolute). Both Designers now implement
+  `ICrfMenuWindow`, so each open one is listed in the Window menu.
+- **A Pulsed CW or FSK preset no longer scrolls the left pane at the default 1199x800.** Both cards overran it by
+  under 10 px. A carrier with no bandwidth picker (CW, PCW, FSK, FILE) now puts Offset and Power in the free middle of
+  its first row, saving a row (~36 px). LTE and NR keep them on the second row, beside Seed and modulation. The two
+  copies of the Offset/Power fields bind the same properties and are switched by `IsOfdm`.

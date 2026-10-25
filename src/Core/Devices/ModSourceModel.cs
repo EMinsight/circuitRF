@@ -173,7 +173,7 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
             ClipPaprDb = clip,
             ShapingFloorDbc = shaping,
         };
-        try { SignalComposer.PulseOf(spec); }
+        try { SignalComposer.PulseOf(spec); SignalComposer.FskOf(spec); }
         catch (Exception ex) when (ex is ArgumentException or FormatException)
         {
             throw new InvalidOperationException($"MOD_Source '{name}': {ex.Message}");

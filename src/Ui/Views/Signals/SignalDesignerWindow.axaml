@@ -1,4 +1,4 @@
-<!-- The MOD_Source Signal Designer. Left pane: the carriers (LTE / NR / CW / pulsed CW / imported I/Q) as cards, the
+<!-- The MOD_Source Signal Designer. Left pane: the carriers (LTE / NR / CW / pulsed CW / FSK / imported I/Q) as cards, the
      signal-wide settings and the presets for the common cases (one LTE or NR channel, two carriers at
      any spacing, four contiguous LTE). Right pane: the composite spectrum and the CCDF — Data Display
      PlotControls at the golden ratio, exactly as the Match Designer hosts its two — and the numbers a
@@ -111,22 +111,25 @@
         <Grid ColumnDefinitions="640,*">
             <!-- ── left: signal definition ─────────────────────────────────────── -->
             <Border Grid.Column="0" Classes="pane">
+                <!-- The header stays put above the scrolling cards: inside the ScrollViewer, a focus that scrolled a
+                     card into view moved the header too and cut the top off its buttons. -->
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,6,0">
+                        <TextBlock Classes="panelhdr" Text="Signal" VerticalAlignment="Center"/>
+                        <!-- Icon-only, as the schematic toolbar's buttons are: the name is in the tooltip. -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,2,0,8">
+                            <Button Padding="6,3" Command="{Binding ExportSignalCommand}"
+                                    ToolTip.Tip="Export signal: save it as a two-column I Q text file (sample-rate header), the format a FILE carrier imports">
+                                <mi:MaterialIcon Kind="ExportVariant" Width="16" Height="16"/>
+                            </Button>
+                            <Button Name="HelpButton" Padding="6,3" Click="OnHelpClick"
+                                    ToolTip.Tip="Help — the Signal Designer page of the circuitRF reference">
+                                <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="0,0,6,0">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Classes="panelhdr" Text="Signal" VerticalAlignment="Center"/>
-                            <!-- Icon-only, as the schematic toolbar's buttons are: the name is in the tooltip. -->
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,2,0,8">
-                                <Button Padding="6,3" Command="{Binding ExportSignalCommand}"
-                                        ToolTip.Tip="Export signal: save it as a two-column I Q text file (sample-rate header), the format a FILE carrier imports">
-                                    <mi:MaterialIcon Kind="ExportVariant" Width="16" Height="16"/>
-                                </Button>
-                                <Button Name="HelpButton" Padding="6,3" Click="OnHelpClick"
-                                        ToolTip.Tip="Help — the Signal Designer page of the circuitRF reference">
-                                    <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
-                                </Button>
-                            </StackPanel>
-                        </Grid>
 
                         <Border Classes="card">
                             <StackPanel>
@@ -167,8 +170,27 @@
                                     <NumericUpDown Value="{Binding PresetSpacingMHz}" Increment="20" Minimum="20" FormatString="0.#" MinWidth="90"/>
                                     <TextBlock Classes="lbl" Text="MHz centre-to-centre"/>
                                 </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
                                 <Button Classes="small" Content="Pulsed CW" Command="{Binding PresetPulseCommand}"
                                         ToolTip.Tip="One pulsed-CW carrier, for a pulsed-radar amplifier: set its PRI, width, edges and delay on the card"/>
+                                <!-- One FSK carrier on PN9 at the mode's chip rate and deviation; Fc moves to the mode's channel.
+                                     One button, one menu item per mode, so the presets row does not grow by four. -->
+                                <Button Classes="small" Tag="wmbus-presets" HorizontalAlignment="Left"
+                                        ToolTip.Tip="Wireless M-Bus (EN 13757-4): one FSK carrier on PN9 data at a mode's chip rate and deviation. Sets Centre Fc unless it is an expression.">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Text="Wireless M-Bus"/>
+                                        <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14"/>
+                                    </StackPanel>
+                                    <Button.Flyout>
+                                        <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                            <MenuItem Header="C1  meter → other   868.95 MHz, 100 kchip/s, ±45 kHz, GFSK BT 0.5" Command="{Binding PresetWmbusC1Command}"/>
+                                            <MenuItem Header="C2  other → meter   869.525 MHz, 50 kchip/s, ±25 kHz, GFSK BT 0.5" Command="{Binding PresetWmbusC2Command}"/>
+                                            <MenuItem Header="T1  meter → other   868.95 MHz, 100 kchip/s, ±50 kHz, FSK" Command="{Binding PresetWmbusT1Command}"/>
+                                            <MenuItem Header="T2  other → meter   868.3 MHz, 32.768 kchip/s, ±50 kHz, FSK" Command="{Binding PresetWmbusT2Command}"/>
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -233,8 +255,10 @@
                                         </NumericUpDown.IsEnabled>
                                     </NumericUpDown>
                                 </Grid>
-                                <TextBlock Classes="note" Margin="0,6,0,0"
+                                <TextBlock Classes="note" Margin="0,6,0,0" IsVisible="{Binding IsAttached}"
                                            Text="Every edit previews by itself. The signal is generated in the background and cached; a simulation of this source reuses it."/>
+                                <TextBlock Classes="note" Margin="0,6,0,0" IsVisible="{Binding !IsAttached}"
+                                           Text="Every edit previews by itself. Export signal saves it as an I/Q file."/>
                             </StackPanel>
                         </Border>
 
@@ -251,7 +275,7 @@
                                 <DataTemplate x:DataType="vm:CarrierRowViewModel">
                                     <Border Classes="card" Classes.selected="{Binding IsSelected}" Tag="carrier-card" Background="Transparent"
                                             ToolTip.Tip="Click a carrier to show its EVM on the EVM tab">
-                                        <Grid ColumnDefinitions="Auto,90,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+                                        <Grid ColumnDefinitions="Auto,90,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
                                             <Border Background="{DynamicResource SystemListLowColor}" CornerRadius="3" Padding="5,1" VerticalAlignment="Center" Margin="0,0,6,0">
                                                 <TextBlock FontSize="12" FontWeight="SemiBold" Text="{Binding Index, StringFormat='C{0}'}"/>
                                             </Border>
@@ -268,7 +292,18 @@
                                                     IsEnabled="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).HasSeveralCarriers}">
                                                 <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
                                             </Button>
-                                            <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                                            <!-- A carrier with no bandwidth picker (CW, PCW, FSK, FILE) has the row's middle free: Offset and
+                                                 Power sit there, a row higher, so a pulse or FSK card fits the window without scrolling. -->
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0" IsVisible="{Binding !IsOfdm}">
+                                                <TextBlock Classes="lbl" Text="Offset (MHz)"/>
+                                                <NumericUpDown Value="{Binding OffsetMHz}" Increment="5" FormatString="0.###" MinWidth="90"
+                                                               ToolTip.Tip="Carrier centre relative to Fc. Carriers more than 3 channel bandwidths apart get their own envelope fundamental in the simulation."/>
+                                                <TextBlock Classes="lbl" Text="Power (dB)"/>
+                                                <NumericUpDown Value="{Binding PowerDb}" Increment="1" FormatString="0.##" MinWidth="70"
+                                                               IsEnabled="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).HasSeveralCarriers}"
+                                                               ToolTip.Tip="Relative to the other carriers; Pavg sets the total. With one carrier there is nothing to be relative to."/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0" IsVisible="{Binding IsOfdm}">
                                                 <TextBlock Classes="lbl" Text="Offset (MHz)"/>
                                                 <NumericUpDown Value="{Binding OffsetMHz}" Increment="5" FormatString="0.###" MinWidth="90"
                                                                ToolTip.Tip="Carrier centre relative to Fc. Carriers more than 3 channel bandwidths apart get their own envelope fundamental in the simulation."/>
@@ -311,6 +346,35 @@
                                                          ToolTip.Tip="{Binding DelayError, TargetNullValue='Off-time before the rising edge, greater than 0 so the run starts at the quiescent point. Empty centres the pulse in the PRI.'}"/>
                                                 <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="4" Classes="lbl" Margin="6,6,0,0" Text="{Binding DelayInfo}"/>
                                             </Grid>
+                                            <!-- FSK: rate, deviation, filter and data. A Gaussian filter makes it GFSK (GMSK at h = 0.5);
+                                                 the data is one period of a PN sequence or a fixed pattern, and that period is the record. -->
+                                            <Grid Grid.Row="4" Grid.ColumnSpan="4" ColumnDefinitions="Auto,140,Auto,110" RowDefinitions="Auto,Auto,Auto,Auto"
+                                                  Margin="0,6,0,0" IsVisible="{Binding IsFsk}" Tag="fsk-fields">
+                                                <TextBlock Classes="lbl" Text="Bit rate (kb/s)" Margin="0,0,6,0"/>
+                                                <NumericUpDown Grid.Column="1" Value="{Binding BitRateKbps}" Increment="10" Minimum="0.001" FormatString="0.######"
+                                                               ToolTip.Tip="Bit (chip) rate. One bit lasts 1 / Rb at +Dev (a 1) or -Dev (a 0)."/>
+                                                <TextBlock Grid.Column="2" Classes="lbl" Text="Deviation (kHz)" Margin="12,0,6,0"/>
+                                                <NumericUpDown Grid.Column="3" Value="{Binding DeviationKHz}" Increment="5" Minimum="0.001" FormatString="0.######"
+                                                               ToolTip.Tip="Peak frequency deviation: a 1 sits at Fc + Dev, a 0 at Fc - Dev"/>
+                                                <TextBlock Grid.Row="1" Classes="lbl" Text="Filter" Margin="0,6,6,0"/>
+                                                <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" HorizontalAlignment="Stretch"
+                                                          ItemsSource="{x:Static vm:CarrierRowViewModel.FilterOptions}" SelectedItem="{Binding Filter}"
+                                                          ToolTip.Tip="None: rectangular frequency steps (CPFSK). Gaussian: GFSK, or GMSK when h = 0.5."/>
+                                                <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="BT" Margin="12,6,6,0" IsVisible="{Binding IsGaussian}"/>
+                                                <NumericUpDown Grid.Row="1" Grid.Column="3" Margin="0,6,0,0" Value="{Binding Bt}" Increment="0.1" Minimum="0.05" FormatString="0.###"
+                                                               IsVisible="{Binding IsGaussian}"
+                                                               ToolTip.Tip="Bandwidth-time product of the Gaussian filter: 0.5 for wireless M-Bus C mode, 0.3 for GSM's GMSK"/>
+                                                <TextBlock Grid.Row="2" Classes="lbl" Text="Data" Margin="0,6,6,0"/>
+                                                <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,6,0,0" HorizontalAlignment="Stretch"
+                                                          ItemsSource="{x:Static vm:CarrierRowViewModel.DataOptions}" SelectedItem="{Binding DataChoice}"
+                                                          ToolTip.Tip="PN9 (511 bits) or PN15 (32,767 bits), or a fixed pattern. The record is one period of it."/>
+                                                <TextBox Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2" Margin="12,6,0,0" Text="{Binding BitsText}"
+                                                         IsVisible="{Binding IsFixedBits}" Classes.error="{Binding HasBitsError}"
+                                                         ToolTip.Tip="{Binding BitsError, TargetNullValue='The bits, first to last, as 0s and 1s; the pattern repeats'}"/>
+                                                <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding FskInfoText}"/>
+                                                <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding FskRefusal}"
+                                                           Foreground="{DynamicResource CrfWarningBrush}" IsVisible="{Binding FskRefusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                            </Grid>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
@@ -318,6 +382,7 @@
                         </ItemsControl>
                     </StackPanel>
                 </ScrollViewer>
+                </DockPanel>
             </Border>
 
             <!-- ── right: preview ───────────────────────────────────────────────── -->
@@ -368,13 +433,14 @@
                              envelope cycles of power around the peak with the average and peak lines. -->
                         <TabItem Header="{Binding SecondTabHeader}" FontSize="13">
                             <Grid>
-                            <!-- a pulse carries no symbols, so in the EVM's place: the pulse over one PRI, with its own marker layer -->
-                            <Grid IsVisible="{Binding IsPulse}">
+                            <!-- a pulse or an FSK carrier carries no QAM symbols, so in the EVM's place: the pulse over one PRI,
+                                 or the FSK's instantaneous frequency over its first bits, with its own marker layer -->
+                            <Grid IsVisible="{Binding HasTimePlot}">
                                 <ctl:AspectRatioPanel VerticalAlignment="Top" Margin="0,2">
-                                    <ddc:PlotControl Name="PulsePlotControl" Plot="{Binding PulsePlot}" Library="{Binding PlotHost.Library}"
+                                    <ddc:PlotControl Name="TimePlotControl" Plot="{Binding TimePlot}" Library="{Binding PlotHost.Library}"
                                                      CanDeletePlot="False" CanEditPlotProperties="False"/>
                                 </ctl:AspectRatioPanel>
-                                <ItemsControl Name="PulseInfoBoxLayer" Background="{x:Null}">
+                                <ItemsControl Name="TimeInfoBoxLayer" Background="{x:Null}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <Canvas Background="{x:Null}"/>
@@ -393,7 +459,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </Grid>
-                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" IsVisible="{Binding IsNotPulse}">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" IsVisible="{Binding HasEvmTab}">
                                 <Grid ColumnDefinitions="*,*">
                                     <!-- the two headline numbers, laid out alike: caption, number, one detail line -->
                                     <Border Classes="card" Margin="0,0,6,6">
@@ -516,13 +582,15 @@
                     <TextBlock Text="Preview"/>
                 </StackPanel>
             </Button>
-            <Button Grid.Column="2" Classes="small" Margin="6,0,0,0" Command="{Binding ApplyCommand}" ToolTip.Tip="Write the signal to the MOD_Source (one undo step)">
+            <!-- Apply needs a MOD_Source: from Tools ▸ Signal Designer there is none, and Export signal is the way out. -->
+            <Button Grid.Column="2" Classes="small" Margin="6,0,0,0" Command="{Binding ApplyCommand}" IsVisible="{Binding IsAttached}"
+                    ToolTip.Tip="Write the signal to the MOD_Source (one undo step)">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <mi:MaterialIcon Kind="Check" Width="14" Height="14"/>
                     <TextBlock Text="Apply"/>
                 </StackPanel>
             </Button>
-            <Button Grid.Column="3" Classes="small" Margin="6,0,0,0" Content="Apply &amp; Close" Click="OnApplyClose"/>
+            <Button Grid.Column="3" Classes="small" Margin="6,0,0,0" Content="Apply &amp; Close" Click="OnApplyClose" IsVisible="{Binding IsAttached}"/>
             <Button Grid.Column="4" Classes="small" Margin="6,0,0,0" Content="Close" Click="OnClose"/>
         </Grid>
     </Grid>

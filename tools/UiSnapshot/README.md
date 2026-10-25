@@ -26,6 +26,25 @@ dotnet run --project tools/UiSnapshot --no-build -- <file.cdd> -o out.png [--vie
 | `--size WxH` | The headless window, in DIPs. Default 1000x700. The inspector scrolls inside its own region, so a taller window does not show more cards. |
 | `--results <dir>` | Where a relative trace source resolves — a workspace's `results/` folder in the application. Default: the `.cdd`'s own folder, which is where `circuitrf plot --write-cdd` puts a document beside its result. |
 
+**The Signal Designer** is the other view it opens. It takes no `.cdd`:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --signal "FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0" \
+    -o out.png [--signal "<another carrier>"] [--tab 1] [--fc <expr>] [--size WxH] [steps]
+```
+
+| Option | Means |
+|---|---|
+| `--signal "<carrier>"` | One `Carrier[i]` of the MOD_Source the Designer opens on, in the netlist form. Repeat for several. |
+| `--tab n` | The preview tab, 0-based: 1 is EVM, Pulse or Frequency. Default 0. |
+| `--fc <expr>` | The source's Fc, in GHz. Default 2. |
+| `--standalone` | Open it as **Tools ▸ Signal Designer** does, on no MOD_Source, instead of `--signal`. |
+| `--iq <file>` | With `--standalone`: read an I/Q file through **Load custom**. |
+
+The window is the real `SignalDesignerWindow`, opened on its view model's `SetTarget` as the inspector's
+**Design signal…** opens it, after its preview has finished. Without `--size` it takes the window's own size
+(1199x800), and the carrier cards may then be below the fold. Use `--size 1199x1060` to see them.
+
 **Input steps run in the order given**, as real pointer and key events through the window, before the final
 capture. Coordinates are window DIPs — take them from a first capture.
 

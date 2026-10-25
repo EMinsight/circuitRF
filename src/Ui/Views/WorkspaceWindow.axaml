@@ -534,6 +534,8 @@
                     <NativeMenu>
                         <NativeMenuItem Header="harmonicaRF" Command="{Binding NewHarmonicaCommand}"/>
                         <NativeMenuItem Header="Match Designer" Command="{Binding NewMatchDesignerCommand}"/>
+                        <!-- The Signal Designer on no MOD_Source: design or read a signal, export it. Mirrored below. -->
+                        <NativeMenuItem Header="Signal Designer" Command="{Binding NewSignalDesignerCommand}"/>
                         <!-- railRF (railrf.md §11.4). Needs NO workspace to open, for harmonicaRF's
                              own reason — what needs one is the import's default of landing the
                              artwork in it as a cell, and railRF offers to create one there. -->
@@ -1585,6 +1587,12 @@
                           Command="{Binding NewMatchDesignerCommand}"
                           ToolTip.Tip="Synthesise an impedance-matching network from two terminations and a band, then flatten it to a cell. Opens with or without a workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="TransitConnectionVariant" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <!-- The Signal Designer on no MOD_Source — hand-mirrored with the macOS NativeMenu above. -->
+                <MenuItem Header="Si_gnal Designer"
+                          Command="{Binding NewSignalDesignerCommand}"
+                          ToolTip.Tip="Design a modulated test signal — LTE, NR, pulsed CW, FSK — or read an I/Q file, see its spectrum and CCDF, and export it as I/Q. Opens with or without a workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- railRF — hand-mirrored with the macOS NativeMenu above, as every other menu on
                      these two surfaces is. -->

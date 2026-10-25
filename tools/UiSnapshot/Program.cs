@@ -8,18 +8,33 @@ using Avalonia.Threading;
 using CircuitRF.Ui;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.ViewModels;
+using CircuitRF.Design.Cells;
+using CircuitRF.Design.Schematic;
+using CircuitRF.Ui.Signals;
+using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views.DataDisplay;
+using CircuitRF.Ui.Views.Signals;
 
 // UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] [--results <dir>]
 //            [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
+// UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
+// UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]
 //
 // Opens the display through DisplayWindowViewModel.LoadAllAsync — the GUI's own Open — and photographs one
 // real view: the plot canvas of the active tab, plot n's Plot Inspector (its trace cards), or the whole Data
 // Display document view (toolbar, canvas and its key bindings). The input steps run IN ORDER, as real pointer and
 // key events through the window, before the final capture; --shot captures an intermediate frame.
+//
+// --signal opens the Signal Designer window itself on a MOD_Source carrying those carriers (netlist form,
+// Carrier[i]), waits for its preview — generated through the cache a simulation reads — and photographs the
+// window; --tab 1 shows the second preview tab (EVM, Pulse or Frequency). --standalone opens it as Tools ▸ Signal
+// Designer does, on no MOD_Source; --iq then reads an I/Q file through Load custom.
 
-string? cdd = null, output = null, view = "canvas", results = null;
-int plotIndex = 1;
+string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null;
+bool standalone = false;
+var signal = new List<string>();
+int plotIndex = 1, previewTab = 0;
+bool sizeGiven = false;
 double width = 1000, height = 700;
 var steps = new List<(string Kind, string Arg)>();
 for (int i = 0; i < args.Length; i++)
@@ -30,9 +45,15 @@ for (int i = 0; i < args.Length; i++)
         case "--view" when i + 1 < args.Length: view = args[++i]; break;
         case "--plot" when i + 1 < args.Length: plotIndex = int.Parse(args[++i]); break;
         case "--results" when i + 1 < args.Length: results = args[++i]; break;
+        case "--signal" when i + 1 < args.Length: signal.Add(args[++i]); break;
+        case "--tab" when i + 1 < args.Length: previewTab = int.Parse(args[++i]); break;
+        case "--standalone": standalone = true; break;
+        case "--iq" when i + 1 < args.Length: iq = Path.GetFullPath(args[++i]); break;
+        case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--size" when i + 1 < args.Length:
             var wh = args[++i].Split('x');
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
+            sizeGiven = true;
             break;
         case "--click" or "--drag" or "--key" or "--shot" when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
@@ -40,10 +61,12 @@ for (int i = 0; i < args.Length; i++)
         default: cdd = args[i]; break;
     }
 }
-if (cdd is null || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && signal.Count == 0 && !standalone) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
-                          + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...");
+                          + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
+                          + "       UiSnapshot --signal \"<carrier>\" ... -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]\n"
+                          + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]");
     return 2;
 }
 
@@ -54,6 +77,43 @@ AppBuilder.Configure<SnapshotApp>()
     .WithInterFont()
     .SetupWithoutStarting();
 
+Window host;
+if (standalone)
+{
+    // Tools ▸ Signal Designer: the view model's own SetStandalone, and Load custom's own path for a file.
+    var designer = new SignalDesignerViewModel();
+    designer.SetStandalone(preview: false);
+    if (iq is not null) designer.LoadCustomFile(iq);
+    host = new SignalDesignerWindow { DataContext = designer };
+    if (sizeGiven) { host.Width = width; host.Height = height; }
+    host.Show();
+    Pump();
+    Await(designer.PreviewAsync());
+    designer.PreviewTab = previewTab;
+    Console.WriteLine(designer.Status);
+}
+else if (signal.Count > 0)
+{
+    // The Designer as the inspector's Design signal... opens it: a MOD_Source in a schematic, SetTarget, the window.
+    var model = new SchematicEditModel();
+    var src = new EditableComponent { InstanceName = "SRC1", Symbol = SymbolKind.ModSource };
+    src.Parameters.Add(new EditableParameter { Name = "Fc", Expression = fc, Unit = "GHz", Dimension = UnitDimension.Frequency });
+    src.Parameters.Add(new EditableParameter { Name = "Pavg", Expression = "10", Unit = "dBm", Dimension = UnitDimension.Power });
+    for (int k = 0; k < signal.Count; k++)
+        src.Parameters.Add(new EditableParameter { Name = $"Carrier[{k + 1}]", Expression = "\"" + signal[k] + "\"" });
+    model.Components.Add(src);
+    var designer = new SignalDesignerViewModel();
+    designer.SetTarget(new SchematicViewModel(model, messageSink: null), src, preview: false);
+    host = new SignalDesignerWindow { DataContext = designer };
+    if (sizeGiven) { host.Width = width; host.Height = height; }
+    host.Show();
+    Pump();
+    Await(designer.PreviewAsync());
+    designer.PreviewTab = previewTab;
+    Console.WriteLine(designer.Status);
+}
+else
+{
 var document = new DataDisplayDocumentViewModel();
 var window   = document.Window;
 // A relative source reference resolves against a workspace's results/ folder, which in the application the
@@ -82,8 +142,9 @@ else
     content = new PlotInspectorView { DataContext = plots[plotIndex - 1].Inspector };
 }
 
-var host = new Window { Width = width, Height = height, Content = content };
+host = new Window { Width = width, Height = height, Content = content };
 host.Show();
+}
 Pump();
 
 foreach (var (kind, arg) in steps)

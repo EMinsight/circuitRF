@@ -3,8 +3,8 @@ title: The Signal Designer
 slug: reference/signal-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Signal Designer
-lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
-keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
+lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train, FSK or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
+keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
 ---
 
 <nav class="toc">
@@ -17,6 +17,7 @@ keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, d
 <li><a href="#waveform">Clipping and spectral shaping</a></li>
 <li><a href="#carriers">Carriers</a></li>
 <li><a href="#pulse">Pulsed CW</a></li>
+<li><a href="#fsk">FSK</a></li>
 <li><a href="#preview">The spectrum and the CCDF</a></li>
 <li><a href="#evm">The EVM tab</a></li>
 <li><a href="#export">Export signal</a></li>
@@ -35,6 +36,12 @@ and is cached. A simulation of the same signal reuses the cached waveform instea
 **Apply** writes the signal to the source as one undoable step; **Apply & Close** does the same and closes
 the window. At the top of the left pane, **Export signal** saves the signal as an I/Q file and **?**
 opens this page.
+
+**Tools ▸ Signal Designer** opens the Designer on its own, with no source behind it and no workspace
+needed. It starts on one LTE 20 MHz carrier. Design a signal there, or read one in with
+[Load custom](#custom) to see its spectrum and CCDF, and **Export signal** to save it as an I/Q file.
+There is nothing to apply it to, so **Apply** and **Apply & Close** are not shown, and a file you load is
+remembered by its full path. Several can be open at once, and each is listed in the **Window** menu.
 
 {{ui: signal-designer}}
 
@@ -59,7 +66,8 @@ opens this page.
 
 One click replaces the carriers with a common case: **LTE 20 MHz**, **NR 20 MHz (30 kHz)**,
 **NR 100 MHz (30 kHz)**, **4 x LTE 20 contiguous**, or **2C NR 20 at spacing** — two NR 20 MHz carriers at
-the centre-to-centre spacing in the field beside it.
+the centre-to-centre spacing in the field beside it. **Pulsed CW** is one [pulse train](#pulse), and
+**Wireless M-Bus** opens a menu of [FSK](#fsk) metering modes.
 
 ## A custom I/Q file {#custom}
 
@@ -138,7 +146,7 @@ which always gives a whole number of samples per record.
 
 ## Carriers {#carriers}
 
-Each card is one carrier: its standard (**LTE**, **NR**, **CW**, **PCW** or **FILE**), channel bandwidth, NR
+Each card is one carrier: its standard (**LTE**, **NR**, **CW**, **PCW**, **FSK** or **FILE**), channel bandwidth, NR
 subcarrier spacing, modulation, offset from `Fc`, relative power and random-data seed. **+** adds a
 carrier beside the last; **×** removes one. With a single carrier, **Power** is disabled — it is relative
 to the others, and `Pavg` is the total. Carriers more than three channel bandwidths apart get their own
@@ -200,6 +208,63 @@ Not modelled: modulation inside the pulse (linear FM chirps and phase codes, whi
 usually carry — the natural next addition), and pulsing the gate or drain bias with the RF, which is a
 pulsed bias source rather than a signal.
 
+## FSK {#fsk}
+
+An **FSK** card is binary frequency-shift keying with continuous phase: each bit holds the frequency at
+`Fc + Dev` (a 1) or `Fc − Dev` (a 0) for one bit period, and the phase never jumps. Choose **FSK** in a
+card's standard list, or a mode from the **Wireless M-Bus** preset.
+
+| Field | Meaning | Default |
+|---|---|---|
+| **Bit rate (kb/s)** | the bit (chip) rate, Rb | 100 |
+| **Deviation (kHz)** | the peak frequency deviation, Dev | 45 |
+| **Filter** | **None (CPFSK)**: the frequency steps at each bit edge. **Gaussian**: the steps are smoothed by a Gaussian filter of bandwidth-time product **BT** | None |
+| **Data** | **PN9** (511 bits), **PN15** (32,767 bits), or **Fixed bits**, a pattern of 0s and 1s you type | PN9 |
+
+The line under the fields gives the modulation index h = 2 Dev / Rb, what the settings make, the bits
+and the record. With a Gaussian filter it is **GFSK**, and with h = 0.5 it is **GMSK**: GSM's is
+270.833 kb/s, ±67.708 kHz, BT 0.3. Without the filter h = 0.5 is MSK.
+
+The **Wireless M-Bus** menu (EN 13757-4) sets one FSK carrier on PN9 for a metering mode and moves
+**Centre Fc** to its channel. If Fc is an expression, the menu leaves it as you typed it.
+
+| Mode | Direction | Fc | Chip rate | Deviation | Filter |
+|---|---|---|---|---|---|
+| C1 | meter → other | 868.95 MHz | 100 kchip/s | ±45 kHz | Gaussian, BT 0.5 |
+| C2 | other → meter | 869.525 MHz | 50 kchip/s | ±25 kHz | Gaussian, BT 0.5 |
+| T1 | meter → other | 868.95 MHz | 100 kchip/s | ±50 kHz | none |
+| T2 | other → meter | 868.3 MHz | 32.768 kchip/s | ±50 kHz | none |
+
+The data is a test pattern, not a telegram. There is no preamble, sync word or 3-out-of-6 coding,
+because an RF front end responds to the modulation and does not depend on what the bits mean.
+
+**The record is one period of the data**: 5.11 ms for PN9 at 100 kb/s, 80 µs for an eight-bit pattern at
+the same rate. It repeats, so the Envelope analysis's **Stop** sets how much is simulated. Over a record
+the phase gains π h for each 1 and loses it for each 0, and that rarely adds up to a whole turn: PN9 has one
+more 1 than 0s. So the record is closed by moving the whole carrier by at most half of one over the record,
+98 Hz for PN9 at 100 kb/s. The seam is then as smooth as any bit edge.
+
+**Bandwidth and rate.** The carrier's channel bandwidth is Carson's, 2 (Dev + Rb): 290 kHz for C1. The
+preview's span, the envelope rate and the ACPR bands follow from it. The record is sampled at Rb × 2ᵏ,
+at least 32 samples per bit and eight times the bandwidth. A 511-bit record holds a whole number of
+samples at none of the standard sample rates, so while an FSK carrier is on the card the Source box's
+list offers **Native rate**, second after Auto, and Auto uses it.
+
+FSK has a constant envelope: its PAPR is 0 dB, and its CCDF is a step at 0 dB. As with a pulse, it is
+the source's only carrier, and **Record**, **Clip to PAPR**, **Spectral shaping** and **+** are
+disabled. A PN sequence draws no random data, so the card has no **Seed**. The second preview tab reads
+**Frequency** and shows the instantaneous frequency over the first 64 bits, where the Gaussian
+filter's rounding of each bit edge can be seen.
+
+In the netlist the card is
+
+```
+Carrier[1]="FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0"
+```
+
+Not modelled: transmitting in bursts with a duty cycle (a metering transmitter sends a few milliseconds
+every several seconds), and AM or PM.
+
 ## The spectrum and the CCDF {#preview}
 
 The **Spectrum** is the composite power spectral density against the offset from `Fc`, framed on the
@@ -227,7 +292,7 @@ record, with no per-subcarrier equaliser. The tab shows:
 An unclipped signal reads close to 0 %. Clipping is what moves it. CW and I/Q-file carriers carry no
 reference symbols, so they have no EVM. A pulsed-CW signal has none either: for one, this tab reads
 **Pulse** and holds the pulse itself, |envelope| against time over one PRI, which zooms onto an edge like
-any plot.
+any plot. For an [FSK](#fsk) signal it reads **Frequency** and holds the instantaneous frequency.
 
 {{ui: signal-designer-evm}}
 
