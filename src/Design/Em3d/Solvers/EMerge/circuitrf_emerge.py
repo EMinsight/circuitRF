@@ -7,7 +7,8 @@ numbers, and a word of the format is only ever compared against a fixed set.
 
 Each solid is built with the same OpenCASCADE calls circuitRF's Gmsh script for Palace writes, then handed to EMerge as
 one of its own volumes, so the two FEM solvers mesh one geometry. Overlaps are EMerge's priorities (circuitRF's precedence,
-already ranked). Kernel solids are their B-rep files, imported as they are and scaled from micrometres.
+already ranked). Kernel solids are their B-rep files, imported as they are: they are in micrometres, the model's units
+while it is built and meshed (MODEL_SCALE).
 
     python -I circuitrf_emerge.py <problem.json> mesh
 
@@ -62,9 +63,10 @@ voltage, each mode's integral of eps|E|^2 per material and each lumped port's vo
 
 import json
 import os
+import re
 import sys
 
-DRIVER_VERSION = 6
+DRIVER_VERSION = 7
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 2
 C0 = 299792458
@@ -127,7 +129,7 @@ def main(argv):
     try:
         sim, counts, model = build(problem, os.path.dirname(path), em, gmsh, GeoVolume, GeoSurface)
     except Exception as e:  # EMerge's or Gmsh's own refusal, reported as the run's
-        fail("%s: %s" % (type(e).__name__, e))
+        fail(named(e))
     if argv[2] == "mesh":
         if model["waves"]:
             counts["wavePorts"] = wave_conditions(sim, model["waves"])
@@ -148,7 +150,7 @@ def main(argv):
         report(error=str(e), refused=True)
         sys.exit(2)
     except Exception as e:
-        fail("%s: %s" % (type(e).__name__, e))
+        fail(named(e))
     # The device the solves USED, read back from the solver EMerge's log says it called, never assumed from what was asked.
     device = None if heard.solver is None else ("gpu" if heard.solver == GPU_SOLVER_NAME else "cpu")
     run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, device=device, gpuFrom=gpu_from,
@@ -302,8 +304,21 @@ class Heard:
 
 # -- geometry ------------------------------------------------------------------------------------------------------------
 
+# brief-dfr27-4: OpenCASCADE's tolerances are absolute (1e-7 in model units). EMerge's model is in metres, where that is
+# 0.1 um, and a board's own artwork sits a few tenths of a micrometre from it: a plane cropped at the board edge left an
+# edge 0.39 um long leaving the edge at an angle, a pad's polygon grazed the edge 0.24 um short of touching it. The fragment
+# then left pieces unsplit, Gmsh's remove_all_duplicates split them after EMerge had taken its map, and the build stopped
+# on a region the map named and the model no longer had; and once that was fixed, Gmsh's boundary recovery found a segment
+# crossing a facet in metres where the same model meshed in micrometres. So the model is built, fragmented and meshed in
+# MICROMETRES, as circuitRF's Gmsh script for Palace is: EMerge's own scale factor (Simulation.set_scale_factor) scales
+# the mesh to metres once it is made, and everything EMerge reads from it is in metres as it always was. What the driver
+# hands Gmsh or EMerge's mesher itself -- a coordinate, a size -- is in model units, so it is multiplied by MODEL_SCALE.
+MODEL_SCALE = 1e6        # model units per metre
+
+
 def points(gmsh, ring):
-    return [gmsh.model.occ.addPoint(p[0], p[1], p[2]) for p in ring]
+    k = MODEL_SCALE
+    return [gmsh.model.occ.addPoint(p[0] * k, p[1] * k, p[2] * k) for p in ring]
 
 
 def polygon_loop(gmsh, ring):
@@ -328,27 +343,100 @@ def volumes_of(dimtags):
     return [t for d, t in dimtags if d == 3]
 
 
+# -- what a tag is, in the designer's words (brief-dfr27-4) ---------------------------------------------------------------
+
+# Each fragment's (dim, tag) -> the words for the objects it was cut from, filled when the model is committed. A Gmsh error
+# naming a tag ("Unknown model region with tag 398") is reported with them: the tag alone tells a designer nothing.
+FRAGMENT_OF = {}
+
+
+def solid_words(gmsh, s, problem, tag):
+    """A solid as a designer finds it: its name (a layout solid's starts with its layer), its material and where it is."""
+    box = [round(c * 1e6 / MODEL_SCALE, 3) + 0.0 for c in gmsh.model.occ.getBoundingBox(3, tag)]   # to the nm; never -0
+    span = ", ".join("%s %.6g to %.6g µm" % (axis, box[k], box[k + 3]) for k, axis in enumerate("xyz"))
+    return "'%s' (%s, %s)" % (s["name"], problem["materials"][s["material"]]["name"], span)
+
+
+def commit_whole(sim, gmsh, described):
+    """EMerge's commit_geometry, held to the map it takes. EMerge fragments the model, keeps the fragment's map from each
+    object to its pieces, then calls Gmsh's remove_all_duplicates -- which fragments everything once more and renumbers
+    whatever it splits, with no map. When that second pass changes a piece, EMerge's
+    map names an entity that is gone and the build stops later on a bare tag; here it stops at once, naming the objects
+    the kernel could not fragment."""
+    occ = gmsh.model.occ
+    fragment, dedupe = occ.fragment, occ.remove_all_duplicates
+
+    def fragment_(objects, tools, *a, **k):
+        out, maps = fragment(objects, tools, *a, **k)
+        FRAGMENT_OF.clear()
+        for dimtag, pieces in zip(list(objects) + list(tools), maps):
+            for piece in pieces:
+                FRAGMENT_OF.setdefault(tuple(piece), []).append(described.get(tuple(dimtag), "an unnamed object"))
+        return out, maps
+
+    def dedupe_(*a, **k):
+        occ.synchronize()
+        before = set(gmsh.model.getEntities(3)) | set(gmsh.model.getEntities(2))
+        dedupe(*a, **k)
+        occ.synchronize()
+        lost = sorted(t for t in before - set(gmsh.model.getEntities(3)) - set(gmsh.model.getEntities(2)) if t in FRAGMENT_OF)
+        if lost:
+            words = sorted({w for t in lost for w in FRAGMENT_OF[t]})
+            raise GeometryNotFragmented(
+                "the geometry kernel could not fragment %s cleanly: a second pass split %s again, so EMerge's map of the "
+                "model's regions no longer holds. Faces, edges or vertices nearly but not quite touching are the usual "
+                "cause." % (" and ".join(words), "it" if len(words) == 1 else "them"))
+
+    occ.fragment, occ.remove_all_duplicates = fragment_, dedupe_
+    try:
+        sim.commit_geometry()
+    finally:
+        occ.fragment, occ.remove_all_duplicates = fragment, dedupe
+
+
+class GeometryNotFragmented(Exception):
+    pass
+
+
+UNKNOWN_TAG = r"Unknown model (region|face|curve|point) with tag (\d+)"
+DIM_OF = {"region": 3, "face": 2, "curve": 1, "point": 0}
+
+
+def named(e):
+    """A build's exception as the run reports it: a Gmsh error naming a tag also names what that tag was cut from."""
+    text = "%s: %s" % (type(e).__name__, e)
+    m = re.search(UNKNOWN_TAG, str(e))
+    words = FRAGMENT_OF.get((DIM_OF[m.group(1)], int(m.group(2)))) if m else None
+    return text + (" -- a piece of %s" % " and ".join(sorted(set(words))) if words else "")
+
+
+def box_of(gmsh, lo, hi):
+    """A box from its corners in metres, built in model units."""
+    k = MODEL_SCALE
+    return gmsh.model.occ.addBox(lo[0] * k, lo[1] * k, lo[2] * k, (hi[0] - lo[0]) * k, (hi[1] - lo[1]) * k, (hi[2] - lo[2]) * k)
+
+
 def shape(gmsh, s, folder):
-    """The OCC volume tags of one solid's shape."""
+    """The OCC volume tags of one solid's shape, in model units (MODEL_SCALE)."""
     occ = gmsh.model.occ
     kind = s["kind"]
+    k = MODEL_SCALE
     if kind == "box":
-        lo, hi = s["min"], s["max"]
-        return [occ.addBox(lo[0], lo[1], lo[2], hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2])]
+        return [box_of(gmsh, s["min"], s["max"])]
     if kind == "cylinder":
-        p, a = s["start"], s["axis"]
-        return [occ.addCylinder(p[0], p[1], p[2], a[0], a[1], a[2], s["radius"])]
+        p, a = [c * k for c in s["start"]], [c * k for c in s["axis"]]
+        return [occ.addCylinder(p[0], p[1], p[2], a[0], a[1], a[2], s["radius"] * k)]
     if kind == "sphere":
-        c = s["center"]
-        return [occ.addSphere(c[0], c[1], c[2], s["radius"])]
+        c = [x * k for x in s["center"]]
+        return [occ.addSphere(c[0], c[1], c[2], s["radius"] * k)]
     if kind == "truncatedSphere":
-        c, lo, hi = s["center"], s["clipMin"], s["clipMax"]
-        ball = occ.addSphere(c[0], c[1], c[2], s["radius"])
-        clip = occ.addBox(lo[0], lo[1], lo[2], hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2])
+        c = [x * k for x in s["center"]]
+        ball = occ.addSphere(c[0], c[1], c[2], s["radius"] * k)
+        clip = box_of(gmsh, s["clipMin"], s["clipMax"])
         kept, _ = occ.intersect([(3, ball)], [(3, clip)])
         return volumes_of(kept)
     if kind == "ellipsoid":
-        c, (a, b, cc) = s["center"], s["semiAxes"]
+        c, (a, b, cc) = [x * k for x in s["center"]], [x * k for x in s["semiAxes"]]
         v = occ.addSphere(0, 0, 0, 1)
         occ.dilate([(3, v)], 0, 0, 0, a, b, cc)
         if "rotationAxis" in s:
@@ -358,7 +446,7 @@ def shape(gmsh, s, folder):
         return [v]
     if kind == "extrusion":
         base = planar(gmsh, s["rings"])
-        return volumes_of(occ.extrude([(2, base)], 0, 0, s["height"]))
+        return volumes_of(occ.extrude([(2, base)], 0, 0, s["height"] * k))
     if kind == "sweep":
         wires = []
         for ring in s["rings"]:
@@ -386,7 +474,9 @@ def shape(gmsh, s, folder):
         return [occ.addVolume([occ.addSurfaceLoop(faces)])]
     if kind == "brep":
         imported = occ.importShapes(os.path.join(folder, s["file"]), highestDimOnly=True)
-        occ.dilate(imported, 0, 0, 0, s["scale"], s["scale"], s["scale"])
+        scale = s["scale"] * k     # a kernel B-rep is in micrometres, which is what model units are: usually 1
+        if scale != 1:
+            occ.dilate(imported, 0, 0, 0, scale, scale, scale)
         return volumes_of(imported)
     raise ValueError("unknown shape kind")
 
@@ -421,6 +511,7 @@ def impedance(element):
 def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     from emerge._emerge.attributes import FiniteThickness
     sim = em.Simulation("circuitrf")
+    sim.set_scale_factor(MODEL_SCALE)
     if problem["wavePorts"]:
         # brief-emw-2: EMerge's S post-processing caps |S_ij| at 1 and power-normalises columns, which changes the modal S a
         # wave port's renormalisation then reads (R-emw1-1). A lumped-only run keeps EMerge's defaults, as it always has.
@@ -432,15 +523,17 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
 
     box = problem["box"]
     lo, hi = box["min"], box["max"]
-    air = GeoVolume(occ.addBox(lo[0], lo[1], lo[2], hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]), name="air box")
+    air = GeoVolume(box_of(gmsh, lo, hi), name="air box")
     air.set_material(mats[box["material"]]).prio_set(0)
     owners = [(air, 0, "air", box["material"])]
     names = ["background"]
+    described = {(3, t): "the air box" for t in air.tags}
     for s in problem["solids"]:
         v = GeoVolume(shape(gmsh, s["shape"], folder), name=s["name"])
         v.set_material(mats[s["material"]]).prio_set(s["priority"])
         owners.append((v, s["priority"], s["role"], s["material"]))
         names.append(s["name"])
+        described.update({(3, t): solid_words(gmsh, s, problem, t) for t in v.tags})
 
     sheets = []
     for sh in problem["sheets"]:
@@ -457,8 +550,10 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     # brief-emw-2: a wave port's region is a surface of its own on the air box's face, built as a lumped port's plate is;
     # commit_geometry fragments it into the face.
     regions = [(w, GeoSurface(rectangle(gmsh, w["origin"], w["u"], w["v"]), name=w["name"])) for w in problem["wavePorts"]]
+    for entry, g in sheets + ports + elements + regions:
+        described.update({(2, t): "'%s'" % entry["name"] for t in g.tags})
 
-    sim.commit_geometry()
+    commit_whole(sim, gmsh, described)
 
     # Conductors are voids, as in Palace's mesh: EMerge has already fragmented the model and resolved every overlap by
     # priority, so each fragment has one owner. Every fragment a conductor owns is removed before meshing, and the faces
@@ -504,7 +599,8 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     sim.mw.set_frequency(problem["frequenciesHz"] if problem["problem"] == "driven" else [problem["sizingHz"]])
 
     # Refinement along the edges of every sheet and every conductor's faces.
-    edge = settings["edgeSizeM"]
+    k = MODEL_SCALE
+    edge = settings["edgeSizeM"] * k
     for _, g in sheets:
         sim.mesher.set_boundary_size(g, edge)
     for tags in walls.values():
@@ -514,12 +610,13 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         field = gmsh.model.mesh.field.add("Box")
         for key, value in (("VIn", region["sizeM"]), ("VOut", settings["largestSizeM"]), ("Thickness", region["thicknessM"]),
                            ("XMin", rlo[0]), ("XMax", rhi[0]), ("YMin", rlo[1]), ("YMax", rhi[1]), ("ZMin", rlo[2]), ("ZMax", rhi[2])):
-            gmsh.model.mesh.field.setNumber(field, key, value)
+            gmsh.model.mesh.field.setNumber(field, key, value * k)
         sim.mesher.mesh_fields.append(field)
 
     # brief-emw-2: a wave port's region meshed as EMerge meshes a port face, to about PORT_TRIANGLES triangles (its
-    # _size_constraint, sqrt(area / N * 4 / sqrt 3)). Left to the volume's size, a small region on a coarse mesh had too few
-    # triangles for its mode solve, and EMerge's dense eigensolver failed on it (LinAlgError from ggev; RESOLVED, EMW-2).
+    # _size_constraint, sqrt(area / N * 4 / sqrt 3); the area and the size both in model units). Left to the volume's size,
+    # a small region on a coarse mesh had too few triangles for its mode solve, and EMerge's dense eigensolver failed on
+    # it (LinAlgError from ggev; RESOLVED, EMW-2).
     for _, g in regions:
         area = sum(gmsh.model.occ.getMass(2, t) for t in g.tags)
         if area > 0:
@@ -527,9 +624,10 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
 
     # The air box's faces: every outer face of meshed space on a box plane. PEC is EMerge's own default for an outer face,
     # so only PMC and absorbing faces are stated.
-    size = max(hi[k] - lo[k] for k in range(3))
+    size = max(hi[a] - lo[a] for a in range(3)) * k
     tol = 1e-9 * size
-    planes = {"xmin": (0, lo[0]), "xmax": (0, hi[0]), "ymin": (1, lo[1]), "ymax": (1, hi[1]), "zmin": (2, lo[2]), "zmax": (2, hi[2])}
+    planes = {"xmin": (0, lo[0] * k), "xmax": (0, hi[0] * k), "ymin": (1, lo[1] * k), "ymax": (1, hi[1] * k),
+              "zmin": (2, lo[2] * k), "zmax": (2, hi[2] * k)}
     faces = {key: [] for key in planes}
     # A port region's fragments are its port, never the face's boundary: a region left PEC is a short across the port.
     in_region = {t for _, g in regions for t in g.tags}
@@ -547,8 +645,8 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     # A floor under every element size, a thousandth of the conductor-edge size. EMerge sizes curved edges by their
     # curvature, and on an imported B-rep's trimmed curve that estimate can be degenerate: the 3D Connector's pin, cut
     # by its trace, asked Gmsh for elements of essentially zero length and took gigabytes in the 1D mesh before being
-    # stopped. The model here is in metres where Palace's is in micrometres, so Gmsh's absolute tolerances no longer
-    # catch it. No real feature is near the floor, and the launch's mesh is the same from edge/10 000 to edge/10.
+    # stopped -- in metres, before brief-dfr27-4 put the model in micrometres; the floor stays. No real feature is near
+    # the floor, and the launch's mesh is the same from edge/10 000 to edge/10.
     gmsh.option.setNumber("Mesh.MeshSizeMin", edge / 1000)
     sim.generate_mesh()
 

@@ -23282,3 +23282,47 @@ seen / not seen / duplicate refused, the face walk, impedance tool = model) and 
   straddles the edge pushed the box 0.3 mm out, which is why port 6 survived only with the via present. Lumped ports on
   a box face are now claimed before the faces; a script with none is byte-identical. The other half of R-dfr26-8-4 —
   `LayoutCrop` keeping a via whose drill crosses the new edge, which breaks the `.c3d` route in Gmsh — is still open.
+
+## brief-dfr27-4 — EMerge stopped on the ten-layer board: "Unknown model region with tag 398" (2026-10-25)
+
+- **The cause was the model's units, not one solid.** OpenCASCADE's tolerances are absolute (1e-7 in model units) and
+  the EMerge driver built its model in metres, where that is 0.1 µm. A board's own artwork sits a few tenths of a
+  micrometre from it: a ground plane cropped at the board edge kept a 0.39 µm edge leaving the edge at an angle (where
+  a clearance arc met the crop line), and a pad's 48-gon grazed the edge 0.24 µm short of touching it. EMerge's
+  `commit_geometry` fragments the model, keeps the fragment's map from each object to its pieces, then calls Gmsh's
+  `remove_all_duplicates` — which fragments everything again and renumbers what it splits, with no map. On this board
+  the second pass split four volumes (two planes and the slabs round them) and renumbered five port plates, so EMerge's
+  map named entities that were gone, and its next `getBoundary` stopped on tag 398. Reduced: one copper plane in the
+  air box's corner, its outline counter-clockwise with that 0.39 µm edge, fails on its own (clockwise, or with the edge
+  at 0.7 µm or perpendicular, it does not). No Gmsh option (`Geometry.Tolerance`, `ToleranceBoolean`,
+  `OCCFixSmallEdges`) changes it.
+- **Welding sub-micron edges was tried and is whack-a-mole.** Dropping a vertex of an edge under 1 µm that sits within
+  0.1 µm of its neighbours' line fixed the planes; the board then failed on the grazing pads, and pushing those off
+  moved the failure to a via. Every cropped board has its own near-tangencies, so the fix is the scale, not the shapes.
+- **Fragmenting in micrometres is not enough on its own.** With the model fragmented in µm and scaled back to metres
+  before meshing, the commit held, but Gmsh's 3D boundary recovery then failed with "PLC Error: A segment and a facet
+  intersect" — and the same model meshed in µm did not (a plain-Gmsh harness, conductors removed as the driver removes
+  them, curvature sizing on as EMerge sets it). Gmsh's mesher has absolute tolerances too. Scaling the B-rep after the
+  fact does not help either: OpenCASCADE scales a shape's tolerances with it, so a model built in metres and dilated is
+  exactly as coarse.
+- **The fix: the driver builds, fragments and MESHES in micrometres** (`MODEL_SCALE = 1e6`), as the Palace script
+  always has, through EMerge's own `Simulation.set_scale_factor`, which scales the mesh nodes, EMerge's geometry
+  caches and its wavelength sizing back to metres once the mesh is made. EMerge's mesher takes some sizes in model
+  units and converts others: `set_boundary_size`'s size and `set_face_size` are NOT converted (only their max size is),
+  so the driver multiplies what it hands Gmsh or the mesher directly — the conductor-edge size, `Mesh.MeshSizeMin`, the
+  mesh-region box fields and the box-face planes — and nothing after the mesh queries the OCC model, which stays in µm.
+  A kernel B-rep (already µm) is no longer dilated. EMerge logs an "experimental feature" warning for the scale factor;
+  circuitRF does not surface EMerge's log warnings. Driver version 7. The board meshes (66,630 tetrahedra, ~56 s) and
+  reaches its first frequency solve. The Cavity's mesh moved from 15,124 to 14,998 tetrahedra and its notch stays at
+  9.955 GHz; the connector launch's EMerge-vs-Palace agreement still holds.
+- **An unfragmentable model now says which solid.** The commit is wrapped (`commit_whole`): the fragment's map is kept
+  per piece, and when `remove_all_duplicates` drops a piece of a named object the run stops at once with
+  `GeometryNotFragmented`, naming each solid as a designer finds it — its name (a layout solid's starts with its
+  layer), its material and its bounding box in µm. Any later Gmsh "Unknown model region/face/curve/point with tag N"
+  is reported with what tag N was cut from. A renumbered air-box wall is not reported: EMerge re-reads those.
+- **Gate:** `testdata/em3d/emerge-fragment/problem.json` (the plane above, synthetic) meshes, and the same plane with
+  the edge shrunk a million-fold — as near the tolerance in µm as the original was in metres — is refused naming
+  `'Inner 1/GND/1' (Copper, x 4612 to 5000 µm, …)` (`EmergeLoweringTests`, ~1 s each).
+- **Open, not caused here:** `TheCavity_Driven_OnEMerge_NotchesAt9955MHz_AndTheCliWritesTheGuisBytes` compares two runs'
+  S to 1e-9, and on the GPU sparse solver two runs of one input already differ by 1.04e-9 with the version-6 driver
+  (1.49e-9 with version 7). Its tolerance was set from CPU runs (2e-12).

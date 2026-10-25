@@ -1,0 +1,104 @@
+{
+ "format": "circuitRF EMerge problem",
+ "version": 2,
+ "testedEmerge": [
+  "3.0.0b2"
+ ],
+ "problem": "driven",
+ "frequenciesHz": [
+  1000000000.0
+ ],
+ "sizingHz": 1000000000.0,
+ "settings": {
+  "elementOrder": 1,
+  "resolution": 0.15,
+  "edgeSizeM": 0.001,
+  "largestSizeM": 0.002,
+  "adaptiveSweep": false,
+  "tolerance": 0.001,
+  "initialSamples": 5,
+  "maxSamples": 100,
+  "adaptiveMesh": 0
+ },
+ "materials": [
+  {
+   "name": "Air",
+   "pec": false,
+   "er": 1,
+   "tand": 0,
+   "ur": 1,
+   "cond": 0
+  },
+  {
+   "name": "Copper",
+   "pec": true,
+   "er": 1,
+   "tand": 0,
+   "ur": 1,
+   "cond": 0
+  }
+ ],
+ "box": {
+  "min": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "max": [
+   0.005,
+   0.004,
+   0.001
+  ],
+  "material": 0,
+  "faces": {
+   "xmin": "absorbing",
+   "xmax": "absorbing",
+   "ymin": "absorbing",
+   "ymax": "absorbing",
+   "zmin": "absorbing",
+   "zmax": "absorbing"
+  }
+ },
+ "solids": [
+  {
+   "name": "Inner 1/GND/1",
+   "role": "conductor",
+   "material": 1,
+   "priority": 1,
+   "shape": {
+    "kind": "extrusion",
+    "rings": [
+     [
+      [
+       0.004647,
+       4.8e-05,
+       0.0005
+      ],
+      [
+       0.004612265999999999,
+       2.83e-07,
+       0.0005
+      ],
+      [
+       0.004612,
+       0.0,
+       0.0005
+      ],
+      [
+       0.005,
+       0.0,
+       0.0005
+      ]
+     ]
+    ],
+    "height": 1.8e-05
+   }
+  }
+ ],
+ "sheets": [],
+ "ports": [],
+ "wavePorts": [],
+ "lumpedElements": [],
+ "meshRegions": [],
+ "files": []
+}

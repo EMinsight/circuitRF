@@ -364,21 +364,75 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(0, wave.GetProperty("pecFaces").GetInt32());
     }
 
+    /// <summary>brief-dfr27-4 R-dfr27-4-3 — a copper plane in the air box's corner, its outline counter-clockwise and its bottom
+    /// edge on the box's ymin face, with an edge 0.39 µm long leaving that face at an angle (testdata/em3d/emerge-fragment, the
+    /// ten-layer board's failure cut down to one solid and rebuilt synthetically). In metres that edge sits a few of
+    /// OpenCASCADE's absolute tolerances (1e-7 in model units) long: the fragment left the plane unsplit, Gmsh's
+    /// remove_all_duplicates split it after EMerge had taken its map, and the build stopped on "Unknown model region with tag
+    /// 2". The driver builds and meshes in micrometres now, so it meshes.</summary>
+    [EmergeFact]
+    public void TheDriver_MeshesASubMicronEdgeAtTheBoardEdge()
+    {
+        string dir = FragmentFixture(null);
+        using var line = JsonDocument.Parse(MeshInEmerge(dir));
+        Assert.True(line.RootElement.GetProperty("tets").GetInt64() > 0);
+        Assert.Equal(5, line.RootElement.GetProperty("conductorFaces").GetInt32());
+    }
+
+    /// <summary>brief-dfr27-4 R-dfr27-4-2 — a model the kernel cannot fragment cleanly is refused NAMING the solid: its name
+    /// (a layout solid's starts with its layer), its material and its bounding box, never the bare tag. The same plane with
+    /// that edge a million times shorter, so in micrometres it sits as near the tolerance as the original did in metres.</summary>
+    [EmergeFact]
+    public void AModelTheKernelCannotFragment_IsRefusedNamingTheSolid()
+    {
+        string dir = FragmentFixture(ring => { ring[1]![0] = ring[2]![0]!.GetValue<double>() + 0.266e-12; ring[1]![1] = 0.283e-12; });
+        var (exit, last) = DriverMesh(dir);
+        Assert.Equal(2, exit);
+        string error = JsonDocument.Parse(last).RootElement.GetProperty("error").GetString()!;
+        Assert.StartsWith("GeometryNotFragmented: ", error, StringComparison.Ordinal);
+        Assert.Contains("'Inner 1/GND/1' (Copper, x 4612 to 5000 µm, y 0 to 48 µm, z 500 to 518 µm)", error, StringComparison.Ordinal);
+        Assert.DoesNotContain("tag", error, StringComparison.Ordinal);
+    }
+
+    /// <summary>The fragment fixture and the driver in a directory of their own, its plane's ring changed by
+    /// <paramref name="edit"/> first.</summary>
+    private string FragmentFixture(Action<System.Text.Json.Nodes.JsonArray>? edit)
+    {
+        string dir = Path.Combine(_root, "fragment");
+        Directory.CreateDirectory(dir);
+        var problem = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(
+            Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "emerge-fragment", EmergeScriptWriter.ProblemFile)))!;
+        edit?.Invoke(problem["solids"]![0]!["shape"]!["rings"]![0]!.AsArray());
+        File.WriteAllText(Path.Combine(dir, EmergeScriptWriter.ProblemFile), problem.ToJsonString());
+        File.WriteAllText(Path.Combine(dir, EmergeScriptWriter.DriverFile), EmergeScriptWriter.Driver);
+        return dir;
+    }
+
     /// <summary>The driver's mesh mode in <paramref name="dir"/>: its last stdout line, after asserting it succeeded.</summary>
     private string MeshInEmerge(string dir)
+    {
+        var (exit, last) = DriverMesh(dir, out string stderr);
+        Assert.True(exit == 0, $"exit {exit}: {last}\n{stderr[^Math.Min(2000, stderr.Length)..]}");
+        return last;
+    }
+
+    private (int Exit, string Last) DriverMesh(string dir) => DriverMesh(dir, out _);
+
+    /// <summary>The driver's mesh mode in <paramref name="dir"/>: its exit code and its last stdout line.</summary>
+    private (int Exit, string Last) DriverMesh(string dir, out string stderr)
     {
         string python = SolverDiscovery.ReadinessFor(EmergeSolver.Id).Single(r => r.Tool == SolverTool.Emerge).Installation!.Path;
         var psi = new ProcessStartInfo(python) { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = dir };
         foreach (string a in new[] { "-I", EmergeScriptWriter.DriverFile, EmergeScriptWriter.ProblemFile, "mesh" }) psi.ArgumentList.Add(a);
         psi.Environment["MPLBACKEND"] = "Agg";
         using var p = Process.Start(psi)!;
-        var stderr = p.StandardError.ReadToEndAsync();
+        var err = p.StandardError.ReadToEndAsync();
         string stdout = p.StandardOutput.ReadToEnd();
         p.WaitForExit();
         string last = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault(l => l.StartsWith('{')) ?? "";   // EMerge may print after it
         output.WriteLine(last);
-        Assert.True(p.ExitCode == 0, $"exit {p.ExitCode}: {last}\n{stderr.Result[^Math.Min(2000, stderr.Result.Length)..]}");
-        return last;
+        stderr = err.Result;
+        return (p.ExitCode, last);
     }
 
     // ── fixtures ──────────────────────────────────────────────────────────────────────────────
