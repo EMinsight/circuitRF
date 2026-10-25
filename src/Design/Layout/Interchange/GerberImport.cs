@@ -1159,6 +1159,8 @@ public static class GerberImport
         if (useTech is not null)
             ReportUse(useTech, target.UsePath!, rows, allIdentities, copperKeys, finalKeyByFile, job,
                       destDbuPerMicron, messages);
+        else
+            GerberImportPlanes.Apply(tech, [.. remaining.Select(s => s.Shape), .. drillShapes], destDbuPerMicron, messages);
 
         // ── 10. Write (R-L4g-13) — nothing is created before this point ─────────────────────────
         //

@@ -176,6 +176,13 @@ public static class Em3dLayoutSolids
         public readonly List<Em3dSolid> SolidList = [];
         public readonly List<Em3dSheet> SheetList = [];
 
+        /// <summary>brief-dfr26-1 R-dfr26-1-2 — each round plated barrel's axis and radius, metres, and the conductors it
+        /// joins: what a pad-to-plane port's sheet stands clear of. A via drawn as a polygon has no axis and is not here.</summary>
+        public IEnumerable<(double X, double Y, double R, PlanarExtractor.StackBand Top, PlanarExtractor.StackBand Bottom)> Barrels
+            => _viaSpans.Select(v => (Drill: Drill(v.Shape), v.Top, v.Bottom))
+                        .Where(v => v.Drill is not null)
+                        .Select(v => (v.Drill!.Value.X, v.Drill.Value.Y, v.Drill.Value.R, v.Top, v.Bottom));
+
         /// <summary>The air solid's reserved slot, when the caller asked for one and the box leaves room.</summary>
         public (int Index, int Order, string Material, double Bottom)? AirSlot { get; private set; }
 

@@ -2533,12 +2533,24 @@ tangent 0.02 on 1 dielectric(s).
 <p>Every one of those numbers is wrong for this board. The fabricator's laminate is <strong>254 µm, not 1.778 mm</strong>, with
 ε<sub>r</sub> <strong>3.66</strong>, not 4.4. On the guessed stackup the 450 µm line is a <strong>115 Ω</strong> microstrip; on the
 fabricator's it is <strong>54 Ω</strong> (the MLIN model's static Z<sub>0</sub>, from the
-<a href="../reference/cli.html#impedance-line">line calculator</a> on each technology). <strong>Nothing at all is marked as the ground
-reference</strong>, and the status line at
-the foot of the tab says so: a microstrip component has no ground plane to resolve until one conductor is marked.</p>
+<a href="../reference/cli.html#impedance-line">line calculator</a> on each technology).</p>
+<p><strong>The planes are guessed, and the summary says which.</strong> No file says which copper is a plane, so under <strong>New</strong> the
+import marks as a <strong>ground reference</strong> every inner conductor whose copper covers at least half the board (the board
+outline's area, or the box the copper spans when the set has none). The outer layers are left as signal layers,
+because the parts and the ports are there, unless the board has no inner plane: then the outer conductor covering
+most is the plane. Here that is the bottom conductor:</p>
+<pre>
+This conductor was marked as a ground reference, because its copper covers at least half of the box the copper
+spans (the set has no board outline): 'Bottom Copper' (100%). An EM setup returns ports through a ground reference
+and meshes its openings as drawn. To undo one, clear Ground reference on it in the Technology editor ▸ Stackup.
+</pre>
+<p>A power plane covering the board is marked the same way, which is right for EM: at RF it is a return path. The
+stack's outer boundary follows the artwork too: when the bottom (or top) conductor carries artwork and is not a
+ground reference, that boundary is set to <strong>Open</strong>, because a Ground boundary is a solid plane beyond the outer
+copper that the board does not have. The summary names that change as well.</p>
 <p>Type the fabricator's values in on the Stackup tab — the dielectric's thickness, ε<sub>r</sub> and tan δ, the
-copper thickness if it is not 35 µm, and <strong>Ground reference</strong> on the bottom conductor. The example's <code>Board/Board.ctech</code> is this same import
-with that done:</p>
+copper thickness if it is not 35 µm — and check the ground references against the board. The example's
+<code>Board/Board.ctech</code> is this same import with that done:</p>
 <figure class="figure"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="264" viewBox="0 0 960 264"><rect fill="white" width="960" height="264" /><rect fill="#F6F8FA" width="960" height="264" /><clipPath id="an02-stackup-corrected_cl_0"><path d="M0 0L960 0L960 259.8L0 259.8L0 0ZM360.09 36.9L370.09 36.9L370.09 218.9L360.09 218.9L360.09 36.9Z" clip-rule="evenodd" /></clipPath><g clip-path="url(#an02-stackup-corrected_cl_0)"><rect fill="#C87A3E" x="24" y="36.9" width="501.6" height="36" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="36.9" width="501.6" height="36" /><rect fill="#788291" fill-opacity="0.2353" x="24" y="72.9" width="501.6" height="110" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="24" y="72.9" width="501.6" height="110" /><rect fill="#8A5028" x="24" y="182.9" width="501.6" height="36" /><rect fill="none" stroke="#1E82C8" stroke-width="2.5" stroke-miterlimit="4" x="24" y="182.9" width="501.6" height="36" /></g><rect fill="#202020" x="354.09" y="36.9" width="6" height="182" /><rect fill="#202020" x="370.09" y="36.9" width="6" height="182" /><rect fill="none" stroke="#6E6E78" stroke-width="1" stroke-miterlimit="4" stroke-opacity="0.3529" x="354.09" y="36.9" width="22" height="182" /><text fill="#19191E" font-size="13" font-weight="600" font-family="IBM Plex Sans" x="31.5, 39.04, 46.36" y="59.77">
 					Top
@@ -3935,8 +3947,8 @@ R1,R,series,0603,10 Ohm,,Ideal,,,7825 µm,17725 µm,refdes=placement;kind=bom;ca
 <td>The Stackup tab</td>
 </tr>
 <tr>
-<td>One conductor is marked as the ground reference</td>
-<td>The Stackup tab — its status line says when none is</td>
+<td>The conductors marked as ground references are the board's planes</td>
+<td>The import summary's <em>marked as a ground reference</em> line; the Stackup tab</td>
 </tr>
 <tr>
 <td>Every recognised part has a value, or a variable you mean to tune</td>

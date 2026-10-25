@@ -200,9 +200,12 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         if (inputs.Refusal is not null || inputs.Source is not { } source) return Scene3DModel.Empty(gen, [inputs.Refusal ?? "no layout"]);
         if (source.Technology is not { } tech) return Scene3DModel.Empty(gen, [EmDiagnostics.NoTechnology(inputs.Setup.LayoutRef).Render()]);
         if (!inputs.Setup.Is3D) return BuildPlanar(gen, inputs, source, tech, ct);
-        var g = Em3dGenerator.Generate(inputs.Setup, source, tech);
+        // brief-dfr26-1 R-dfr26-1-5 — ports that refuse do not blank the picture of a 3D setup either: the geometry is
+        // drawn without them and the refusal is the banner. A solve still refuses (EmRunService never asks for this).
+        var g = Em3dGenerator.Generate(inputs.Setup, source, tech, portsOptional: true);
         ct.ThrowIfCancellationRequested();
         var notes = new List<string>();
+        if (g.PortRefusal is { } portRefusal) notes.Add(WouldNotRunNote + portRefusal);
         if (g.Problem is null && inputs.Setup.HasWavePorts3D)
         {
             // A view exists to show what is about to be solved, and a refused wave port is the moment
@@ -214,7 +217,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             var lumped = Em3dGenerator.Generate(preview, source, tech);
             if (lumped.Problem is not null)
             {
-                notes.Add("This setup would not run: " + g.Refusal);
+                notes.Add(WouldNotRunNote + g.Refusal);
                 notes.Add("Shown for inspection with its wave ports drawn as lumped ports.");
                 g = lumped;
             }
@@ -239,6 +242,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         "Planar setup, shown in 3D. The planar solve treats every dielectric as laterally infinite; each is drawn " +
         "here to the board outline, or to the outline of the copper above and below it, for viewing only, and one " +
         "with neither is not drawn. A planar solve has no air box, so none is shown.";
+
+    /// <summary>What a 3D setup's picture says first when it is drawn but a solve would refuse; the refusal follows.</summary>
+    public const string WouldNotRunNote = "This setup would not run: ";
 
     /// <summary>What a planar setup's picture says first when its ports could not be built; the refusal follows.</summary>
     public const string PortsNotDrawnNote = "Shown without ports: ";
@@ -297,8 +303,13 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         HitCycle.SceneChanged(scene.Generation);
         IsRegenerating = scene.Generation < Source.Requested;
         OnPropertyChanged(nameof(IsBuildingFirstScene));
-        // An empty scene's first note is its refusal, which Status already says.
-        Notes = string.Join("\n", scene.Objects.Length == 0 ? scene.Notes.Skip(1) : scene.Notes);
+        // An empty scene's first note is its refusal, which Status already says. A drawn scene's refusal — the setup
+        // would not run, or its ports are not drawn — is the banner over the viewport, and not repeated in the notes.
+        Banner = scene.Objects.Length > 0 && scene.Notes.Count > 0 &&
+                 (scene.Notes[0].StartsWith(WouldNotRunNote, StringComparison.Ordinal) ||
+                  scene.Notes[0].StartsWith(PortsNotDrawnNote, StringComparison.Ordinal))
+            ? scene.Notes[0] : "";
+        Notes = string.Join("\n", scene.Objects.Length == 0 || Banner.Length > 0 ? scene.Notes.Skip(1) : scene.Notes);
         if (_lastSource is { } src)
         {
             var unit = src.View.DisplayUnit;
@@ -454,6 +465,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool IsBuildingFirstScene => IsRegenerating && Scene.Objects.Length == 0;
     [ObservableProperty] private string _notes = "";
+    /// <summary>brief-dfr26-1 R-dfr26-1-5 — why the drawn scene would not solve, shown over the viewport; empty otherwise.</summary>
+    [ObservableProperty] private string _banner = "";
     [ObservableProperty] private string _hoverText = "";
     [ObservableProperty] private string _cursorText = "";
     [ObservableProperty] private string _meshText = "";

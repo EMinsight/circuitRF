@@ -399,6 +399,15 @@
                         <TextBlock Text="Show 3D"/>
                     </StackPanel>
                 </Button>
+                <!-- brief-dfr26-1 R-dfr26-1-6 — the same command as Design ▸ New 3D View from Layout, for this setup's layout. -->
+                <Button Margin="4,0,0,0" Command="{Binding ViewModel.NewThreeDViewFromLayoutCommand}"
+                        IsVisible="{Binding ViewModel.ShowGeometryReference}"
+                        ToolTip.Tip="New 3D View from Layout: a 3D view (.c3d) in this layout's cell holding one instance of the layout, with a copy of every 3D setup naming it.">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="CubeScan" Width="14" Height="14"/>
+                        <TextBlock Text="New 3D View"/>
+                    </StackPanel>
+                </Button>
 
                 <!-- brief-em3d-49 — embedded in a .c3d, the 3D editor's own Undo, Save and Show 3D are the ones. -->
                 <Button Margin="8,0,0,0" Command="{Binding ViewModel.UndoCommand}" IsVisible="{Binding ViewModel.ShowGeometryReference}"

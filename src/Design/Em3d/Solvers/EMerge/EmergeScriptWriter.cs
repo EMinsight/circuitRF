@@ -142,7 +142,7 @@ public static partial class EmergeScriptWriter
              // brief-emi-11 — its +n (the local +z through World, the side Plot Field ▸ Top side names): the driver orients the
              // sheet's surface current and its triangles by it
              .Key("normal").Point(sh.Frame?.Normal ?? new Point3(0, 0, 1))
-             .Key("rings").Rings(new[] { sh.Outline }.Concat(sh.Holes).Select(r => GmshGeoWriter.Clean(r).Select(sh.World)))
+             .Key("rings").Rings(GmshGeoWriter.PlanarRings(new[] { sh.Outline }.Concat(sh.Holes)).Select(r => r.Select(sh.World)))
              .EndObject();
         e.EndArray();
 
@@ -352,8 +352,8 @@ public static partial class EmergeScriptWriter
             }
             case Em3dExtrudedPolygon x:
                 e.Key("kind").Str("extrusion")
-                 .Key("rings").Rings(new[] { x.Outline }.Concat(x.Holes)
-                                     .Select(r => GmshGeoWriter.Clean(r).Select(q => new Point3(q.X, q.Y, x.ZBottom))))
+                 .Key("rings").Rings(GmshGeoWriter.PlanarRings(new[] { x.Outline }.Concat(x.Holes))
+                                     .Select(r => r.Select(q => new Point3(q.X, q.Y, x.ZBottom))))
                  .Key("height").Number(x.ZTop - x.ZBottom);
                 break;
             case Em3dSweep w:

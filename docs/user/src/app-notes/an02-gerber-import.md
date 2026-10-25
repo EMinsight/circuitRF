@@ -259,13 +259,28 @@ Open `Board_2.ctech` and its **Stackup** tab shows exactly that:
 Every one of those numbers is wrong for this board. The fabricator's laminate is **254 µm, not 1.778 mm**, with
 ε<sub>r</sub> **3.66**, not 4.4. On the guessed stackup the 450 µm line is a **115 Ω** microstrip; on the
 fabricator's it is **54 Ω** (the MLIN model's static Z<sub>0</sub>, from the
-[line calculator](../reference/cli.html#impedance-line) on each technology). **Nothing at all is marked as the ground
-reference**, and the status line at
-the foot of the tab says so: a microstrip component has no ground plane to resolve until one conductor is marked.
+[line calculator](../reference/cli.html#impedance-line) on each technology).
+
+**The planes are guessed, and the summary says which.** No file says which copper is a plane, so under **New** the
+import marks as a **ground reference** every inner conductor whose copper covers at least half the board (the board
+outline's area, or the box the copper spans when the set has none). The outer layers are left as signal layers,
+because the parts and the ports are there, unless the board has no inner plane: then the outer conductor covering
+most is the plane. Here that is the bottom conductor:
+
+<pre>
+This conductor was marked as a ground reference, because its copper covers at least half of the box the copper
+spans (the set has no board outline): 'Bottom Copper' (100%). An EM setup returns ports through a ground reference
+and meshes its openings as drawn. To undo one, clear Ground reference on it in the Technology editor ▸ Stackup.
+</pre>
+
+A power plane covering the board is marked the same way, which is right for EM: at RF it is a return path. The
+stack's outer boundary follows the artwork too: when the bottom (or top) conductor carries artwork and is not a
+ground reference, that boundary is set to **Open**, because a Ground boundary is a solid plane beyond the outer
+copper that the board does not have. The summary names that change as well.
 
 Type the fabricator's values in on the Stackup tab — the dielectric's thickness, ε<sub>r</sub> and tan δ, the
-copper thickness if it is not 35 µm, and **Ground reference** on the bottom conductor. The example's `Board/Board.ctech` is this same import
-with that done:
+copper thickness if it is not 35 µm — and check the ground references against the board. The example's
+`Board/Board.ctech` is this same import with that done:
 
 {{ui: an02-stackup-corrected}}
 
@@ -431,6 +446,6 @@ R1,R,series,0603,10 Ohm,,Ideal,,,7825 µm,17725 µm,refdes=placement;kind=bom;ca
 | The drill data agrees with the artwork, and the via count is what the board has | Import summary — the *Drill:* line; *unpaired* should be 0 |
 | The technology is the one holding the fabricator's stackup, or you chose **New** knowing it guesses | The Technology row; the summary's closing line |
 | Under **New**: every number in the *NOT STATED* paragraph replaced with the fabricator's | The Stackup tab |
-| One conductor is marked as the ground reference | The Stackup tab — its status line says when none is |
+| The conductors marked as ground references are the board's planes | The import summary's *marked as a ground reference* line; the Stackup tab |
 | Every recognised part has a value, or a variable you mean to tune | The parts table, and the report's unknown-value line |
 | One number from the recognised schematic agrees with something you trust | Your own simulation of the design it came from |

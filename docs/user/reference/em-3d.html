@@ -199,23 +199,36 @@ Setup</strong> on a layout, see <a href="em-setup.html#creating">EM Setup</a>), 
 writes a field of the <code>.cem</code>, so a setup can equally be written as text. The fields below link to their
 full description.</p>
 <ul>
-<li><strong>Solver</strong> (<code>Solver3D</code>): <code>Palace</code>, <code>OpenEms</code>, or <code>Both</code> to run the two and compare them.
-<a href="em-setup.html#solver-3d">More</a>.</li>
-<li><strong>Problem</strong> (<code>Problem3D</code>, Palace only): <em>Driven</em> for S-parameters (the default), <em>Electrostatic</em> for a
-capacitance matrix, <em>Magnetostatic</em> for an inductance matrix, <em>Eigenmode</em> for resonant frequencies and
+<li><p><strong>Solver</strong> (<code>Solver3D</code>): <code>Palace</code>, <code>OpenEms</code>, or <code>Both</code> to run the two and compare them.
+<a href="em-setup.html#solver-3d">More</a>.</p>
+</li>
+<li><p><strong>Problem</strong> (<code>Problem3D</code>, Palace only): <em>Driven</em> for S-parameters (the default), <em>Electrostatic</em> for a
+capacitance matrix, <em>Magnetostatic</em> for an inductance matrix, <em>Eigenmode</em> for resonant frequencies and</p>
 <ol type="A" start="17">
 <li><a href="em-setup.html#package-rlc">Package RLC</a>, <a href="em-setup.html#eigenmodes">Eigenmodes</a>.</li>
 </ol>
 </li>
-<li><strong>Ports.</strong> A layout's port labels become ports. In 3D a port is <strong>lumped</strong> by default: a sheet from the
+<li><p><strong>Ports.</strong> A layout's port labels become ports. In 3D a port is <strong>lumped</strong> by default: a sheet from the
 line down to its return, with the port's Z₀ across it. A <strong>wave port</strong> (<code>Ports3D</code>) is fed and measured
 in the line's own field at the air box's face instead, and has no sheet parasitic. Both solvers build
 one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
-terminals. <a href="em-setup.html#wave-ports">Wave ports</a>.</li>
-<li><strong>Terminals</strong> (<code>Terminals3D</code>, static solves): the matrix's rows and columns, each named by a net.
+terminals. <a href="em-setup.html#wave-ports">Wave ports</a>.</p>
+<p>An <strong>internal</strong> port, placed inside a pad rather than at a line's end, is a <strong>pad-to-plane port</strong>: a
+vertical lumped sheet from the pad to the nearest ground-reference plane, above or below, that has
+metal across the whole sheet. A plane with an opening under the pad is passed through, so a cut-out
+under a test pad moves the port's return to the next plane down, which is what the cut-out does to
+the real pad. The sheet is centred on the label and is as wide as the pad is across it. When a via
+stands at the label (a test point's through via), the sheet stands beside the barrel instead, on the
+side away from the trace that feeds the pad, and moves out to where the plane's clearance round the
+via ends. The setup's named return plane, if it names one, is the only plane it lands on. Metal of
+another layer across the sheet's path is refused, naming that layer. A delta-gap port (a cut across a
+line) is planar only.</p>
+</li>
+<li><p><strong>Terminals</strong> (<code>Terminals3D</code>, static solves): the matrix's rows and columns, each named by a net.
 Every conductor on that net belongs to the terminal. A magnetostatic terminal also names the port its
-current enters by.</li>
-<li><strong>The air box</strong> (<code>AirBox</code>): how far each face of the solved region lies beyond the geometry, and what
+current enters by.</p>
+</li>
+<li><p><strong>The air box</strong> (<code>AirBox</code>): how far each face of the solved region lies beyond the geometry, and what
 the face does to the field. It can be <em>Absorbing</em> (open space), <em>Pec</em> (a metal wall), <em>Pmc</em> or
 <em>Symmetry</em>. By default the floor sits on the lowest ground plane and the other five faces are
 absorbing, an eighth of the longest wavelength in the sweep out (a quarter when a radiation pattern is
@@ -223,15 +236,18 @@ asked for). A closed box of <code>Pec</code> faces is a shielded enclosure, and 
 package lid. The Inspector and <code>circuitrf explain</code> both give each face's distance and where it came
 from — <em>default: 18.74 mm, λ/8 at 2 GHz, the sweep's lowest frequency</em> — so a sweep that starts low,
 and so pads far, is visible before it is meshed. On a guided structure (a launch, a transition) a
-stated padding of a few substrate heights is usually far cheaper.</li>
-<li><strong>Quality</strong> (<code>Quality</code> in the <code>Palace</code> section): <em>Draft</em>, <em>Standard</em> (the default) or <em>Accurate</em>.
+stated padding of a few substrate heights is usually far cheaper.</p>
+</li>
+<li><p><strong>Quality</strong> (<code>Quality</code> in the <code>Palace</code> section): <em>Draft</em>, <em>Standard</em> (the default) or <em>Accurate</em>.
 These set the element order, the refinement passes and the sweep tolerance together, and any one of
 those can be overridden on its own. The measured cost of each preset is in
 <a href="em-setup.html#solver-3d">EM Setup ▸ Solver</a>. <strong>Which one is enough depends on the structure, not on a
-rule</strong>: the example below uses both Draft and Standard, and says why for each.</li>
-<li><strong>Fields</strong> (<code>SaveFieldsGHz</code>): which frequencies' fields are saved for the 3D view. By default only the
+rule</strong>: the example below uses both Draft and Standard, and says why for each.</p>
+</li>
+<li><p><strong>Fields</strong> (<code>SaveFieldsGHz</code>): which frequencies' fields are saved for the 3D view. By default only the
 sweep's centre is saved, because fields are large.
-<a href="em-setup.html#palace-fields">Fields for the 3D view</a>.</li>
+<a href="em-setup.html#palace-fields">Fields for the 3D view</a>.</p>
+</li>
 </ul>
 <p><strong>Leaving something out.</strong> In a <a href="drawing-in-3d.html#model">3D view</a>, untick an object's, a placed cell's or a
 port's <strong>Model</strong> to solve without it while keeping it drawn. A run leaves it out entirely — the air box too is sized
@@ -242,7 +258,9 @@ no sheet, no lumped element, so the gap it spanned is open. The result's ports a
 reference to something that is off — a modelled port's conductor, a wire's pad, a face boundary — is refused naming
 both, never dropped; every port off is refused (<em>there is nothing to excite</em>).</p>
 <p><strong>Look before you solve.</strong> <strong>Show 3D</strong> on the setup's panel opens the 3D view on the model circuitRF
-built. It works before any solver is installed. <code>circuitrf explain</code> on the <code>.cem</code> prints the same model as
+built. It works before any solver is installed, and a port that cannot be built does not empty it: the
+board is drawn without that port, and the reason the setup would not run is shown across the top of the
+view. <code>circuitrf explain</code> on the <code>.cem</code> prints the same model as
 text: every solid, its material and its extent, the ports, the air box and its faces, and an estimate of
 the problem's size. A <code>.c3d</code> that embeds several setups takes <code>--setup &lt;name&gt;</code> to say which one. <code>circuitrf render x.cem --section xz@y=0um -o cut.svg</code> draws a section through it.</p>
 <h2 id="running">Watching it run, and reading the answer</h2>

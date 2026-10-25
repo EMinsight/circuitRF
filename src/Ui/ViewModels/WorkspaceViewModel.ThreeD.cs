@@ -391,6 +391,21 @@ public partial class WorkspaceViewModel
         OpenOrActivateC3dEditor(path);
     }
 
+    /// <summary>
+    /// brief-dfr26-1 R-dfr26-1-6 — New 3D View from Layout for a layout FILE: the layout editor's toolbar and the EM setup
+    /// panel, beside its Show 3D. The cell is the folder its layout subfolder sits in; a layout in no cell is said.
+    /// </summary>
+    public Task NewThreeDViewFromLayoutForLayoutAsync(string clayPath)
+    {
+        string? cellDir = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(clayPath)));
+        if (cellDir is null || !File.Exists(Path.Combine(cellDir, CircuitRF.Design.Cells.CellFolder.CcellFileName)))
+        {
+            Messages.Error($"New 3D View from Layout: '{Path.GetFileName(clayPath)}' is not saved in a cell, and a 3D view is made in its layout's cell.");
+            return Task.CompletedTask;
+        }
+        return NewThreeDViewFromLayoutAsync(cellDir);
+    }
+
     /// <summary>Design ▸ New 3D View from Layout — the active layout's cell.</summary>
     [RelayCommand(CanExecute = nameof(CanNewThreeDViewFromLayout))]
     private async Task NewThreeDViewFromLayout()

@@ -376,6 +376,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(CanOpenLayout));
         DrawSolveRegionCommand.NotifyCanExecuteChanged();
+        NewThreeDViewFromLayoutCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>Whether there is a layout to show — what the Layout row's context menu is gated on.</summary>
@@ -1119,6 +1120,15 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// solve; a planar one shows its layout through the stackup, for a look in 3D.</summary>
     [RelayCommand]
     private void Show3D() => Show3DRequested?.Invoke();
+
+    /// <summary>brief-dfr26-1 R-dfr26-1-6 — New 3D View from Layout, for this setup's layout: the shell's one command.</summary>
+    public Action<string>? NewThreeDViewRequested { get; set; }
+
+    [RelayCommand(CanExecute = nameof(CanOpenLayout))]
+    private void NewThreeDViewFromLayout()
+    {
+        if (ResolvedLayoutPath is { Length: > 0 } p) NewThreeDViewRequested?.Invoke(p);
+    }
 
     // ── Field commits ──────────────────────────────────────────────────────────────────────────
 

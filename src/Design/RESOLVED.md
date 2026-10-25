@@ -23004,3 +23004,106 @@ writes a global-law copy of the example model, since its claims are about the li
 
 **Examples.** The two shipped `.cmodel`s were re-written through `CmodelFile` with `Mode: "Local"` and nothing else (each
 round-tripped byte for byte first), and `gan_4x125.va` was regenerated from it.
+
+## brief-dfr26-1 — a multilayer board in 3D EM: port levels, a pad-to-plane port, imported planes (2026-10-24)
+
+**R-dfr26-1-1 — one rule for a port's own level.** `EmPortExtraction.Extract` trusted the port's committed level only when
+that level CONTAINED the label (`containing.Contains(own)`), and had a second rule for a label on the boundary that ran only
+when NO level contained it (`containing.Count == 0`). An edge port at a Top Copper trace end over inner pours is neither —
+the pours contain the point, Top Copper does not — so it fell to the multi-level refusal, which listed every level but the
+port's own. It is now one rule: a port that commits a level is on it when the label is inside that level's metal, or within
+the reach `NearestPolygon` already accepts as on the metal (`CharacteristicHalfWidth`, half the conductor's width), whatever
+other levels have there. A port that commits no level still gets the multi-level refusal. A side effect worth knowing: with
+ONE inner pour under the trace end the old code did not refuse, it silently resolved the port to the pour.
+
+**R-dfr26-1-2 — the pad-to-plane port.** An internal (to-ground) port in a 3D setup is a vertical lumped sheet
+(`Em3dGenerator.PadToPlanePort`). `Extract` takes `padToPlane: true` from the 3D generator, which skips the planar ground-path
+logic: the 3D port problem carries no vias, so it would always "grow" a path and its note would have quoted a width from a
+1 m dummy slab height.
+- **Width:** the pad's own chord across the sheet, through the label point — the edge-port rule (an edge port is as wide as
+  its line). A faceted 1.5 mm circle gives 1.4985 mm.
+- **Orientation:** the sheet's line is perpendicular to the side "away from the feed". The feed is the pad's own piece plus,
+  when a barrel stands at the label, every signal piece the barrel lands on; each axis direction is probed at 1.25/1.5/2/3/5
+  times the pad's 2·Area/Perimeter (a disk's radius) and the least-fed side wins, preferring the side opposite the most-fed.
+  A trace running straight through the via (both ±x fed) puts the sheet on +y.
+- **Return:** walk outward on each side, nearest conductor first. A ground reference whose metal covers the whole segment is
+  the return; one with no metal on it is passed (an opening); any partial coverage, or any signal metal touching the segment,
+  is a refusal naming that level. The nearer of the two sides' answers wins. A named return plane is the only one landed on.
+  The PEC floor counts as covering everything.
+- **A barrel at the label:** the sheet starts tangent to it. When no plane covers the sheet there — every plane's antipad is
+  wider than the barrel — it slides outward, tested at every vertex coordinate of the nearby metal, to the first position
+  where a plane covers the whole chord: the antipad's edge, which is where the pad's return current reaches the plane. The
+  note says which it was. A brief's literal "tangent to the barrel" would have been refused on every real board, since the
+  label point and the tangent line both sit inside every plane's antipad.
+- A delta-gap internal port stays refused in 3D; its refusal now names both port kinds that ARE built. A wave port on a
+  pad-to-plane port is refused (a wave port is on the box face at a line's end).
+
+**R-dfr26-1-3 / -4 — what a Gerber import marks (`GerberImportPlanes`), on the minted technology only** (a technology the
+import USES is referenced and never written). A conductor whose copper (Clipper union area) covers at least half the board
+is a ground reference — board area from the outline layer's closed shapes, else the box its strokes span, else the copper's
+box. **Outer conductors are left as signal when any inner conductor qualifies**: a ground-flooded outer layer covers as
+much as a plane (three-quarters is ordinary), and marking it would refuse every port on
+the RF trace. With no inner plane (a two-layer board) the outer conductor covering most is marked. Then Top/Bottom = Ground
+over outer copper that carries artwork and is not a ground reference is set to Open. Each change is one message.
+- **The "1 issue (Stackup 1)" message** on an imported ten-layer board was `TechValidation`'s "Stackup has no conductor
+  marked as a ground reference" — a minted technology marked none. An import with an inner plane now marks it, so that
+  board raises no Stackup finding. An import that USES a ten-layer technology writes nothing to it, so whether that raises
+  any finding is the technology's own matter (DFR26-3 ships one).
+- `Stackup.Bottom` defaults to Ground in the model, which is where the "Bottom Copper sits at or below the ground plane"
+  meshing refusal came from: the minted stackup never set it.
+- A drawn plane is meshed as metal with its holes (`Em3dLayoutSolids`): asserted by `MultilayerPortRound26Tests`, whose
+  cut-out under the pad reaches the 3D problem as a hole in the plane's solid.
+
+**R-dfr26-1-5 — Show 3D on a 3D setup.** Only the PLANAR preview passed `portsOptional: true`; the 3D branch of
+`Viewer3DViewModel.Build` called `Generate` without it, so a refused port returned no problem and the view showed the
+refusal instead of the board. It now passes it and puts `This setup would not run: <refusal>` first; `Viewer3DViewModel.Banner`
+lifts that note (or the planar `Shown without ports:` one) out of the notes and the view shows it across the top of the
+viewport. A solve never asks for `portsOptional`.
+
+**R-dfr26-1-6.** New 3D View from Layout was already on Design ▸ (both menus) as well as the Project Tree. It now also sits
+on the layout editor's toolbar beside the EM controls and on the EM setup panel beside Show 3D; both call
+`WorkspaceViewModel.NewThreeDViewFromLayoutForLayoutAsync(clay)`, which finds the cell (the layout folder's parent, holding a
+`.ccell`) and calls the one `NewThreeDViewFromLayoutAsync`.
+
+**On a ten-layer board cropped to its RF path** (P1 an edge port at the Top Copper trace end, P2 an internal port in the connector's
+centre pad, inner planes marked and Bottom = Open): both ports build — P1 on Top Copper, P2 a 1.246 mm × 73 µm sheet from
+Top Copper down to Inner 1. The generator takes 0.15 s; Palace's estimate is ~52,000 elements, ~341,000 unknowns at order
+2, ~6.5 GB. **Gmsh did not mesh it** (91 s, 1.4 GB peak), with or without the plane marks:
+`Difference failed - BOPAlgo_AlertTooFewArguments` in the background step, after a run of `SolidBuilderUnusedFaces`
+warnings. **Fixed — the cause was the winding of a plane's holes** (`GmshGeoWriter.PlanarRings`):
+- Tracing `#sN[]` after every boolean showed four dielectric slabs EMPTY after their disjoint-by-order cut, each with a
+  `SolidBuilderUnusedFaces` warning; the background then lost them and ran out of volume. Reduced to two tools: the slab
+  minus {Inner 4's plane, one via's air fill} returns nothing; either tool alone is fine.
+- The trigger is the plane's antipad ring wound CLOCKWISE against a counter-clockwise outline — Clipper's convention,
+  which every extracted polygon carries. Reversing either ring, so both wind alike, makes the cut right. A synthetic
+  rectangle with any clockwise hole (a square, a 16-, 48- or 49-gon) reproduces it; the same counter-clockwise does not.
+  It needs the extrusion to share a face with the solid it is cut from (a copper level sitting on a dielectric face) and
+  a second tool in the same cut; a fuzzy tolerance (1e-3, 0.1 µm) does not help; chaining the cut one tool at a time
+  fixes the reduced case but not the board, and costs 2.4× the geometry time.
+- Gmsh's Python API (EMerge's script) behaves the same: `occ.cut(slab, [holed extrusion, cylinder])` returns 0 volumes
+  with a clockwise hole, 1 with a counter-clockwise one. So `PlanarRings` (cleaned rings, every hole re-wound to the
+  outline's winding, the outline untouched so a sheet's normal is unchanged) is used by `EmitPlanar` — the `.geo`
+  extrusions and sheets, and the thermal writer through it — and by both of `EmergeScriptWriter`'s ring writers. The
+  polyhedron writer builds faces from shared signed edges and is not changed.
+- `MultilayerPortRound26Tests.ASlabUnderAPlaneWithAnAntipad_CutByThePlaneAndItsVia_Meshes` (GmshFact, ~2 s) meshes the
+  pad-on-a-via fixture with both planes' antipads; it fails on the unfixed writer.
+
+**With that fixed the board meshed — and the run's own entity check refused it: one surface belonged to nothing**, a flat
+face at the underside of Inner 2 whose box was larger than Inner 2's own. Two laser vias end flush with that underside
+and stick out past the plane's cropped edge; the fragment made ONE face of the plane's underside and both vias' end caps,
+and every conductor claims its faces by its own box, so a face spanning several conductors and leaving all their boxes
+was claimed by none and would have been a magnetic wall. Fixed in `GmshGeoWriter` (`TouchingConductors`): conductors
+whose boxes touch, share a face plane on one axis, and neither of which holds the other on the other two axes are
+grouped, and after every conductor's own claim the voids left inside a group's joint box go to its largest member. A via
+standing inside a plane's outline forms no group — a face across the two is inside the plane's box — so every committed
+golden script is unchanged. `ABlindViaOverhangingItsPlanesEdge_LeavesNoFaceUnclaimed` (GmshFact, ~3 s; the four-layer
+stack's L1–L2 ground via at the plane's edge) reproduces the refusal on the unfixed writer.
+
+**The board's geometry is slow: ~650 s of Gmsh CPU before the first mesh line** (1D, 2D, 3D, order 2 and its optimisation then take ~40 s;
+411k nodes, 395k elements, 3.1 GB peak, 12.3 min in all). The script has ~270 boolean operations and none dominates: the
+later ones cost ~8 s each, in OCC bookkeeping (`OCC_Internals::_unbind`, `_recomputeMaxTag`) that grows with the model,
+not in the cuts themselves. Not changed here.
+
+**The planar solver on the same board** refuses at extraction: the setup's levels include Bottom Copper, which lies below
+every ground reference, with Stackup.Bottom = Open — "no ground plane below the lowest analysis level 'Bottom Copper'". Left
+as it is (out of scope).

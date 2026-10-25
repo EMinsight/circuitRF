@@ -136,6 +136,17 @@ full description.
   in the line's own field at the air box's face instead, and has no sheet parasitic. Both solvers build
   one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
   terminals. [Wave ports](em-setup.html#wave-ports).
+
+  An **internal** port, placed inside a pad rather than at a line's end, is a **pad-to-plane port**: a
+  vertical lumped sheet from the pad to the nearest ground-reference plane, above or below, that has
+  metal across the whole sheet. A plane with an opening under the pad is passed through, so a cut-out
+  under a test pad moves the port's return to the next plane down, which is what the cut-out does to
+  the real pad. The sheet is centred on the label and is as wide as the pad is across it. When a via
+  stands at the label (a test point's through via), the sheet stands beside the barrel instead, on the
+  side away from the trace that feeds the pad, and moves out to where the plane's clearance round the
+  via ends. The setup's named return plane, if it names one, is the only plane it lands on. Metal of
+  another layer across the sheet's path is refused, naming that layer. A delta-gap port (a cut across a
+  line) is planar only.
 - **Terminals** (`Terminals3D`, static solves): the matrix's rows and columns, each named by a net.
   Every conductor on that net belongs to the terminal. A magnetostatic terminal also names the port its
   current enters by.
@@ -167,7 +178,9 @@ reference to something that is off — a modelled port's conductor, a wire's pad
 both, never dropped; every port off is refused (*there is nothing to excite*).
 
 **Look before you solve.** **Show 3D** on the setup's panel opens the 3D view on the model circuitRF
-built. It works before any solver is installed. `circuitrf explain` on the `.cem` prints the same model as
+built. It works before any solver is installed, and a port that cannot be built does not empty it: the
+board is drawn without that port, and the reason the setup would not run is shown across the top of the
+view. `circuitrf explain` on the `.cem` prints the same model as
 text: every solid, its material and its extent, the ports, the air box and its faces, and an estimate of
 the problem's size. A `.c3d` that embeds several setups takes `--setup <name>` to say which one. `circuitrf render x.cem --section xz@y=0um -o cut.svg` draws a section through it.
 

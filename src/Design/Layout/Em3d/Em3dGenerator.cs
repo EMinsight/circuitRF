@@ -368,17 +368,30 @@ public static class Em3dGenerator
             // its own layer (the technology says which level that is), and no refusal offers analysis levels.
             var extracted = EmPortExtraction.Extract(source.View.Shapes, portProblem, source.DbuPerMicron,
                                                      setup.ResolvePortZ0, source.View.DisplayUnit,
-                                                     technology: source.Technology, analysisLevelsApply: false);
+                                                     technology: source.Technology, analysisLevelsApply: false,
+                                                     padToPlane: true);
             _notes.AddRange(extracted.Notes);
             if (!extracted.Ok) return extracted.Refusal;
 
             foreach (var p in extracted.Ports)
             {
+                if (p.Kind == PlanarPortKind.Internal && !p.IsConductorReferenced)
+                {
+                    if (setup.PortKind3D(p.Number) == Em3dPortKind.Wave)
+                        return $"The setup makes port {p.Number} a wave port, but it is a pad-to-plane port. A wave port " +
+                               "lies on the air box's face at a line's end, so only an edge port can be one.";
+                    if (PadToPlanePort(p, bands, signal, pieces, floorPlane, floorZ, out var padPort) is { } padRefusal)
+                        return padRefusal;
+                    ports.Add(padPort!);
+                    continue;
+                }
                 if (p.Kind != PlanarPortKind.Edge || p.IsConductorReferenced)
-                    return $"Port {p.Number} is {(p.IsConductorReferenced ? "referenced to a drawn conductor" : "an internal port")}. " +
-                           "A 3D setup builds lumped EDGE ports in this version — a vertical sheet from the " +
-                           "conductor's end down (or up) to its return plane. Make it an edge port at a " +
-                           "conductor end, or solve this layout with a planar setup.";
+                    return $"Port {p.Number} is {(p.IsConductorReferenced ? "referenced to a drawn conductor" : "an internal delta-gap port")}. " +
+                           "A 3D setup builds two kinds of lumped port: an edge port, a vertical sheet from a conductor's " +
+                           "end down (or up) to its return plane, and an internal port, a vertical sheet from a pad to the " +
+                           "nearest plane with metal over or under it. A gap cut across a conductor is not built in this " +
+                           "version. Make it an edge port at a conductor end or an internal port on a pad, or solve this " +
+                           "layout with a planar setup.";
 
                 var band  = signal[p.LayerIndex ?? 0];
                 var piece = PieceAt(pieces[band.Index], p.Location.X, p.Location.Y, p.Side, out var edge);
@@ -492,6 +505,222 @@ public static class Em3dGenerator
                     }, edgeAt, hi - lo, zHi - zLo, above));
             }
             return null;
+        }
+
+        /// <summary>
+        /// <b>brief-dfr26-1 R-dfr26-1-2 — an internal (to-ground) port in 3D: a vertical lumped sheet from the pad at
+        /// the label to the nearest ground-reference conductor, above or below, that has metal across the sheet's
+        /// whole width.</b> A plane with an opening there is passed through — a cut-out under a test pad is the case
+        /// this exists for — and the setup's named return plane, when it names one, is the only plane landed on, as
+        /// for an edge port. The sheet's width is the pad's own chord across it, as an edge port's is its line's.
+        ///
+        /// <para>A via barrel at the label point (a test point's through via) cannot share the sheet's place, so the
+        /// sheet stands tangent to the barrel on the side away from the metal that feeds the pad — and, where every
+        /// plane's clearance round the barrel is wider than the barrel, slides out to where the plane first has metal
+        /// across it, which is where the pad's return current actually reaches the plane. Metal of any other level
+        /// across part of the sheet's path is a refusal naming that level: a lumped sheet runs through dielectric.</para>
+        /// </summary>
+        private string? PadToPlanePort(PlanarPort p, IReadOnlyList<PlanarExtractor.StackBand> bands,
+                                       List<PlanarExtractor.StackBand> signal, Dictionary<int, List<Piece>> pieces,
+                                       PlanarExtractor.StackBand? floorPlane, double floorZ, out Em3dPort? port)
+        {
+            port = null;
+            var band = signal[p.LayerIndex ?? 0];
+            double x0 = p.Location.X, y0 = p.Location.Y;
+            string at = $"({Fmt(x0 * 1e6)}, {Fmt(y0 * 1e6)}) µm";
+            var pad = pieces[band.Index].FirstOrDefault(q => q.Poly.Contains(x0, y0));
+            if (pad is null)
+                return $"Port {p.Number} at {at} is an internal port on '{band.Layer.Name}', but its label is not inside " +
+                       "that conductor's metal. Move it onto the pad it drives.";
+
+            const double zEps = 1e-12;
+            var barrel = _g.Barrels.Where(v => (v.X - x0) * (v.X - x0) + (v.Y - y0) * (v.Y - y0) <= v.R * v.R &&
+                                               v.Bottom.BottomM <= band.BottomM + zEps && v.Top.TopM >= band.TopM - zEps)
+                                   .Select(v => ((double X, double Y, double R, PlanarExtractor.StackBand Top, PlanarExtractor.StackBand Bottom)?)v)
+                                   .FirstOrDefault();
+
+            // ── Which side is away from the feed ─────────────────────────────────────────────────
+            // The metal that feeds the pad: its own piece (a trace merged into it), and every signal piece a barrel at
+            // the label lands on. Probed beyond the pad's own size in the four axis directions; the sheet goes on the
+            // least-fed side, preferring the side opposite the most-fed one.
+            var feed = new List<PlanarPolygon> { pad.Poly };
+            if (barrel is { } fb)
+                foreach (var b in bands.Where(b => b.Index != band.Index && !b.Layer.IsGroundReference && pieces.ContainsKey(b.Index) &&
+                                                   b.BottomM >= fb.Bottom.BottomM - zEps && b.TopM <= fb.Top.TopM + zEps))
+                    feed.AddRange(pieces[b.Index].Where(q => q.Poly.Contains(fb.X, fb.Y)).Select(q => q.Poly));
+            double padScale = 2 * pad.Poly.Area() / Math.Max(Perimeter(pad.Poly), 1e-30);
+            (double Dx, double Dy, string Name)[] dirs = [(1, 0, "+x"), (0, 1, "+y"), (-1, 0, "−x"), (0, -1, "−y")];
+            var score = new int[4];
+            for (int k = 0; k < 4; k++)
+                foreach (double m in new[] { 1.25, 1.5, 2, 3, 5 })
+                    if (feed.Any(f => f.Contains(x0 + dirs[k].Dx * m * padScale, y0 + dirs[k].Dy * m * padScale))) score[k]++;
+            int most = Array.IndexOf(score, score.Max());
+            int least = score.Min();
+            int away = score[(most + 2) % 4] == least && score[most] > least ? (most + 2) % 4 : Array.IndexOf(score, least);
+            var dir = dirs[away];
+            bool lineAlongX = dir.Dy != 0;                  // the sheet's line runs across the away direction
+            double u0 = lineAlongX ? y0 : x0, v0 = lineAlongX ? x0 : y0;
+            double sign = lineAlongX ? dir.Dy : dir.Dx;
+
+            // ── Where along the away direction the sheet may stand ──────────────────────────────
+            var offsets = new List<double>();
+            if (barrel is { } sb)
+            {
+                double padFar = pad.Poly.Outer.Max(q => ((lineAlongX ? q.Y : q.X) - u0) * sign);
+                double nudge = 1e-6 * Math.Max(padScale, sb.R);
+                offsets.Add(sb.R + nudge);
+                var vertices = new SortedSet<double>();
+                foreach (var b in bands.Where(b => pieces.ContainsKey(b.Index)))
+                    foreach (var q in pieces[b.Index])
+                        foreach (var ring in q.Poly.HoleRings.Prepend(q.Poly.Outer))
+                            foreach (var pt in ring)
+                            {
+                                double s = ((lineAlongX ? pt.Y : pt.X) - u0) * sign;
+                                if (s > sb.R + nudge && s < padFar && Math.Abs((lineAlongX ? pt.X : pt.Y) - v0) <= 2 * padScale * 5)
+                                    vertices.Add(s + nudge);
+                            }
+                offsets.AddRange(vertices.Take(4096));
+            }
+            else offsets.Add(0);
+
+            string? named = setup.GroundStackupLayerName is { Length: > 0 } n ? n : null;
+            if (named is not null && !bands.Any(b => b.Layer.Kind == StackupKind.Conductor && b.Layer.Name == named))
+                return $"This EM setup names '{named}' as its return plane, but technology '{tech.Name}' " +
+                       "has no conductor stackup layer with that name.";
+
+            string? firstBlocked = null;
+            List<string>? firstPassed = null;
+            foreach (double s in offsets)
+            {
+                double c = u0 + sign * s;
+                if (Chord(pad.Poly, c, lineAlongX, v0) is not var (lo, hi)) break;
+
+                var found = new List<(PlanarExtractor.StackBand Band, Piece? Piece, bool Above, List<string> Passed)>();
+                var passedHere = new List<string>();
+                string? blockedHere = null;
+                foreach (bool above in new[] { true, false })
+                {
+                    var walk = Walk(above, c, lo, hi);
+                    if (walk.Band is { } wb) found.Add((wb, walk.Piece, above, walk.Passed));
+                    else
+                    {
+                        blockedHere ??= walk.Blocked;
+                        passedHere.AddRange(walk.Passed);
+                    }
+                }
+                if (found.Count == 0)
+                {
+                    firstBlocked ??= blockedHere;
+                    firstPassed ??= passedHere;
+                    continue;
+                }
+
+                var (retBand, retPiece, retAbove, passed) = found.MinBy(f => f.Above ? f.Band.BottomM - band.TopM : band.BottomM - f.Band.TopM);
+                bool isFloor = retPiece is null;
+                double sigFace = pad.IsSheet ? pad.SheetZ : retAbove ? pad.ZTop : pad.ZBottom;
+                double retFace = isFloor ? floorZ : retPiece!.IsSheet ? retPiece.SheetZ : retAbove ? retPiece.ZBottom : retPiece.ZTop;
+                double zLo = Math.Min(sigFace, retFace), zHi = Math.Max(sigFace, retFace);
+                if (!(zHi > zLo))
+                    return $"Port {p.Number}'s return plane '{retBand.Layer.Name}' is not separated from " +
+                           $"'{band.Layer.Name}' by any height, so the port's sheet would be empty.";
+
+                var min = lineAlongX ? new Point3(lo, c, zLo) : new Point3(c, lo, zLo);
+                var max = lineAlongX ? new Point3(hi, c, zHi) : new Point3(c, hi, zHi);
+                var centre = new Point3((min.X + max.X) / 2, (min.Y + max.Y) / 2, (min.Z + max.Z) / 2);
+                port = new Em3dPort(p.Number, $"port/{p.Number}", pad.Name,
+                                    isFloor ? Em3dAirBox.FaceName("zmin") : retPiece!.Name, min, max,
+                                    new Point3(0, 0, retAbove ? -1 : 1), p.Z0,
+                                    new Em3dReferencePlane(centre, new Point3(dir.Dx, dir.Dy, 0), 0));
+                _notes.Add($"Port {p.Number} at {at} is a pad-to-plane port: a vertical lumped sheet {Length(hi - lo)} wide " +
+                           $"and {Length(zHi - zLo)} tall from '{band.Layer.Name}' {(retAbove ? "up" : "down")} to " +
+                           $"'{retBand.Layer.Name}'{(isFloor ? " (the air box's floor)" : "")}" +
+                           (passed.Count > 0 ? $", passing through the opening in {string.Join(", ", passed.Select(q => $"'{q}'"))}" : "") +
+                           ". Its width is the pad's own across the sheet." +
+                           (barrel is { } nb
+                               ? $" A via barrel stands at the label, so the sheet stands {Length(s)} from the barrel's axis on its " +
+                                 $"{dir.Name} side, away from the metal that feeds the pad" +
+                                 (s > nb.R * (1 + 1e-3)
+                                     ? $" — not tangent to the barrel ({Length(nb.R)} radius), because no plane has metal across the " +
+                                       "sheet nearer it: that is where the plane's clearance round the via ends."
+                                     : ", tangent to it.")
+                               : " It is centred on the label."));
+                return null;
+            }
+
+            return firstBlocked
+                ?? $"Port {p.Number} at {at} is a pad-to-plane port on '{band.Layer.Name}', and no " +
+                   (named is null ? "ground-reference conductor" : $"metal of its named return plane '{named}'") +
+                   " lies across its sheet" + (barrel is null ? "" : " anywhere beside the via barrel at its label") +
+                   (firstPassed is { Count: > 0 }
+                       ? $": {string.Join(", ", firstPassed.Distinct().Select(q => $"'{q}'"))} {(firstPassed.Distinct().Count() == 1 ? "has" : "each have")} an opening there. "
+                       : named is null ? ": the technology marks none above or below it. " : ". ") +
+                   "Mark the plane the pad returns through as a ground reference in the technology's stackup, or draw " +
+                   "its metal under the pad.";
+
+            // One side of the pad: the conductors in order of distance, until one lands the sheet or blocks it.
+            (PlanarExtractor.StackBand? Band, Piece? Piece, List<string> Passed, string? Blocked) Walk(bool above, double c, double lo, double hi)
+            {
+                var passed = new List<string>();
+                var order = bands.Where(b => b.Layer.Kind == StackupKind.Conductor && b.Index != band.Index &&
+                                             (above ? b.BottomM >= band.TopM - zEps : b.TopM <= band.BottomM + zEps))
+                                 .OrderBy(b => above ? b.BottomM : -b.TopM);
+                foreach (var b in order)
+                {
+                    bool target = named is null ? b.Layer.IsGroundReference : b.Layer.Name == named;
+                    if (floorPlane is not null && ReferenceEquals(b.Layer, floorPlane.Layer) && target)
+                        return (b, null, passed, null);
+                    var on = pieces.TryGetValue(b.Index, out var ps) ? ps : [];
+                    var (cover, touches) = Across(on, c, lineAlongX, lo, hi);
+                    if (target && cover is not null) return (b, cover, passed, null);
+                    if (touches)
+                        return (null, null, passed,
+                            $"Port {p.Number}'s pad-to-plane sheet at {at}, from '{band.Layer.Name}' {(above ? "up" : "down")} toward " +
+                            $"{(named is null ? "a ground-reference plane" : $"its named return plane '{named}'")}, would cross metal " +
+                            $"on '{b.Layer.Name}'{(b.Layer.IsGroundReference && cover is null ? ", which covers only part of it" : "")}. " +
+                            "A lumped port's sheet runs through dielectric from the pad to the plane it returns through. " +
+                            "Move the label, clear that metal from under the pad, or name the return plane this setup should use.");
+                    if (b.Layer.IsGroundReference) passed.Add(b.Layer.Name);
+                    if (named is not null && target) return (null, null, passed, null);   // the named plane, with no metal there
+                }
+                return (null, null, passed, null);
+            }
+        }
+
+        /// <summary>The interval of <paramref name="poly"/>'s metal on the line (the second coordinate = <paramref name="c"/>,
+        /// x first when <paramref name="alongX"/>) that contains <paramref name="v"/>, or null.</summary>
+        private static (double Lo, double Hi)? Chord(PlanarPolygon poly, double c, bool alongX, double v)
+        {
+            var hits = Crossings(poly, c, alongX);
+            hits.Sort();
+            for (int i = 0; i + 1 < hits.Count; i += 2)
+                if (v >= hits[i] && v <= hits[i + 1]) return (hits[i], hits[i + 1]);
+            return null;
+        }
+
+        /// <summary>Whether a level's pieces cover the segment [lo, hi] of the line whole (the covering piece), and whether
+        /// they touch it at all.</summary>
+        private static (Piece? Cover, bool Touches) Across(IEnumerable<Piece> on, double c, bool alongX, double lo, double hi)
+        {
+            double tol = 1e-9 * (hi - lo);
+            double mid = (lo + hi) / 2;
+            bool touches = false;
+            foreach (var q in on)
+            {
+                bool crossesInside = Crossings(q.Poly, c, alongX).Any(h => h > lo + tol && h < hi - tol);
+                bool midIn = alongX ? q.Poly.Contains(mid, c) : q.Poly.Contains(c, mid);
+                if (!crossesInside && midIn) return (q, true);
+                touches |= crossesInside || midIn;
+            }
+            return (null, touches);
+        }
+
+        private static double Perimeter(PlanarPolygon poly)
+        {
+            double s = 0;
+            foreach (var ring in poly.HoleRings.Prepend(poly.Outer))
+                for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+                    s += Math.Sqrt((ring[i].X - ring[j].X) * (ring[i].X - ring[j].X) + (ring[i].Y - ring[j].Y) * (ring[i].Y - ring[j].Y));
+            return s;
         }
 
         /// <summary>brief-em3d-23 — a wave port before the air box exists: the lumped sheet it grows from,

@@ -879,6 +879,19 @@ public partial class LayoutEditorView : UserControl
     /// <c>LayoutDocument</c>, not the workspace). A scratch layout with no path yet has no name to
     /// derive the setup's from, so it is reported rather than silently doing nothing.
     /// </summary>
+    /// <summary>brief-dfr26-1 R-dfr26-1-6 — the toolbar's New 3D View from Layout: the shell's one command, for this layout.</summary>
+    private void OnNewThreeDViewFromLayout(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not LayoutDocument doc) return;
+        if (doc.FilePath is not { Length: > 0 } clayPath)
+        {
+            doc.ActiveViewModel.ReportWarning("Save this layout to a cell first — a 3D view is made in its layout's cell.");
+            return;
+        }
+        if (ResolveWorkspace() is { } workspace) _ = workspace.NewThreeDViewFromLayoutForLayoutAsync(clayPath);
+        else doc.ActiveViewModel.ReportWarning("New 3D View from Layout needs the workspace window: open this layout there.");
+    }
+
     private void OnOpenEmSetup(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not LayoutDocument doc) return;

@@ -7963,6 +7963,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // brief-em3d-28 R-em3d28-5: Show 3D opens the view beside the setup, and an edit to the
             // setup regenerates any 3D view of it (R-em3d28-2d).
             vm.Show3DRequested  = () => OpenOrActivate3DView(vm.FilePath);
+            vm.NewThreeDViewRequested = clay => _ = NewThreeDViewFromLayoutForLayoutAsync(clay);
             vm.SetupChanged     += () => Invalidate3DViews(vm.FilePath);
             // R-em-15/17: the mesh "renders automatically in the layout view" (D2), and is dropped
             // there the moment the setup's own state says it is no longer current.

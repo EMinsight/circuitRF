@@ -210,6 +210,9 @@ public static class EmPortExtraction
     /// <param name="analysisLevelsApply">Whether the setup has analysis levels a user can narrow (a planar
     /// setup) — false for a 3D one, whose levels are every signal conductor, so a refusal does not offer a
     /// remedy the panel does not have.</param>
+    /// <param name="padToPlane">brief-dfr26-1 R-dfr26-1-2 — a 3D setup's internal (to-ground) port is a vertical sheet
+    /// from the pad to the nearest plane, which the 3D generator builds and describes itself: no path to ground is
+    /// grown for it, and none of the planar path's notes or refusals about that path is written.</param>
     public static EmPortExtractionResult Extract(
         IReadOnlyList<LayoutShape> shapes,
         PlanarProblem              problem,
@@ -218,7 +221,8 @@ public static class EmPortExtraction
         LayoutUnit                 displayUnit = LayoutUnit.Um,
         double?                    groundPathWidthM = null,
         Technology?                technology = null,
-        bool                       analysisLevelsApply = true)
+        bool                       analysisLevelsApply = true,
+        bool                       padToPlane = false)
     {
         ArgumentNullException.ThrowIfNull(shapes);
         ArgumentNullException.ThrowIfNull(problem);
@@ -314,7 +318,7 @@ public static class EmPortExtraction
             int? viaLevel = null;
             bool grownPath = false;
             double? assumedWidthM = null;
-            if (kind == PlanarPortKind.Internal)
+            if (kind == PlanarPortKind.Internal && !padToPlane)
             {
                 viaLevel = GroundViaLevelAt(problem, x, y);
 
@@ -385,26 +389,30 @@ public static class EmPortExtraction
             // top-side trace over bottom-side copper was refused whenever both levels were meshed —
             // always, for a 3D setup, whose levels are every signal conductor. When the port's own layer
             // names one of the levels under it, that is the level: nothing is guessed.
-            if (poly is not null && containing.Count > 1 && viaLevel is null &&
-                OwnLevel(label, problem, technology) is { } own && containing.Contains(own) &&
-                PolygonOn(problem, own, x, y) is { } ownPoly)
+            //
+            // The same rule holds at an EDGE, and it is ONE rule (brief-dfr26-1 R-dfr26-1-1). A port exactly on
+            // its trace's boundary — an Edge port at the end of a trace, which is where the Port tool puts one — is
+            // contained by no polygon of its own level, so the rule above asked only when that level CONTAINED the
+            // point and a second rule asked only when NO level did. A ten-layer board's Top Copper edge port over
+            // inner ground pours is neither: the pours contain the point, Top Copper does not, and the port was
+            // refused as sitting on "8 of 9 levels" — none of them the one it was placed on. On metal is now
+            // inside a polygon of the port's own level, or within the reach NearestPolygon accepts as on the metal
+            // (half that conductor's characteristic width), whatever any other level has there.
+            if (viaLevel is null && OwnLevel(label, problem, technology) is { } own)
             {
-                poly = ownPoly;
-                level = own;
-                containing = [own];
-            }
-
-            // The same rule on an EDGE. A port exactly on its polygon's boundary — an Edge port at the end of a
-            // trace, which is where the Port tool puts one — is contained by no polygon, so the nearest-boundary
-            // pick took the FIRST level at distance zero and the port's own layer was never read: two ports on
-            // one Metal2 line resolved one to Metal2 and the other, at the far end, to the Metal1 under it.
-            if (poly is not null && containing.Count == 0 && viaLevel is null &&
-                OwnLevel(label, problem, technology) is { } ownAtEdge && ownAtEdge != level &&
-                NearestOn(problem, ownAtEdge, x, y) is { } onOwn &&
-                onOwn.Distance <= BoundaryDistance(poly, x, y) + 1e-12)
-            {
-                poly = onOwn.Poly;
-                level = ownAtEdge;
+                if (PolygonOn(problem, own, x, y) is { } ownPoly)
+                {
+                    poly = ownPoly;
+                    level = own;
+                    containing = [own];
+                }
+                else if (NearestOn(problem, own, x, y) is { } onOwn &&
+                         onOwn.Distance <= CharacteristicHalfWidth(onOwn.Poly))
+                {
+                    poly = onOwn.Poly;
+                    level = own;
+                    containing = [];
+                }
             }
 
             if (poly is not null && containing.Count > 1 && viaLevel is null)
@@ -650,6 +658,7 @@ public static class EmPortExtraction
             owners.Add(label);
             rows.Add(new EmPortRow(number, label, ports[^1], null, kind));
 
+            if (kind == PlanarPortKind.Internal && padToPlane) continue;
             notes.Add(kind == PlanarPortKind.Internal
                 ? $"Port {number} ('{Describe(label)}') at {Coord(label.X, label.Y, dbuPerMicron, displayUnit)} is " +
                   "an INTERNAL port — between the metal there and the ground plane" +

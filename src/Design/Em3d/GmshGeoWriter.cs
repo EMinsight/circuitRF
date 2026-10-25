@@ -428,6 +428,24 @@ public static partial class GmshGeoWriter
             L($"c{i}[] -= claimed[];");
             L($"claimed[] += c{i}[];");
         }
+        // brief-dfr26-1 — conductors that touch: where two share a plane (a via's end flush with the plane it lands on),
+        // the fragment can leave ONE face across both, and when one sticks out past the other's edge that face lies in
+        // neither box — every conductor face was found, and this one was left a magnetic wall and refused. What is left of
+        // the voids inside a touching group's joint box is that group's metal; it goes to the group's largest member.
+        foreach (var group in TouchingConductors(conductors, bounds))
+        {
+            var joint = group.Select(i => bounds[i]).Aggregate((a, b) => (Math.Min(a.X0, b.X0), Math.Min(a.Y0, b.Y0),
+                Math.Min(a.Z0, b.Z0), Math.Max(a.X1, b.X1), Math.Max(a.Y1, b.Y1), Math.Max(a.Z1, b.Z1)));
+            int owner = group.OrderByDescending(i => Volume(bounds[i])).ThenBy(i => i).First();
+            L($"// conductors {string.Join(", ", group.Select(i => Comment(problem.Solids[i].Name)))}, touching: what their boxes left");
+            L($"y[] = {Query(joint, 0)};");
+            L("x[] = y[];");
+            L("x[] -= voids[];");
+            L("y[] -= x[];");
+            L("y[] -= claimed[];");
+            L($"c{owner}[] += y[];");
+            L("claimed[] += y[];");
+        }
         L("rest[] = single[];");
         L("rest[] -= claimed[];");
         L();
@@ -960,9 +978,8 @@ public static partial class GmshGeoWriter
     {
         void L(string line) => g.Append(line).Append('\n');
         L("cl[] = {};");
-        foreach (var raw in rings)
+        foreach (var ring in PlanarRings(rings))
         {
-            var ring = Clean(raw);
             L("p = newp;");
             for (int k = 0; k < ring.Count; k++)
             {
@@ -1195,6 +1212,42 @@ public static partial class GmshGeoWriter
     private static double Margin(Em3dPrimitive p)
         => p is Em3dSweep { Section: Em3dSection.Circle } w ? 0.05 * w.Diameter : 0;
 
+    /// <summary>
+    /// The conductors a single face can span outside every one of their boxes, as connected groups of two or more, in index
+    /// order (see the conductor claims). Two are joined when their boxes touch, share a face plane on one axis, and neither
+    /// box holds the other on the other two axes — a via's end flush with a plane and sticking out past its edge. A via
+    /// standing inside a plane's outline is not: a face across the two lies inside the plane's box, which claims it.
+    /// </summary>
+    private static List<List<int>> TouchingConductors(IReadOnlyList<int> conductors,
+        IReadOnlyList<(double X0, double Y0, double Z0, double X1, double Y1, double Z1)> bounds)
+    {
+        var parent = conductors.ToDictionary(i => i, i => i);
+        int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+        const double tol = 1e-12;
+        static bool Touch(double a0, double a1, double b0, double b1) => a0 <= b1 + tol && b0 <= a1 + tol;
+        static bool Holds(double a0, double a1, double b0, double b1) => a0 <= b0 + tol && b1 <= a1 + tol;
+        static bool SharePlane(double a0, double a1, double b0, double b1) =>
+            Math.Abs(a0 - b0) <= tol || Math.Abs(a1 - b1) <= tol || Math.Abs(a0 - b1) <= tol || Math.Abs(a1 - b0) <= tol;
+        for (int a = 0; a < conductors.Count; a++)
+            for (int b = a + 1; b < conductors.Count; b++)
+            {
+                var (p, q) = (bounds[conductors[a]], bounds[conductors[b]]);
+                if (!(Touch(p.X0, p.X1, q.X0, q.X1) && Touch(p.Y0, p.Y1, q.Y0, q.Y1) && Touch(p.Z0, p.Z1, q.Z0, q.Z1))) continue;
+                (double, double, double, double)[] axes = [(p.X0, p.X1, q.X0, q.X1), (p.Y0, p.Y1, q.Y0, q.Y1), (p.Z0, p.Z1, q.Z0, q.Z1)];
+                bool escapes = false;
+                for (int k = 0; k < 3 && !escapes; k++)
+                {
+                    if (!SharePlane(axes[k].Item1, axes[k].Item2, axes[k].Item3, axes[k].Item4)) continue;
+                    var (u, v) = (axes[(k + 1) % 3], axes[(k + 2) % 3]);
+                    bool pHolds = Holds(u.Item1, u.Item2, u.Item3, u.Item4) && Holds(v.Item1, v.Item2, v.Item3, v.Item4);
+                    bool qHolds = Holds(u.Item3, u.Item4, u.Item1, u.Item2) && Holds(v.Item3, v.Item4, v.Item1, v.Item2);
+                    escapes = !pHolds && !qHolds;
+                }
+                if (escapes) parent[Find(conductors[a])] = Find(conductors[b]);
+            }
+        return [.. conductors.GroupBy(Find).Where(g => g.Count() > 1).Select(g => g.Order().ToList()).OrderBy(g => g[0])];
+    }
+
     private static bool Overlap((double X0, double Y0, double Z0, double X1, double Y1, double Z1) a,
                                 (double X0, double Y0, double Z0, double X1, double Y1, double Z1) b)
     {
@@ -1214,6 +1267,33 @@ public static partial class GmshGeoWriter
         => (b.X1 - b.X0) * (b.Y1 - b.Y0) * (b.Z1 - b.Z0);
 
     /// <summary>A ring with its closing duplicate and any repeated vertex removed.</summary>
+    /// <summary>
+    /// <b>A planar region's rings as the OCC factory needs them: cleaned, and every hole wound the way the outline is.</b>
+    /// Clipper hands a polygon over in the usual convention — outline counter-clockwise, holes clockwise — and a face OCC
+    /// builds from loops wound opposite ways is valid on its own, so an extrusion of it meshes. But cut from a solid it
+    /// shares a face with, TOGETHER with any second tool, it empties the solid: OCC reports
+    /// <c>BOPAlgo_AlertSolidBuilderUnusedFaces</c> and returns nothing (brief-dfr26-1). On a multilayer board that is
+    /// every dielectric under a plane with an antipad, cut by the plane and a via at once: the slab vanished, the
+    /// background lost it next, and Gmsh stopped on <c>BOPAlgo_AlertTooFewArguments</c>. Wound alike, the same cut is
+    /// right — in the <c>.geo</c> script and through Gmsh's Python API (EMerge's script) alike.
+    /// </summary>
+    internal static List<List<Point2>> PlanarRings(IEnumerable<IReadOnlyList<Point2>> rings)
+    {
+        var o = rings.Select(Clean).ToList();
+        if (o.Count < 2) return o;
+        bool outerCcw = SignedArea(o[0]) > 0;
+        for (int k = 1; k < o.Count; k++)
+            if (SignedArea(o[k]) > 0 != outerCcw) o[k].Reverse();
+        return o;
+
+        static double SignedArea(List<Point2> r)
+        {
+            double a = 0;
+            for (int i = 0, j = r.Count - 1; i < r.Count; j = i++) a += r[j].X * r[i].Y - r[i].X * r[j].Y;
+            return a;
+        }
+    }
+
     internal static List<Point2> Clean(IReadOnlyList<Point2> ring)
     {
         var o = new List<Point2>(ring.Count);
