@@ -443,7 +443,7 @@ internal static class Check
         if (!CheckViewFile(path, ViewType.Schematic, f)) return;
 
         SchematicEditModel model;
-        try { (model, _, _) = SchematicPersistence.LoadFromFile(path); }
+        try { (model, _, _) = CircuitSource.LoadSchematic(path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
         // What the lenient read ignored, misread or dropped — a component with no Symbol is read as a
@@ -526,6 +526,8 @@ internal static class Check
 
         foreach (var conflict in extracted.Conflicts)
             if (conflict != techError) f.Add(CliDiagnostics.CheckExtractionConflict(path, conflict));
+        foreach (var choice in extracted.HostCellChoices)
+            f.Add(CliDiagnostics.CheckHostCellChoice(path, choice.Text, choice.IsWarning));
 
         // Elaboration runs on what the `.cnl` round trip produces, not on the extraction directly —
         // see CircuitSource for why those are not the same TestBench, and for the four shipped

@@ -23377,3 +23377,26 @@ seen / not seen / duplicate refused, the face walk, impedance tool = model) and 
   default is Don't Simulate. **Open:** the order-1 per-unknown figure reads 8.1 GB for this mesh at eight processes
   against 4.3 GB measured — high by 1.9× here, the direction the check wants, but it is what told the designer's 3.8 GB
   subsystem that even one process would not fit, where the measurement says one process would (2.5 GB).
+
+## A loose schematic drew its cells Not Found; Save As broke every cell reference (2026-10-25)
+
+- **Save As wrote cell references unchanged and then moved the base.** `SchematicPersistence.SaveToFile` set
+  `SchematicDirectory` to the new folder after serializing the components verbatim, so a schematic saved out
+  of `<cell>/schematic/` as a Known File kept `../../FET` and pointed every instance at a folder that does not
+  exist. It now re-spells each path-form `CellRef` whose target exists (`ExternalCellRef.MakeCellRef`) before
+  writing; a missing one is left as written. Other path-shaped fields (an SnP or SPICE `File`, a wBond link)
+  were not changed here.
+- **A loose schematic's references fall back to its host workspace** — `docs/design/workspace-and-project-tree.md`
+  §4.5. The host travels on the MODEL rather than in a process-wide table keyed by path, because each window
+  has its own session registry, and a table would let the last window to register decide for every window.
+- **`CellLookup` moved from `src/Cli` to `src/Design/Workspace`** so the host lookup finds exactly the cells
+  `explain --cells` lists; `DocumentKinds.LooksLikeCellFolder` now delegates to it.
+- **Headless, the host is the global `--workspace`** (`CliEntry.HostWorkspace`), taken before dispatch like
+  `--kits`. Until then no run verb reported ANY extraction conflict — only `check` did — which is why the host
+  choices travel as their own list (`ExtractionResult.HostCellChoices`) rather than among the conflicts: every
+  surface that reads a schematic reports them, without starting to print every other conflict too.
+- **A loose schematic's reference base is its host's root** (`SchematicCircuit.ReferenceBaseOf`,
+  `SchematicTechnology.NetlistBaseOf`), because that is where Simulate writes a Known File's netlist and
+  elaborates it. Moving the run's base without the technology statement's would have read a loose
+  schematic's technology path against the wrong folder.
+

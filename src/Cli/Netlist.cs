@@ -1,6 +1,7 @@
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Workspace;
 
 namespace CircuitRF.Cli;
 

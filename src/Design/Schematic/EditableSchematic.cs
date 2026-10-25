@@ -1465,6 +1465,19 @@ public sealed class SchematicEditModel
     /// </summary>
     public string? SchematicDirectory { get; set; }
 
+    /// <summary>
+    /// The workspace this schematic is being worked on and run from when it belongs to NO workspace
+    /// of its own — a Known File kept outside the workspace folder — and null otherwise. Runtime
+    /// only, never persisted: which workspace that is depends on where the file is OPENED, not on
+    /// the file, so one loose file open in two windows has two answers.
+    ///
+    /// <para>A cell reference that names nothing is looked for here last of all
+    /// (<see cref="CircuitRF.Design.Workspace.ExternalCellRef.FindInHostWorkspace"/>), and kit parts
+    /// resolve against it. A schematic inside a workspace ignores it: its references are relative to
+    /// where it is, and nothing re-reads them against another workspace.</para>
+    /// </summary>
+    public string? HostWorkspaceRoot { get; set; }
+
     /// <summary>What the read ignored, misread or dropped (<see cref="SchematicLoadAudit"/>). Set by
     /// <see cref="SchematicPersistence.Deserialize"/>; empty for a model built in memory. The GUI
     /// posts these on a fresh load and <c>circuitrf check</c> reports them, in the same words.</summary>
@@ -1677,7 +1690,7 @@ public sealed class SchematicEditModel
             // pins. Which forms those are is the resolver's own question, never re-derived here.
             if (SchematicDirectory is null && !CellSymbolResolver.NeedsNoBaseDirectory(symRef)) continue;
             result ??= new Dictionary<string, CellSymbolResolution>(StringComparer.Ordinal);
-            result[comp.Id] = CellSymbolResolver.Resolve(symRef, SchematicDirectory);
+            result[comp.Id] = CellSymbolResolver.Resolve(symRef, SchematicDirectory, HostWorkspaceRoot);
         }
         return result;
     }
@@ -1701,7 +1714,7 @@ public sealed class SchematicEditModel
             if (cellRefResolutions is not null)
                 cellRefResolutions.TryGetValue(comp.Id, out res);
             else if (SchematicDirectory is not null)
-                res = CellSymbolResolver.Resolve(symRef, SchematicDirectory);
+                res = CellSymbolResolver.Resolve(symRef, SchematicDirectory, HostWorkspaceRoot);
 
             if (res is { State: CellSymbolState.Resolved, Symbol: { } sym })
             {
@@ -1757,7 +1770,7 @@ public sealed class SchematicEditModel
         if (cellRefResolutions is not null)
             cellRefResolutions.TryGetValue(comp.Id, out res);
         else if (SchematicDirectory is not null)
-            res = CellSymbolResolver.Resolve(symRef, SchematicDirectory);
+            res = CellSymbolResolver.Resolve(symRef, SchematicDirectory, HostWorkspaceRoot);
 
         return res is { State: CellSymbolState.Resolved, Symbol: { } sym } ? sym.Primitives : null;
     }

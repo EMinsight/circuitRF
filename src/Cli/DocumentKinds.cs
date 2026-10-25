@@ -171,22 +171,8 @@ internal static class DocumentKinds
     public static string? InterchangeFormat(string path) =>
         LayoutConvert.DetectSource(path) is { } f ? LayoutConvert.Name(f) : null;
 
-    /// <summary>
-    /// True when a directory has the SHAPE of a cell folder. Deliberately structural rather than a
-    /// `.ccell` test alone: a cell folder is legal with no `.ccell` at all (primacy is implicit when
-    /// a sub-folder holds exactly one file — <see cref="PrimaryState.SoleFile"/>), so requiring the
-    /// manifest would classify a perfectly ordinary cell as a plain folder and check nothing in it.
-    /// </summary>
-    public static bool LooksLikeCellFolder(string dir)
-    {
-        if (File.Exists(Path.Combine(dir, CellFolder.CcellFileName))) return true;
-
-        foreach (var t in AllViewTypes)
-            if (Directory.Exists(Path.Combine(dir, CellFolder.SubFolderName(t))))
-                return true;
-
-        return false;
-    }
+    /// <inheritdoc cref="CellLookup.LooksLikeCellFolder"/>
+    public static bool LooksLikeCellFolder(string dir) => CellLookup.LooksLikeCellFolder(dir);
 
     public static readonly ViewType[] AllViewTypes = Enum.GetValues<ViewType>();
 

@@ -69,7 +69,20 @@ public static class NetExtractor
         /// </summary>
         public IReadOnlyDictionary<string, string> CellKeys { get; init; } =
             new Dictionary<string, string>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Every cell a LOOSE schematic's instance was matched to in the workspace it is run from, or
+        /// could have been (<see cref="ExternalCellRef.FindInHostWorkspace"/>). Kept apart from
+        /// <see cref="Conflicts"/> because each one says which cell the run USED, and that has to be
+        /// said wherever the design runs, by surfaces that do not report extraction conflicts at all.
+        /// </summary>
+        public IReadOnlyList<HostCellChoice> HostCellChoices { get; init; } = [];
     }
+
+    /// <summary>One <see cref="ExtractionResult.HostCellChoices"/> entry. <see cref="IsWarning"/>
+    /// for two candidate cells (the stored path's and the host's, or two in the host); an
+    /// information line when the host's one cell was used because the stored path named nothing.</summary>
+    public sealed record HostCellChoice(string InstanceName, string Text, bool IsWarning);
 
     /// <param name="cornerVariables">
     /// Process constants the selected corners bind, already resolved by the caller (see
@@ -173,6 +186,7 @@ public static class NetExtractor
         return new ExtractionResult(tb, conflicts)
         {
             CellPorts = cellPorts, Library = lib, CellKeys = scope.LibraryNameToKey(),
+            HostCellChoices = scope.HostCellChoices,
         };
     }
 
@@ -448,6 +462,8 @@ public static class NetExtractor
 
             if (comp.CellRef is not null)
             {
+                NoteHostWorkspaceCell(model, comp, scope.HostCellChoices);
+
                 // A part whose definition is a CIRCUIT comes first: a package is a subcircuit, not a
                 // device model, whatever else the kit says about it.
                 var nb = TryEmitNetlistBackedCellInstance(comp, model, uf, QK, netNames, detachedKeys,
@@ -568,7 +584,53 @@ public static class NetExtractor
     /// Null for a scratch schematic that has never been saved, which is an ordinary state here.
     /// </summary>
     private static string? WorkspaceOf(SchematicEditModel model)
-        => WorkspaceRootFinder.WorkspaceDirOf(model.SchematicDirectory);
+        => WorkspaceRootFinder.WorkspaceDirOf(model.SchematicDirectory) ?? model.HostWorkspaceRoot;
+
+    /// <summary>
+    /// Says which cell a LOOSE schematic's instance runs with whenever the workspace it is run from
+    /// was asked (<see cref="ExternalCellRef.FindInHostWorkspace"/>). Silent for a schematic inside a
+    /// workspace, with no host, and when the stored path and the host name the same cell.
+    ///
+    /// <para><b>Two cells, one name: the stored path wins, and the run says so.</b> The schematic's
+    /// own path is what the file says; the host's cell of the same name is a different cell, and a
+    /// result computed with one of them looks exactly like a result computed with the other. Two
+    /// host cells of that name and no path that resolves is an instance with NO cell, and the note
+    /// names both rather than leaving only "no primary schematic". When the stored path names
+    /// nothing and the host has the one cell, that cell is used and the run says where it came
+    /// from — information, because nothing else was on offer.</para>
+    /// </summary>
+    private static void NoteHostWorkspaceCell(SchematicEditModel model, EditableComponent comp, List<HostCellChoice> choices)
+    {
+        if (ExternalCellRef.FindInHostWorkspace(comp.CellRef, model.SchematicDirectory, model.HostWorkspaceRoot)
+                is not { } hosted)
+            return;
+
+        string name   = Path.GetFileName(comp.CellRef!.Replace('\\', '/').TrimEnd('/'));
+        string host   = Path.GetFileName(WorkspaceRootFinder.Normalize(model.HostWorkspaceRoot));
+        string? stored = ExternalCellRef.ResolveCellDir(comp.CellRef, model.SchematicDirectory, out _, out bool exists);
+
+        if (exists && stored is not null)
+        {
+            var others = hosted.Candidates
+                .Where(c => !string.Equals(Path.GetFullPath(c), Path.GetFullPath(stored), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (others.Count == 0) return;
+            choices.Add(new HostCellChoice(comp.InstanceName,
+                $"Cell instance '{comp.InstanceName}': found two cells named '{name}' — " +
+                $"{stored} (the schematic's stored path) and {string.Join(", ", others)} " +
+                $"(workspace '{host}'). Used {stored}.", IsWarning: true));
+            return;
+        }
+
+        choices.Add(hosted.CellDir is { } used
+            ? new HostCellChoice(comp.InstanceName,
+                $"Cell instance '{comp.InstanceName}': '{comp.CellRef}' is not at the schematic's stored path; " +
+                $"used {used} from workspace '{host}'.", IsWarning: false)
+            : new HostCellChoice(comp.InstanceName,
+                $"Cell instance '{comp.InstanceName}': '{comp.CellRef}' is not at the schematic's " +
+                $"stored path, and workspace '{host}' has {hosted.Candidates.Count} cells named " +
+                $"'{name}' ({string.Join(", ", hosted.Candidates)}). Neither was used.", IsWarning: true));
+    }
 
     private static CcellFile? CcellOf(SchematicEditModel model, EditableComponent comp)
     {
@@ -578,7 +640,7 @@ public static class NetExtractor
 
         return model.SchematicDirectory is null
             ? null
-            : CellSymbolResolver.ResolveCcell(comp.CellRef, model.SchematicDirectory);
+            : CellSymbolResolver.ResolveCcell(comp.CellRef, model.SchematicDirectory, model.HostWorkspaceRoot);
     }
 
     /// <summary>
@@ -1411,6 +1473,9 @@ public static class NetExtractor
     {
         /// <summary>Cell KEYS on the path from the extraction root to here.</summary>
         public readonly HashSet<string> InProgress = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary><see cref="ExtractionResult.HostCellChoices"/>, gathered across every level.</summary>
+        public readonly List<HostCellChoice> HostCellChoices = [];
 
         private readonly Dictionary<string, string> _names = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _taken = new(StringComparer.Ordinal);
@@ -2491,7 +2556,7 @@ public static class NetExtractor
             // pins the canvas drew, or a kit part would extract with the wrong terminal count.
             if (model.SchematicDirectory is null && !CellSymbolResolver.NeedsNoBaseDirectory(symRef)) continue;
             result ??= new Dictionary<string, CellSymbolResolution>(StringComparer.Ordinal);
-            result[comp.Id] = CellSymbolResolver.Resolve(symRef, model.SchematicDirectory);
+            result[comp.Id] = CellSymbolResolver.Resolve(symRef, model.SchematicDirectory, model.HostWorkspaceRoot);
         }
         return result;
     }

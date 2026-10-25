@@ -29,6 +29,7 @@ using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Layout.Recognition;
 using CircuitRF.Design.Layout.Recognition.Image;
 using CircuitRF.Design.Schematic.Recognition;
+using CircuitRF.Design.Workspace;
 using RfCore.Export;
 
 namespace CircuitRF.Cli;

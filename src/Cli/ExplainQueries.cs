@@ -483,7 +483,7 @@ internal static class ExplainQueries
     private static (ExplainExtentsJson?, int) SchematicExtents(string csch)
     {
         SchematicEditModel model;
-        try { (model, _, _) = SchematicPersistence.LoadFromFile(csch); }
+        try { (model, _, _) = CircuitSource.LoadSchematic(csch); }
         catch (Exception ex)
         { return (null, JsonRun.Fail(CliDiagnostics.ExplainUnreadable(csch, ex.Message))); }
 
@@ -571,7 +571,7 @@ internal static class ExplainQueries
                 "the footprints a schematic's components state")));
 
         SchematicEditModel model;
-        try { (model, _, _) = SchematicPersistence.LoadFromFile(csch); }
+        try { (model, _, _) = CircuitSource.LoadSchematic(csch); }
         catch (Exception ex) { return ([], JsonRun.Fail(CliDiagnostics.ExplainUnreadable(csch, ex.Message))); }
 
         string baseDir = Path.GetDirectoryName(csch)!;

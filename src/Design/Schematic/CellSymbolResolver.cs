@@ -165,7 +165,10 @@ public static class CellSymbolResolver
         // .cmoves, INSIDE ResolveCellDir. What comes back here is the folder it finally named, plus
         // the record that named it — which every state below carries, because a cell that moved and
         // then lost its primary symbol still needs to say where it went.
-        if (ExternalCellRef.ResolveCellDir(cellRef, baseDir, out var redirect, out bool folderExists)
+        // A LOOSE document's reference that names nothing is looked for in the workspace it is being
+        // resolved on behalf of — the window it is open in, or the run it is part of — last of all
+        // (ExternalCellRef.FindInHostWorkspace). A document inside a workspace is never re-read.
+        if (ExternalCellRef.ResolveCellDir(cellRef, baseDir, workspaceRoot, out var redirect, out bool folderExists)
                 is not { } cellAbsDir)
             return CellSymbolResolution.NotFoundResult;
 
@@ -315,7 +318,8 @@ public static class CellSymbolResolver
 
         try
         {
-            if (ExternalCellRef.ResolveCellDir(cellRef, baseDir) is not { } cellAbsDir) return null;
+            if (ExternalCellRef.ResolveCellDir(cellRef, baseDir, workspaceRoot, out _, out _) is not { } cellAbsDir)
+                return null;
             string ccellPath = Path.Combine(cellAbsDir, CellFolder.CcellFileName);
             return File.Exists(ccellPath) ? CellPersistence.LoadFromFile(ccellPath) : null;
         }

@@ -34,7 +34,10 @@ public static class HierarchyResolver
         // A ws:// reference resolves through the referencing workspace's alias table; a plain one is
         // the path relative to this schematic's own folder (MW2 R-mw2-2). Both land here, so push-in
         // and the elaborator's descent — which both go through this file — need no second rule.
-        var cellDir = ExternalCellRef.ResolveCellDir(comp.CellRef, parentModel.SchematicDirectory);
+        // A loose schematic's reference that names nothing is looked for in the workspace it is run
+        // from, last of all (ExternalCellRef.FindInHostWorkspace).
+        var cellDir = ExternalCellRef.ResolveCellDir(
+            comp.CellRef, parentModel.SchematicDirectory, parentModel.HostWorkspaceRoot, out _, out _);
         if (cellDir is null || !Directory.Exists(cellDir))
         { reason = "cell reference not found"; return false; }
 
@@ -58,7 +61,8 @@ public static class HierarchyResolver
     public static string? ResolvePrimaryPath(EditableComponent comp, SchematicEditModel parentModel)
     {
         if (!CanPushInto(comp, parentModel, out _)) return null;
-        var cellDir = ExternalCellRef.ResolveCellDir(comp.CellRef, parentModel.SchematicDirectory)!;
+        var cellDir = ExternalCellRef.ResolveCellDir(
+            comp.CellRef, parentModel.SchematicDirectory, parentModel.HostWorkspaceRoot, out _, out _)!;
         var pr      = CellFolder.ResolvePrimary(cellDir, ViewType.Schematic);
         return Path.Combine(cellDir, CellFolder.SchematicSubFolder, pr.ResolvedName!);
     }

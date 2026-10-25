@@ -1136,7 +1136,7 @@ internal static class Render
             return JsonRun.Fail(CliDiagnostics.RenderDetailNotApplicable("schematic"));
 
         SchematicEditModel model;
-        try { (model, _, _) = SchematicPersistence.LoadFromFile(t.File); }
+        try { (model, _, _) = CircuitSource.LoadSchematic(t.File); }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RenderDocumentUnreadable(t.File, ex.Message)); }
 
         RunHost.Cancellation.ThrowIfCancellationRequested();

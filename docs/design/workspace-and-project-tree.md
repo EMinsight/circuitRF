@@ -702,6 +702,33 @@ Gate: `tests/Ui.Tests/TreeMoveRedirectTests.cs`.
 
 ---
 
+### 4.5 A loose schematic's cells come from the workspace it is run from *(built 2026-10-25)*
+
+A Known File kept outside the workspace folder belongs to no workspace of its own, and its cell references are
+still relative to where IT is — so `../../FET`, written from inside a cell, names nothing there and every
+instance draws Not Found. Such a schematic is worked on and run from the window it is open in, and that
+window's workspace is its **host** (`SchematicEditModel.HostWorkspaceRoot`, runtime only: one loose file open
+in two windows has two hosts, and can simulate differently in each).
+
+- **Last, never first.** `ExternalCellRef.ResolveCellDir` asks the host only after the stored path and the
+  `.cmoves` redirect (§4.4) have both named nothing. A stored path that resolves wins even when the host also
+  has a cell of that name.
+- **How the host is searched** (`ExternalCellRef.FindInHostWorkspace`): the leading `../` segments are
+  dropped and the rest is read against the host root (`../../FET` → `<host>/FET`); failing that, by cell
+  NAME through `CellLookup`. Two cells of that name are an ambiguity and neither is used.
+- **A schematic inside a workspace is never re-read against another.** Neither are `ws://`, virtual or
+  rooted references, which name their own place.
+- **A run says which cell it used** (`NetExtractor.ExtractionResult.HostCellChoices`): a warning naming both
+  cells and the one used when the stored path and the host each had one, or naming the host's same-named
+  cells when neither was used; an information line when the host's one cell was used because the stored
+  path named nothing. Simulate posts them to Messages; `check` reports them as findings; every headless verb
+  prints them on stderr.
+- **Headless, the host is `--workspace`** (`cli.md` §2's table of flags taken before dispatch). Without it a
+  loose schematic has no host, as in a window with no workspace open.
+- **Save As re-spells the cell references it can** (`SchematicPersistence.SaveToFile`) so they still name
+  the same cell from the new folder. One that already names nothing is left as written, which is the
+  spelling the host lookup reads best.
+
 ## 5. `.cws` contents (refines `project-file-formats.md`)
 
 The `.cws` records **configuration only — never membership** (membership is the filesystem, §intro):

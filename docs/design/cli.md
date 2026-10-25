@@ -208,6 +208,7 @@ verb's own argument loop has to learn about any of them:
 |---|---|
 | `--kits <dir>` | makes an externally-supplied device model resolve headlessly, the way opening a workspace does in the GUI. Repeatable. |
 | `--trust-kit <dir>` | lets THIS run execute the PCell scripts of the kit whose generator manifest is in `<dir>`, to rebuild the generated cells a layout places — §23. Repeatable. |
+| `--workspace <dir \| .cws>` | the workspace a LOOSE schematic (a Known File outside any workspace folder) is run from, as a window's workspace is in the GUI: a cell reference that names nothing is looked for there, last of all (`workspace-and-project-tree.md` §4.5). Ignored for a document inside a workspace. Each instance it decides for is reported — `note:` when the workspace's one cell was used, `warning:` when there were two to choose from — and a path naming no workspace is a refusal. NOT taken for `em`, whose own `--workspace` means the same thing for a `.cem`, nor for `convert`, whose `--workspace` is where imported layers are grafted. |
 | `--json` | one JSON document on stdout and nothing else — §3.2 |
 | `--only`, `--group` | narrow that document's `result` by cube and group name — §3.2 |
 | `--at`, `--range`, `--interp`, `--result` | narrow it by AXIS, or ask for the shape alone — §3.2 |

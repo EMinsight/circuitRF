@@ -295,6 +295,25 @@ internal static class CliDiagnostics
     public static Diagnostic ElaborationWarning(string text) => Diagnostic.Create(
         "elab.warning", DiagnosticSeverity.Warning, "{text}", ("text", text));
 
+    /// <summary>Which cell a loose schematic's instance runs with, when the <c>--workspace</c> it is run
+    /// from was asked (<c>NetExtractor.HostCellChoice</c>): a warning for two candidate cells, a note
+    /// when the workspace's one cell was used because the stored path named nothing.</summary>
+    public static Diagnostic HostCellChoice(string text, bool isWarning) =>
+        isWarning ? HostCellAmbiguous(text) : HostCellUsed(text);
+
+    /// <summary>Two candidate cells for one loose-schematic instance. See <see cref="HostCellChoice"/>.</summary>
+    public static Diagnostic HostCellAmbiguous(string text) => Diagnostic.Create(
+        "schematic.host-cell.ambiguous", DiagnosticSeverity.Warning, "{text}", ("text", text));
+
+    /// <summary>The <c>--workspace</c>'s one cell was used. See <see cref="HostCellChoice"/>.</summary>
+    public static Diagnostic HostCellUsed(string text) => Diagnostic.Create(
+        "schematic.host-cell.used", DiagnosticSeverity.Info, "{text}", ("text", text));
+
+    /// <summary><c>--workspace</c> names neither a folder holding a <c>.cws</c> nor a <c>.cws</c>.</summary>
+    public static Diagnostic HostWorkspaceNotAWorkspace(string path) => Diagnostic.Create(
+        "cli.workspace.not-a-workspace", DiagnosticSeverity.Error,
+        "--workspace {path}: not a workspace — name a folder holding a .cws, or the .cws itself.", ("path", path));
+
     /// <summary>A <c>measure</c> line that would not evaluate.</summary>
     public static Diagnostic MeasurementFailed(string text) => Diagnostic.Create(
         "cli.measurement.failed", DiagnosticSeverity.Warning, "{text}", ("text", text));
@@ -1436,6 +1455,14 @@ internal static class CliDiagnostics
     public static Diagnostic CheckExtractionConflict(string path, string text) => Diagnostic.Create(
         "check.schematic.conflict", DiagnosticSeverity.Warning,
         "{path}: {text}", ("path", path), ("text", text));
+
+    /// <summary><see cref="HostCellChoice"/>, as a <c>check</c> finding on the schematic.</summary>
+    public static Diagnostic CheckHostCellChoice(string path, string text, bool isWarning) =>
+        isWarning
+            ? Diagnostic.Create("check.schematic.host-cell.ambiguous", DiagnosticSeverity.Warning,
+                                "{path}: {text}", ("path", path), ("text", text))
+            : Diagnostic.Create("check.schematic.host-cell.used", DiagnosticSeverity.Info,
+                                "{path}: {text}", ("path", path), ("text", text));
 
     /// <summary>Elaboration threw. This is the one that answers "does it resolve?" for parameters,
     /// expressions and cycles — all three arrive here as the expression engine's own message.</summary>

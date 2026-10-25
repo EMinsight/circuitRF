@@ -173,6 +173,12 @@ internal static class ToolCatalog
         "Report the notes as counts by severity instead of in full. Every warning and error still "
       + "travels; only the informational notes are collapsed.");
 
+    /// <summary>The CLI's global <c>--workspace</c> (CliEntry.HostWorkspace), on the tools that read a
+    /// schematic's cells without running it. <c>run</c> declares its own, which <c>em</c> shares.</summary>
+    private static readonly ToolOption HostWorkspace = new("workspace", "--workspace", OptKind.Path,
+        "The workspace a loose .csch (kept outside any workspace folder) is read from: a cell reference "
+      + "that names nothing is looked for there. Ignored for a document inside a workspace.");
+
     private static readonly ToolOption Set = new("set", "--set", OptKind.StrRepeat,
         "Override a global variable, as name=expr. Applied before elaboration.");
 
@@ -595,7 +601,9 @@ internal static class ToolCatalog
                      // A thermal setup driven from a circuit: one of the CIRCUIT's globals (brief-em3d-79).
                      Set,
                      new("workspace", "--workspace", OptKind.Path,
-                         "The .cws paths resolve against. Default: the nearest one above the .cem."),
+                         "The workspace this run is on behalf of. For em, the .cws paths resolve against "
+                       + "(default: the nearest one above the .cem). For a loose .csch kept outside any "
+                       + "workspace folder, where a cell reference that names nothing is looked for."),
                      new("solver", "--solver", OptKind.Str,
                          "A 3D setup's solver for this run only: " + CircuitRF.Design.Em3d.Em3dSolvers.CliWordList + ". Default: the .cem's Solver3D."),
                      // brief-emi-6 R-emi6-5 — a comparison's reference, as `em --reference`.
@@ -638,6 +646,7 @@ internal static class ToolCatalog
                         new("severity",  "--severity",  OptKind.Str,
                             "What decides the exit code: warning or error. Default error; warnings are reported either way."),
                         Summary,
+                        HostWorkspace,
                     ],
                     ""),
             ]),
@@ -650,6 +659,7 @@ internal static class ToolCatalog
                     [new("path", true, "The document to explain.")],
                     [
                         Set,
+                        HostWorkspace,
                         new("expr",     "--expr",     OptKind.Str, "Evaluate an expression in the design's resolved scope."),
                         // StrOptional, not Str: `explain` reads the name as an OPTIONAL token after
                         // the flag, so an empty string handed through as a value is a name — and
@@ -867,6 +877,7 @@ internal static class ToolCatalog
                     [new("path", true,
                          "The .csch .csym .clay .cdd, 3D .cem or .c3d, a cell folder, or a workspace with cell.")],
                     [
+                        HostWorkspace,
                         new("output", "-o", OptKind.Path,
                             "Required, except with listFields. Where the picture is written; its extension picks the format: "
                           + ".svg, .pdf or .png."),
@@ -1029,6 +1040,7 @@ internal static class ToolCatalog
                         "A .csch, a cell folder, or a workspace with cell — or a .clay, with at least "
                       + "one of ipc/placement/bom — or a .cnl, with toSchematic.")],
                     [
+                        HostWorkspace,
                         new("output", "-o", OptKind.Path,
                             "Where the .cnl is written. Without it the text comes back in the result."),
                         new("cell", "--cell", OptKind.Str, "Which cell, when the path is a workspace."),

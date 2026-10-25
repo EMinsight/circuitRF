@@ -298,7 +298,7 @@ internal static partial class Yield
         // ── 1. The circuit, prepared as Simulate prepares it ─────────────────────
         string full = Path.GetFullPath(input);
         var circuit = kind == DocumentKind.Schematic
-            ? PreparedCircuit.FromSchematic(full)
+            ? CircuitSource.PrepareSchematic(full)
             : PreparedCircuit.FromFile(full, Path.GetDirectoryName(full));
         if (circuit.ReadError is not null || circuit.Lib is null || circuit.Tb is not { } tb)
             return JsonRun.Fail(CliDiagnostics.RunFailed(circuit.ReadError ?? "the design could not be read"));

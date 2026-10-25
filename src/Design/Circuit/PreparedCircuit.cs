@@ -43,6 +43,10 @@ public sealed class PreparedCircuit
     /// nothing to it.</summary>
     public IReadOnlyList<string> FilesRead { get; }
 
+    /// <summary>Which cells a loose schematic's instances were run with from its host workspace
+    /// (<see cref="NetExtractor.ExtractionResult.HostCellChoices"/>). Empty for every other input.</summary>
+    public IReadOnlyList<NetExtractor.HostCellChoice> HostCellChoices { get; private set; } = [];
+
     /// <summary>How many times the netlist was parsed and its cell library built: one, for the life of
     /// this object. The counter R-to2-4 asks a test to hold.</summary>
     public int LibraryResolutions { get; }
@@ -108,14 +112,19 @@ public sealed class PreparedCircuit
     /// writes at the workspace root. The base directory is that workspace root (null for a schematic
     /// belonging to no workspace), as Simulate passes it.
     /// </summary>
-    public static PreparedCircuit FromSchematic(string cschPath)
+    /// <param name="hostWorkspaceRoot">The workspace a LOOSE schematic is run from (the CLI's
+    /// <c>--workspace</c>), standing in for the workspace root it does not have.</param>
+    public static PreparedCircuit FromSchematic(string cschPath, string? hostWorkspaceRoot = null)
     {
-        string? wsRoot = WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(Path.GetFullPath(cschPath)));
+        string? wsRoot = WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(Path.GetFullPath(cschPath)))
+                      ?? (string.IsNullOrWhiteSpace(hostWorkspaceRoot) ? null : WorkspaceRootFinder.Normalize(hostWorkspaceRoot));
         try
         {
-            var (text, files) = SchematicCircuit.CnlTextAndFilesOf(cschPath);
-            return FromText(text, SchematicCircuit.ReferenceBaseOf(cschPath), wsRoot,
-                            Path.GetFileNameWithoutExtension(cschPath), files);
+            var (text, files, choices) = SchematicCircuit.CnlTextAndFilesOf(cschPath, hostWorkspaceRoot);
+            var prepared = FromText(text, SchematicCircuit.ReferenceBaseOf(cschPath, hostWorkspaceRoot), wsRoot,
+                                    Path.GetFileNameWithoutExtension(cschPath), files);
+            prepared.HostCellChoices = choices;
+            return prepared;
         }
         catch (Exception ex)
         {

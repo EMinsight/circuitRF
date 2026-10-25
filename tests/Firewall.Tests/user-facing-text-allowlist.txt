@@ -548,7 +548,7 @@ src/RfCore/Data/DataSet.cs|No cube named '{name}' — DataSet is empty.
 src/RfCore/Data/DataSet.cs|No group named '{group}' in this DataSet.
 src/RfCore/Data/DataSet.cs|Node/branch name '{label}' not found on axis '{axisName}' of cube '{cubeName}'. 
 src/RfCore/Data/DataSet.cs|Parameter cube does not have an axis named '{name}'.
-src/RfCore/Data/DataSet.cs|Port {portNumber} not found on axis '{axisName}' of cube '{cubeName}'.
+src/RfCore/Data/DataSet.cs|Port {portNumber} not found on axis '{axisName}' of cube '{cubeName}' 
 src/RfCore/Data/NetworkMetrics.cs|2-port metrics need at least 2 ports; this network has {nPorts}.
 src/RfCore/Data/NetworkMetrics.cs|DataSet carries no \"S\" cube.
 src/RfCore/Data/NetworkMetrics.cs|Input and output port must differ.
@@ -1487,7 +1487,7 @@ src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a frequency: a n
 src/RfCore/Signals/SignalSpec.cs|empty carrier description
 src/RfCore/Signals/SignalSpec.cs|empty signal description
 src/RfCore/Signals/SignalSpec.cs|unknown carrier field '{k}'
-src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW or FILE)
+src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK or FILE)
 src/RfCore/Signals/SignalSpec.cs|unknown modulation '{v}' (QPSK, 16QAM, 64QAM, 256QAM, 1024QAM)
 
 # ── Pulsed-CW carrier (brief ENV-PCW, 2026-10-24) ─────────────────────────────────────
@@ -1507,3 +1507,11 @@ src/RfCore/Signals/PulsedCw.cs|pCW carrier: {field} must be a positive time (got
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to a PCW carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a fraction of the pulse top
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a time: a number with s, ms, us or ns
+src/RfCore/Signals/Fsk.cs|FSK carrier: BT must be positive, or 0 for no filter (got {s.Bt.ToString(inv)})
+src/RfCore/Signals/Fsk.cs|FSK carrier: Data must be PN9, PN15 or a pattern of 0s and 1s (got '{c.Data}')
+src/RfCore/Signals/Fsk.cs|FSK carrier: Dev must be a positive frequency deviation (got {s.Deviation.ToString(inv)} Hz)
+src/RfCore/Signals/Fsk.cs|FSK carrier: Rb must be a positive bit rate (got {s.BitRate.ToString(inv)} b/s)
+src/RfCore/Signals/ModulatedSignal.cs|an FSK carrier has a constant envelope and is not clipped: remove Clip from the source
+src/RfCore/Signals/ModulatedSignal.cs|an FSK carrier must be the source's only carrier
+src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an FSK carrier
+src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a bit rate: a number with bps, kbps or Mbps

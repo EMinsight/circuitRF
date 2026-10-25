@@ -63,7 +63,7 @@ internal static class Fields
 
         string full = Path.GetFullPath(input);
         var circuit = kind == DocumentKind.Schematic
-            ? PreparedCircuit.FromSchematic(full)
+            ? CircuitSource.PrepareSchematic(full)
             : PreparedCircuit.FromFile(full, Path.GetDirectoryName(full));
         if (circuit.ReadError is { } readError || circuit.Tb is not { } tb)
             return JsonRun.Fail(CliDiagnostics.RunFailed(circuit.ReadError ?? "the design could not be read"));

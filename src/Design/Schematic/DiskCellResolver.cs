@@ -61,6 +61,9 @@ public sealed class DiskCellResolver : ICellResolver
         // Set exactly as Open and Push-In set it — without it the descent stops one level down, and
         // stops silently, because an unresolvable reference is skipped rather than reported.
         schematic.SchematicDirectory = Path.GetDirectoryName(primaryPath);
+        // Carried down so a loose cell reached from a loose top is looked for in the same workspace.
+        // Inert for a cell inside a workspace, which is where a host lookup almost always lands it.
+        schematic.HostWorkspaceRoot = containingModel.HostWorkspaceRoot;
 
         // …/<cell>/schematic/<file>.csch → the cell folder is two levels up.
         string cellDir  = Path.GetDirectoryName(Path.GetDirectoryName(primaryPath))!;

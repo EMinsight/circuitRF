@@ -97,10 +97,14 @@ public static class SchematicTechnology
 
     /// <summary>
     /// What relative references in the netlist a schematic extracts to resolve against: its own workspace's root,
-    /// else its own folder — <c>SchematicCircuit.ReferenceBaseOf</c>, and where Simulate writes that netlist.
+    /// else the workspace a loose schematic is run from, else its own folder — <c>SchematicCircuit.ReferenceBaseOf</c>,
+    /// and where Simulate writes that netlist.
     /// </summary>
     public static string? NetlistBaseOf(SchematicEditModel model) =>
-        model.SchematicDirectory is not { } dir ? null : WorkspaceRootFinder.WorkspaceDirOf(dir) ?? dir;
+        model.SchematicDirectory is not { } dir ? null
+            : WorkspaceRootFinder.WorkspaceDirOf(dir)
+              ?? (string.IsNullOrWhiteSpace(model.HostWorkspaceRoot) ? null : WorkspaceRootFinder.Normalize(model.HostWorkspaceRoot))
+              ?? dir;
 
     /// <summary>
     /// The <c>technology</c> statement of the netlist <paramref name="model"/> extracts to: its <c>TechRef</c>

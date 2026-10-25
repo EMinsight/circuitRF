@@ -117,6 +117,20 @@ public static class ExternalCellRef
     /// </summary>
     public static string? ResolveCellDir(
         string? cellRef, string? baseDir, out MoveRedirectHit? redirect, out bool folderExists)
+        => ResolveCellDir(cellRef, baseDir, null, out redirect, out folderExists);
+
+    /// <summary>
+    /// The same answer, with one more step for a LOOSE document: when the reference names nothing
+    /// even after <c>.cmoves</c>, it is looked for in <paramref name="hostWorkspaceRoot"/> — the
+    /// workspace the document is being worked on and run from (<see cref="FindInHostWorkspace"/>).
+    ///
+    /// <para><b>Last, never first.</b> A path that resolves is what the file says, and it wins even
+    /// when the host also holds a cell of that name; a run says so (<c>NetExtractor</c>'s note). The
+    /// host is only asked about a reference that would otherwise be Not Found.</para>
+    /// </summary>
+    public static string? ResolveCellDir(
+        string? cellRef, string? baseDir, string? hostWorkspaceRoot,
+        out MoveRedirectHit? redirect, out bool folderExists)
     {
         redirect = null;
         folderExists = false;
@@ -143,12 +157,97 @@ public static class ExternalCellRef
         if (CellStat.DirectoryExists(direct, cache: true)) { folderExists = true; return direct; }
 
         // Step 3, and only now.
-        if (MoveRedirects.Resolve(direct) is not { } hit) return direct;
+        if (MoveRedirects.Resolve(direct) is not { } hit)
+        {
+            // Step 4: a loose document's host workspace, for a reference nothing else answered.
+            if (FindInHostWorkspace(cellRef, baseDir, hostWorkspaceRoot)?.CellDir is { } hosted)
+            {
+                folderExists = true;
+                return hosted;
+            }
+            return direct;
+        }
 
         redirect     = hit;
         folderExists = true;
         return hit.ResolvedDir;
     }
+
+    // ── A loose document's host workspace ─────────────────────────────────────
+
+    /// <summary>What <see cref="FindInHostWorkspace"/> found: the one cell it would use, or null when
+    /// several cells share the name; <see cref="Candidates"/> lists every one it considered.</summary>
+    public sealed record HostCellMatch(string? CellDir, IReadOnlyList<string> Candidates);
+
+    /// <summary>
+    /// The cell <paramref name="cellRef"/> names in <paramref name="hostWorkspaceRoot"/>, for a
+    /// document that belongs to NO workspace of its own — a Known File kept outside the workspace
+    /// folder. Null when the document has a workspace of its own (its references are never
+    /// re-read against another), when there is no host, or when the host has no such cell.
+    ///
+    /// <para><b>Why a loose document needs this.</b> A cell reference is relative to the document
+    /// holding it, and one written from inside a cell reads <c>../../FET</c>. In a loose file that
+    /// path names nothing, so every instance drew Not Found even though the workspace the file was
+    /// opened in has a cell called <c>FET</c>.</para>
+    ///
+    /// <para><b>Two steps, and the first is the common case.</b> The leading <c>../</c> segments are
+    /// dropped and the rest is read against the host root, which is where a reference written from
+    /// a cell at the root points (<c>../../footprints/C0402</c> → <c>footprints/C0402</c>). Failing
+    /// that, the host is searched by cell NAME through <see cref="CellLookup"/>. Two cells of that
+    /// name are an AMBIGUITY, reported with no cell chosen: picking the first would run a design
+    /// against a cell nobody picked.</para>
+    ///
+    /// <para><b>The answer depends on the host</b>, so one loose file run from two workspaces can use
+    /// two different cells. That is the point of it, and a run says which cell it used.</para>
+    /// </summary>
+    public static HostCellMatch? FindInHostWorkspace(string? cellRef, string? baseDir, string? hostWorkspaceRoot)
+    {
+        if (string.IsNullOrWhiteSpace(hostWorkspaceRoot) || string.IsNullOrEmpty(cellRef) || baseDir is null)
+            return null;
+        // A ws:// reference names its workspace, a virtual one is not a path, and a rooted one names
+        // one place on purpose: none of them is re-read against the host.
+        if (cellRef.Contains("://", StringComparison.Ordinal) || Path.IsPathRooted(cellRef)) return null;
+        if (WorkspaceRootFinder.WorkspaceDirOf(baseDir) is not null) return null;
+
+        string root = WorkspaceRootFinder.Normalize(hostWorkspaceRoot);
+        string[] rest = [.. cellRef.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries)
+                                   .SkipWhile(seg => seg is "." or "..")];
+        if (rest.Length == 0) return null;
+
+        try
+        {
+            string anchored = Path.GetFullPath(Path.Combine([root, .. rest]));
+            if (!WorkspaceRootFinder.IsOutside(anchored, root) && CellLookup.LooksLikeCellFolder(anchored))
+                return new HostCellMatch(anchored, [anchored]);
+        }
+        catch { /* a name the OS will not parse: fall through to the name search */ }
+
+        var found = CellsNamed(root, rest[^1]);
+        return found.Count switch
+        {
+            0 => null,
+            1 => new HostCellMatch(found[0], found),
+            _ => new HostCellMatch(null, found),
+        };
+    }
+
+    /// <summary><see cref="CellLookup.Find"/>, memoised: it walks the host's tree, and a loose
+    /// document's references are resolved on every edit. Bounded by <see cref="CellStat.Freshness"/>
+    /// so a cell created a moment ago is found, and dropped with every other memo here.</summary>
+    private static IReadOnlyList<string> CellsNamed(string root, string name)
+    {
+        var key = (root, name.ToLowerInvariant());
+        lock (_memoGate)
+            if (_namedMemo.TryGetValue(key, out var memo) && DateTime.UtcNow - memo.Taken <= CellStat.Freshness)
+                return memo.Found;
+
+        var found = CellLookup.Find(root, name);
+        lock (_memoGate) _namedMemo[key] = (DateTime.UtcNow, found);
+        return found;
+    }
+
+    private static readonly Dictionary<(string Root, string Name), (DateTime Taken, IReadOnlyList<string> Found)>
+        _namedMemo = [];
 
     /// <summary>
     /// The workspace ROOT a <c>ws://</c> reference's alias resolves to — the directory holding the
@@ -330,7 +429,7 @@ public static class ExternalCellRef
     /// resolvers that depend on it are invalidated.</summary>
     public static void InvalidateCache()
     {
-        lock (_memoGate) _aliasMemo.Clear();
+        lock (_memoGate) { _aliasMemo.Clear(); _namedMemo.Clear(); }
         // TM2 R-tm2-10: the forwarding records a moved reference resolves through, and the walk-up
         // that finds the root holding them, are memoised on exactly the same terms and dropped here
         // rather than on a lifecycle of their own — a third memo that had to be invalidated

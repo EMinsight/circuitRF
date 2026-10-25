@@ -27,7 +27,7 @@ internal static class ExplainTunables
                     string csch = kind == DocumentKind.Schematic ? path : PrimarySchematic(path) ?? "";
                     if (csch.Length == 0)
                         return (null, JsonRun.Fail(CliDiagnostics.ExplainNotApplicable("--tunables", DocumentKinds.Name(kind))));
-                    var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
+                    var (model, _, _) = CircuitSource.LoadSchematic(csch);
                     string? cws = DocumentKinds.AncestorCws(Path.GetFullPath(csch));
                     catalog = TunableCatalog.Discover(model, DiskCellResolver.Instance,
                                                       cws is null ? null : Path.GetDirectoryName(cws));

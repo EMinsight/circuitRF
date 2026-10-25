@@ -61,6 +61,13 @@ public static class CliEntry
     /// because they are taken before dispatch.</summary>
     internal static IReadOnlyList<string> KitFolders { get; private set; } = [];
 
+    /// <summary>
+    /// This invocation's <c>--workspace</c>, as a workspace ROOT: the workspace a LOOSE schematic is
+    /// run from, as a window's workspace is in the GUI (<c>SchematicEditModel.HostWorkspaceRoot</c>).
+    /// Null without the flag. Reset on every Run, so a <c>serve</c> call never inherits another's.
+    /// </summary>
+    internal static string? HostWorkspace { get; private set; }
+
     /// <summary>The <c>--kits</c> folder sets already given a resolver. See Run.</summary>
     private static readonly HashSet<string> _kitsAdded = [];
 
@@ -149,6 +156,20 @@ JsonRun.Verb = args[0].ToLowerInvariant();
 // gratuitous.
 if (JsonRun.Malformed is { } bad)
     return JsonRun.Finish(JsonRun.Fail(CliDiagnostics.NarrowingMalformed(bad.Option, bad.Text)));
+
+// --workspace <dir | .cws>: the workspace a loose schematic (a Known File outside the workspace
+// folder) is run from, so its cell references resolve as they do in that workspace's window. Taken
+// here, like --kits, so every verb that reads a schematic honours it without learning it — except
+// `em`, which parses the same flag for the same purpose itself, and `convert`, whose --workspace is
+// the workspace imported layers are grafted onto.
+HostWorkspace = null;
+if (JsonRun.Verb is not ("em" or "convert"))
+{
+    args = TakeHostWorkspace(args, out string? hostGiven, out string? hostRoot);
+    if (hostGiven is not null && hostRoot is null)
+        return JsonRun.Finish(JsonRun.Fail(CliDiagnostics.HostWorkspaceNotAWorkspace(hostGiven)));
+    HostWorkspace = hostRoot;
+}
 
 // The verb's function, or null for a word that is not one. ONE table: IsVerb below asks the same
 // question of the same switch, so the installed executable's decision "is this a command line or a
@@ -2517,6 +2538,41 @@ static AnalysisSettings DcSettingsFrom(string[] args)
     };
 }
 
+/// <summary>
+/// Pulls <c>--workspace &lt;dir | .cws&gt;</c> out of the argument list, returning what remains.
+/// <paramref name="root"/> is the workspace root it names, or null when the flag is absent or names
+/// no workspace (then <paramref name="given"/> is what was written, for the refusal). The last one
+/// given wins.
+/// </summary>
+static string[] TakeHostWorkspace(string[] args, out string? given, out string? root)
+{
+    given = null;
+    root  = null;
+    var rest = new List<string>(args.Length);
+
+    for (int i = 0; i < args.Length; i++)
+    {
+        if (args[i] == "--workspace" && i + 1 < args.Length)
+        {
+            given = args[++i];
+            continue;
+        }
+        rest.Add(args[i]);
+    }
+
+    if (given is not null)
+    {
+        string full = Path.GetFullPath(given);
+        string? dir = string.Equals(Path.GetFileName(full), ".cws", StringComparison.OrdinalIgnoreCase)
+            ? Path.GetDirectoryName(full)
+            : full;
+        if (dir is not null && File.Exists(Path.Combine(dir, ".cws")))
+            root = WorkspaceRootFinder.Normalize(dir);
+    }
+    return rest.ToArray();
+}
+
+/// <summary>
 /// Pulls every <c>--kits &lt;dir&gt;</c> out of the argument list, returning what remains. Repeatable,
 /// because a design may draw on kits installed in more than one place.
 /// </summary>
@@ -2812,6 +2868,9 @@ static int PrintHelp()
     Console.WriteLine("Options (any command):");
     Console.WriteLine("  --kits <dir>        folder of installed kits, for externally-provided");
     Console.WriteLine("                      devices (ExtDevice Provider=...). Repeatable.");
+    Console.WriteLine("  --workspace <dir>   the workspace a loose .csch (one outside any workspace");
+    Console.WriteLine("                      folder) is run from: a cell reference that names nothing");
+    Console.WriteLine("                      is looked for there. em and convert read their own.");
     Console.WriteLine("  --json              one JSON document on stdout and nothing else; progress,");
     Console.WriteLine("                      notes and errors stay on stderr. A failed run still");
     Console.WriteLine("                      emits a document — the failure is the payload.");

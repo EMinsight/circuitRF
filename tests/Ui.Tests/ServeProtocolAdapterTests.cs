@@ -602,7 +602,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         var doc = JsonNode.Parse(server.Call("solver", new JsonObject()))!;
         Assert.Equal(0, doc["exitCode"]!.GetValue<int>());
         var solvers = doc["result"]!["solvers"]!.AsArray();
-        Assert.Equal(["palace", "gmsh", "openems"], solvers.Select(s => s!["tool"]!.GetValue<string>()));
+        Assert.Equal(["palace", "gmsh", "openems", "emerge"], solvers.Select(s => s!["tool"]!.GetValue<string>()));
 
         // What this machine has installed is not this test's business; what a FOUND Palace reports is.
         var palace = solvers[0]!;

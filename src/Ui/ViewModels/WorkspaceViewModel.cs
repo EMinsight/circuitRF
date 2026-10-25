@@ -4309,6 +4309,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? result.Conflicts
             : (IReadOnlyList<string>)[.. cornerProblems, .. result.Conflicts];
 
+        // Which cell each instance of a loose Known File ran with, where this workspace was asked:
+        // a warning when there were two to choose from, information when this workspace's was used.
+        foreach (var choice in result.HostCellChoices)
+        {
+            if (choice.IsWarning) Messages.Warning(choice.Text);
+            else                  Messages.Info(choice.Text);
+        }
+
         // The technology statement is relative to the schematic's own workspace root; restated for where this
         // file actually lands (another workspace's root, or the scratch folder with none open).
         result.TestBench.Technology = SchematicTechnology.Rebase(
@@ -12157,6 +12165,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // re-registers, so the name follows the file. See SchematicViewModel.DocumentName.
         vm.DocumentName = Path.GetFileName(absNormalizedPath);
         _registry.Register(absNormalizedPath, vm, UpdateCellDirtyForSession);
+
+        // A Known File kept outside the workspace folder is worked on and run from THIS window's
+        // workspace: a cell reference that names nothing is looked for there (and only for such a
+        // file — the model ignores the host when the schematic has a workspace of its own). Set here
+        // because Save As re-registers, so a file saved out of, or into, the workspace re-answers.
+        if (vm.EditModel.HostWorkspaceRoot != CurrentWorkspaceRoot)
+        {
+            vm.EditModel.HostWorkspaceRoot = CurrentWorkspaceRoot;
+            vm.EditModel.NotifyChanged();
+        }
         return vm;
     }
 
@@ -12170,6 +12188,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (_registry.TryGet(key, out var existing))
             return existing!;
         var (editModel, _, _) = SchematicPersistence.LoadFromFile(key);
+        // Before the scans below, so a loose file's cells found in this workspace are scanned too.
+        editModel.HostWorkspaceRoot = CurrentWorkspaceRoot;
         ReportUnknownComponents(editModel, key);
 
         // What the read ignored, misread or dropped (SchematicLoadAudit) — once per fresh load, the
@@ -12230,7 +12250,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private IReadOnlyList<CellInterfaceChange> ReportInterfaceChanges(SchematicEditModel model, string path)
     {
         var changes = CellInterfaceWatch.Scan(
-            model, WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(path)));
+            model, WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(path)) ?? model.HostWorkspaceRoot);
         foreach (var change in changes) Messages.Warning(change.Message, path);
         return changes;
     }
@@ -12248,7 +12268,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private IReadOnlyList<MovedCellReport> ReportMovedCells(SchematicEditModel model, string path)
     {
         var reports = CellMoveWatch.Scan(
-            model, WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(path)));
+            model, WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(path)) ?? model.HostWorkspaceRoot);
         foreach (var report in reports) Messages.Info(report.Message, path);
         return reports;
     }

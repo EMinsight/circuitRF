@@ -47,10 +47,33 @@ public static class SchematicCircuit
     /// Extraction, then the `.cnl` round trip — see this type's own remarks for why the second half
     /// is not optional.
     /// </summary>
-    public static (Library Lib, TestBench Tb) FromSchematic(string cschPath)
+    /// <param name="hostWorkspaceRoot">The workspace a LOOSE schematic is run from — a window's own, or
+    /// the CLI's <c>--workspace</c> (<see cref="SchematicEditModel.HostWorkspaceRoot"/>). Ignored for a
+    /// schematic inside a workspace.</param>
+    public static (Library Lib, TestBench Tb) FromSchematic(string cschPath, string? hostWorkspaceRoot = null)
     {
+        var (extracted, name) = ExtractFile(cschPath, hostWorkspaceRoot);
+        return FromExtraction(extracted, name, cschPath, hostWorkspaceRoot);
+    }
+
+    /// <summary>The round trip of an extraction <see cref="ExtractFile"/> made — the second half of
+    /// <see cref="FromSchematic(string, string?)"/>, for a caller that reports the extraction first.</summary>
+    public static (Library Lib, TestBench Tb) FromExtraction(
+        NetExtractor.ExtractionResult extracted, string name, string cschPath, string? hostWorkspaceRoot = null)
+        => RoundTrip(CnlTextOf(extracted, name), name, ReferenceBaseOf(cschPath, hostWorkspaceRoot));
+
+    /// <summary>
+    /// The schematic at <paramref name="cschPath"/> read and extracted as a run extracts it, with its
+    /// test-bench name. The one load every path-taking entry point here goes through, so the host
+    /// workspace reaches every one of them.
+    /// </summary>
+    public static (NetExtractor.ExtractionResult Extracted, string Name) ExtractFile(
+        string cschPath, string? hostWorkspaceRoot = null)
+    {
+        var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
+        model.HostWorkspaceRoot = hostWorkspaceRoot;
         string name = Path.GetFileNameWithoutExtension(cschPath);
-        return RoundTrip(CnlTextOf(cschPath), name, ReferenceBaseOf(cschPath));
+        return (ExtractInWorkspace(model, name, DiskCellResolver.Instance, cschPath), name);
     }
 
     /// <inheritdoc cref="FromSchematic(string)"/>
@@ -103,11 +126,10 @@ public static class SchematicCircuit
         => CnlTextOf(Extract(model, testBenchName), testBenchName);
 
     /// <inheritdoc cref="CnlTextOf(NetExtractor.ExtractionResult, string)"/>
-    public static string CnlTextOf(string cschPath)
+    public static string CnlTextOf(string cschPath, string? hostWorkspaceRoot = null)
     {
-        var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
-        string name = Path.GetFileNameWithoutExtension(cschPath);
-        return CnlTextOf(ExtractInWorkspace(model, name, DiskCellResolver.Instance, cschPath), name);
+        var (extracted, name) = ExtractFile(cschPath, hostWorkspaceRoot);
+        return CnlTextOf(extracted, name);
     }
 
     /// <summary>
@@ -138,11 +160,21 @@ public static class SchematicCircuit
     /// </summary>
     public static (string Text, IReadOnlyList<string> FilesRead) CnlTextAndFilesOf(string cschPath)
     {
+        var (text, files, _) = CnlTextAndFilesOf(cschPath, null);
+        return (text, files);
+    }
+
+    /// <inheritdoc cref="CnlTextAndFilesOf(string)"/>
+    /// <remarks>With the workspace a loose schematic is run from, and the cells it chose there.</remarks>
+    public static (string Text, IReadOnlyList<string> FilesRead, IReadOnlyList<NetExtractor.HostCellChoice> HostCellChoices)
+        CnlTextAndFilesOf(string cschPath, string? hostWorkspaceRoot)
+    {
         var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
+        model.HostWorkspaceRoot = hostWorkspaceRoot;
         string name = Path.GetFileNameWithoutExtension(cschPath);
         var watch = new WatchedResolver(Path.GetFullPath(cschPath));
-        string text = CnlTextOf(ExtractInWorkspace(model, name, watch, cschPath), name);
-        return (text, watch.Files);
+        var extracted = ExtractInWorkspace(model, name, watch, cschPath);
+        return (CnlTextOf(extracted, name), watch.Files, extracted.HostCellChoices);
     }
 
     /// <summary>
@@ -189,12 +221,15 @@ public static class SchematicCircuit
     /// wrong was not the interesting part — that they disagreed at all is what made a verb's answer
     /// stop meaning anything about the window.</para>
     ///
-    /// <para>The no-workspace fallback is the document's own folder, which is the only base a loose
-    /// <c>.csch</c> can reasonably have, and the same fallback <c>SnpPathPolicy.Resolve</c> takes.</para>
+    /// <para>The no-workspace fallback is the workspace the loose document is RUN from when there is
+    /// one — where Simulate writes <c>netlist.cnl</c> for a Known File — and otherwise the document's
+    /// own folder, the same fallback <c>SnpPathPolicy.Resolve</c> takes.</para>
     /// </summary>
-    public static string? ReferenceBaseOf(string documentPath)
+    public static string? ReferenceBaseOf(string documentPath, string? hostWorkspaceRoot = null)
     {
         string? own = Path.GetDirectoryName(Path.GetFullPath(documentPath));
-        return WorkspaceRootFinder.WorkspaceDirOf(own) ?? own;
+        return WorkspaceRootFinder.WorkspaceDirOf(own)
+            ?? (string.IsNullOrWhiteSpace(hostWorkspaceRoot) ? null : WorkspaceRootFinder.Normalize(hostWorkspaceRoot))
+            ?? own;
     }
 }

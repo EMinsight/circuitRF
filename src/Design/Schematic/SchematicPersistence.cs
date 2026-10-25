@@ -427,6 +427,7 @@ public static class SchematicPersistence
                                   double panX = 0, double panY = 0, double zoom = 1.0,
                                   bool rebaseDirectory = true)
     {
+        if (rebaseDirectory) RebaseCellRefs(model, Path.GetDirectoryName(Path.GetFullPath(path)));
         AtomicFile.WriteAllText(path, Serialize(model, cellName, panX, panY, zoom));
         // A model saved to a path now has a known on-disk location. Record its directory so
         // CellRef relative-path resolution works — mirrors what LoadFromFile does on open.
@@ -435,6 +436,42 @@ public static class SchematicPersistence
         // the base dir to compute and resolve CellRef — aborted silently at its first guard.
         if (rebaseDirectory)
             model.SchematicDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
+    }
+
+    /// <summary>
+    /// Re-spells every path-form cell reference for a schematic about to live in
+    /// <paramref name="newDirectory"/>, so each one still names the cell it named. A no-op for an
+    /// ordinary save, where the directory does not change.
+    ///
+    /// <para><b>Without this, Save As broke every cell reference in the file.</b> A reference is
+    /// relative to the schematic's own folder, and the save wrote it unchanged and then moved that
+    /// folder — so a schematic saved out of a cell as a Known File drew every instance Not Found.</para>
+    ///
+    /// <para>A reference that already names nothing is left exactly as written: there is no target
+    /// to re-spell it against, and its original spelling is what a host-workspace lookup reads
+    /// (<see cref="Workspace.ExternalCellRef.FindInHostWorkspace"/>). Virtual references, <c>ws://</c>
+    /// ones and rooted ones do not depend on the folder and are never touched.</para>
+    /// </summary>
+    private static void RebaseCellRefs(SchematicEditModel model, string? newDirectory)
+    {
+        string? oldDirectory = model.SchematicDirectory;
+        if (oldDirectory is null || newDirectory is null) return;
+        if (string.Equals(Path.GetFullPath(oldDirectory), Path.GetFullPath(newDirectory), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        foreach (var comp in model.Components)
+        {
+            if (comp.CellRef is not { Length: > 0 } cellRef) continue;
+            if (cellRef.Contains("://", StringComparison.Ordinal) || Path.IsPathRooted(cellRef)) continue;
+            if (PdkKitRegistry.IsKitRef(cellRef) || WBondSymbolProvider.IsWBondRef(cellRef)
+                || SpiceModelSymbolProvider.IsSpiceModelRef(cellRef) || ComposedFetSymbolProvider.IsComposedFetRef(cellRef))
+                continue;
+
+            if (Workspace.ExternalCellRef.ResolveCellDir(cellRef, oldDirectory, out _, out bool exists) is not { } cellDir
+                || !exists)
+                continue;
+            comp.CellRef = Workspace.ExternalCellRef.MakeCellRef(newDirectory, cellDir);
+        }
     }
 
     // ── Read ──────────────────────────────────────────────────────────────────

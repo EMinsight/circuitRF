@@ -1,6 +1,7 @@
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
+using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 
@@ -64,9 +65,64 @@ internal static class CircuitSource
         }
     }
 
-    /// <inheritdoc cref="SchematicCircuit.FromSchematic(string)"/>
+    /// <inheritdoc cref="SchematicCircuit.FromSchematic(string, string?)"/>
+    /// <remarks>With this invocation's <c>--workspace</c> as the host, and the cells it chose reported
+    /// (<see cref="ReportHostCellChoices"/>).</remarks>
     public static (Library Lib, TestBench Tb) FromSchematic(string cschPath)
-        => SchematicCircuit.FromSchematic(cschPath);
+    {
+        var (extracted, name) = ExtractFile(cschPath);
+        return SchematicCircuit.FromExtraction(extracted, name, cschPath, CliEntry.HostWorkspace);
+    }
+
+    /// <summary><see cref="SchematicCircuit.ExtractFile"/> with this invocation's <c>--workspace</c>,
+    /// its host-cell choices reported.</summary>
+    public static (NetExtractor.ExtractionResult Extracted, string Name) ExtractFile(string cschPath)
+    {
+        var result = SchematicCircuit.ExtractFile(cschPath, CliEntry.HostWorkspace);
+        ReportHostCellChoices(result.Extracted);
+        return result;
+    }
+
+    /// <summary><see cref="PreparedCircuit.FromSchematic"/> with this invocation's <c>--workspace</c>, its
+    /// host-cell choices reported — what <c>opt</c>, <c>yield</c> and <c>fields</c> read a schematic with.</summary>
+    public static PreparedCircuit PrepareSchematic(string cschPath)
+    {
+        var circuit = PreparedCircuit.FromSchematic(cschPath, CliEntry.HostWorkspace);
+        ReportHostCellChoices(circuit.HostCellChoices);
+        return circuit;
+    }
+
+    /// <summary>
+    /// A schematic read from disk for a verb, with this invocation's <c>--workspace</c> as its host
+    /// (<see cref="SchematicEditModel.HostWorkspaceRoot"/>). Every verb that RESOLVES a schematic's
+    /// cells reads it through here, so a loose schematic finds the same cells in every verb that it
+    /// finds in the workspace's window.
+    /// </summary>
+    public static (SchematicEditModel Model, CschViewState View, string CellName) LoadSchematic(string cschPath)
+    {
+        var loaded = SchematicPersistence.LoadFromFile(cschPath);
+        loaded.model.HostWorkspaceRoot = CliEntry.HostWorkspace;
+        return loaded;
+    }
+
+    /// <summary>
+    /// Says on stderr which cell each loose-schematic instance was run with, where the
+    /// <c>--workspace</c> it is run from was asked — the same sentences the GUI posts to Messages
+    /// when it simulates. <c>warning: </c> for two candidates, <c>note: </c> for the one used.
+    /// </summary>
+    public static void ReportHostCellChoices(NetExtractor.ExtractionResult extracted)
+        => ReportHostCellChoices(extracted.HostCellChoices);
+
+    /// <inheritdoc cref="ReportHostCellChoices(NetExtractor.ExtractionResult)"/>
+    public static void ReportHostCellChoices(IReadOnlyList<NetExtractor.HostCellChoice> choices)
+    {
+        foreach (var choice in choices)
+        {
+            var d = CliDiagnostics.HostCellChoice(choice.Text, choice.IsWarning);
+            Console.Error.WriteLine((choice.IsWarning ? "warning: " : "note: ") + d.Render());
+            JsonRun.Note(d);
+        }
+    }
 
     /// <inheritdoc cref="SchematicCircuit.FromSchematic(SchematicEditModel, string, string?)"/>
     public static (Library Lib, TestBench Tb) FromSchematic(
@@ -77,8 +133,12 @@ internal static class CircuitSource
     public static string CnlTextOf(SchematicEditModel model, string testBenchName)
         => SchematicCircuit.CnlTextOf(model, testBenchName);
 
-    /// <inheritdoc cref="SchematicCircuit.CnlTextOf(string)"/>
-    public static string CnlTextOf(string cschPath) => SchematicCircuit.CnlTextOf(cschPath);
+    /// <inheritdoc cref="SchematicCircuit.CnlTextOf(string, string?)"/>
+    public static string CnlTextOf(string cschPath)
+    {
+        var (extracted, name) = ExtractFile(cschPath);
+        return SchematicCircuit.CnlTextOf(extracted, name);
+    }
 
     /// <summary>
     /// What a run verb's input resolves its relative file references against — a <c>.cnl</c> its own folder, as
@@ -89,7 +149,7 @@ internal static class CircuitSource
     /// </summary>
     public static string? ReferenceBaseOf(string inputPath) =>
         DocumentKinds.Classify(inputPath) == DocumentKind.Schematic
-            ? SchematicCircuit.ReferenceBaseOf(inputPath)
+            ? SchematicCircuit.ReferenceBaseOf(inputPath, CliEntry.HostWorkspace)
             : Path.GetDirectoryName(Path.GetFullPath(inputPath));
 
     /// <summary>

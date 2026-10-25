@@ -2,6 +2,7 @@ using System.Linq;
 using System.Text;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.Lvs;
+using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 using RfCore.Export;
 
