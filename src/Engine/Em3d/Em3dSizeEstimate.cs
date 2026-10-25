@@ -202,6 +202,26 @@ public static class Em3dSizeEstimate
     public static long? PalaceStaticMemoryBytesForMesh(long tetrahedra, int order, int refinementPasses)
         => PalaceMemoryBytes((long)Math.Round(tetrahedra * UnknownsPerTet(order, true)), order, refinementPasses, isStatic: true);
 
+    /// <summary>
+    /// brief-dfr27-5 R-dfr27-5-5 — the process count the driven per-unknown figures were measured on (F0's runs, eight ranks).
+    /// </summary>
+    public const int PalaceMeasuredProcesses = 8;
+
+    /// <summary>
+    /// brief-dfr27-5 R-dfr27-5-5 — Palace's peak memory on ONE process, as a share of its peak on
+    /// <see cref="PalaceMeasuredProcesses"/>. Measured on the round-26 ten-layer board (218,437 order-1 unknowns, one
+    /// excitation at 3.5 GHz, Palace's own Total HWM): 2.5, 3.0, 3.5 and 4.3 GB on 1, 2, 4 and 8 processes, and 4.5 GB on
+    /// ten (six excitations). Every rank carries its own preconditioner and its share of the mesh's halo, so the peak
+    /// climbs about evenly with each doubling of the count; a line in log2 of the count through 1 and 8 lies on or above
+    /// every one-excitation point, and reads 4.49 GB for the ten-process run of six excitations.
+    /// </summary>
+    public const double PalaceOneProcessShare = 2.5 / 4.3;
+
+    /// <summary>Palace's peak memory on <paramref name="processes"/> processes, as a share of its peak on
+    /// <see cref="PalaceMeasuredProcesses"/> — the factor a driven estimate is scaled by for the run's own count.</summary>
+    public static double PalaceProcessFactor(int processes)
+        => PalaceOneProcessShare + (1 - PalaceOneProcessShare) * Math.Log2(Math.Max(1, processes)) / Math.Log2(PalaceMeasuredProcesses);
+
     /// <summary>Palace's peak memory for <paramref name="unknowns"/> at <paramref name="order"/>, with
     /// <see cref="PalaceRefinementMemoryFactor"/> when any refinement pass is allowed.</summary>
     public static long PalaceMemoryBytes(long unknowns, int order, int refinementPasses)

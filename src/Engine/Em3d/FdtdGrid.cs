@@ -187,6 +187,16 @@ public sealed record FdtdLineSource(
     double?      LocalCellM     = null,
     string?      LocalCellSetBy = null)
 {
+    /// <summary>brief-dfr27-5 R-dfr27-5-1 — for a conductor's line on its edge, face or extreme, the side of the line its
+    /// metal is on (+1 above, −1 below); null where that is not known (a material face, a port, a polyhedron's edge). A
+    /// thirds line's side follows from its kind and position, so it is not stored. The merge reads it to keep a conductor's
+    /// own width and thickness, and a gap between two conductors.</summary>
+    public int? MetalSide { get; init; }
+
+    /// <summary>brief-dfr27-5 R-dfr27-5-1 — an extreme of a planar conductor's curved or diagonal outline (a pour's clearance
+    /// hole, a round pad), which the grid staircases between its lines anyway; a solid's extreme (a via barrel's) is not.</summary>
+    public bool Outline { get; init; }
+
     /// <summary>The source as a phrase: <c>'strip' edge at x = 300 µm (thirds rule, inside; local cell 75 µm, set by 'pad')</c>.</summary>
     public string Describe(FdtdAxis axis)
     {
@@ -235,11 +245,19 @@ public sealed record FdtdMerge(
     double                        DistanceM,
     double                        MergedAtM)
 {
+    /// <summary>brief-dfr27-5 R-dfr27-5-1 — for a merge of two lines closer than
+    /// <see cref="FdtdGrid.CrossFeatureMergeFraction"/> of their local cell (not MinCell), that local cell; null for a merge
+    /// under MinCell.</summary>
+    public double? LocalCellM { get; init; }
+
     public string Sentence =>
         $"On {FdtdGrid.AxisName(Axis)}: {string.Join(" and ", First.Select(s => s.Describe(Axis)))} and " +
         $"{string.Join(" and ", Second.Select(s => s.Describe(Axis)))} want lines " +
-        $"{FdtdGrid.FormatLength(DistanceM)} apart, closer than MinCell; merged to one line at " +
-        $"{FdtdGrid.AxisName(Axis)} = {FdtdGrid.FormatLength(MergedAtM)}.";
+        $"{FdtdGrid.FormatLength(DistanceM)} apart, " +
+        (LocalCellM is { } h
+            ? $"closer than a quarter of their local cell ({FdtdGrid.FormatLength(h)})"
+            : "closer than MinCell") +
+        $"; merged to one line at {FdtdGrid.AxisName(Axis)} = {FdtdGrid.FormatLength(MergedAtM)}.";
 }
 
 /// <summary>
@@ -364,6 +382,19 @@ public static partial class FdtdGrid
     public const double MinCellFeatureFraction = 0.1;
 
     /// <summary>
+    /// brief-dfr27-5 R-dfr27-5-1. Two lines from DIFFERENT features closer than this fraction of the local cell they sit
+    /// in — the smaller of their thirds-rule cells — are merged, not only those closer than MinCell. Imported board layers
+    /// land sub-micron to tens of microns apart (a ground pour's edge on one layer, the same pour on the next), and each
+    /// edge's own thirds pair, placed with no knowledge of the other layer's, left a 0.97 µm cell on a 2.4 GHz board: a
+    /// time step 100 times smaller than the board needs. A quarter moves no line by more than a quarter of its own cell, so
+    /// every thirds line stays on its own side of its edge (a third inside, two thirds outside). The thirds lines of one
+    /// conductor's edges with the metal on opposite sides — a strip's two edges, a slot's two faces — keep MinCell, and so do
+    /// two lines with no local cell (the z planes of a stackup, a via's wall) unless one is a planar outline's extreme.
+    /// Same-side edges of one conductor a few microns apart (a pour's jog: one edge drawn twice) merge as two layers' do.
+    /// </summary>
+    public const double CrossFeatureMergeFraction = 0.25;
+
+    /// <summary>
     /// R-em3d8-5a. The nominal ring-down after the pulse, in pulse lengths. From F0's two openEMS cases:
     /// case A reached −50 dB at 0.976 ns, 6.8 of its 0.143 ns pulses; case B's ports were down 129 dB by
     /// 1 ns and its bounded run stopped at 2.0 ns, 7.0 of its 0.286 ns pulses. Pulse plus six is both.
@@ -445,7 +476,7 @@ public static partial class FdtdGrid
                 // is not a line: it snaps, as upstream's ports do.
                 var (collected, snapped, snappedEdges) = SnapIntoThirdsPairs([.. CollectRequired(problem, a, settings, ctx.MinCell, localCells),
                                                                               .. wavePorts.ExtraLines(a)], keepLines, acrossPorts);
-                var required = Merge(collected, a, ctx.MinCell, axisMerges, axisWarnings);
+                var required = Merge(collected, a, ctx.MinCell, axisMerges, axisWarnings, nearFeatures: true);
                 var (lo, hi) = ctx.Faces(a);
                 var lines = Fill(required, iv => ctx.MaxCell(a, iv.Lo, iv.Hi), settings.GradingRatio,
                                  lo == Em3dBoundaryKind.Absorbing ? settings.PmlCells : 0,
@@ -585,8 +616,8 @@ public static partial class FdtdGrid
                 else
                 {
                     var kind = shape.Conductor ? FdtdLineKind.MetalEdge : FdtdLineKind.MaterialFace;
-                    Add(shape.Z0, false, new FdtdLineSource(shape.Name, kind, shape.Z0));
-                    Add(shape.Z1, false, new FdtdLineSource(shape.Name, kind, shape.Z1));
+                    Add(shape.Z0, false, new FdtdLineSource(shape.Name, kind, shape.Z0) { MetalSide = shape.Conductor ? +1 : null });
+                    Add(shape.Z1, false, new FdtdLineSource(shape.Name, kind, shape.Z1) { MetalSide = shape.Conductor ? -1 : null });
                 }
                 continue;
             }
@@ -596,8 +627,8 @@ public static partial class FdtdGrid
                 // Curved or swept: its extremes only; the grid staircases the rest (em-3d.md §3).
                 var kind = shape.Conductor ? FdtdLineKind.MetalExtreme : FdtdLineKind.MaterialFace;
                 var (lo, hi) = shape.Range(axis);
-                Add(lo, false, new FdtdLineSource(shape.Name, kind, lo));
-                Add(hi, false, new FdtdLineSource(shape.Name, kind, hi));
+                Add(lo, false, new FdtdLineSource(shape.Name, kind, lo) { MetalSide = shape.Conductor ? +1 : null });
+                Add(hi, false, new FdtdLineSource(shape.Name, kind, hi) { MetalSide = shape.Conductor ? -1 : null });
                 continue;
             }
 
@@ -626,7 +657,7 @@ public static partial class FdtdGrid
                         ctx.ConductorAt(Pt(e - metalSide * ctx.Probe, mid, axis), shape.Z0, shape.Z1, shape);
                     if (!thirdsHere || metalSide == 0 || bordersMetal)
                     {
-                        Add(e, false, new FdtdLineSource(shape.Name, FdtdLineKind.MetalEdge, e));
+                        Add(e, false, new FdtdLineSource(shape.Name, FdtdLineKind.MetalEdge, e) { MetalSide = metalSide == 0 ? null : metalSide });
                         continue;
                     }
 
@@ -640,7 +671,7 @@ public static partial class FdtdGrid
                     if (!(h >= ThirdsMinCells * minCellM) || outside < ctx.BoxMin(axis) || outside > ctx.BoxMax(axis)
                         || Math.Abs(qb - pb) < h)
                     {
-                        Add(e, false, new FdtdLineSource(shape.Name, FdtdLineKind.MetalEdge, e));
+                        Add(e, false, new FdtdLineSource(shape.Name, FdtdLineKind.MetalEdge, e) { MetalSide = metalSide });
                         continue;
                     }
                     Add(e + metalSide * h / 3, false,
@@ -655,7 +686,11 @@ public static partial class FdtdGrid
                 var extremeKind = shape.Conductor ? FdtdLineKind.MetalExtreme : FdtdLineKind.MaterialFace;
                 foreach (double ex in new[] { min, max })
                     if (!edgeAt.Any(e => Math.Abs(e - ex) <= ctx.Tol))
-                        Add(ex, false, new FdtdLineSource(shape.Name, extremeKind, ex));
+                        Add(ex, false, new FdtdLineSource(shape.Name, extremeKind, ex)
+                                       {
+                                           MetalSide = !shape.Conductor ? null : ReferenceEquals(ring, shape.Rings[0]) == (ex == min) ? +1 : -1,
+                                           Outline = shape.Conductor && shape.Thin,
+                                       });
             }
         }
 
@@ -792,9 +827,18 @@ public static partial class FdtdGrid
     /// fixed lines are both kept and a warning names them and the cell they force. Lines that coincide
     /// to rounding become one line carrying every source, and are not reported — two features sharing a
     /// coordinate is the ordinary case (a strip's bottom on its substrate's top), not a merge.
+    /// <para>brief-dfr27-5 R-dfr27-5-1 — with <paramref name="nearFeatures"/>, two lines also merge when closer than
+    /// <see cref="CrossFeatureMergeFraction"/> of the local cell they sit in, the smaller of their thirds-rule cells
+    /// (<see cref="FdtdRequiredLine.SizeHintM"/>), and only while every line the merged one stands for lies within that distance
+    /// of the first, so a run of near features cannot carry a line away from any of them. A thirds line goes onto a feature's
+    /// own line (an edge, an extreme, a face) rather than meeting it halfway: the pair is a refinement, the feature is the
+    /// geometry. One conductor's lines from edges with its metal on opposite sides — a strip's width, a slot — keep MinCell,
+    /// and so do two lines neither of which has a thirds cell (a via's wall, a stackup's planes).</para>
     /// </summary>
+    /// <param name="nearFeatures">The rule above; false merges under MinCell only, as before brief-dfr27-5. The Cartesian
+    /// builder passes true; a cylindrical grid's radial lines are circles, which the rule was not measured on.</param>
     public static List<FdtdRequiredLine> Merge(IReadOnlyList<FdtdRequiredLine> lines, FdtdAxis axis, double minCellM,
-                                               List<FdtdMerge> merges, List<string> warnings)
+                                               List<FdtdMerge> merges, List<string> warnings, bool nearFeatures = false)
     {
         var sorted = lines.OrderBy(l => l.PositionM).ToList();    // stable: ties keep the problem's order
         if (sorted.Count == 0) return sorted;
@@ -815,29 +859,88 @@ public static partial class FdtdGrid
         }
 
         var kept = new List<FdtdRequiredLine> { one[0] };
+        var members = new List<FdtdRequiredLine> { one[0] };    // the original lines the last kept line stands for
         for (int i = 1; i < one.Count; i++)
         {
             var k = kept[^1];
             var l = one[i];
             double d = l.PositionM - k.PositionM;
-            if (d >= minCellM) { kept.Add(l); continue; }
+            double? local = null;
+            if (d >= minCellM)
+            {
+                double h = Math.Min(k.SizeHintM, l.SizeHintM);
+                // An outline's extreme with no thirds cell beside it sits between the required lines either side.
+                if (nearFeatures && !double.IsFinite(h) && (OnlyOutline(k) || OnlyOutline(l)) && !SharesFeature(k, l))
+                    h = Math.Min(kept.Count > 1 ? members[0].PositionM - kept[^2].PositionM : double.PositiveInfinity,
+                                 NextBeyond(i, l.PositionM - members[0].PositionM));
+                if (!nearFeatures || !double.IsFinite(h) || k.Fixed && l.Fixed ||
+                    !(l.PositionM - members[0].PositionM < CrossFeatureMergeFraction * h) ||
+                    members.Any(m => l.PositionM - m.PositionM >= minCellM && OneConductorsSides(m, l)))
+                {
+                    kept.Add(l);
+                    members = [l];
+                    continue;
+                }
+                local = h;
+            }
 
             if (k.Fixed && l.Fixed)
             {
                 kept.Add(l);
+                members = [l];
                 warnings.Add($"On {AxisName(axis)}: {string.Join(" and ", k.Sources.Select(s => s.Describe(axis)))} and " +
                              $"{string.Join(" and ", l.Sources.Select(s => s.Describe(axis)))} are " +
                              $"{FormatLength(d)} apart, closer than MinCell ({FormatLength(minCellM)}), and neither may " +
                              $"move, so they force a {FormatLength(d)} cell — and the time step with it.");
                 continue;
             }
-            double at = k.Fixed ? k.PositionM : l.Fixed ? l.PositionM : (k.PositionM + l.PositionM) / 2;
-            merges.Add(new FdtdMerge(axis, k.Sources, k.PositionM, l.Sources, l.PositionM, d, at));
+            double at = k.Fixed ? k.PositionM : l.Fixed ? l.PositionM
+                      : local is not null && Feature(k) != Feature(l) ? (Feature(k) ? k.PositionM : l.PositionM)
+                      : local is not null && OnlyOutline(k) != OnlyOutline(l) ? (OnlyOutline(k) ? l.PositionM : k.PositionM)
+                      : (k.PositionM + l.PositionM) / 2;
+            merges.Add(new FdtdMerge(axis, k.Sources, k.PositionM, l.Sources, l.PositionM, d, at) { LocalCellM = local });
             kept[^1] = new FdtdRequiredLine(at, k.Fixed || l.Fixed, [.. k.Sources, .. l.Sources],
                                             Math.Min(k.SizeHintM, l.SizeHintM));
+            members.Add(l);
         }
         return kept;
+
+        static bool Feature(FdtdRequiredLine a)
+            => a.Sources.Any(x => x.Kind is not (FdtdLineKind.ThirdsInside or FdtdLineKind.ThirdsOutside));
+
+        static bool OnlyOutline(FdtdRequiredLine a) => a.Sources.All(x => x.Outline);
+
+        static bool SharesFeature(FdtdRequiredLine a, FdtdRequiredLine b)
+            => a.Sources.Any(x => b.Sources.Any(y => string.Equals(x.Feature, y.Feature, StringComparison.Ordinal)));
+
+        // The interval from line i to the next line farther from it than the run being merged is wide: nearer ones are the
+        // same cluster of near features, not the cell beside it.
+        double NextBeyond(int i, double run)
+        {
+            for (int j = i + 1; j < one.Count; j++)
+                if (one[j].PositionM - one[i].PositionM > run) return one[j].PositionM - one[i].PositionM;
+            return double.PositiveInfinity;
+        }
     }
+
+    /// <summary>
+    /// brief-dfr27-5 R-dfr27-5-1 — whether two lines (<paramref name="lo"/> below <paramref name="hi"/>) come from one
+    /// conductor's edges with its metal on opposite sides: its width or thickness between them, or a slot in it. Those are
+    /// drawn on purpose and merge under MinCell only. Two same-side edges of one conductor a few microns apart are one edge
+    /// drawn twice (an imported pour's jog), and two conductors' lines face no gap the rule could close: facing in one layer,
+    /// the thirds rule's gap clamp already keeps their lines a whole local cell apart.
+    /// </summary>
+    private static bool OneConductorsSides(FdtdRequiredLine lo, FdtdRequiredLine hi)
+        => lo.Sources.Any(x => MetalSide(x, lo.PositionM) is { } sx &&
+                               hi.Sources.Any(y => string.Equals(x.Feature, y.Feature, StringComparison.Ordinal) &&
+                                                   MetalSide(y, hi.PositionM) is { } sy && sy != sx));
+
+    private static int? MetalSide(FdtdLineSource src, double at) => src.Kind switch
+    {
+        FdtdLineKind.ThirdsInside  => Math.Sign(at - src.FeatureAtM),
+        FdtdLineKind.ThirdsOutside => -Math.Sign(at - src.FeatureAtM),
+        _                          => src.MetalSide,
+    };
 
     // ── step 3: fill and smooth (R-em3d8-4) ──────────────────────────────────────────────────
 
@@ -1599,6 +1702,17 @@ public static partial class FdtdGrid
             foreach (double f in new[] { 0.25, 0.5, 0.75 })
                 width = Math.Min(width, RayToBoundary(shape.Rings!, a, e, b0 + f * (b1 - b0), metalSide));
             h = Math.Min(h, ThirdsWidthFraction * width);
+
+            // brief-dfr27-5 — and the gap across this edge to the shape's OWN metal: a slot or notch in one pour. Only separate
+            // metal was clamped before, so a 200 µm slot in a ground pour took a 336 µm cell and its two edges' pairs crossed.
+            double own = double.PositiveInfinity;
+            foreach (double f in new[] { 0.25, 0.5, 0.75 })
+                own = Math.Min(own, RayToBoundary(shape.Rings!, a, e, b0 + f * (b1 - b0), -metalSide));
+            if (ThirdsGapFraction * own < h)
+            {
+                h = ThirdsGapFraction * own;
+                by = shape.Name;
+            }
 
             // The gap: the nearest coordinate, outside this edge, of separate metal in this layer alongside it.
             var across = a == FdtdAxis.X ? FdtdAxis.Y : FdtdAxis.X;

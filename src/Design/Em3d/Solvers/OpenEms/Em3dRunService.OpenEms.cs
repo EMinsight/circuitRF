@@ -93,6 +93,11 @@ public static partial class Em3dRunService
             _plan = PrepareOpenEms(problem, _grid!, _run!, run.Readiness, run.Control, run.Log, out var stop,
                                    FarFieldFrequencies(run.Setup, problem));
             Stop = stop;
+            // brief-dfr27-5 R-dfr27-5-2 — how long it will take, before anything starts: asked about past an hour.
+            if (_plan is { } plan &&
+                run.Memory.AdmitTime(OpenEmsTimeEstimate.Verdict(plan.Grid, plan.Lowering.Ports.Count,
+                                                                 OpenEmsTimeEstimate.Cores(run.MaxCores)), run.Log) is { } declined)
+                Stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-time", declined));
         }
 
         public override Leg Execute(Em3dProblem problem, string snpBase, RunContext run)
@@ -213,7 +218,7 @@ public static partial class Em3dRunService
             try
             {
                 r = OpenEmsRun.RunPort(runDir, lowering, k, openEms.Path, threads, runSettings.EndCriterionDb,
-                                       grid.ExcitationS, control, ct, settleS, limits);
+                                       grid.ExcitationS, control, ct, settleS, limits, grid.Cells, grid.TimeStepEstimateS);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -393,7 +398,7 @@ public static partial class Em3dRunService
     /// Null on success; otherwise the error the leg fails with.
     /// </summary>
     internal static string? OpenEmsPattern(Nf2ffSurface surface, FdtdPortResult result, CsxcadLowering lowering, string runDir,
-                                          EmSetup setup, int? maxCores, RunControl? control, CancellationToken ct, List<string> notes, DataSet data,
+                                          EmSetup setup, int? maxCores, RunControl? control, CancellationToken ct, ICollection<string> notes, DataSet data,
                                           List<(double Hz, int Port, double Efficiency)>? efficiencies = null)
     {
         var grid = surface.Hemisphere ? PlanarFarFieldGrid.Hemisphere() : FarFieldStage.Sphere();

@@ -35,6 +35,13 @@ public sealed record RunProgress(
     string StageUnit = "", string StageDetail = "");
 
 /// <summary>
+/// brief-dfr27-5 R-dfr27-5-3 — one sentence a run has to say, the moment it is known: a note (the run explaining itself) or a
+/// warning (something to act on), with the file it names and the tool it offers to install, where it has them. The run's
+/// result still carries every sentence; this is what lets a caller show them while the run is still going.
+/// </summary>
+public sealed record RunNote(bool Warning, string Text, string? File = null, string? Install = null);
+
+/// <summary>
 /// Cancellation and progress for an engine run — the ONE object every engine takes, so a caller
 /// wires both concerns once rather than threading two parameters through every signature.
 ///
@@ -103,6 +110,11 @@ public sealed class RunControl
     /// <summary>Where progress observations go. Null makes <see cref="Tick"/> a cancellation check
     /// and nothing else — which is exactly what <see cref="Child"/> produces.</summary>
     public IProgress<RunProgress>? Progress { get; init; }
+
+    /// <summary>brief-dfr27-5 R-dfr27-5-3 — where a run's notes and warnings go as they are known, on the run's own thread.
+    /// Null keeps them for the result only. A run whose steps can take hours (a 3D solver) said nothing until it ended:
+    /// which solver, where each port went, why the grid is the size it is — all arrived at once, after a Cancel's own line.</summary>
+    public Action<RunNote>? Notes { get; init; }
 
     /// <summary>Total leaf work units for the WHOLE run, across every analysis. 0 = indeterminate.</summary>
     public long Total { get; init; }

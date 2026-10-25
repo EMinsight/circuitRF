@@ -307,8 +307,30 @@ public static class ProcessTreeMemory
 /// <summary>How a run's memory estimate sits against the machine.</summary>
 public enum Em3dMemoryLevel { Fits, Warning, Severe }
 
+/// <summary>brief-dfr27-5 R-dfr27-5-2 — what a pre-run verdict is about: a solver's memory, or how long openEMS will take.</summary>
+public enum Em3dRunConcern { Memory, Time }
+
 /// <summary>One remedy a warning offers, and the estimate it would give.</summary>
-public sealed record Em3dMemoryRemedy(string What, long? EstimateBytes);
+public sealed record Em3dMemoryRemedy(string What, long? EstimateBytes)
+{
+    /// <summary>brief-dfr27-5 R-dfr27-5-5 — a remedy THIS run can take without changing the design: Palace on this many MPI
+    /// processes. The question before a run offers it as a button; null for a remedy that is an edit (a preset, a crop).</summary>
+    public int? Processes { get; init; }
+
+    /// <summary>brief-dfr27-5 R-dfr27-5-5 — the remedy was SIZED to fit (a crop of the share that would), so its estimate says
+    /// how much, not whether: it never counts as a setting that fits.</summary>
+    public bool Sized { get; init; }
+
+    /// <summary>Whether this remedy, a setting rather than a size, brings the run within <paramref name="physical"/>.</summary>
+    public bool Fits(long physical) => !Sized && EstimateBytes is { } b && b <= physical;
+}
+
+/// <summary>brief-dfr27-5 R-dfr27-5-5 — what the question before a run was answered with, beyond yes or no: the remedy the run
+/// is to take. Set by whoever asked (the panel's dialog), read by the run.</summary>
+public sealed class Em3dMemoryChoice
+{
+    public Em3dMemoryRemedy? Remedy { get; set; }
+}
 
 /// <summary>R-em3d21-2b — the verdict, and the sentence a warning or a confirmation shows.</summary>
 /// <param name="File">A file <see cref="Text"/> names and the reader may want to open — the Linux
@@ -330,6 +352,20 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
     /// <summary>brief-emi-10 — the remedies the verdict was evaluated with, in their order: what a run stopped at its memory
     /// ceiling names.</summary>
     public IReadOnlyList<Em3dMemoryRemedy> Remedies { get; init; } = [];
+
+    /// <summary>brief-dfr27-5 R-dfr27-5-2 — what the verdict is about. A <see cref="Em3dRunConcern.Time"/> verdict asks the
+    /// same question the memory check does, through the same confirmation, and its <see cref="Text"/> is the estimate.</summary>
+    public Em3dRunConcern Concern { get; init; } = Em3dRunConcern.Memory;
+
+    /// <summary>brief-dfr27-5 R-dfr27-5-5 — the remedy chosen when this verdict was confirmed, if one was.</summary>
+    public Em3dMemoryChoice Choice { get; init; } = new();
+
+    /// <summary>The remedies this run can take itself (<see cref="Em3dMemoryRemedy.Processes"/>) and that fit.</summary>
+    public IReadOnlyList<Em3dMemoryRemedy> Applicable => [.. Remedies.Where(r => r.Processes is not null && r.Fits(PhysicalBytes))];
+
+    /// <summary>Past the confirmation with no remedy that is a setting and fits: the question says so, and its default is
+    /// not to run.</summary>
+    public bool NothingFits => Level == Em3dMemoryLevel.Severe && !Remedies.Any(r => r.Fits(PhysicalBytes));
 
     public static readonly Em3dMemoryVerdict Unknown = new(Em3dMemoryLevel.Fits, null, 0, null);
 
@@ -358,9 +394,15 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
                           ? ". At that size the run will very likely swap or be killed by the operating system. "
                           : "; a run this size may slow the machine or swap (the estimate errs high). ");
         var useful = remedies.Where(r => r.EstimateBytes is { } b && b < e).ToList();
+        // brief-dfr27-5 R-dfr27-5-5 — each says whether it fits; past the confirmation, a list none of which fits says so
+        // plainly, rather than leave "anyway" the only way forward the reader is shown.
         string tail = useful.Count == 0 ? ""
             : "In order of effect: " + string.Join("; ", useful.Select(r =>
-                  $"{r.What} — about {MachineMemory.Format(r.EstimateBytes!.Value)}")) + ".";
+                  $"{r.What} — about {MachineMemory.Format(r.EstimateBytes!.Value)}{(r.Fits(physical) ? ", which fits" : "")}")) + ".";
+        if (level == Em3dMemoryLevel.Severe && !useful.Any(r => r.Fits(physical)))
+            tail += $" No setting fits it in {scope?.Owner ?? "this machine's"} {MachineMemory.Format(physical)}" +
+                    (useful.Any(r => r.Sized) ? "; only a smaller crop would" : "") +
+                    ". As it stands, the run would very likely be stopped for memory part-way through.";
         var raise = scope?.Remedy?.Invoke(e);
         return new(level, e, physical, (head + tail).TrimEnd() + (raise?.Text is { } r ? " " + r : ""), raise?.File) { Remedies = remedies };
     }

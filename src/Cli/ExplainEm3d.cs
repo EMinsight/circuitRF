@@ -470,10 +470,12 @@ internal static class ExplainEm3d
             $"Time step about {g.TimeStepEstimateS:G3} s (the Courant estimate; openEMS computes its own), about " +
             $"{g.Steps:N0} steps for the pulse and a nominal ring-down, about {g.MemoryBytes / 1e6:N0} MB. " +
             (g.Merges.Count == 0 ? "No lines merged." : $"{g.Merges.Count} merge(s) of lines closer than MinCell " +
-                                                         $"({FdtdGrid.FormatLength(g.MinCellM)}).") +
+                                                         $"({FdtdGrid.FormatLength(g.MinCellM)}) or than a quarter of their local cell.") +
             // brief-em3d-9 R-em3d9-3a: openEMS excites one port per simulation.
             (ports > 1 ? $" openEMS runs once per port: {ports} runs, one after another, so the whole takes about " +
-                         $"{ports} times one run." : "");
+                         $"{ports} times one run." : "") +
+            // brief-dfr27-5 R-dfr27-5-2 — the estimate a run states before it starts, on this machine's cores.
+            " " + OpenEmsTimeEstimate.Sentence(g, ports, OpenEmsTimeEstimate.Cores(null));
         return new("openems", "exact", g.Cells, null, g.TimeStepEstimateS, g.MemoryBytes, note,
                    [g.X.Lines.Count, g.Y.Lines.Count, g.Z.Lines.Count], s.SmallestCellM, axis, features, g.Steps,
                    g.Merges.Select(m => m.Sentence).ToList(), g.Warnings, g.Refusal,

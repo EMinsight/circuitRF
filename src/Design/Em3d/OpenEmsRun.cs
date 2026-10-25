@@ -137,9 +137,13 @@ public static class OpenEmsRun
     /// <paramref name="endCriterionDb"/> below their peak over the last <paramref name="windowS"/>.
     /// <paramref name="threads"/> null lets openEMS choose (it measures which count is fastest).
     /// </summary>
+    /// <param name="cells">brief-dfr27-5 R-dfr27-5-4 — the grid's cells, which a quiet openEMS is said to be building its operator
+    /// for; 0 when unknown.</param>
+    /// <param name="stepS">The time step openEMS is expected to take (the grid's Courant estimate): what turns a probe's time
+    /// into a step when openEMS's own lines do not arrive; 0 when unknown.</param>
     public static OpenEmsPortRun RunPort(string runDir, CsxcadLowering lowering, int index, string openEms, int? threads,
                                          double endCriterionDb, double windowS, RunControl? control, CancellationToken ct,
-                                         double settleS = 0, ProcessLimits? limits = null)
+                                         double settleS = 0, ProcessLimits? limits = null, long cells = 0, double stepS = 0)
     {
         int port = lowering.Ports[index];
         int n = lowering.Ports.Count;
@@ -173,14 +177,23 @@ public static class OpenEmsRun
         // brief-emi-10 R-emi10-2 — the process loop every solver runs in, so openEMS is held to the same memory ceiling and
         // disk floor. Its own watching rides on it: the step count from each line, and on each tick the stage and, every half
         // second, the probes' decay — written as openEMS's own graceful stop, the ABORT file it checks every time step.
-        long latestStep = 0, reported = 0;
+        long latestStep = 0, reported = 0, lineStep = 0;
         bool stoppedOnDecay = false;
         var decayWatch = Stopwatch.StartNew();
+        // brief-dfr27-5 R-dfr27-5-4 — no silent stalls: a quiet openEMS is said to be quiet, once, with what it is probably
+        // doing; and a step read from the probes when its own lines do not come (a child's buffered output looks the same).
+        var sinceStep = Stopwatch.StartNew();
+        bool quietSaid = false, bufferedSaid = false;
+        void Say(string sentence) => control?.Notes?.Invoke(new RunNote(false, sentence));
         void OnLine(string text)
         {
             if (StepLine.Match(text) is { Success: true } m &&
                 long.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long s))
-                latestStep = s;
+            {
+                if (s > lineStep) sinceStep.Restart();
+                lineStep = s;
+                latestStep = Math.Max(latestStep, s);
+            }
         }
         void OnTick()
         {
@@ -189,9 +202,23 @@ public static class OpenEmsRun
                 control.TickStage(latestStep - reported);
                 reported = latestStep;
             }
+            if (!quietSaid && sinceStep.Elapsed >= QuietAfter)
+            {
+                quietSaid = true;
+                Say(QuietSentence(index, n, lineStep, cells, QuietAfter));
+            }
             if (stoppedOnDecay || decayWatch.ElapsedMilliseconds < 500) return;
             decayWatch.Restart();
             foreach (var tl in tails) tl.Poll();
+            if (ProbeStep(tails.Select(tl => tl.LastTimeS), stepS) is { } probed && probed > latestStep && probed > lineStep)
+            {
+                latestStep = probed;
+                if (!bufferedSaid && sinceStep.Elapsed >= QuietAfter)
+                {
+                    bufferedSaid = true;
+                    Say(BufferedSentence);
+                }
+            }
             if (Decay(Pairs(tails), windowS, settleS) is { } level && level <= endCriterionDb)
             {
                 try { WriteText(abort, "circuitRF: the port signals have decayed to the end criterion.\n"); stoppedOnDecay = true; }
@@ -390,6 +417,41 @@ public static class OpenEmsRun
     }
 
     private static readonly Regex StepLine    = new(@"Timestep:\s*(\d+)", RegexOptions.Compiled);
+
+    /// <summary>brief-dfr27-5 R-dfr27-5-4 — how long openEMS may report no step before the run says so.</summary>
+    internal static TimeSpan QuietAfter { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// What a quiet openEMS is probably doing. Before its first step it builds its operator — a coefficient per cell and field
+    /// component, in one thread — and says nothing while it does, which on a grid of tens of millions of cells takes minutes;
+    /// after it, a step it does not report is usually a machine out of memory and swapping.
+    /// </summary>
+    internal static string QuietSentence(int index, int ports, long lastStep, long cells, TimeSpan quiet)
+    {
+        string who = $"openEMS (port {index + 1} of {ports}) has reported no time step for {quiet.TotalMinutes:0} minutes";
+        string cancel = " Cancel stops it; nothing from this run is kept yet.";
+        if (lastStep == 0)
+            return who + (cells > 0
+                       ? $": it is probably still building its operator for {cells / 1e6:0.#} million cells, which it does before " +
+                         "the first step and without a word."
+                       : ": it is probably still building its operator, which it does before the first step and without a word.") + cancel;
+        return who + $" since step {lastStep:N0}: it is still running, and a step it does not report is usually a machine short of " +
+               "memory and swapping." + cancel;
+    }
+
+    /// <summary>When openEMS's probes advance and its own lines do not arrive: its output is held back by the pipe.</summary>
+    internal const string BufferedSentence =
+        "openEMS's progress lines are not reaching circuitRF (its output is buffered), but its probes are advancing: the step " +
+        "count shown is read from the probes instead.";
+
+    /// <summary>The step openEMS has reached by its probes: the earliest last sample over every probe, over the time step.
+    /// Null before every probe has a sample, or with no time step to divide by.</summary>
+    internal static long? ProbeStep(IEnumerable<double> lastTimes, double stepS)
+    {
+        double t = double.PositiveInfinity;
+        foreach (double x in lastTimes) t = Math.Min(t, x);
+        return stepS > 0 && t > 0 && double.IsFinite(t) ? (long)(t / stepS) : null;
+    }
     private static readonly Regex TimeStep    = new(@"FDTD timestep is:\s*([-+0-9.eE]+)\s*s", RegexOptions.Compiled);
     private static readonly Regex SizeLine    = new(@"FDTD simulation size:.*-->\s*(\d+)\s*FDTD cells", RegexOptions.Compiled);
     private static readonly Regex TimeFor     = new(@"Time for\s+(\d+)\s+iterations", RegexOptions.Compiled);
@@ -452,6 +514,9 @@ public static class OpenEmsRun
         }
 
         public FdtdProbe Snapshot() => new([.. _t], [.. _x]);
+
+        /// <summary>The time of the last sample read, or 0 before one.</summary>
+        public double LastTimeS => _t.Count > 0 ? _t[^1] : 0;
     }
 
     private static void TryDelete(string path)

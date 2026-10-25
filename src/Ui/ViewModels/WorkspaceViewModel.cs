@@ -8864,10 +8864,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     internal static void PostEmSentence(IMessageSink sink, MessageLevel level, EmRunResult result, string sentence,
                                         Func<Task> raiseMemory)
+        => PostEmSentence(sink, level, sentence, EmMessageFile(result, sentence), result.MessageInstalls?.GetValueOrDefault(sentence),
+                          raiseMemory);
+
+    /// <summary>brief-dfr27-5 R-dfr27-5-3 — one sentence a run posted while it was still going, with the file and install it
+    /// carried then.</summary>
+    internal static void PostEmSentence(IMessageSink sink, RunNote note, Func<Task> raiseMemory)
+        => PostEmSentence(sink, note.Warning ? MessageLevel.Warning : MessageLevel.Info, note.Text, note.File, note.Install, raiseMemory);
+
+    private static void PostEmSentence(IMessageSink sink, MessageLevel level, string sentence, string? file, string? install,
+                                       Func<Task> raiseMemory)
     {
-        string? file = EmMessageFile(result, sentence);
         // brief-emdc-2 R-emdc2-2 — a DC row refused for want of Gmsh offers Install … on its own row, as a solver's refusal does.
-        if (result.MessageInstalls?.GetValueOrDefault(sentence) is { } installId
+        if (install is { } installId
             && CircuitRF.Design.Em3d.Install.SolverHomes.ToolFromId(installId) is { } installTool)
             sink.PostAction(level, sentence, $"Install {CircuitRF.Design.Em3d.SolverDiscovery.For(installTool).Name}…",
                             () => CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.InstallAsync(installTool, owner: null, sink));
@@ -8942,6 +8951,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var emWorkDescriptor = $"the EM run '{setup.Name}'";
 
         EmRunResult result;
+        // brief-dfr27-5 R-dfr27-5-3 — what the run says, posted the moment it says it (a 3D run's steps take hours), and
+        // recorded so the end of the run posts each sentence once. Nothing is posted once Cancel is pressed: its own line is
+        // the last but the stopped line.
+        var streamed = new EmStreamedSentences();
+        bool cancelPressed = false;
         using (var cts = new CancellationTokenSource())
         {
             // Declared before it is built so the progress sink can read the run's OWN stop flag —
@@ -8961,6 +8975,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 Progress = new Progress<RunProgress>(
                     p => ReportEmProgress(sweepLive, stageLive, setup.Name, p, adaptive,
                                           control!.StopRequested)),
+                Notes = note =>
+                {
+                    if (cts.IsCancellationRequested) return;
+                    streamed.Add(note);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (!cancelPressed) PostEmSentence(Messages, note, RaiseSubsystemMemoryAsync);
+                    });
+                },
             };
 
             // ONE handle, THREE surfaces: the panel's Cancel button, the sweep row's bar and the
@@ -8976,6 +8999,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 Messages.Info("Cancelling the EM analysis. It stops at the next work boundary and " +
                               "writes nothing — use Stop instead to finish now and keep the points " +
                               "already solved.");
+                cancelPressed = true;
                 vm.IsCancelling = true;
                 cts.Cancel();
             },
@@ -9073,7 +9097,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             stageLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — stopped");
             sweepLive.Complete(MessageLevel.Info, $"EM '{setup.Name}' — see the error below");
 
-            foreach (var w in result.Warnings)     PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync);
+            foreach (var w in streamed.Unposted(result.Warnings, warning: true))
+                PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync);
             foreach (var e in result.Errors ?? []) PostEmSentence(Messages, MessageLevel.Error, result, e, RaiseSubsystemMemoryAsync);
 
             // Through the render point, not as a bare sentence: the diagnostic's ID is what a future
@@ -9124,9 +9149,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // been removed from the solve were correct, well worded, and in the middle of them. The
         // panel groups by icon and the reader scrolls from the top, so the order is what decides
         // whether they are seen.
-        foreach (var e in result.Errors ?? [])   PostEmSentence(Messages, MessageLevel.Error, result, e, RaiseSubsystemMemoryAsync);
-        foreach (var w in result.Warnings)       PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync);
-        foreach (var n in result.Notes ?? [])    PostEmSentence(Messages, MessageLevel.Info, result, n, RaiseSubsystemMemoryAsync);
+        //
+        // brief-dfr27-5 R-dfr27-5-3 — a sentence already posted while the run went is not posted again, and a cancelled run
+        // posts none: everything it said before Cancel is already there, and Cancel's own line is the last but the stopped one.
+        if (result.Status != EmRunStatus.Cancelled)
+        {
+            foreach (var e in result.Errors ?? [])   PostEmSentence(Messages, MessageLevel.Error, result, e, RaiseSubsystemMemoryAsync);
+            foreach (var w in streamed.Unposted(result.Warnings, warning: true))
+                PostEmSentence(Messages, MessageLevel.Warning, result, w, RaiseSubsystemMemoryAsync);
+            foreach (var n in streamed.Unposted(result.Notes ?? [], warning: false))
+                PostEmSentence(Messages, MessageLevel.Info, result, n, RaiseSubsystemMemoryAsync);
+        }
 
         if (result.Status == EmRunStatus.Cancelled)
         {
@@ -9385,11 +9418,29 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         => Dispatcher.UIThread.InvokeAsync(async () =>
         {
             if (ResolveOwner(null) is not { } owner) return false;
+            // brief-dfr27-5 R-dfr27-5-2 — openEMS's time estimate asks through the same door.
+            if (verdict.Concern == CircuitRF.Design.Em3d.Em3dRunConcern.Time)
+                return await new Views.Dialogs.SaveChangesDialog(
+                    verdict.Text ?? "", saveLabel: "Run Anyway", dontSaveLabel: null, cancelLabel: "Cancel",
+                    title: "This Run May Take a Long Time").ShowDialog<SaveChangesResult>(owner) == SaveChangesResult.Save;
+            // brief-dfr27-5 R-dfr27-5-5 — a remedy the run can take itself and that fits (fewer MPI processes) is the default
+            // answer; the subsystem's memory dialog stays on the warning's own row in Messages.
+            if (verdict.Applicable is [var fits, ..])
+            {
+                var answer = await new Views.Dialogs.SaveChangesDialog(
+                    verdict.Text ?? "", saveLabel: $"Run on {fits.Processes} Process{(fits.Processes == 1 ? "" : "es")}",
+                    dontSaveLabel: "Simulate Anyway", cancelLabel: "Don't Simulate",
+                    title: "This Run May Not Fit in Memory").ShowDialog<SaveChangesResult>(owner);
+                return AnswerEmMemoryWithRemedy(answer, verdict, fits);
+            }
             bool offer = CircuitRF.Design.Em3d.Wsl.WslMemory.IsWslConfig(verdict.File);
+            // …and when nothing it lists fits, Don't Simulate is the default: the text says so, and Enter should not start a
+            // run that will very likely be stopped part-way.
+            bool noneFits = verdict.NothingFits;
             var choice = await new Views.Dialogs.SaveChangesDialog(
                 verdict.Text ?? "", saveLabel: "Simulate Anyway",
                 dontSaveLabel: offer ? MoreMemoryFirstLabel : null, cancelLabel: "Don't Simulate",
-                title: "This Run May Not Fit in Memory").ShowDialog<SaveChangesResult>(owner);
+                title: "This Run May Not Fit in Memory", destructive: noneFits).ShowDialog<SaveChangesResult>(owner);
             return AnswerEmMemory(choice, () => Dispatcher.UIThread.Post(() => _ = RaiseSubsystemMemoryAsync()));
         }).GetAwaiter().GetResult();
 
@@ -9404,6 +9455,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         if (choice == SaveChangesResult.DontSave) openMemoryDialog();
         return choice == SaveChangesResult.Save;
+    }
+
+    /// <summary>brief-dfr27-5 R-dfr27-5-5 — the question with a remedy offered: its button runs with it, Simulate Anyway runs as
+    /// the setup stands, Don't Simulate does not run.</summary>
+    internal static bool AnswerEmMemoryWithRemedy(SaveChangesResult choice, CircuitRF.Design.Em3d.Em3dMemoryVerdict verdict,
+                                                  CircuitRF.Design.Em3d.Em3dMemoryRemedy remedy)
+    {
+        if (choice == SaveChangesResult.Save) verdict.Choice.Remedy = remedy;
+        return choice != SaveChangesResult.Cancel;
     }
 
     internal static void ReportEmProgress(

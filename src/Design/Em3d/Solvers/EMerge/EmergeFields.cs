@@ -271,7 +271,7 @@ public static class EmergeFields
     /// (Palace's arithmetic on port-V.csv's waves, PalacePattern). Null on success; otherwise why there is no pattern.
     /// </summary>
     public static string? PublishPattern(string runDir, EmergeFieldFacts facts, IReadOnlyList<Em3dPort> ports, EmSetup setup,
-                                         DataSet data, List<string> notes)
+                                         DataSet data, ICollection<string> notes)
     {
         Complex[] e;
         int[] shape;
@@ -289,10 +289,11 @@ public static class EmergeFields
         }
         var points = PatternPoints(e, shape, theta, phi, freqs, facts, ports, out var grid, out string? error);
         if (points is null) return error;
-        notes.AddRange(Em3dRadiation.Publish(data, "EMerge (FEM)", grid, [.. ports.Select(p => p.Number)], freqs, points,
+        foreach (string n in Em3dRadiation.Publish(data, "EMerge (FEM)", grid, [.. ports.Select(p => p.Number)], freqs, points,
                                              setup.ReferenceInputPowerDbm, hemisphere: false,
                                              frequencies: $"A pattern at each of the {freqs.Length} frequencies the fields were saved at " +
-                                                          "(EMerge.SaveFieldsGHz; the sweep's centre when it names none)"));
+                                                          "(EMerge.SaveFieldsGHz; the sweep's centre when it names none)"))
+            notes.Add(n);
         notes.Add("EMerge's far field is its own Stratton–Chu integral over the air box's absorbing faces, which are first order: " +
                   "the pattern is only as good as the field those faces leave unreflected, so a box close to the radiator reads " +
                   "its nulls and its back radiation high. Each frequency is a direct solve of its own after the sweep.");

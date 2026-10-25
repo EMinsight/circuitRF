@@ -1764,12 +1764,16 @@ static int ReportEmRun(EmRunResult result, EmSetup setup, string cemPath)
     // Designer feedback round 11 — a sentence naming a file (the memory warning's .wslconfig) carries its path
     // beside it in EmRunResult.MessageFiles, which the Messages panel shows as a link; a terminal prints it.
     string WithFile(string s) => result.MessageFiles?.GetValueOrDefault(s) is { } f ? $"{s} ({f})" : s;
+    // brief-dfr27-5 R-dfr27-5-3 — a line the run already printed as it went is not printed twice; --json still has every one.
+    var printed = EmStreamed.Value ?? [];
+    EmStreamed.Value = null;
+    void Print(string line) { if (!printed.Remove(line)) Console.Error.WriteLine(line); }
     foreach (var e in result.Errors ?? [])
-    { Console.Error.WriteLine($"error: {WithFile(e)}");   JsonRun.Note(CliDiagnostics.EmRunError(WithFile(e))); }
+    { Print($"error: {WithFile(e)}");   JsonRun.Note(CliDiagnostics.EmRunError(WithFile(e))); }
     foreach (var w in result.Warnings)
-    { Console.Error.WriteLine($"warning: {WithFile(w)}"); JsonRun.Note(CliDiagnostics.EmRunWarning(WithFile(w))); }
+    { Print($"warning: {WithFile(w)}"); JsonRun.Note(CliDiagnostics.EmRunWarning(WithFile(w))); }
     foreach (var n in result.Notes ?? [])
-    { Console.Error.WriteLine($"note: {WithFile(n)}");    JsonRun.Note(CliDiagnostics.EmRunNote(WithFile(n))); }
+    { Print($"note: {WithFile(n)}");    JsonRun.Note(CliDiagnostics.EmRunNote(WithFile(n))); }
 
     // R-emcli-8 — a refusal stays a refusal. Each status carries a written explanation of what is
     // wrong with THIS setup; collapsing them into "EM failed" throws away the only part a user can
@@ -1931,6 +1935,9 @@ static void PrintModes(RfCore.Data.DataSet data)
 static RunControl EmProgressToStderr()
 {
     string lastLine = "";
+    // brief-dfr27-5 R-dfr27-5-3 — a run's notes and warnings print the moment they are known (openEMS's time estimate before a
+    // run of hours, not after it); ReportEmRun then prints only the ones that did not.
+    var streamed = EmStreamed.Value = new List<string>();
     // The host's observer, when there is one, sees EVERY observation — the de-duplication below is a
     // terminal concern (a repeated row is noise on a screen and information to a progress bar), and
     // the host's token is what makes a long run cancellable (R-aut5-8). With no host both are absent
@@ -1952,7 +1959,20 @@ static RunControl EmProgressToStderr()
             lastLine = line;
             Console.Error.WriteLine(line);
         }),
+        Notes = n =>
+        {
+            string text = n.File is { } f ? $"{n.Text} ({f})" : n.Text;
+            lock (streamed) streamed.Add((n.Warning ? "warning: " : "note: ") + text);
+            Console.Error.WriteLine((n.Warning ? "warning: " : "note: ") + text);
+        },
     };
+}
+
+/// <summary>brief-dfr27-5 — the lines the current EM run printed as it went (<see cref="EmProgressToStderr"/>), per thread so
+/// a host running several verbs keeps them apart.</summary>
+static class EmStreamed
+{
+    [ThreadStatic] public static List<string>? Value;
 }
 
 static string DescribeEmStatus(EmRunStatus status) => status switch

@@ -535,9 +535,22 @@ model's volumes and the refined shell round each conductor and port, and again o
 The second check is the one that counts on a bond wire or another small curved conductor, where the
 refinement its curvature asks for is nearly the whole mesh and the first check says almost nothing. Past **75 %** of
 the machine's memory the run carries a warning naming the estimate and what would shrink it — the
-Draft preset, no refinement passes, a smaller air box — each with the estimate it would give. Past
+Draft preset, first-order elements, no refinement passes, a smaller air box, fewer MPI processes, a
+smaller crop — each with the estimate it would give, and saying which of them fit. Past
 **150 %** Simulate asks before going on (headless, `circuitrf em` needs `--force`). A warning never stops
 a run on its own: the estimate uses the highest memory per unknown circuitRF has measured.
+
+**Fewer processes is the one remedy a run can take by itself**, without changing the setup: every MPI
+process carries its own copy of the solver's preconditioner, so Palace's peak climbs with each doubling
+of the count — on a ten-layer board, 2.5 GB on one process against 4.3 GB on eight, at about twice the
+time. When a smaller count fits, the question's default button is **Run on N Processes**, which runs
+this once on that many (Settings ▸ Solvers' *Cores* is unchanged). The crop is sized: the share of the
+current crop's area that would fit, made with Crop to New Cell. **When no setting fits**, the question
+says so plainly — only a smaller crop would — and its default is **Don't Simulate**.
+
+**A 3D run's notes appear as they are known** — which solver and version, where each port was placed,
+every grid merge, each warning — not when the run ends. A run that is cancelled posts nothing after the
+cancel line but the line saying it stopped. `circuitrf em` prints them to the terminal the same way.
 
 **While it runs**, the progress row names Palace's own stages, from its own log: *Meshing (Gmsh)*;
 *Solving: refinement pass k of N* with the unknown count; *Sweep: sampling* with Palace's error and the
@@ -602,6 +615,18 @@ Two lines closer than **MinCell** are merged into one, and **every merge is repo
 features**: two shapes 10 nm apart through a drawing error would otherwise set the time step of the
 whole run without anyone seeing why. A port line or a sheet's plane is never moved; two of those
 closer than MinCell are kept, with a warning naming both.
+
+Lines also merge when they are closer than **a quarter of the local cell** they sit in — the cell the
+thirds rule chose at that edge — which is far wider than MinCell on a board. Imported layers routinely
+land a few microns apart: a ground pour's edge on one layer and the same pour's edge on the next each
+get their own thirds pair, and two of those lines a micron apart would set the time step of a 2.4 GHz
+run a hundred times smaller than the board needs. Such lines become one line, and the merge is
+reported like any other. A thirds line moves onto a feature's own line (an edge, a face, an extreme)
+rather than meeting it halfway, since the pair is a refinement and the feature is the geometry; an
+extreme of a round or diagonal pad or pour outline, which the grid staircases anyway, moves onto a
+feature beside it in the same way. What is never merged this way: one conductor's two sides (a strip's
+width, a slot in a pour), and two lines neither of which has a thirds cell, such as a via barrel's
+wall or the planes of a stackup — those keep MinCell.
 
 | `.cem` field (in `OpenEms`) | Default | What it does |
 |---|---|---|
@@ -751,6 +776,23 @@ using every core — a 4-port takes about four times as long as a 2-port, and th
 *port k of N*. circuitRF writes openEMS's model itself, runs the `openEMS` program, reads the voltage
 and current it recorded at every port, and computes the S-parameters from them with the same
 definition of a wave as every other result, including a complex port impedance.
+
+**How long it will take is said before it starts.** openEMS's cost is arithmetic on the grid: every
+cell is updated once per time step, once per port. So once the grid is placed, the run states its
+estimate — cells × time steps × ports, at 25 million cell updates a second per core, counting at most
+eight cores (past that openEMS waits on memory) — in hours or days. That is a conservative figure:
+recorded runs went two to ten times faster, and each run stops as soon as its ports have decayed.
+**Past an hour, Simulate asks** (*Run Anyway* or *Cancel*). **Past a day, the question also names what
+makes it long** — the smallest cell, the edges that set it, and that raising `MinCellUm` above it merges
+them. `circuitrf em` has no one to ask: it prints the same estimate as a warning and runs.
+`circuitrf explain` shows it too, beside the grid.
+
+**A quiet openEMS says so.** Before its first time step openEMS builds its operator, and on a grid of
+tens of millions of cells that takes minutes without a word. If it reports no time step for two
+minutes, one line says what it is probably doing (building its operator for the grid's cells, or — after
+steps have begun — running short of memory and swapping) and that Cancel keeps nothing from that run.
+If its progress lines do not arrive while its probe files keep growing (its output is held back by the
+pipe), the step count is read from the probes instead, and a line says so.
 
 **When a run stops.** openEMS's own stopping rule is the field energy left in the model, and on a
 board whose metal floats in open space — a via transition's ground plane — that energy never falls,

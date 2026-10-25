@@ -23326,3 +23326,54 @@ seen / not seen / duplicate refused, the face walk, impedance tool = model) and 
 - **Open, not caused here:** `TheCavity_Driven_OnEMerge_NotchesAt9955MHz_AndTheCliWritesTheGuisBytes` compares two runs'
   S to 1e-9, and on the GPU sparse solver two runs of one input already differ by 1.04e-9 with the version-6 driver
   (1.49e-9 with version 7). Its tolerance was set from CPU runs (2e-12).
+
+## brief-dfr27-5 — 3D runs on an 8 GB laptop: the openEMS grid, a time estimate, notes as they happen, Palace fit options (2026-10-25)
+
+- **The 0.97 µm cell had a family, not one cause.** On the round-26 crop the first smallest cell was a Top and a Bottom
+  ground pour's thirds pairs landing 3.4 µm apart (two layers, so the gap clamp never saw them). Merging those
+  (`FdtdGrid.Merge`, `nearFeatures`: closer than a quarter of the smaller thirds-rule local cell) exposed the next
+  ones in turn: a pour drawn with a 4.7 µm jog (two same-side edges of ONE conductor), a plain edge pulled away from its
+  own extreme by an earlier midpoint merge, a polygonised clearance hole's extreme 1.55 µm from the via bore's exact
+  circle, and thirds pairs that crossed inside a 200 µm slot of one pour — `LocalCell`'s gap clamp skipped the shape's
+  OWN outline, so the slot took the 336 µm wavelength cell and the thirds repair then ground it down. Each is handled:
+  same-side edges of one conductor merge (opposite sides — a strip's width, a slot — keep MinCell, read from each
+  source's metal side, now carried on `FdtdLineSource.MetalSide`); the deliberate-feature check compares ORIGINAL lines
+  at least MinCell apart, not the drifting merged one; a planar outline's extreme (`FdtdLineSource.Outline`) with no
+  thirds cell sits in the interval to the required lines either side; a thirds line moves onto a feature's own line
+  rather than meeting it halfway; the gap clamp includes the shape's own metal across the edge.
+- **Two looser rules were tried and dropped.** Any metal extreme with a neighbour-interval local cell merged the via
+  barrel's 25 µm plating wall with its fill (the "via" golden); a facing-gap test on plain edges needed geometry the
+  merge does not have and over-protected two layers' pours. A solid's extreme and two lines with no thirds cell keep
+  MinCell. The rule is Cartesian only: a cylindrical grid's radial lines were not measured with it.
+- **Gate, on the crop:** 430 × 535 × 107 = 24.6 M cells → 289 × 350 × 107 = 10.8 M; 2.9 → 1.26 GB; 4.70 M → 1.94 M
+  steps (2.4×); every port within 9.3 µm of where it is drawn (was 9.3 µm before too). **The brief's 10 µm and 5× are
+  NOT met**: the smallest cell is now 2.4 µm, set by a 5 µm sliver of one GND pour (two edges, opposite metal sides —
+  geometry, which the brief keeps on today's behaviour), and other slivers 4–12 µm wide follow it. A 10 µm floor on the
+  thirds pair was measured and barely moved it (9.7 M cells, same smallest cell): what is left is the imported copper's
+  own shape, which only a sliver cleanup at import or crop would remove. The "via" golden changed: the strip's thirds
+  inside line now sits on the barrel's extreme (30 µm, a quarter of 240 is 60), 86 → 69 x lines, 75 → 71 y lines.
+  F0's openEMS gate (Gate8, Benchmark) needs openEMS, which this machine does not have; it was not run.
+- **Time before an openEMS run** (`OpenEmsTimeEstimate`): cells × nominal steps × ports at 25 M cell updates a second
+  per core, eight cores at most — a third of the slowest recorded per-thread rate (288 MC/s on four threads). Past an
+  hour the run asks through the memory check's own confirmation (`Em3dMemoryVerdict.Concern = Time`,
+  `MemoryGate.AdmitTime`); with no one to ask it is a warning and the run goes on; past a day it names the smallest cell
+  and MinCellUm. The crop read 40 days before the grid fix and 7.3 days after, on 8 cores.
+- **Notes as they happen**: `RunControl.Notes` (Engine, a plain callback) receives every sentence `RunLog`'s Notes and
+  Warnings lists take, the moment they take it, with its file and install — so those two annotations are now set
+  BEFORE the sentence is added. The GUI posts them live and skips them at the end (`EmStreamedSentences`, a multiset);
+  a cancelled run posts nothing after the cancel line but the stopped line. The CLI prints them as they come
+  (`EmStreamed`) and `--json` still carries all of them. The planar path keeps its own lists and is unchanged.
+- **A quiet openEMS** (`OpenEmsRun.QuietAfter`, two minutes): one line, "building its operator for N million cells"
+  before the first step, "short of memory and swapping" after. Whether openEMS's progress reaches circuitRF through a
+  Windows pipe could not be checked here (no Windows openEMS); the run now reads the step from the probe files when
+  the lines do not come and says so, which covers a buffered stdout either way.
+- **Palace's memory follows its process count.** Measured on the crop (148,988 tetrahedra, 218,437 order-1 unknowns,
+  one excitation at 3.5 GHz, Palace's own Total HWM): 2.5 / 3.0 / 3.5 / 4.3 GB on 1 / 2 / 4 / 8 processes (23 / 15 /
+  11 / 12 s), 4.5 GB on ten for six excitations — the preconditioner is most of it and every rank holds its own.
+  `Em3dSizeEstimate.PalaceProcessFactor` is a line in log2 of the count through 1 and 8. Both Palace verdicts are
+  priced at the run's process count and offer fewer processes (a button: `Em3dMemoryRemedy.Processes`, chosen through
+  `Em3dMemoryVerdict.Choice`, held by `MemoryGate.ProcessCap`, keeping the memory ceiling), first-order elements and a
+  crop sized to fit (`Sized`, never counted as fitting). With no setting that fits the text says so and the dialog's
+  default is Don't Simulate. **Open:** the order-1 per-unknown figure reads 8.1 GB for this mesh at eight processes
+  against 4.3 GB measured — high by 1.9× here, the direction the check wants, but it is what told the designer's 3.8 GB
+  subsystem that even one process would not fit, where the measurement says one process would (2.5 GB).

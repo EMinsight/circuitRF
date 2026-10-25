@@ -223,7 +223,7 @@ public static partial class Em3dRunService
                                     EmergeDevice emergeDevice = EmergeDevice.Auto)
     {
         RunStarting?.Invoke(resultsRoot, memoryCeilingBytes);
-        var log = new RunLog();
+        var log = new RunLog(control);
         var memory = new MemoryGate(confirmMemory);
         var choice = setup.Solver3D;
         bool compare = choice.IsCompare;
@@ -359,8 +359,9 @@ public static partial class Em3dRunService
         if (dc.Refusal is { } refusal)
         {
             string warning = Em3dDcRow.RefusedWarning(refusal);
-            run.Log.Warnings.Add(warning);
+            // Before the sentence, so a run posting it as it happens offers the install on its row (brief-dfr27-5).
             if (!gmsh.Proceeds && Install.SolverInstaller.OfferFor(gmsh) is { } tool) run.Log.Installs[warning] = tool;
+            run.Log.Warnings.Add(warning);
         }
         return dc;
     }
@@ -662,12 +663,59 @@ public static partial class Em3dRunService
     /// <summary>The diagnostic source of a run stopped, or not started, below the free-disk floor.</summary>
     public const string DiskFloorSource = "disk-floor";
 
-    /// <summary>The run's three lists (R-emcli-6), shared by every leg of a comparison.</summary>
+    /// <summary>The run's three lists (R-emcli-6), shared by every leg of a comparison. brief-dfr27-5 R-dfr27-5-3 — a note or
+    /// a warning goes to <paramref name="control"/>'s <see cref="RunControl.Notes"/> the moment it is added, with the file or
+    /// install it carries; set those in <see cref="Files"/>/<see cref="Installs"/> BEFORE adding the sentence.</summary>
     internal sealed class RunLog
     {
-        public List<string> Notes { get; } = [];
-        public List<string> Warnings { get; } = [];
+        public RunLog(RunControl? control = null)
+        {
+            Action<RunNote>? sink = control?.Notes;
+            Notes    = new(sink is null ? null : t => sink(Posted(false, t)));
+            Warnings = new(sink is null ? null : t => sink(Posted(true, t)));
+        }
+
+        public RunLines Notes { get; }
+        public RunLines Warnings { get; }
         public List<string> Errors { get; } = [];
+
+        private RunNote Posted(bool warning, string text)
+            => new(warning, text, Files.GetValueOrDefault(text), Installs.GetValueOrDefault(text));
+
+        /// <summary>One of the log's lists: what a <see cref="List{T}"/> was, posting each sentence as it is added.</summary>
+        internal sealed class RunLines(Action<string>? post) : IReadOnlyList<string>, ICollection<string>
+        {
+            private readonly List<string> _items = [];
+
+            public int Count => _items.Count;
+            public bool IsReadOnly => false;
+            public bool Contains(string item) => _items.Contains(item);
+            public void CopyTo(string[] array, int arrayIndex) => _items.CopyTo(array, arrayIndex);
+            void ICollection<string>.Clear() => throw new NotSupportedException();
+            bool ICollection<string>.Remove(string item) => throw new NotSupportedException();
+            public string this[int index] => _items[index];
+            public IEnumerator<string> GetEnumerator() => _items.GetEnumerator();
+            System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+            public void Add(string text)
+            {
+                _items.Add(text);
+                post?.Invoke(text);
+            }
+
+            public void AddRange(IEnumerable<string> texts)
+            {
+                foreach (string t in texts) Add(t);
+            }
+
+            /// <summary>At <paramref name="index"/> in the result's order; posted now, as everything else is.</summary>
+            public void InsertRange(int index, IEnumerable<string> texts)
+            {
+                var list = texts.ToList();
+                _items.InsertRange(index, list);
+                foreach (string t in list) post?.Invoke(t);
+            }
+        }
 
         /// <summary>The file a sentence in the three lists names, keyed by the sentence (see
         /// <see cref="EmRunResult.MessageFiles"/>).</summary>
@@ -685,6 +733,13 @@ public static partial class Em3dRunService
             => new(status, null, null, null, null, null, d.Render(), Warnings,
                    Notes: Notes, Errors: Errors, Diagnostic: d, Outputs: outputs is { Count: > 0 } ? outputs : null,
                    MessageFiles: FilesOrNull, MessageInstalls: InstallsOrNull);
+    }
+
+    /// <summary>A run's sentences, added to whichever list a writer was handed — a <see cref="RunLog"/>'s, which posts each
+    /// as it is added (brief-dfr27-5), or a plain one.</summary>
+    internal static void AddRange(this ICollection<string> to, IEnumerable<string> sentences)
+    {
+        foreach (string s in sentences) to.Add(s);
     }
 
     /// <summary>Several holds released together.</summary>
@@ -742,6 +797,24 @@ public static partial class Em3dRunService
         /// <summary>The last verdict the gate was given: its remedies are what a run stopped at its ceiling names.</summary>
         public Em3dMemoryVerdict? Last { get; private set; }
 
+        /// <summary>brief-dfr27-5 R-dfr27-5-5 — the MPI processes the question's answer chose for this run, or null.</summary>
+        public int? ProcessCap { get; private set; }
+
+        /// <summary>
+        /// brief-dfr27-5 R-dfr27-5-2 — openEMS's time estimate, through the same confirmation: a long run is asked about (the
+        /// panel's question); with no one to ask (the CLI) or once answered yes, the estimate is a warning and the run goes on.
+        /// A short run's estimate is a note. Null to go on; otherwise the refusal.
+        /// </summary>
+        public string? AdmitTime(Em3dMemoryVerdict verdict, RunLog log)
+        {
+            if (verdict.Text is not { } text) return null;
+            if (verdict.Level != Em3dMemoryLevel.Severe) { log.Notes.Add(text); return null; }
+            if (confirm is null) { log.Warnings.Add(text); return null; }
+            if (!confirm(verdict)) return text + " It was not started.";
+            log.Warnings.Add(text + " It was started anyway, as confirmed.");
+            return null;
+        }
+
         /// <summary>Null to go on; otherwise the refusal.</summary>
         public string? Admit(Em3dMemoryVerdict verdict, RunLog log)
         {
@@ -751,6 +824,15 @@ public static partial class Em3dRunService
             {
                 if (confirm?.Invoke(verdict) != true)
                     return verdict.Text + " To start it anyway, confirm it when Simulate asks, or pass --force to `circuitrf em`.";
+                // brief-dfr27-5 R-dfr27-5-5 — a remedy the run takes itself: it fits, so it keeps its memory ceiling.
+                if (verdict.Choice.Remedy is { Processes: { } n } chosen)
+                {
+                    ProcessCap = n;
+                    Warn(verdict.Text + $" It was started on {n} MPI process{(n == 1 ? "" : "es")}, as chosen (about " +
+                         $"{MachineMemory.Format(chosen.EstimateBytes ?? 0)}).");
+                    _posted = Em3dMemoryLevel.Warning;
+                    return null;
+                }
                 _confirmed = true;
                 Warn(verdict.Text + " It was started anyway, as confirmed.");
                 _posted = verdict.Level;
@@ -762,8 +844,8 @@ public static partial class Em3dRunService
 
             void Warn(string text)
             {
-                log.Warnings.Add(text);
                 if (verdict.File is { } file) log.Files[text] = file;
+                log.Warnings.Add(text);
             }
         }
     }

@@ -192,7 +192,7 @@ public static class EmergeAccelerator
     /// once per session (the answer is right, only slower). Returns the installation to run: found again when a build
     /// changed it, so the run and its summary see the faster solver.
     /// </summary>
-    public static SolverInstallation BeforeRun(SolverInstallation found, List<string> notes, List<string> warnings,
+    public static SolverInstallation BeforeRun(SolverInstallation found, ICollection<string> notes, ICollection<string> warnings,
                                                SolverDiscovery? discovery = null, SolverInstaller? installer = null)
     {
         var done = FinishIfDue(found, installer);

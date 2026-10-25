@@ -132,9 +132,12 @@ public static partial class Em3dRunService
                                   run.Setup.RadiationPattern, run.Device, _gpus);
             Stop = stop;
             // brief-em3d-21 R-em3d21-2 — will it fit? A warning, and past 150 % a confirmation; still no process.
+            // brief-dfr27-5 R-dfr27-5-5 — priced on the processes the run will use, so fewer can be offered.
+            int? processes = run.Device == PalaceDevice.Cpu && _runner is not null
+                ? PalaceProcessCount(run.Device, run.MaxCores, _runner.Cores, _gpus).Processes : null;
             if (_plan is not null && Stop is null &&
                 run.Memory.Admit(PalaceMemoryVerdict(problem, run.Setup, run.Build, _settings!, _memory?.Bytes ?? MachineMemory.PhysicalBytes,
-                                                     _memory), run.Log) is { } tooBig)
+                                                     _memory, processes), run.Log) is { } tooBig)
             {
                 Stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource, tooBig));
                 _plan = null;
@@ -227,15 +230,19 @@ public static partial class Em3dRunService
 
         // brief-em3d-21 R-em3d21-2 — the mesh's size is known now, and on a problem whose mesh is mostly
         // refinement (a bond wire) it is the first figure that can say the run will not fit.
-        if (meshed.Tetrahedra is { } tets &&
-            memory.Admit(MeshMemoryVerdict(tets, settings, physical, plan.Memory, problem.IsStatic), log) is { } tooBig)
-            return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource,
-                tooBig + $" The mesh is kept in {runDir}, so a run started anyway reuses it."));
-
         // ── Palace ────────────────────────────────────────────────────────────────────────────
         // brief-em3d-21 R-em3d21-3a — one MPI rank per PHYSICAL core by default (Open MPI's slot count).
         // brief-em3d-136 R-em3d136-2a — one per GPU on a GPU run, capped by Cores.
+        // brief-dfr27-5 R-dfr27-5-5 — and no more than the question before the run chose.
         var (processes, processNote) = PalaceProcessCount(plan.Device, maxCores, runner.Cores, plan.Gpus);
+        bool cpu = plan.Device == PalaceDevice.Cpu;
+        if (cpu && memory.ProcessCap is { } cap && cap < processes) (processes, processNote) = (cap, null);
+
+        if (meshed.Tetrahedra is { } tets &&
+            memory.Admit(MeshMemoryVerdict(tets, settings, physical, plan.Memory, problem.IsStatic, cpu ? processes : null), log) is { } tooBig)
+            return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource,
+                tooBig + $" The mesh is kept in {runDir}, so a run started anyway reuses it."));
+        if (cpu && memory.ProcessCap is { } chosen && chosen < processes) (processes, processNote) = (chosen, null);
         if (processNote is not null) log.Notes.Add(processNote);
         var tracker = new PalaceStageTracker(settings.AdaptiveMaxIterations, settings.SweepAdaptiveTol, control,
                                              electrostatic: problem.Type == Em3dProblemType.Electrostatic);
@@ -516,7 +523,7 @@ public static partial class Em3dRunService
     /// rows are read, so a save-only Point sample (brief 29) adds no pattern. Null on success.
     /// </summary>
     internal static string? PalacePattern(string post, PalacePortS s, IReadOnlyList<Em3dPort> ports, EmSetup setup, DataSet data,
-                                         List<string> notes)
+                                         ICollection<string> notes)
     {
         var numbers = ports.Select(p => p.Number).ToList();
         var ff = PalaceRun.ReadFarField(Path.Combine(post, PalaceRun.FarFieldFile), out string? error);
@@ -898,21 +905,27 @@ public static partial class Em3dRunService
     /// an air box with half the padding (regenerated, so its figure is the smaller problem's).
     /// </summary>
     public static Em3dMemoryVerdict PalaceMemoryVerdict(Em3dProblem problem, EmSetup setup, EmLayoutSource source,
-                                                        PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null)
+                                                        PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null,
+                                                        int? processes = null)
         => PalaceMemoryVerdict(problem, setup,
                                source.Technology is { } tech ? s => Em3dGenerator.Generate(s, source, tech) : null,
-                               settings, physicalBytes, scope);
+                               settings, physicalBytes, scope, processes);
 
     /// <summary>brief-em3d-42 — the same check, regenerating the half-padding remedy through
     /// <paramref name="regenerate"/> (null: no such remedy is priced).</summary>
+    /// <param name="processes">brief-dfr27-5 R-dfr27-5-5 — the MPI processes the run will use: the estimate is scaled to them
+    /// (<see cref="Em3dSizeEstimate.PalaceProcessFactor"/>) and fewer is offered when fewer would fit. Null: the count the
+    /// per-unknown figures were measured on, and no such remedy.</param>
     public static Em3dMemoryVerdict PalaceMemoryVerdict(Em3dProblem problem, EmSetup setup,
                                                         Func<EmSetup, Em3dGenerationResult>? regenerate,
-                                                        PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null)
+                                                        PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null,
+                                                        int? processes = null)
     {
         // brief-em3d-22 — the volume estimate prices elements per WAVELENGTH, which a static solve does
         // not have; its check is the one after meshing, on Gmsh's own count.
         if (problem.IsStatic) return Em3dMemoryVerdict.Unknown;
-        long? estimate = EstimatePalace(problem, settings)?.MemoryBytes;
+        long? At(PalaceSettings s, Em3dProblem? q = null) => Scaled(EstimatePalace(q ?? problem, s)?.MemoryBytes, processes);
+        long? estimate = At(settings);
         if (estimate is not { } e || physicalBytes <= 0 || e <= Em3dMemoryVerdict.WarnFraction * physicalBytes)
             return Em3dMemoryVerdict.Evaluate(estimate, physicalBytes, [], scope: scope);
 
@@ -924,10 +937,13 @@ public static partial class Em3dRunService
             AdaptiveTol = draft.AdaptiveTol, SweepAdaptiveTol = draft.SweepAdaptiveTol,
         };
         if (asDraft != settings)
-            remedies.Add(new("the Draft preset (Palace.Quality: Draft)", EstimatePalace(problem, asDraft)?.MemoryBytes));
+            remedies.Add(new("the Draft preset (Palace.Quality: Draft)", At(asDraft)));
+        // brief-dfr27-5 R-dfr27-5-5 — first-order elements on their own, keeping the preset's refinement and tolerances.
+        if (settings.ElementOrder == 2)
+            remedies.Add(new("first-order elements (Palace.ElementOrder: 1)", At(settings with { ElementOrder = 1 })));
         if (settings.AdaptiveMaxIterations > 0)
             remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)",
-                             EstimatePalace(problem, settings with { AdaptiveMaxIterations = 0 })?.MemoryBytes));
+                             At(settings with { AdaptiveMaxIterations = 0 })));
         if (regenerate is not null)
         {
             double defaultPadUm = Em3dGenerator.DefaultPaddingFractionOfLongestWavelength * 299_792_458.0 /
@@ -941,10 +957,42 @@ public static partial class Em3dRunService
                                           Half(box.ZMin), Half(box.ZMax));
             var regenerated = regenerate(smaller);
             if (regenerated.Ok && regenerated.Problem is { } q)
-                remedies.Add(new("an air box with half the padding on every side (AirBox)", EstimatePalace(q, settings)?.MemoryBytes));
+                remedies.Add(new("an air box with half the padding on every side (AirBox)", At(settings, q)));
         }
+        remedies.AddRange(FitRemedies(e, processes, physicalBytes));
         return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes ?? long.MaxValue)],
             basis: "Before meshing, from the 3D model's volumes:", scope: scope);
+    }
+
+    /// <summary>brief-dfr27-5 R-dfr27-5-5 — <paramref name="bytes"/>, measured on <see cref="Em3dSizeEstimate.PalaceMeasuredProcesses"/>
+    /// processes, on <paramref name="processes"/> (unchanged when that is null).</summary>
+    private static long? Scaled(long? bytes, int? processes)
+        => bytes is { } b && processes is { } n
+            ? (long)Math.Round(b * Em3dSizeEstimate.PalaceProcessFactor(n) / Em3dSizeEstimate.PalaceProcessFactor(Em3dSizeEstimate.PalaceMeasuredProcesses))
+            : bytes;
+
+    /// <summary>
+    /// brief-dfr27-5 R-dfr27-5-5 — the two remedies every Palace estimate past the machine can be priced for without a new
+    /// model. FEWER PROCESSES: the most that fit, or one when none does — this run can take it itself, so the question offers
+    /// it as a button; each rank carries its own preconditioner, and one rank measured 2.5 GB where eight took 4.3, at twice
+    /// the time. A SMALLER CROP: the share of this crop's area that would fit, since the elements follow the volume.
+    /// </summary>
+    internal static IEnumerable<Em3dMemoryRemedy> FitRemedies(long estimate, int? processes, long physicalBytes)
+    {
+        if (physicalBytes <= 0 || estimate <= physicalBytes) yield break;
+        if (processes is { } now && now > 1)
+        {
+            static double Factor(int n) => Em3dSizeEstimate.PalaceProcessFactor(n);
+            int fits = 1;
+            for (int n = now - 1; n >= 1; n--)
+                if (estimate * Factor(n) / Factor(now) <= physicalBytes) { fits = n; break; }
+            long at = (long)Math.Round(estimate * Factor(fits) / Factor(now));
+            yield return new($"{fits} MPI process{(fits == 1 ? "" : "es")} instead of {now} (slower; the Cores setting)", at)
+                         { Processes = fits };
+        }
+        double share = 0.9 * physicalBytes / estimate;
+        yield return new($"a crop about {Math.Floor(share * 100).ToString("0", CultureInfo.InvariantCulture)} % of this one's area " +
+                         "(Crop to New Cell; the mesh follows the volume)", (long)Math.Round(estimate * share)) { Sized = true };
     }
 
     /// <summary>
@@ -953,7 +1001,7 @@ public static partial class Em3dRunService
     /// ones a mesh this size can be priced for without meshing again.
     /// </summary>
     public static Em3dMemoryVerdict MeshMemoryVerdict(long tetrahedra, PalaceSettings settings, long physicalBytes,
-                                                      Em3dMemoryScope? scope = null, bool isStatic = false)
+                                                      Em3dMemoryScope? scope = null, bool isStatic = false, int? processes = null)
     {
         if (settings.ElementOrder is not (1 or 2)) return Em3dMemoryVerdict.Unknown;
         // brief-dfr26-8 — a static solve's unknowns are scalar: priced as a field's, a ten-layer electrostatic run that used
@@ -963,13 +1011,17 @@ public static partial class Em3dRunService
                 ? Em3dMemoryVerdict.Evaluate(se, physicalBytes, [],
                       basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope)
                 : Em3dMemoryVerdict.Unknown;
-        long e = Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, settings.AdaptiveMaxIterations);
+        long For(int order, int passes) => Scaled(Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, order, passes), processes)!.Value;
+        long e = For(settings.ElementOrder, settings.AdaptiveMaxIterations);
         var remedies = new List<Em3dMemoryRemedy>();
         if (settings.ElementOrder != 1 || settings.AdaptiveMaxIterations > 0)
-            remedies.Add(new("the Draft preset (Palace.Quality: Draft)", Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, 1, 0)));
+            remedies.Add(new("the Draft preset (Palace.Quality: Draft)", For(1, 0)));
+        // brief-dfr27-5 R-dfr27-5-5 — first-order elements on their own.
+        if (settings.ElementOrder == 2 && settings.AdaptiveMaxIterations > 0)
+            remedies.Add(new("first-order elements (Palace.ElementOrder: 1)", For(1, settings.AdaptiveMaxIterations)));
         if (settings.AdaptiveMaxIterations > 0)
-            remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)",
-                             Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, 0)));
+            remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)", For(settings.ElementOrder, 0)));
+        remedies.AddRange(FitRemedies(e, processes, physicalBytes));
         return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes)],
             basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope);
     }
