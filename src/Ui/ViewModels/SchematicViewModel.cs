@@ -847,7 +847,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         _placementSymbol    = p.Kind;
         _placementPortCount = p.PortCount;
         _placementRot       = p.Rotation;
-        _placementMirrorX   = false;
+        _placementMirrorX   = p.MirrorX;
 
         if (kindChanged)
         {
@@ -857,9 +857,9 @@ public sealed partial class SchematicViewModel : ObservableObject
         }
         else
         {
-            // Same kind, rotation changed: update existing ghost in-place.
+            // Same kind, rotated or mirrored: update existing ghost in-place.
             if (Overlay.Ghost is { } g)
-                Overlay = Overlay with { Ghost = g with { Rotation = p.Rotation } };
+                Overlay = Overlay with { Ghost = g with { Rotation = p.Rotation, MirrorX = p.MirrorX } };
         }
     }
 
@@ -907,8 +907,12 @@ public sealed partial class SchematicViewModel : ObservableObject
                 else
                     RotateSelection(clockwise: true);
                 return true;
-            case Key.M when !modifiers.HasFlag(KeyModifiers.Shift): MirrorSelection(horizontal: true);  return true;
-            case Key.M when  modifiers.HasFlag(KeyModifiers.Shift): MirrorSelection(horizontal: false); return true;
+            case Key.M when !ctrl:
+                if (ActiveTool == Tool.Place && _placementService?.Pending is not null)
+                    _placementService.Mirror(horizontal: !modifiers.HasFlag(KeyModifiers.Shift));
+                else
+                    MirrorSelection(horizontal: !modifiers.HasFlag(KeyModifiers.Shift));
+                return true;
             case Key.A when ctrl: SelectAll(); return true;
             case Key.Up:    NudgeSelection(0,  -GridStep(modifiers)); return true;
             case Key.Down:  NudgeSelection(0,   GridStep(modifiers)); return true;
@@ -3939,7 +3943,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         }
         if (ArmedCellDir is { Length: > 0 } armedCell)
         {
-            _ = CommitCellPlacementAsync(armedCell, wx, wy, _placementRot);
+            _ = CommitCellPlacementAsync(armedCell, wx, wy, _placementRot, _placementMirrorX);
             return;
         }
 
@@ -4272,7 +4276,8 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// Mirrors <see cref="CommitPlacement"/> but uses the cell folder as the component source
     /// instead of a built-in SymbolKind.  One undoable <see cref="PlaceComponentCommand"/>.
     /// </summary>
-    public async Task CommitCellPlacementAsync(string cellAbsDir, double wx, double wy, SymbolRotation rotation)
+    public async Task CommitCellPlacementAsync(string cellAbsDir, double wx, double wy, SymbolRotation rotation,
+                                               bool mirrorX = false)
     {
         string cellRef;
 
@@ -4382,6 +4387,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             CellInterfaceHash = PlacedCellRef.HashFor(cellRef, EditModel.SchematicDirectory, KitWorkspaceRoot),
             X = sx, Y = sy,
             Rotation     = rotation,
+            MirrorX      = mirrorX,
             ShowTypeLabel    = true,
             ShowInstanceName = true,
         };
@@ -4809,7 +4815,9 @@ public sealed partial class SchematicViewModel : ObservableObject
         var ids = Selection.Ids.ToList();
         if (ids.Count == 0)
         {
-            if (horizontal) _placementMirrorX = !_placementMirrorX;
+            // The armed P/T/G ghost (nothing selected): the same reflection a placed part takes.
+            _placementRot     = MirrorCommand.MirroredRotation(_placementRot, horizontal);
+            _placementMirrorX = !_placementMirrorX;
             RebuildOverlay();
             return;
         }

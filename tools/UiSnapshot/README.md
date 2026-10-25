@@ -45,6 +45,15 @@ The window is the real `SignalDesignerWindow`, opened on its view model's `SetTa
 **Design signal…** opens it, after its preview has finished. Without `--size` it takes the window's own size
 (1199x800), and the carrier cards may then be below the fold. Use `--size 1199x1060` to see them.
 
+**The Tuning window** opens on a schematic's ticked Tune rows, the way the shell hosts it:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --tuning <file.csch> -o out.png [--size WxH] [steps]
+```
+
+After every step it prints which control holds the keyboard and each row's value, so what a key did is read
+rather than guessed from pixels. Default size 420x500.
+
 **Input steps run in the order given**, as real pointer and key events through the window, before the final
 capture. Coordinates are window DIPs — take them from a first capture.
 

@@ -312,4 +312,54 @@ public sealed class PlotsAndTuningRound26Tests
         Assert.True(t.StepMarkerAlongX(m, -1));
         Assert.Equal(0.2f, m.PositionStatic.X, 3);
     }
+
+    /// <summary>
+    /// New data under a Smith marker — every frame of a tuning drag — keeps it on its own sample. It was
+    /// re-snapped to the point nearest where it USED to be, so as the curve slid it hopped between samples:
+    /// a few pixels of jitter, and a readout at another frequency (owner report, 2026-10-25).
+    /// </summary>
+    [Fact]
+    public void ASmithMarker_RidesItsOwnSample_WhenTheDataUnderItMoves()
+    {
+        var t = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db)
+        {
+            CubeName = "S", Slice = [new AxisSlice("freq", AxisRole.KeepAsX, 0)],
+        };
+        t.SetCubeData([1e9, 2e9, 3e9], [new(0.1, 0), new(0.2, 0), new(0.3, 0)], null, "freq", "Hz",
+                      PlotType.Smith, FreqUnit.GHz);
+        var m = new Marker(t, 0, false, false, 1) { PositionStatic = new System.Numerics.Vector2(0.2f, 0) };   // 2 GHz
+        t.Markers.Add(m);
+
+        // The curve slides one sample's width: 1 GHz now lies where 2 GHz was.
+        t.SetCubeData([1e9, 2e9, 3e9], [new(0.2, 0), new(0.3, 0), new(0.4, 0)], null, "freq", "Hz",
+                      PlotType.Smith, FreqUnit.GHz);
+
+        Assert.Equal(0.3f, t.GetMarkerDataLocation(m).X, 3);           // still 2 GHz
+    }
+
+    /// <summary>A tuning step whose result has a non-finite sample: the autoscaled window stays finite (it went
+    /// infinite, and serializing it for the unsaved-changes check crashed the app), and a marker on that sample
+    /// is not moved onto it.</summary>
+    [Fact]
+    public void ANonFiniteSample_LeavesTheWindowFinite_AndTheMarkerOffIt()
+    {
+        var plot = new Plot(PlotType.Smith, FreqUnit.GHz);
+        var t = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db)
+        {
+            CubeName = "S", Slice = [new AxisSlice("freq", AxisRole.KeepAsX, 0)],
+        };
+        t.SetCubeData([1e9, 2e9, 3e9], [new(0.1, 0), new(0.2, 0), new(0.3, 0)], null, "freq", "Hz",
+                      PlotType.Smith, FreqUnit.GHz);
+        var m = new Marker(t, 0, false, false, 1) { PositionStatic = new System.Numerics.Vector2(0.2f, 0) };
+        t.Markers.Add(m);
+        plot.Traces.Add(t);
+
+        t.SetCubeData([1e9, 2e9, 3e9], [new(0.1, 0), new(double.PositiveInfinity, 0), new(0.3, 0)], null, "freq", "Hz",
+                      PlotType.Smith, FreqUnit.GHz);
+        plot.Autoscale(force: true);
+
+        var w = plot.Axes.Window;
+        Assert.True(double.IsFinite(w.X) && double.IsFinite(w.Y) && double.IsFinite(w.Width) && double.IsFinite(w.Height));
+        Assert.True(float.IsFinite(m.PositionStatic.X) && float.IsFinite(m.PositionStatic.Y));
+    }
 }

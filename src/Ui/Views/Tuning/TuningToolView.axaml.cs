@@ -18,7 +18,8 @@ namespace CircuitRF.Ui.Views.Tuning;
 /// <summary>
 /// The Tuning panel (brief-tuneopt-4). Everything a row DOES is on <see cref="TuningRowViewModel"/>;
 /// this file only routes keys and pointer releases to it — Up/Down between rows, Left/Right, Shift and
-/// Page keys on the value (overview §3, R-dfr26-6-3), Enter/Esc in the number box, the min/max boxes that open in place — and paints
+/// Page keys on the value (overview §3, R-dfr26-6-3) wherever the keyboard is in the panel, Enter/Esc in the number
+/// box, the min/max boxes that open in place — and paints
 /// the status dot. A timer re-reads the session's lag while one runs, so "1.4 s behind" counts up.
 /// </summary>
 public partial class TuningToolView : UserControl
@@ -26,7 +27,7 @@ public partial class TuningToolView : UserControl
     private TuningPanelViewModel? _panel;
 
     private FlyoutBase AddFlyout => AddButton.Flyout!;
-    private readonly DispatcherTimer _lagTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private readonly DispatcherTimer _lagTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
 
     static TuningToolView()
     {
@@ -44,6 +45,8 @@ public partial class TuningToolView : UserControl
 
         AddHandler(KeyDownEvent, OnKeyDownTunnel, RoutingStrategies.Tunnel);
         AddHandler(PointerReleasedEvent, OnPointerReleasedAnywhere, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(PointerPressedEvent, OnPointerPressedInRow, RoutingStrategies.Bubble);
+        AddHandler(GotFocusEvent, (_, e) => { if (SliderOf(e.Source as Control) is { Tag: TuningRowViewModel r }) _currentRow = r; });
         AddHandler(LostFocusEvent, OnLostFocus, RoutingStrategies.Bubble);
         EscapeCancelsEdit.Attach(this);   // after the tunnel above, so a box's own Esc meaning runs first
 
@@ -133,7 +136,8 @@ public partial class TuningToolView : UserControl
 
         if (source is TextBox { Tag: TuningRowViewModel row } box && box.Classes.Contains("tuningValue"))
         {
-            if (e.Key == Key.Enter)  { row.CommitValueText(); e.Handled = true; }
+            // Enter hands the keyboard back to the row's slider, so the arrows step on from the typed value.
+            if (e.Key == Key.Enter)  { row.CommitValueText(); FocusSliderOf(row); e.Handled = true; }
             if (e.Key == Key.Escape) { row.RevertValueText(); e.Handled = true; }
             return;
         }
@@ -147,8 +151,19 @@ public partial class TuningToolView : UserControl
 
         // Anywhere else in a row — its slider, or its ⋮ button: Up/Down choose the parameter,
         // Left/Right change it (R-dfr26-6-3). A text box returned above, so it keeps its own arrows.
-        if ((SliderOf(source)?.Tag ?? (source as Button)?.DataContext) is not TuningRowViewModel focused || _panel is null)
-            return;
+        if (_panel is null) return;
+        if ((SliderOf(source)?.Tag ?? (source as Button)?.DataContext) is not TuningRowViewModel focused)
+        {
+            // Anywhere else in the panel — the panel itself after a click on a row's name or on blank space, after
+            // Esc out of a box, or a toolbar button: the keys act on the last row used, else the first. They used
+            // to act only from a slider, so the panel looked focused and the arrows did nothing (owner report,
+            // 2026-10-25). A control with arrows of its own keeps them.
+            if (e.Key is not (Key.Up or Key.Down or Key.Left or Key.Right or Key.PageUp or Key.PageDown)) return;
+            if (source is TextBox or SelectingItemsControl or NumericUpDown or MenuItem or Slider) return;
+            if (CurrentRow() is not { } current) return;
+            focused = current;
+            FocusSliderOf(focused);
+        }
 
         if (e.Key is Key.Up or Key.Down)
         {
@@ -170,6 +185,34 @@ public partial class TuningToolView : UserControl
         {
             focused.Nudge(n.dir, n.size);
             e.Handled = true;
+        }
+    }
+
+    /// <summary>The row the arrows act on when no row's slider has the keyboard: the last one used, while it is
+    /// still listed and enabled, otherwise the first enabled row.</summary>
+    private TuningRowViewModel? _currentRow;
+
+    private TuningRowViewModel? CurrentRow()
+        => _currentRow is { IsEnabled: true } r && _panel!.Rows.Contains(r) ? r
+         : _panel!.Rows.FirstOrDefault(x => x.IsEnabled);
+
+    /// <summary>
+    /// A press on a row's name, units or blank space — nothing there takes the keyboard, so it went to the panel
+    /// and the arrows did nothing: that row's slider takes it instead. A press a control handled (a slider, a box,
+    /// a min/max opening its box) is left alone.
+    /// </summary>
+    private void OnPointerPressedInRow(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Handled) return;
+        for (var v = e.Source as Visual; v is not null && !ReferenceEquals(v, RowsList); v = v.GetVisualParent())
+        {
+            if (v is InputElement { Focusable: true }) return;
+            if (v is Border { DataContext: TuningRowViewModel row } border && border.Classes.Contains("row"))
+            {
+                _currentRow = row;
+                FocusSliderOf(row);
+                return;
+            }
         }
     }
 

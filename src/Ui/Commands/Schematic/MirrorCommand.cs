@@ -54,8 +54,9 @@ internal sealed class MirrorCommand : IUiCommand
         _model.NotifyChanged();
     }
 
-    /// <summary>Rot(−θ) for a horizontal flip; Rot(180 − θ) for a vertical one.</summary>
-    private static SymbolRotation MirroredRotation(SymbolRotation rot, bool horizontal)
+    /// <summary>Rot(−θ) for a horizontal flip; Rot(180 − θ) for a vertical one. The armed placement's
+    /// ghost is flipped by the same rule (<see cref="PlacementService.Mirror"/>).</summary>
+    internal static SymbolRotation MirroredRotation(SymbolRotation rot, bool horizontal)
         => horizontal
             ? rot switch
             {

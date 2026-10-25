@@ -661,14 +661,35 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
     private void OnSessionChanged(object? sender, EventArgs e) => UpdateLag();
 
+    /// <summary>
+    /// How long the display must stay behind the sliders before the panel SAYS so. Every request is a
+    /// lag until its result lands, so on a circuit that solves in a few milliseconds a drag flashed
+    /// the dot amber, the time text and the rows several times a second while nothing was actually
+    /// behind (owner report, 2026-10-25). A lag shorter than this is not one anybody can act on.
+    /// </summary>
+    internal static readonly TimeSpan LagShownAfter = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>The clock the lag is timed by; a test replaces it.</summary>
+    internal Func<DateTime> Clock { get; set; } = () => DateTime.UtcNow;
+
+    private DateTime? _lagSince;
+
+    /// <summary>Whether a lag that began at <paramref name="since"/> is shown at <paramref name="now"/>.</summary>
+    internal static bool ShowsLag(DateTime? since, DateTime now) => since is { } s && now - s >= LagShownAfter;
+
     /// <summary>Re-reads the session's lag. The view calls it on a timer while lagging, so the age
-    /// counts up.</summary>
+    /// counts up — and so a lag that outlasts <see cref="LagShownAfter"/> turns amber without waiting
+    /// for the next slider move.</summary>
     public void UpdateLag()
     {
         var s = _session;
-        Status = s is null ? TuningStatus.Idle : s.IsLagging ? TuningStatus.Lagging : TuningStatus.Running;
+        if (s is { IsLagging: true }) _lagSince ??= Clock();
+        else                          _lagSince = null;
+        bool lagging = s is not null && ShowsLag(_lagSince, Clock());
+
+        Status = s is null ? TuningStatus.Idle : lagging ? TuningStatus.Lagging : TuningStatus.Running;
         LastEvalText = s?.LastDuration is { } d ? $"{d.TotalSeconds:0.0} s" : "";
-        BehindText   = s is { IsLagging: true, DisplayedAge: { } age } ? $"{age.TotalSeconds:0.0} s behind" : "";
+        BehindText   = lagging && s!.DisplayedAge is { } age ? $"{age.TotalSeconds:0.0} s behind" : "";
 
         var shown   = s?.DisplayedValues;
         var current = CurrentValues();
@@ -676,7 +697,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         {
             // A part row lags when its WHOLE value does: that is the value the session evaluates.
             string key = row.Tunable?.ValueKey ?? row.Key;
-            row.IsLagging = s is { IsLagging: true }
+            row.IsLagging = lagging
                 && current.GetValueOrDefault(key) != shown?.GetValueOrDefault(key);
         }
     }

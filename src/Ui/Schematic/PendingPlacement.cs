@@ -1,7 +1,7 @@
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
-/// App-level armed-placement state: the component type + rotation currently being placed.
+/// App-level armed-placement state: the component type + orientation currently being placed.
 /// Null on <see cref="PlacementService"/> means nothing is armed.
 /// </summary>
 public sealed record PendingPlacement(
@@ -23,4 +23,7 @@ public sealed record PendingPlacement(
     /// none. Reusing <c>PdkPartRef</c> for one would put a cell in the palette's armed-tile
     /// comparison under a kit name nobody imported.</para>
     /// </summary>
-    string? CellDir = null);
+    string? CellDir = null,
+    /// <summary>The armed ghost's mirror flag — M / Shift+M before the click, in the placed part's own
+    /// mirror-then-rotate convention (<see cref="Commands.Schematic.MirrorCommand"/>).</summary>
+    bool MirrorX = false);

@@ -34,9 +34,10 @@ public sealed class TunableActivationTests
     }
 
     /// <summary>A double-click toggles a Multiple,Toggle row twice, so it lands unselected: the clicked row
-    /// is added by identity, never by falling back to the first row shown.</summary>
+    /// is added by identity, never by falling back to the first row shown. The popup STAYS OPEN so the
+    /// next one can be added (owner request, 2026-10-25), the added row gone from its list; × closes it.</summary>
     [Fact]
-    public void AddPopup_DoubleClick_AddsTheClickedRow()
+    public void AddPopup_DoubleClick_AddsTheClickedRow_AndStaysOpen()
     {
         var f = new TuningPanelFixture();
         f.Panel.Add.IsOpen = true;
@@ -45,6 +46,10 @@ public sealed class TunableActivationTests
         var clicked = results[^1];
         f.Panel.Add.AddWith(clicked);
         Assert.Equal(clicked.Key, Assert.Single(f.Top.EditModel.Tuning!.Variables).Key);
+        Assert.True(f.Panel.Add.IsOpen);
+        Assert.DoesNotContain(f.Panel.Add.Results, r => r.Key == clicked.Key);
+
+        f.Panel.Add.CloseCommand.Execute(null);
         Assert.False(f.Panel.Add.IsOpen);
     }
 

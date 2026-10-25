@@ -1,5 +1,6 @@
 // ================================================================
 //  TuningAddPopup.cs  —  Enter and double-click in the Add… popup
+//  (Enter adds and closes; a double-click adds and stays open)
 //
 //  The Tuning, Optimizer and Yield panels each host the popup in a
 //  Button.Flyout. A flyout's content lives under its own popup root, so
@@ -20,8 +21,8 @@ namespace CircuitRF.Ui.Views.Tuning;
 
 internal static class TuningAddPopup
 {
-    /// <summary>Enter (in the search box or the list) adds the selected rows; a double-click adds that
-    /// row along with any already selected.</summary>
+    /// <summary>Enter (in the search box or the list) adds the selected rows and closes; a double-click adds
+    /// that row along with any already selected, and leaves the popup open.</summary>
     public static void Attach(TextBox search, ListBox list, Func<TuningAddViewModel?> add)
     {
         void OnKeyDown(object? sender, KeyEventArgs e)

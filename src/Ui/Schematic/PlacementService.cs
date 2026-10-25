@@ -74,6 +74,23 @@ public sealed partial class PlacementService : ObservableObject
         Pending = Pending with { Rotation = Step(Pending.Rotation, clockwise) };
     }
 
+    /// <summary>
+    /// Mirror the armed placement: M (horizontal=true) flips it left↔right, Shift+M top↔bottom — so a
+    /// part lands facing the way it is wanted, an IProbe's arrow along the wire it cuts. Exactly the
+    /// reflection <see cref="Commands.Schematic.MirrorCommand"/> applies to a placed part: the mirror
+    /// flag toggles and the rotation is re-derived, since a symbol is mirrored THEN rotated.
+    /// No-op when nothing is armed.
+    /// </summary>
+    public void Mirror(bool horizontal)
+    {
+        if (Pending is null) return;
+        Pending = Pending with
+        {
+            Rotation = Commands.Schematic.MirrorCommand.MirroredRotation(Pending.Rotation, horizontal),
+            MirrorX  = !Pending.MirrorX,
+        };
+    }
+
     private static SymbolRotation Step(SymbolRotation r, bool cw) => cw
         ? r switch
         {

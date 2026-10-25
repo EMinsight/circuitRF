@@ -40633,3 +40633,30 @@ held-back-read test fails on the old overlay.
   under 10 px. A carrier with no bandwidth picker (CW, PCW, FSK, FILE) now puts Offset and Power in the free middle of
   its first row, saving a row (~36 px). LTE and NR keep them on the second row, beside Seed and modulation. The two
   copies of the Offset/Power fields bind the same properties and are switched by `IsOfdm`.
+
+## Tuning window: arrows that did nothing, a flashing status dot, an Add… popup that closed (2026-10-25)
+
+- **The arrows answered only from a row's SLIDER.** A click on a row's name or blank space, Esc out of a
+  box, or Enter in a value box left the keyboard on the panel (or in the box), and the tunnel handler only
+  acted when the source was a slider or a row's ⋮ — so the panel looked focused and nothing moved. Now a
+  press on a row's non-focusable part gives its slider the keyboard, Enter in the value box does the same,
+  and any other focus in the panel (outside a text box, combo, list or menu) acts on the last row used, else
+  the first. Verified as real pointer and key events with `tools/UiSnapshot --tuning <file.csch>`, which
+  prints the focused control and every row's value after each step.
+- **The status dot went amber for every evaluation**, since a request is a lag until its result lands.
+  `TuningPanelViewModel.LagShownAfter` (200 ms) gates the amber, the "behind" text and the row tint; the
+  view's lag timer is 100 ms so a real lag still shows promptly. The time text has a `MinWidth` so its
+  changing width cannot push the dot sideways.
+- **Add… popup (shared by Tuning, Optimizer, Yield):** a double-click adds and stays open, the search kept;
+  Enter still adds and closes; a × beside the search box closes it, inside the popup's unchanged 320 px.
+
+
+## A docked tool's title bar blinked a dark line while tuning (2026-10-25)
+
+The Dock Fluent theme's `ToolChromeControl` template has a divider strip, `PART_Panel` (1-2 px, in
+`DockBorderSubtleBrush`), whose visibility follows `:pointerover`: for `GripMode.Visible` — every tool dock
+here — it is hidden, and SHOWN while the pointer is over the panel. During a slider drag each published frame
+redraws the window and pointer-over is re-read, so the strip blinked at the top of the Tuning title bar.
+`CircuitRfStyles.axaml` now gives the `:pointerover` state the theme's own non-hover rule
+(`IsVisibleAutoHideOrHiddenConverter`). Checked headlessly against the real theme: hover showed the strip
+before the override and does not after. The selector names a template part — re-check on a Dock upgrade.

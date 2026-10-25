@@ -1,5 +1,26 @@
 # src/Render — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## A Smith marker on a simulated trace jittered while tuning (2026-10-25)
+
+Owner report: during a tuning drag, a marker on a Smith chart jumped a few pixels up and down; a Rect
+marker did not. **A marker on a cube trace on a complex plane is resolved in two dimensions** —
+`CubeMarkerIndex` picks the sample nearest its stored `PositionStatic` (Re, Im), because Smith/Polar
+`Points` carry no x. So when new data moved the curve, the marker re-snapped to whichever sample now lay
+nearest its OLD point: it hopped along the curve, and its readout changed frequency. A Rect marker stores
+its x and has no such failure.
+
+`Trace.SetCubeData` now reads each locus marker's x sample before the data is replaced and puts it back on
+that sample's new point afterwards (`LocusMarkerSamples`/`ReanchorLocusMarkers`), matched by x value and by
+which half of a whole-plane cut it is on. A point cloud (no x order), a family and a free marker are left
+alone. Test `PlotsAndTuningRound26Tests.ASmithMarker_RidesItsOwnSample_WhenTheDataUnderItMoves`.
+
+**The same session crashed the app on a non-finite sample.** `Trace.PathBoundingRect` counted ±∞/NaN
+points, so a tuning step whose result had one gave an autoscaled window that was not finite; the `.cdd`
+dirty-check serializes the axes on every redraw and System.Text.Json throws on ±∞. The extent now skips
+non-finite points, the axes window is written through `Finite()` as the marker fields already were, and a
+locus marker whose sample comes back non-finite stays put. Test
+`ANonFiniteSample_LeavesTheWindowFinite_AndTheMarkerOffIt`.
+
 ## A dashed closed shape exported SOLID, and the only warning was native console noise (2026-09-21)
 
 Owner report: a run printed `Unsupported path effect in addPaint.` repeatedly — no newline between

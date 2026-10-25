@@ -14,23 +14,29 @@ using CircuitRF.Ui.Signals;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Views.DataDisplay;
 using CircuitRF.Ui.Views.Signals;
+using CircuitRF.Ui.ViewModels.Dock;
+using CircuitRF.Ui.Views.Tuning;
 
 // UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] [--results <dir>]
 //            [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
 // UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
 // UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]
+// UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
 //
 // Opens the display through DisplayWindowViewModel.LoadAllAsync — the GUI's own Open — and photographs one
 // real view: the plot canvas of the active tab, plot n's Plot Inspector (its trace cards), or the whole Data
 // Display document view (toolbar, canvas and its key bindings). The input steps run IN ORDER, as real pointer and
 // key events through the window, before the final capture; --shot captures an intermediate frame.
 //
+// --tuning opens the Tuning window on a schematic, its rows the ones the file has ticked Tune; after each step it
+// prints what holds the keyboard and every row's value, so a key's effect is read rather than guessed from pixels.
+//
 // --signal opens the Signal Designer window itself on a MOD_Source carrying those carriers (netlist form,
 // Carrier[i]), waits for its preview — generated through the cache a simulation reads — and photographs the
 // window; --tab 1 shows the second preview tab (EVM, Pulse or Frequency). --standalone opens it as Tools ▸ Signal
 // Designer does, on no MOD_Source; --iq then reads an I/Q file through Load custom.
 
-string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null;
+string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null;
 bool standalone = false;
 var signal = new List<string>();
 int plotIndex = 1, previewTab = 0;
@@ -49,6 +55,7 @@ for (int i = 0; i < args.Length; i++)
         case "--tab" when i + 1 < args.Length: previewTab = int.Parse(args[++i]); break;
         case "--standalone": standalone = true; break;
         case "--iq" when i + 1 < args.Length: iq = Path.GetFullPath(args[++i]); break;
+        case "--tuning" when i + 1 < args.Length: tuning = Path.GetFullPath(args[++i]); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--size" when i + 1 < args.Length:
             var wh = args[++i].Split('x');
@@ -61,12 +68,13 @@ for (int i = 0; i < args.Length; i++)
         default: cdd = args[i]; break;
     }
 }
-if ((cdd is null && signal.Count == 0 && !standalone) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && signal.Count == 0 && !standalone && tuning is null) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
                           + "       UiSnapshot --signal \"<carrier>\" ... -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]\n"
-                          + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]");
+                          + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]\n"
+                          + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]");
     return 2;
 }
 
@@ -78,7 +86,18 @@ AppBuilder.Configure<SnapshotApp>()
     .SetupWithoutStarting();
 
 Window host;
-if (standalone)
+TuningTool? tuningTool = null;
+if (tuning is not null)
+{
+    // The Tuning window as the shell hosts it: a TuningTool whose panel follows one schematic.
+    var (model, _, _) = SchematicPersistence.LoadFromFile(tuning);
+    tuningTool = new TuningTool();
+    tuningTool.Panel.SetActiveSchematic(new SchematicViewModel(model, messageSink: null), Path.GetFileName(tuning));
+    host = new Window { Width = sizeGiven ? width : 420, Height = sizeGiven ? height : 500,
+                        Content = new TuningToolView { DataContext = tuningTool } };
+    host.Show();
+}
+else if (standalone)
 {
     // Tools ▸ Signal Designer: the view model's own SetStandalone, and Load custom's own path for a file.
     var designer = new SignalDesignerViewModel();
@@ -189,6 +208,13 @@ foreach (var (kind, arg) in steps)
             break;
     }
     Pump();
+    if (tuningTool is not null)
+    {
+        var focused = host.FocusManager?.GetFocusedElement();
+        string tag = focused is Control { Tag: CircuitRF.Ui.Tuning.TuningRowViewModel r } ? $" (row {r.Key})" : "";
+        Console.WriteLine($"{kind} {arg}: focus {focused?.GetType().Name ?? "none"}{tag}; "
+                        + string.Join(", ", tuningTool.Panel.Rows.Select(r => $"{r.Key}={r.ValueBoxText}")));
+    }
 }
 
 Capture(output);

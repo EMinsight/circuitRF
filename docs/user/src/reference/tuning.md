@@ -45,7 +45,9 @@ Three ways in, all of which add the same entry:
 
 - **＋** in the panel opens a search over everything tunable in the schematic. Type part of a name, an
   instance, a parameter or a cell. Tick *Include sub-cells* to search inside the schematic's
-  sub-circuits as well.
+  sub-circuits as well. **Double-click** a value to add it and keep the search open for the next one;
+  **Enter** adds the selected values and closes it. Close it with **×** beside the search box, or by
+  clicking anywhere outside it.
 - The **tune toggle** beside a parameter in the Properties panel.
 - **Right-click a parameter value on the canvas ▸ Tune.**
 
@@ -70,10 +72,11 @@ reads (`Wvar`) instead, and everything that reads it follows.
 
 Each row has a slider, a box holding the current value, the unit, and the range under the slider.
 
-- **Drag the slider**, or **type a value and press Enter** (Esc puts the box back). With a slider
-  focused, **Up** and **Down** move to the previous and next row, and **Left** and **Right** move the
-  value one step; Shift with Left or Right moves it ten steps, and Page Up and Page Down a tenth of the
-  range. A value box you are typing in keeps its own arrow keys.
+- **Drag the slider**, or **type a value and press Enter** (Esc puts the box back). Click a row, then
+  **Up** and **Down** move to the previous and next row, and **Left** and **Right** move the value one
+  step; Shift with Left or Right moves it ten steps, and Page Up and Page Down a tenth of the range. The
+  keys work wherever the panel has the keyboard, acting on the row you last used. A value box you are
+  typing in keeps its own arrow keys until you press Enter.
 - **The range** is the minimum and maximum under the slider. Click either one to change it. The first
   time a value is tuned its range is guessed: half to twice the value for a positive number, or 0–1 in
   its own unit for zero. The range is shown in the value's own unit, so pF stays pF.

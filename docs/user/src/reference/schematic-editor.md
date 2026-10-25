@@ -95,8 +95,10 @@ something else.</li>
 </ol>
 
 While a placement is armed, <kbd>R</kbd> rotates the ghost 90° counter-clockwise and
-<kbd>Shift</kbd>+<kbd>R</kbd> clockwise — the same two keys that rotate a selection when nothing is
-armed, so there is one pair of rotate keys to remember rather than two.
+<kbd>Shift</kbd>+<kbd>R</kbd> clockwise, <kbd>M</kbd> mirrors it left to right and
+<kbd>Shift</kbd>+<kbd>M</kbd> top to bottom — the same keys that rotate and mirror a selection when
+nothing is armed. The part lands the way the ghost faces, so an IProbe dropped onto a wire already
+points its arrow the way you want the current measured.
 
 **Dropping a part along a wire puts it in series.** When two of its pins land on one straight stretch
 of wire, the wire between them is removed, so the part breaks into the run instead of being shorted by
@@ -222,7 +224,7 @@ at the top of the schematic.
 | **S**, **W**, **Z** | Select, Wire, zoom box |
 | **F** | Zoom to fit |
 | **R**, **Shift+R** | Rotate the selection — or the part being placed — 90° counter-clockwise; clockwise |
-| **M**, **Shift+M** | Mirror horizontally; vertically |
+| **M**, **Shift+M** | Mirror the selection — or the part being placed — horizontally; vertically |
 | **G**, **T**, **P** | Place a ground, a Term, a Pin |
 | **Q** | Disable the selection as an open circuit |
 | arrows; **Shift**+arrows | Nudge the selection one grid step; five |

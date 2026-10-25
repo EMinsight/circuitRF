@@ -566,8 +566,10 @@ leaves nothing armed, which is what you want when you are placing one part in th
 something else.</li>
 </ol>
 <p>While a placement is armed, <kbd>R</kbd> rotates the ghost 90° counter-clockwise and
-<kbd>Shift</kbd>+<kbd>R</kbd> clockwise — the same two keys that rotate a selection when nothing is
-armed, so there is one pair of rotate keys to remember rather than two.</p>
+<kbd>Shift</kbd>+<kbd>R</kbd> clockwise, <kbd>M</kbd> mirrors it left to right and
+<kbd>Shift</kbd>+<kbd>M</kbd> top to bottom — the same keys that rotate and mirror a selection when
+nothing is armed. The part lands the way the ghost faces, so an IProbe dropped onto a wire already
+points its arrow the way you want the current measured.</p>
 <p><strong>Dropping a part along a wire puts it in series.</strong> When two of its pins land on one straight stretch
 of wire, the wire between them is removed, so the part breaks into the run instead of being shorted by
 it. That holds for a two-pin part, for an MTEE whose pins 1 and 2 lie along the wire (pin 3 is left for
@@ -998,7 +1000,7 @@ at the top of the schematic.</p>
 </tr>
 <tr>
 <td><strong>M</strong>, <strong>Shift+M</strong></td>
-<td>Mirror horizontally; vertically</td>
+<td>Mirror the selection — or the part being placed — horizontally; vertically</td>
 </tr>
 <tr>
 <td><strong>G</strong>, <strong>T</strong>, <strong>P</strong></td>

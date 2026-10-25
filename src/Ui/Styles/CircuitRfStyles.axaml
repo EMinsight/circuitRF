@@ -5,6 +5,7 @@
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         xmlns:dockCtrl="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
         xmlns:dockCore="clr-namespace:Dock.Model.Core;assembly=Dock.Model"
+        xmlns:dockConv="clr-namespace:Dock.Avalonia.Converters;assembly=Dock.Avalonia"
         xmlns:ctl="using:CircuitRF.Ui.Controls">
 
     <!--
@@ -191,6 +192,17 @@
                     <Setter Property="Padding" Value="0"/>
                 </ControlTheme>
             </Setter>
+        </Style>
+
+        <!-- A docked tool's title bar: the 1-2 px divider strip (PART_Panel, in DockBorderSubtleBrush) must not
+             follow :pointerover. The theme shows it on hover for GripMode.Visible — every tool dock here — and
+             hides it otherwise; during a tuning drag each published frame redraws the window, Avalonia re-reads
+             pointer-over, and the strip blinked dark at the top of the Tuning title bar (owner report,
+             2026-10-25). This makes the hover rule the theme's own non-hover rule, so the strip shows exactly
+             when it would without the pointer. Re-check on a Dock upgrade: the selector names a template part. -->
+        <Style Selector="dockCtrl|ToolChromeControl:pointerover /template/ Panel#PART_Panel">
+            <Setter Property="IsVisible"
+                    Value="{ReflectionBinding GripMode, Converter={x:Static dockConv:GripModeConverters.IsVisibleAutoHideOrHiddenConverter}}"/>
         </Style>
 
         <Style Selector="dockCtrl|DocumentDockControl">

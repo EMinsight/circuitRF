@@ -2065,12 +2065,59 @@ namespace CircuitRF.Render.DataDisplay
             _cubeXValues = string.Equals(xAxisName, MixIndexAxisName, StringComparison.Ordinal)
                 ? Array.ConvertAll(xValues, Math.Abs)
                 : xValues;
+            var anchors = LocusMarkerSamples();
             _cubeComplexValues = complexValues;
             _cubeRealValues    = realValues;
             _cubeXAxisName     = xAxisName;
             _cubeXUnit         = xUnit;
             _cubeXLabels       = xLabels;
             BuildCubePath(plotType, freqUnit);
+            ReanchorLocusMarkers(anchors);
+        }
+
+        /// <summary>
+        /// The x sample (a frequency, for an S-parameter) each marker on a Smith or Polar LOCUS stands on, read
+        /// before new data replaces the old. Such a marker is resolved in two dimensions — to the point nearest
+        /// its stored (Re, Im) — so when the curve moved under it (every frame of a tuning drag) it hopped to
+        /// whichever sample now lay nearest the OLD point: a jitter of a few pixels along the curve, and a
+        /// readout at a different frequency (owner report, 2026-10-25). A Rect marker stores its x and never
+        /// had this. Empty for a point cloud (no x order), a family, or a trace with no sample map.
+        /// </summary>
+        private List<(Marker M, double X, bool Back)> LocusMarkerSamples()
+        {
+            var anchors = new List<(Marker, double, bool)>();
+            if (!MarkersResolve2D || IsPointCloud || Markers.Count == 0) return anchors;
+            if (_cubeXValues is not { Length: > 0 } xs || _pointSample.Count != Points.Count) return anchors;
+            foreach (var m in Markers)
+            {
+                if (m.FreePosition) continue;
+                var (sample, back) = CubeMarkerSample(m);
+                if (sample >= 0 && sample < xs.Length) anchors.Add((m, xs[sample], back));
+            }
+            return anchors;
+        }
+
+        /// <summary>Puts each marker <see cref="LocusMarkerSamples"/> read back on the point of the SAME x sample
+        /// in the new data, so it rides the curve rather than re-snapping by distance.</summary>
+        private void ReanchorLocusMarkers(List<(Marker M, double X, bool Back)> anchors)
+        {
+            if (anchors.Count == 0 || !MarkersResolve2D || IsPointCloud) return;
+            if (_cubeXValues is not { Length: > 0 } xs || _pointSample.Count != Points.Count) return;
+            foreach (var (m, x, back) in anchors)
+            {
+                int best = -1; double bestD = double.PositiveInfinity;
+                for (int p = 0; p < _pointSample.Count; p++)
+                {
+                    int s = _pointSample[p];
+                    if ((s < 0) != back) continue;
+                    double d = Math.Abs(xs[s < 0 ? ~s : s] - x);
+                    if (d < bestD) { bestD = d; best = p; }
+                }
+                // A sample that came back non-finite (a singular step) leaves the marker where it was, rather
+                // than moving it onto a neighbour it would then stay on.
+                if (best >= 0 && float.IsFinite(Points[best].X) && float.IsFinite(Points[best].Y))
+                    m.PositionStatic = Points[best];
+            }
         }
 
         /// <summary>Binds a scalar (rank-0) cube value. Renders as one Table cell; on any non-Table plot type
@@ -2632,14 +2679,19 @@ namespace CircuitRF.Render.DataDisplay
                 foreach (var c in FamilyCurves)
                     foreach (var p in c.Points)
                     {
+                        if (!float.IsFinite(p.X) || !float.IsFinite(p.Y)) continue;
                         if (!any) { minX = maxX = p.X; minY = maxY = p.Y; any = true; }
                         else { minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X); minY = Math.Min(minY, p.Y); maxY = Math.Max(maxY, p.Y); }
                     }
                 return any ? new PlotRect(minX, minY, maxX - minX, maxY - minY) : default;
             }
-            if (Points.Count == 0) return default;
-            float aX = Points.Min(p => p.X), bX = Points.Max(p => p.X);
-            float aY = Points.Min(p => p.Y), bY = Points.Max(p => p.Y);
+            // A non-finite sample (a singular tuning step, a dB of zero) is a gap in the curve, not an extent:
+            // counted, it made an autoscaled window infinite, and the .cdd dirty-check then threw on
+            // serializing it — a crash mid-tuning (owner report, 2026-10-25).
+            var finite = Points.Where(p => float.IsFinite(p.X) && float.IsFinite(p.Y)).ToList();
+            if (finite.Count == 0) return default;
+            float aX = finite.Min(p => p.X), bX = finite.Max(p => p.X);
+            float aY = finite.Min(p => p.Y), bY = finite.Max(p => p.Y);
             return new PlotRect(aX, aY, bX - aX, bY - aY);
         }
 

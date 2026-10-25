@@ -197,10 +197,12 @@ public partial class WorkspaceWindow : Window
         }
     }
 
-    // While a placement is armed, R / Shift+R rotate the ghost regardless of which control has focus
-    // (palette tile, canvas, …). Scoped to the schematic-placement context so it never steals R from
-    // the Symbol Editor (rotate primitive), a text field, or other panels. Tunnel = fires before the
-    // SchematicView tunnel and the canvas bubble, so it wins when armed and they don't double-rotate.
+    // While a placement is armed, R / Shift+R rotate the ghost and M / Shift+M mirror it, regardless of
+    // which control has focus (palette tile, canvas, …) — clicking a Library tile leaves focus ON the
+    // tile, so a key handled only by the canvas never arrives (M did exactly that, 2026-10-25). Scoped
+    // to the schematic-placement context so it never steals the keys from the Symbol Editor, a text
+    // field, or other panels. Tunnel = fires before the SchematicView tunnel and the canvas bubble, so
+    // it wins when armed and they don't act twice.
     private void OnWindowKeyDownTunnel(object? sender, KeyEventArgs e)
     {
         // Esc goes to a paste reading its picture first (IMF-9, R-imf9-6): it is cancelled and the key is handled, so the
@@ -213,11 +215,13 @@ public partial class WorkspaceWindow : Window
         if (TryHandleWirePanelKeys(e)) return;
 
         if (_vm is null || _vm.PlacementService.Pending is null) return;  // only when armed
-        if (e.Key != Key.R) return;
-        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0) return;  // leave ⌘/Ctrl+R alone
+        if (e.Key is not (Key.R or Key.M)) return;
+        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0) return;  // leave ⌘/Ctrl+R/M alone
         if (!IsPlacementKeyContext(FocusManager?.GetFocusedElement())) return;
 
-        _vm.PlacementService.Rotate(clockwise: e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+        bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        if (e.Key == Key.R) _vm.PlacementService.Rotate(clockwise: shift);
+        else                _vm.PlacementService.Mirror(horizontal: !shift);
         e.Handled = true;
     }
 
@@ -243,7 +247,7 @@ public partial class WorkspaceWindow : Window
     }
 
     // True only when focus is inside a schematic editor or the Library Palette (and not a text field),
-    // i.e. the contexts where R-as-rotate-the-ghost is the intended meaning.
+    // i.e. the contexts where R / M rotating and mirroring the ghost is the intended meaning.
     private static bool IsPlacementKeyContext(IInputElement? focused)
     {
         if (focused is TextBox) return false;            // typing — don't steal R

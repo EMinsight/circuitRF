@@ -177,7 +177,9 @@ you are watching the results.</p>
 <ul>
 <li><strong>＋</strong> in the panel opens a search over everything tunable in the schematic. Type part of a name, an
 instance, a parameter or a cell. Tick <em>Include sub-cells</em> to search inside the schematic's
-sub-circuits as well.</li>
+sub-circuits as well. <strong>Double-click</strong> a value to add it and keep the search open for the next one;
+<strong>Enter</strong> adds the selected values and closes it. Close it with <strong>×</strong> beside the search box, or by
+clicking anywhere outside it.</li>
 <li>The <strong>tune toggle</strong> beside a parameter in the Properties panel.</li>
 <li><strong>Right-click a parameter value on the canvas ▸ Tune.</strong></li>
 </ul>
@@ -201,10 +203,11 @@ optimized. Its row is marked, and Push skips it and says so.</li>
 <h2 id="rows">A row: the slider, the value and the range</h2>
 <p>Each row has a slider, a box holding the current value, the unit, and the range under the slider.</p>
 <ul>
-<li><strong>Drag the slider</strong>, or <strong>type a value and press Enter</strong> (Esc puts the box back). With a slider
-focused, <strong>Up</strong> and <strong>Down</strong> move to the previous and next row, and <strong>Left</strong> and <strong>Right</strong> move the
-value one step; Shift with Left or Right moves it ten steps, and Page Up and Page Down a tenth of the
-range. A value box you are typing in keeps its own arrow keys.</li>
+<li><strong>Drag the slider</strong>, or <strong>type a value and press Enter</strong> (Esc puts the box back). Click a row, then
+<strong>Up</strong> and <strong>Down</strong> move to the previous and next row, and <strong>Left</strong> and <strong>Right</strong> move the value one
+step; Shift with Left or Right moves it ten steps, and Page Up and Page Down a tenth of the range. The
+keys work wherever the panel has the keyboard, acting on the row you last used. A value box you are
+typing in keeps its own arrow keys until you press Enter.</li>
 <li><strong>The range</strong> is the minimum and maximum under the slider. Click either one to change it. The first
 time a value is tuned its range is guessed: half to twice the value for a positive number, or 0–1 in
 its own unit for zero. The range is shown in the value's own unit, so pF stays pF.</li>

@@ -1678,14 +1678,17 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 AutoscaleY      = plot.AutoscaleY,
                 AutoscaleRightY = plot.AutoscaleRightY,
                 AutoscaleMag    = plot.AutoscaleMag,
-                WindowX             = plot.Axes.Window.X,
-                WindowY             = plot.Axes.Window.Y,
-                WindowWidth         = plot.Axes.Window.Width,
-                WindowHeight        = plot.Axes.Window.Height,
-                WindowSecondaryX        = plot.Axes.WindowSecondary.X,
-                WindowSecondaryY        = plot.Axes.WindowSecondary.Y,
-                WindowSecondaryWidth    = plot.Axes.WindowSecondary.Width,
-                WindowSecondaryHeight   = plot.Axes.WindowSecondary.Height,
+                // Guarded as the marker fields are: JSON cannot carry a NaN or ±∞, and the dirty-check
+                // serializes this on every redraw — a non-finite window crashed the app mid-tuning. A zero
+                // width/height reads back as "missing" and is autoscaled on load (RestoreAxesFromConfig).
+                WindowX             = Finite(plot.Axes.Window.X),
+                WindowY             = Finite(plot.Axes.Window.Y),
+                WindowWidth         = Finite(plot.Axes.Window.Width),
+                WindowHeight        = Finite(plot.Axes.Window.Height),
+                WindowSecondaryX        = Finite(plot.Axes.WindowSecondary.X),
+                WindowSecondaryY        = Finite(plot.Axes.WindowSecondary.Y),
+                WindowSecondaryWidth    = Finite(plot.Axes.WindowSecondary.Width),
+                WindowSecondaryHeight   = Finite(plot.Axes.WindowSecondary.Height),
                 XScale                  = plot.Axes.XScale,
             },
         };

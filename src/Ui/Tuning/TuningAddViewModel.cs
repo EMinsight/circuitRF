@@ -5,7 +5,9 @@
 //  Typing filters live; "Include sub-cells" widens the list past the
 //  top level, as the Instances panel's check does. Enter adds the
 //  selected rows — or the first one shown when none is selected — in
-//  one undo step; a double-click adds that row with any selected.
+//  one undo step and closes; a double-click adds that row with any
+//  selected and stays open, so several can be added in a row. The ×
+//  beside the search box, or a click away, closes it.
 //
 //  The Optimizer panel's ＋ is the same popup over the same catalog;
 //  only the flag it sets differs (ITunableAddHost).
@@ -68,21 +70,36 @@ public sealed partial class TuningAddViewModel(ITunableAddHost panel) : Observab
         => new[] { t.Key, t.Owner, t.Parameter, t.Cell }
             .Any(s => s?.Contains(q, StringComparison.OrdinalIgnoreCase) == true);
 
-    /// <summary>Adds the selected rows, or the first one shown when none is selected (Enter).</summary>
+    /// <summary>Adds the selected rows, or the first one shown when none is selected (Enter), and closes.</summary>
     [RelayCommand]
-    private void AddSelected() => Add(null);
+    private void AddSelected()
+    {
+        if (!Add(null)) return;
+        IsOpen = false;
+        SearchText = "";
+    }
 
-    /// <summary>Double-click: adds this row, along with any rows already selected.</summary>
-    public void AddWith(TuningAddRow row) => Add(row);
+    /// <summary>
+    /// Double-click: adds this row, along with any rows already selected, and STAYS OPEN with the search
+    /// as typed — so several values are added without reopening the popup each time (owner request,
+    /// 2026-10-25). The added rows leave the list: the panel refreshes it while the popup is open.
+    /// </summary>
+    public void AddWith(TuningAddRow row)
+    {
+        if (Add(row)) Refresh();
+    }
 
-    private void Add(TuningAddRow? also)
+    /// <summary>The × beside the search box.</summary>
+    [RelayCommand]
+    private void Close() => IsOpen = false;
+
+    private bool Add(TuningAddRow? also)
     {
         var keys = Results.Where(r => r.IsSelected || ReferenceEquals(r, also)).Select(r => r.Key).ToList();
         if (keys.Count == 0 && Results.Count > 0) keys.Add(Results[0].Key);
-        if (keys.Count == 0) return;
+        if (keys.Count == 0) return false;
         panel.Activate(keys);
-        IsOpen = false;
-        SearchText = "";
+        return true;
     }
 }
 
