@@ -1448,7 +1448,9 @@ public static class SchematicRenderer
         // drag is about to make is drawn by the same code, in the same paint, because it is the same
         // statement — "this is not in the model yet". A duplicate that looked different from a
         // placement would be a second visual language for one idea.
-        if (!isLod && (overlay.Ghost is not null || overlay.DuplicateGhosts is { Count: > 0 }))
+        // A paste's ghost (brief DFR26-5) can be wires or pictures alone, so any of the three halves opens the block.
+        if (!isLod && (overlay.Ghost is not null || overlay.DuplicateGhosts is { Count: > 0 }
+                       || overlay.DuplicateGhostWires is { Count: > 0 } || overlay.DuplicateGhostRects is { Count: > 0 }))
         {
             using var ghostPaint = new SKPaint
             {

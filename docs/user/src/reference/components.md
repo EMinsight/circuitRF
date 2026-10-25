@@ -938,7 +938,18 @@ refused. Conductor thickness enters through the line part only.
 
 {{symbol: mtee}}
 
-A three-port microstrip T-junction. `W1`, `W2` and `W3` are the widths of the three arms.
+A three-port microstrip T-junction. `W1`, `W2` and `W3` are the widths of the three arms, and `L1`,
+`L2` and `L3` their lengths from the junction's centre to each pin — the shape the layout draws.
+
+The arms are simulated as microstrip lines, with the junction model between them. A through arm carries
+`L1 − W3/2` (or `L2 − W3/2`) of line, the branch `L3 − max(W1, W2)/2`: the junction model starts where
+the crossing arm's edge is. When the branch reaches no further than the through line's edge, the tee is
+a straight line with pin 3 on it, and it simulates as exactly that — two lines of `L1` and `L2` meeting
+at pin 3 — so with pin 3 open it gives the same answer as an MLIN of `L1 + L2`. Any longer branch
+brings the junction model in.
+
+A tee with no `L` values (from a file saved before they existed) simulates the junction alone, and the
+run says its arms are not simulated.
 
 {{table: components/MTee}}
 
@@ -946,7 +957,14 @@ A three-port microstrip T-junction. `W1`, `W2` and `W3` are the widths of the th
 
 {{symbol: mcross}}
 
-A four-port microstrip cross-junction, with a width per arm.
+A four-port microstrip cross-junction, with a width (`W1`–`W4`) and a length from the centre
+(`L1`–`L4`) per arm.
+
+The arms are simulated as microstrip lines with the junction model between them, as for the
+[MTEE](#mtee): arms 1 and 3 carry `L − max(W2, W4)/2` of line, arms 2 and 4 `L − max(W1, W3)/2`. When
+arms 2 and 4 both stop at the edge of arms 1 and 3, the cross is a straight line — the lines of `L1` and
+`L3` with pins 2 and 4 on it — and with those pins open it equals an MLIN of `L1 + L3`. The same holds
+the other way round. A cross with no `L` values simulates the junction alone, and says so.
 
 {{table: components/MCross}}
 

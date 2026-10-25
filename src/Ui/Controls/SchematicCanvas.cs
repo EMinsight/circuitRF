@@ -90,6 +90,7 @@ public sealed class SchematicCanvas : Control
                 _editContext.PropertyChanged -= OnVmPropertyChanged;
                 _editContext.ZoomToRectCallback = null;
                 _editContext.ViewportProvider   = null;
+                _editContext.PointerWorldProvider = null;
             }
 
             SetAndRaise(EditContextProperty, ref _editContext, value);
@@ -99,6 +100,7 @@ public sealed class SchematicCanvas : Control
                 _editContext.PropertyChanged += OnVmPropertyChanged;
                 _editContext.ZoomToRectCallback = ZoomToRect;
                 _editContext.ViewportProvider   = () => WorldViewport;
+                _editContext.PointerWorldProvider = PointerWorld;
 
                 // A session this canvas has not shown yet but that HAS been on screen before — the
                 // view was re-realised — comes back at the pan/zoom it was left at instead of being
@@ -580,6 +582,11 @@ public sealed class SchematicCanvas : Control
             ? new SchematicPasteGeometry.ViewRect(
                 _panX, _panY, _panX + Bounds.Width / _zoom, _panY + Bounds.Height / _zoom)
             : null;
+
+    /// <summary>The pointer's world position while it is over this canvas, else null — where a paste's ghost
+    /// appears (SchematicViewModel.PointerWorldProvider).</summary>
+    private (double X, double Y)? PointerWorld()
+        => IsPointerOver && _lastPointerScreen is { } pos ? (ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y)) : null;
 
     private double ScreenToWorldX(double sx) => sx / _zoom + _panX;
     private double ScreenToWorldY(double sy) => sy / _zoom + _panY;

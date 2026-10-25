@@ -1,5 +1,38 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Designer round 26 — paste at the pointer, a tee in series, imported parts that travel (brief DFR26-5, 2026-10-24)
+
+**Paste follows the pointer** (`SchematicViewModel.PasteGhost.cs`). The old rule kept an in-view fragment where it
+was, one connection-grid step off — which lands the copy's pins on the original's wires and pins and shorts the nets.
+With the pointer over the canvas a paste now arms a ghost (the duplicate drag's three overlay slots, so it is drawn by
+the same code as every other "not in the model yet" ghost); a click places it, nudged off an exact component overlap
+as before, and Escape or any tool change drops it through `CancelCurrentOp`. Nothing is in the model while it floats,
+so nothing connects. Without the pointer on the canvas (the Edit menu, whose pointer is on the menu) the fragment is
+now centred in the view whatever its source position — the one-step rule is gone everywhere. The schematic has no
+Ctrl+D; its duplicate is the modifier-drag, which already lands where it is dropped and is unchanged. The renderer
+opened its ghost block only when a COMPONENT ghost existed, so a wires-only paste drew nothing; any of the three slots
+opens it now. Free-standing net labels were never translated with a pasted fragment, so they named the original's
+pin; `SchematicPasteGeometry.Translate` moves them now.
+
+**A part breaks into a wire when TWO of its pins land on one straight segment** (`SeriesPartInsertion`), not only a
+part with exactly two pins: an MTEE's pins 1-2, an MCROSS's collinear pair. Every wire carrying the run must carry
+the same pair, and the part's other pins must be off every cut wire entirely — a branch pin on another segment of the
+same wire would stay tied to one of the pieces and still short. The old "three pins never cut" test was the inverse
+claim and was replaced.
+
+**Imported schematics.** The importers join a pin they cannot wire by a FREE label on the pin (no wire exists to
+anchor it to), so the importer end was right and the delete end was not: `DeleteCommand` now takes a free label
+sitting on a deleted part's pin unless a surviving pin or wire also meets that point, and a copy carries the free
+labels on copied pins (`SchematicViewModel.CopiedNetLabels`, both copy paths). The placeholder boxes after a copy to
+another sheet were `CellRef`s, which are relative to the sheet holding them: the importer puts its parts' cells
+beside the source sheet, so from any other folder the same text named nothing. `SchematicClipboard` carries them
+absolute (`WithAbsoluteCellRefs`) and the schematic paste makes them relative to the destination again
+(`RelativizeCellRefs`, through `ExternalCellRef.MakeCellRef`, so a cell in a referenced workspace gets its alias).
+The Smith chart and Model Composer readers of the same clipboard are left with the absolute form, which resolves.
+
+Gates: `tests/Ui.Tests/Schematic/SchematicEditRound26Tests.cs`, `SeriesPartPlacementClearsWireTests`,
+`SchematicPasteAndDragTests`.
+
 ## Designer round 21 — copied lines shorted, a footprint on a line, a stale duplicate (2026-10-18)
 
 **A copied part dragged onto a wire stayed shorted.** Palette placement already broke into a wire

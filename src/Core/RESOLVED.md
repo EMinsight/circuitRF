@@ -3773,3 +3773,37 @@ finite, the block is now stamped through `IdealSBlockModel.StampWaveConstraints`
 reference node), whose rows have no singular case. A block with a finite Z stamps exactly as before, so no existing
 result moves. Gate: `Em3dDcRowTests.ACircuitsDcSolve_ThroughTheSolvedGapCapacitor_PutsTheLoadAtZero`, a 5 V source, the
 gap capacitor's `.s2p` and a 50 Ω load: 0 V at the load.
+
+## MTEE and MCROSS simulate the arms they draw (brief DFR26-5, 2026-10-24)
+
+`L1`-`L3` (tee) and `L1`-`L4` (cross) were drawn by the PCells and ignored by the models, so a tee with 2.9 mm arms
+simulated as a bare junction. Each arm is now an MLIN section from the pin to the junction's reference plane at the
+crossing arm's edge — through arms `L − W3/2`, the tee's branch `L3 − max(W1, W2)/2`, the cross's arms `L − (the other
+pair's wider width)/2` — with the Gupta-Garg-Chadha network between them (`Microstrip/JunctionArms.cs`). The sections
+are `MicrostripLineModel.LineAt` stamped through `TLineModel.StampUniformLine`, exactly what an MLIN stamps.
+
+- **Assembled locally, Kron-reduced, one P×P block stamped.** The junction's ports are internal nodes of a small
+  dense block eliminated per frequency; nothing is allocated in the engine. That is exact for a linear block at one
+  frequency, and it keeps the part usable under a device multiplier. The one exception is the tie below: a cross in
+  its straight limit (or a straight tee with a zero-length arm) allocates a branch, which a multiplier refuses.
+- **The straight-line limit drops the junction, deliberately.** With the branch reaching no further than the through
+  line's edge (`L3 − max(W1, W2)/2 ≤ 1 nm`) the drawn copper IS a straight line with a pin on it, so the tee is two
+  lines `L1` and `L2` meeting at pin 3 and no star network; with pin 3 open it equals an MLIN of `L1 + L2` to
+  rounding (1e-9 in S is the gate). Any branch past that edge, however short, carries the full junction — the closed
+  forms do not taper to zero with branch length, so the limit is a step, not a smooth approach. The cross does the
+  same when BOTH arms of one pair stop at the other pair's edge (arms 2/4 tested first); one short arm alone is a
+  tee-shaped cross and keeps the junction.
+- **Known consequence of that limit:** the model sees only its own geometry. A tee with `L3` at its minimum and an
+  MLIN wired onto pin 3 as the branch is simulated without junction parasitics, although the copper on the board is a
+  tee. Drawing the branch length in `L3` rather than in a separate MLIN avoids it.
+- **An exact tie, not 1e9 S.** The cross's straight limit puts its two short-pair pins on one point; tying them with
+  the junctions' DC-style 1e9 S conductance left ~1e-7 S of rounding on the line once a floating pin was eliminated
+  (1e9 cancelled against 1e9), which broke the 1e-9 gate. `JunctionArms.StampTie` is a zero-volt branch instead.
+- **No `L` declared = the junction alone, as before, reported once per instance** (`MTee:Arms`/`MCross:Arms` through
+  the instance's `IReportsWarnings` drain). The artwork-to-schematic recogniser writes widths only and runs its MLINs
+  to the junction's reference planes, so its tees stay junction-only and correct; they now carry that report.
+  A partly declared part models the declared arms and names the missing ones.
+
+Gate: `tests/Core.Tests/Devices/Microstrip/JunctionArmTests.cs` against `testdata/microstrip-junction-arms/`
+(straight tee = MLIN of `L1 + L2`, tee = hand-built MLIN + junction + MLIN, the same two for the cross, no-`L`
+identity with the junction-only stamp).

@@ -620,6 +620,11 @@ public sealed partial class SchematicViewModel : ObservableObject
             CanvasObjectScaleBox    = scaleBox,
             TextPreview             = TypingPreview(),
         };
+        if (_pendingPaste is not null)
+        {
+            var (ghosts, wires, rects) = PasteGhostOverlay();
+            Overlay = Overlay with { DuplicateGhosts = ghosts, DuplicateGhostWires = wires, DuplicateGhostRects = rects };
+        }
     }
 
     /// <summary>The text the Text tool is typing, with its caret — the symbol editor's preview.</summary>
@@ -680,7 +685,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         || _isDragging
         || _isRubberBanding
         || _isSegmentDrag
-        || _isObjResizing;
+        || _isObjResizing
+        || _pendingPaste is not null;
 
     [RelayCommand]
     public void SetSelectTool()
@@ -920,6 +926,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     public void OnPointerPressed(double worldX, double worldY, KeyModifiers modifiers,
                                  double screenX = 0, double screenY = 0)
     {
+        if (_pendingPaste is not null) { PlacePasteGhost(worldX, worldY); return; }
         bool shift = modifiers.HasFlag(KeyModifiers.Shift);
         switch (ActiveTool)
         {
@@ -1005,6 +1012,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                                double screenX = 0, double screenY = 0,
                                KeyModifiers modifiers = default)
     {
+        if (_pendingPaste is not null) { MovePasteGhost(worldX, worldY); return; }
         switch (ActiveTool)
         {
             case Tool.Select:     if (leftDown) HandleSelectDrag(worldX, worldY, modifiers); break;
@@ -4086,8 +4094,8 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// span scan must not count.</para>
     ///
     /// <para><b>Which parts qualify is not asked here.</b> There is no list of kinds:
-    /// <see cref="SeriesPartInsertion.FindShortedSpans"/> answers it geometrically — two pins, both
-    /// on one straight segment, nothing else inside the span — and returns nothing for everything
+    /// <see cref="SeriesPartInsertion.FindShortedSpans"/> answers it geometrically — two pins on one
+    /// straight segment and any others off it, nothing else inside the span — and returns nothing for everything
     /// else. See that class for why a list was the wrong shape.</para>
     ///
     /// <para>Every wire carrying the run is cut, not just one: a doubled run draws as a single
@@ -5543,6 +5551,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         }
 
         if (_wirePoints.Count > 0) { _wirePoints.Clear(); RebuildOverlay(); }
+        ClearPasteGhost();
         // Leaving the Text tool places a typed text; Escape empties the buffer before it gets here.
         if (_isTypingText) CommitText();
         _isRubberBanding = false;
@@ -5598,13 +5607,25 @@ public sealed partial class SchematicViewModel : ObservableObject
 
         if (comps.Count == 0 && wires.Count == 0 && objs.Count == 0) return;
 
-        var netLabels = EditModel.NetLabels
-            .Where(n => n.IsAnchored && wholeWireIds.Contains(n.OwnerWireId))
-            .ToList();
+        var netLabels = CopiedNetLabels(comps, wholeWireIds);
         await SchematicClipboard.CopyAsync(clipboard, comps, wires, objs, EditModel.GridSize,
                                            netLabels, EditModel.SchematicDirectory,
                                            technologyPath: SchematicTechnology.Resolve(EditModel).Path);
         if (cut) DeleteSelection();
+    }
+
+    /// <summary>
+    /// The net labels a copy carries: each one anchored to a wire copied whole, and each free-standing one on a copied
+    /// part's pin — the label that joins that pin by name, which an imported schematic places on every pin it could not
+    /// wire, and which a delete of the part takes with it (<c>DeleteCommand</c>, brief DFR26-5).
+    /// </summary>
+    internal List<EditableNetLabel> CopiedNetLabels(IReadOnlyList<EditableComponent> comps, IReadOnlySet<string> wholeWireIds)
+    {
+        const double tol = SchematicEditModel.ConnectTolerance;
+        var pins = comps.SelectMany(c => EditModel.PortDefsOf(c).Select(d => EditModel.PortWorldOf(c, d))).ToList();
+        return [.. EditModel.NetLabels.Where(n => n.IsAnchored
+            ? wholeWireIds.Contains(n.OwnerWireId)
+            : pins.Any(p => SchematicGeometry.CoincidentPoints(p.X, p.Y, n.X, n.Y, tol)))];
     }
 
     /// <summary>Pastes from the system clipboard into the schematic (undoable).</summary>
@@ -5627,7 +5648,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             return;
         }
 
-        var result = await SchematicClipboard.PasteAsync(clipboard);
+        var result = await SchematicClipboard.PasteAsync(clipboard, destinationDirectory: EditModel.SchematicDirectory);
         if (result is null)
         {
             // Not schematic content: a parts table copied from a spreadsheet or a PDF places its
@@ -5643,10 +5664,11 @@ public sealed partial class SchematicViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Places an already-deserialized clipboard fragment: positions it relative to the current view
-    /// (<see cref="SchematicPasteGeometry"/>), then executes the undoable paste with the pasted
-    /// objects selected. The single entry point for both paste paths (canvas Ctrl+V and Edit menu),
-    /// so they cannot drift apart.
+    /// Places an already-deserialized clipboard fragment. With the pointer over the canvas it arms a
+    /// ghost that follows the pointer until a click places it (<c>SchematicViewModel.PasteGhost.cs</c>);
+    /// otherwise it positions it relative to the current view (<see cref="SchematicPasteGeometry"/>)
+    /// and executes the undoable paste at once, with the pasted objects selected. The single entry
+    /// point for both paste paths (canvas Ctrl+V and Edit menu), so they cannot drift apart.
     /// </summary>
     public void PasteFragment(
         List<EditableComponent> comps,
@@ -5657,17 +5679,14 @@ public sealed partial class SchematicViewModel : ObservableObject
     {
         if (comps.Count == 0 && wires.Count == 0 && cobjs.Count == 0) return;
 
-        var (dx, dy) = SchematicPasteGeometry.Offset(
-            comps, wires, cobjs, ViewportProvider?.Invoke(), EditModel.GridSize,
-            occupied: (x, y) => EditModel.Components.Any(
-                c => Math.Abs(c.X - x) < 1e-6 && Math.Abs(c.Y - y) < 1e-6));
-        SchematicPasteGeometry.Translate(comps, wires, cobjs, dx, dy);
+        if (PointerWorldProvider?.Invoke() is { } pointer)
+        {
+            ArmPasteGhost(comps, wires, cobjs, sourceGridSize, netLabels, pointer.X, pointer.Y);
+            return;
+        }
 
-        Execute(WithSeriesWireCutsForOne(new SchematicPasteCommand(
-            EditModel, comps, wires, cobjs,
-            ids => Selection.SetAll(ids),
-            sourceGridSize: sourceGridSize,
-            messageSink: _messageSink,
-            netLabels: netLabels), comps, wires, cobjs));
+        var (dx, dy) = SchematicPasteGeometry.Offset(
+            comps, wires, cobjs, ViewportProvider?.Invoke(), EditModel.GridSize, occupied: OccupiedByComponent);
+        CommitPaste(comps, wires, cobjs, sourceGridSize, netLabels, dx, dy);
     }
 }

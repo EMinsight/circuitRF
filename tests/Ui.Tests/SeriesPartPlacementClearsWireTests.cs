@@ -5,7 +5,7 @@ using CircuitRF.Ui.ViewModels;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// A TWO-TERMINAL PART placed onto a wire clears the stretch of wire between its own two pins, so
+/// A part placed onto a wire with two of its pins on it clears the stretch of wire between them, so
 /// the part is in series with the run instead of shorted by it — but only at PLACEMENT, and only
 /// when the cut provably changes no circuit. See <see cref="SeriesPartInsertion"/>.
 ///
@@ -350,22 +350,65 @@ public class SeriesPartPlacementClearsWireTests
     }
 
     /// <summary>
-    /// A part that is NOT two-terminal has no unambiguous pair to break the run between, so nothing
-    /// is cut however its pins fall. A MESFET's gate and drain are 200 apart on the diagonal and
-    /// never collinear with one run anyway; the refusal is the pin COUNT, asserted on a part whose
-    /// third pin is the one that would be stranded.
+    /// Brief DFR26-5 R-dfr26-5-2: a part with more pins qualifies when exactly two of them land on the run
+    /// and the rest are off it. An MTEE dropped along a wire is in series between pins 1 and 2, its branch
+    /// pin left for the user — before this it shorted its own through line. MTee pins sit at local
+    /// (-200,0), (200,0) and (0,200).
     /// </summary>
     [Fact]
-    public void AThreeTerminalPartPlacedOverAWire_NeverCutsIt()
+    public void AnMTeeDroppedAlongAWire_CutsTheSpanBetweenItsThroughPins()
     {
         var (model, vm) = MakeVm();
         AddWire(model, (0, 0), (900, 0));
 
-        // MTee: pins at local (-200,0), (200,0) — collinear with the run — and a third at (0,200).
+        vm.CommitPlacement(SymbolKind.MTee, 3, SymbolRotation.R0, 500, 0);
+
+        Assert.Equal(2, model.Wires.Count);
+        Assert.Equal([(0.0, 0.0), (300.0, 0.0)],   Pts(model.Wires[0]));
+        Assert.Equal([(700.0, 0.0), (900.0, 0.0)], Pts(model.Wires[1]));
+    }
+
+    /// <summary>The same for an MCROSS, between its two pins on the wire (1 at local (200,0), 3 at (-200,0)).</summary>
+    [Fact]
+    public void AnMCrossDroppedAlongAWire_CutsTheSpanBetweenItsCollinearPins()
+    {
+        var (model, vm) = MakeVm();
+        AddWire(model, (0, 0), (900, 0));
+
+        vm.CommitPlacement(SymbolKind.MCross, 4, SymbolRotation.R0, 500, 0);
+
+        Assert.Equal(2, model.Wires.Count);
+        Assert.Equal([(0.0, 0.0), (300.0, 0.0)],   Pts(model.Wires[0]));
+        Assert.Equal([(700.0, 0.0), (900.0, 0.0)], Pts(model.Wires[1]));
+    }
+
+    /// <summary>Every safety condition still holds for a tee: a wire teeing into the span is a third
+    /// connection, and cutting under it would re-partition the net.</summary>
+    [Fact]
+    public void AnMTeeOverAJunctionInsideTheSpan_LeavesTheWireAlone()
+    {
+        var (model, vm) = MakeVm();
+        AddWire(model, (0, 0), (900, 0));
+        AddWire(model, (400, 0), (400, -300));
+
+        vm.CommitPlacement(SymbolKind.MTee, 3, SymbolRotation.R0, 500, 0);
+
+        Assert.Equal(2, model.Wires.Count);
+        Assert.Equal([(0.0, 0.0), (900.0, 0.0)], Pts(model.Wires[0]));
+    }
+
+    /// <summary>The branch pin landing on ANOTHER segment of the wire being cut would stay tied to one of
+    /// the pieces — still shorted to a through pin — so nothing is cut.</summary>
+    [Fact]
+    public void AnMTeeWhoseBranchPinIsOnTheSameWire_LeavesTheWireAlone()
+    {
+        var (model, vm) = MakeVm();
+        AddWire(model, (0, 0), (900, 0), (900, 200), (500, 200));
+
         vm.CommitPlacement(SymbolKind.MTee, 3, SymbolRotation.R0, 500, 0);
 
         Assert.Single(model.Wires);
-        Assert.Equal([(0.0, 0.0), (900.0, 0.0)], Pts(model.Wires[0]));
+        Assert.Equal(4, model.Wires[0].Points.Count);
     }
 
     /// <summary>

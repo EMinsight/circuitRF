@@ -48,6 +48,16 @@ namespace CircuitRF.Core.Devices;
 /// the SAME static Hammerstad-Jensen values <see cref="MicrostripLineModel"/> uses (R7/R-pc-12's
 /// "one implementation"), evaluated without Kirschning-Jansen dispersion — matching the source's
 /// own quasi-static scope.
+///
+/// <b>Arms (brief DFR26-5 R-dfr26-5-3): the tee simulates the arms it draws.</b> <c>L1</c>/<c>L2</c>/<c>L3</c>
+/// are each arm's length from the junction centre to its pin, as <c>MTeePCell</c> draws them. The
+/// through arms carry MLIN sections of <c>L1 − W3/2</c> and <c>L2 − W3/2</c> and the branch one of
+/// <c>L3 − max(W1, W2)/2</c> — the reference planes the star network above is referred to — with the
+/// junction between them (<see cref="JunctionArms"/>). When the branch has no metal past the through
+/// line, the drawn shape is a straight line with a pin on it, so the tee is two lines <c>L1</c> and
+/// <c>L2</c> meeting at pin 3 and carries no junction: with pin 3 open it IS an MLIN of <c>L1 + L2</c>.
+/// A tee that declares no length (a file from before the lengths existed) is the junction alone, as it
+/// always simulated, reported once.
 /// </summary>
 public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings
 {
@@ -63,14 +73,33 @@ public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings
     private bool _warnedAsymmetry;
     private bool _warnedEpsR;
 
+    // The arm sections, pin k → junction port k (null = no line: the pin is the junction's port), or —
+    // in the straight-line limit — the full L1 and L2 lines meeting at pin 3. All null and not straight
+    // when no length is declared: the junction alone.
+    private readonly MicrostripLineModel?[] _arms = new MicrostripLineModel?[3];
+    private readonly string? _unmodelledArms;
+
+    /// <summary>True when the branch has no metal past the through line, so the tee is two lines
+    /// joined at pin 3 with no junction.</summary>
+    public bool IsStraightLine { get; }
+
+    /// <summary>The length of line each arm carries to the junction (m) — 0 for an arm with none.
+    /// In the straight-line limit, the two through lines' full lengths and 0.</summary>
+    public IReadOnlyList<double> ArmSectionLengths { get; }
+
     /// <summary>R-mk-7/8 (brief-mklopf-performance-and-messages.md): routes this instance's
     /// validity-range warnings into ElaboratedNetlist.Warnings via the engine's post-Stamp drain —
     /// see IReportsWarnings' own doc comment. This model's own separate direct console notices
     /// below are pre-existing, out of this brief's stated scope, and are untouched.</summary>
-    public IReadOnlyList<(string Key, string Message)> DrainWarnings() => _reporter.Drain();
+    public IReadOnlyList<(string Key, string Message)> DrainWarnings()
+        => [.. _reporter.Drain(), .. JunctionArms.DrainSections(_arms)];
 
+    /// <param name="l1Meters">Arm lengths from the junction centre to each pin, as drawn; null where the
+    /// instance declares none. All three null is the junction alone (a file written before the lengths
+    /// existed).</param>
     public MicrostripTeeModel(double w1Meters, double w2Meters, double w3Meters,
-        double hMeters, double tMeters, double epsR, double sigmaSPerM, double tanD, string instancePath)
+        double hMeters, double tMeters, double epsR, double sigmaSPerM, double tanD, string instancePath,
+        double? l1Meters = null, double? l2Meters = null, double? l3Meters = null, double roughnessMeters = 0.0)
     {
         _w1 = w1Meters;
         _w2 = w2Meters;
@@ -80,7 +109,37 @@ public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings
         _epsR = epsR;
         _instancePath = instancePath;
         _reporter = new MicrostripValidityReporter(instancePath);
-        _ = (sigmaSPerM, tanD); // conductor/dielectric loss: not part of this quasi-static LC model
+
+        double[] lengths = [0.0, 0.0, 0.0];
+        if (l1Meters is null && l2Meters is null && l3Meters is null)
+        {
+            _unmodelledArms = "declares no arm lengths (L1, L2, L3), so its arms are not simulated — only the "
+                + "junction is. Set L1-L3 to simulate the arms the layout draws.";
+        }
+        else
+        {
+            MicrostripLineModel? Line(double len, double w)
+                => JunctionArms.Section(len, w, hMeters, tMeters, epsR, sigmaSPerM, tanD, roughnessMeters, instancePath);
+
+            double branch = (l3Meters ?? 0.0) - Math.Max(w1Meters, w2Meters) / 2.0;
+            IsStraightLine = l3Meters is not null && branch <= JunctionArms.ZeroLengthMeters;
+            lengths = IsStraightLine
+                ? [Math.Max(0.0, l1Meters ?? 0.0), Math.Max(0.0, l2Meters ?? 0.0), 0.0]
+                : [Math.Max(0.0, (l1Meters ?? 0.0) - w3Meters / 2.0),
+                   Math.Max(0.0, (l2Meters ?? 0.0) - w3Meters / 2.0),
+                   Math.Max(0.0, branch)];
+            _arms[0] = Line(lengths[0], w1Meters);
+            _arms[1] = Line(lengths[1], w2Meters);
+            _arms[2] = IsStraightLine ? null : Line(lengths[2], w3Meters);
+
+            var missing = new[] { ("L1", l1Meters), ("L2", l2Meters), ("L3", l3Meters) }
+                .Where(a => a.Item2 is null).Select(a => a.Item1).ToArray();
+            if (missing.Length > 0)
+                _unmodelledArms = $"declares no {string.Join(", ", missing)}, so "
+                    + (missing.Length == 1 ? "that arm is" : "those arms are") + " not simulated.";
+        }
+        for (int k = 0; k < 3; k++) if (_arms[k] is null) lengths[k] = 0.0;
+        ArmSectionLengths = lengths;
     }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
@@ -89,14 +148,40 @@ public sealed class MicrostripTeeModel : ComponentModel, IReportsWarnings
 
         if (omega <= 0.0)
         {
-            // DC: ideal inductors are short circuits, the shunt capacitor is an open — the three
-            // ports collapse to one node, which is the true DC limit of this same LC network.
+            // DC: ideal inductors are short circuits, the shunt capacitor is an open, and the arm
+            // lines are lossless at DC — the three ports collapse to one node, which is the true DC
+            // limit of this same network.
             var gDc = new Complex(1.0e9, 0.0);
             mna.AddAdmittance(n1, n2, gDc);
             mna.AddAdmittance(n1, n3, gDc);
             return;
         }
 
+        if (_unmodelledArms is not null)
+            _reporter.ReportOnce("MTee:Arms", $"MTEE {_unmodelledArms}");
+
+        if (IsStraightLine)
+        {
+            // The drawn shape is a straight line with pin 3 on it: two lines meeting at pin 3.
+            double freqHz = omega / (2.0 * Math.PI);
+            JunctionArms.StampLine(mna, n1, n3, _arms[0], freqHz);
+            JunctionArms.StampLine(mna, n3, n2, _arms[1], freqHz);
+            return;
+        }
+
+        if (_arms.All(a => a is null))
+        {
+            StampJunction(mna, n1, n2, n3, omega);
+            return;
+        }
+
+        JunctionArms.Stamp(mna, [n1, n2, n3], _arms, omega,
+            (block, ports) => StampJunction(block, ports[0], ports[1], ports[2], omega));
+    }
+
+    /// <summary>The Gupta-Garg-Chadha star network on its three reference-plane nodes.</summary>
+    private void StampJunction(IMnaContext mna, int n1, int n2, int n3, double omega)
+    {
         if (!_warnedEpsR && (_epsR < 9.0 || _epsR > 10.8))
         {
             Console.Error.WriteLine(

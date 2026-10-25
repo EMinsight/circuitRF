@@ -10,13 +10,17 @@ namespace CircuitRF.Ui.Schematic;
 /// moment the selection is dragged. Landing the fragment where the user is looking, and never
 /// exactly on existing content, is what makes the pasted copy draggable at all.
 ///
-/// The rule, in world coordinates:
+/// <b>With the pointer over the canvas, a paste does not land at all until the user says where</b>
+/// (brief DFR26-5 R-dfr26-5-1): it arms a ghost that follows the pointer and a click places it — the
+/// layout editor's pattern (<c>SchematicViewModel.PasteGhost.cs</c>). This class then supplies only
+/// the on-grid delta and the overlap nudge. Without a pointer on the canvas, the rule, in world
+/// coordinates:
 /// <list type="bullet">
 /// <item>No viewport known (headless, or the canvas has never been laid out) → paste in place.</item>
-/// <item>Fragment bbox fully inside the viewport → keep it where it is, offset by one connection
-///       grid step, so the copy is visibly distinct from its original without jumping away.</item>
-/// <item>Otherwise (the user panned away, or the fragment is bigger than the view) → translate so
-///       the fragment's bbox centre lands on the viewport centre.</item>
+/// <item>Otherwise → translate so the fragment's bbox centre lands on the viewport centre. A fragment
+///       already in view used to stay where it was, offset by ONE connection-grid step — which put
+///       its pins straight onto the original's wires and pins and shorted the nets (designer
+///       feedback round 26, reported twice).</item>
 /// </list>
 /// The delta is always a whole multiple of the connection grid P, so every pasted connection point
 /// stays exactly on grid (P is itself a whole multiple of the fine author grid p, so canvas objects
@@ -88,10 +92,6 @@ public static class SchematicPasteGeometry
         {
             dx = dy = 0;                                    // headless / no canvas — paste in place
         }
-        else if (v.Contains(bb.MinX, bb.MinY, bb.MaxX, bb.MaxY))
-        {
-            dx = dy = p;                                    // already in view — one step off the source
-        }
         else
         {
             double fx = (bb.MinX + bb.MaxX) / 2.0;
@@ -100,30 +100,41 @@ public static class SchematicPasteGeometry
             dy = Math.Round((v.CenterY - fy) / p) * p;
         }
 
-        // Never land a component exactly on an existing one: that is the state in which a dragged
-        // selection pins itself to the content underneath it. Step diagonally until clear.
-        if (occupied is not null && comps.Count > 0)
-        {
-            for (int step = 0; step < 20; step++)
-            {
-                bool clash = false;
-                foreach (var c in comps)
-                    if (occupied(c.X + dx, c.Y + dy)) { clash = true; break; }
-                if (!clash) break;
-                dx += p;
-                dy += p;
-            }
-        }
+        return Nudge(comps, dx, dy, p, occupied);
+    }
 
+    /// <summary>
+    /// The delta (<paramref name="dx"/>, <paramref name="dy"/>) stepped diagonally by
+    /// <paramref name="gridP"/> until no component of the fragment lands exactly on an existing
+    /// component's origin (<paramref name="occupied"/>; null skips the pass). That is the state in
+    /// which a dragged selection pins itself to the content underneath it.
+    /// </summary>
+    public static (double Dx, double Dy) Nudge(
+        IReadOnlyList<EditableComponent> comps, double dx, double dy, double gridP,
+        Func<double, double, bool>? occupied)
+    {
+        double p = gridP > 0 ? gridP : 100.0;
+        if (occupied is null || comps.Count == 0) return (dx, dy);
+        for (int step = 0; step < 20; step++)
+        {
+            bool clash = false;
+            foreach (var c in comps)
+                if (occupied(c.X + dx, c.Y + dy)) { clash = true; break; }
+            if (!clash) break;
+            dx += p;
+            dy += p;
+        }
         return (dx, dy);
     }
 
-    /// <summary>Translates a fragment in place by (dx, dy).</summary>
+    /// <summary>Translates a fragment in place by (dx, dy). A free-standing net label moves with it — it names
+    /// the pin it sits on, so left behind it would name the ORIGINAL's pin; an anchored one follows its wire.</summary>
     public static void Translate(
         IReadOnlyList<EditableComponent> comps,
         IReadOnlyList<EditableWire> wires,
         IReadOnlyList<EditableCanvasObject> cobjs,
-        double dx, double dy)
+        double dx, double dy,
+        IReadOnlyList<EditableNetLabel>? netLabels = null)
     {
         if (dx == 0 && dy == 0) return;
 
@@ -132,5 +143,7 @@ public static class SchematicPasteGeometry
             for (int i = 0; i < w.Points.Count; i++)
                 w.Points[i] = (w.Points[i].X + dx, w.Points[i].Y + dy);
         foreach (var o in cobjs) { o.X += dx; o.Y += dy; }
+        foreach (var n in netLabels ?? [])
+            if (!n.IsAnchored) { n.X += dx; n.Y += dy; }
     }
 }

@@ -2535,9 +2535,13 @@ public static class ComponentModelFactory
         double er = GetReal(parameters, "Er", DefaultSubstrateEpsR);
         double sigma = GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM);
         double tanD = GetReal(parameters, "TanD", DefaultSubstrateTanD);
+        double roughness = GetReal(parameters, "Roughness", 0.0);
         string name = MicrostripInstanceName(parameters, "MTEE");
 
-        return new MicrostripTeeModel(w1, w2, w3, h, t, er, sigma, tanD, name);
+        // L1-L3 are the drawn arm lengths the model simulates (brief DFR26-5); an undeclared one is null,
+        // which is how a tee written before the lengths existed keeps simulating as the junction alone.
+        return new MicrostripTeeModel(w1, w2, w3, h, t, er, sigma, tanD, name,
+            DeclaredReal(parameters, "L1"), DeclaredReal(parameters, "L2"), DeclaredReal(parameters, "L3"), roughness);
     }
 
     private static MicrostripCrossModel CreateMicrostripCrossModel(IReadOnlyDictionary<string, Value> parameters)
@@ -2551,10 +2555,16 @@ public static class ComponentModelFactory
         double er = GetReal(parameters, "Er", DefaultSubstrateEpsR);
         double sigma = GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM);
         double tanD = GetReal(parameters, "TanD", DefaultSubstrateTanD);
+        double roughness = GetReal(parameters, "Roughness", 0.0);
         string name = MicrostripInstanceName(parameters, "MCROSS");
 
-        return new MicrostripCrossModel(w1, w2, w3, w4, h, t, er, sigma, tanD, name);
+        return new MicrostripCrossModel(w1, w2, w3, w4, h, t, er, sigma, tanD, name,
+            [DeclaredReal(parameters, "L1"), DeclaredReal(parameters, "L2"),
+             DeclaredReal(parameters, "L3"), DeclaredReal(parameters, "L4")], roughness);
     }
+
+    private static double? DeclaredReal(IReadOnlyDictionary<string, Value> parameters, string key)
+        => parameters.ContainsKey(key) ? GetReal(parameters, key, 0.0) : null;
 
     private static MicrostripTaperModel CreateMicrostripTaperModel(IReadOnlyDictionary<string, Value> parameters)
     {

@@ -137,19 +137,22 @@ public class SchematicPasteAndDragTests
         Assert.Equal((6200.0, 3800.0), model.Wires[1].Points[0]);
     }
 
+    /// <summary>Brief DFR26-5: a source already in view is centred too. It used to stay put one grid step off,
+    /// which put the copy's pins onto the original's wires and shorted the nets.</summary>
     [Fact]
-    public void Paste_WithSourceFullyInView_OffsetsByOneGridStep()
+    public void Paste_WithSourceFullyInView_CentresItInTheViewToo()
     {
         var (model, vm) = MakeModel();
         vm.ViewportProvider = () => new SchematicPasteGeometry.ViewRect(-2000, -2000, 3000, 3000);
 
         CopyAllAndPaste(model, vm);
 
+        // Fragment bbox centre (300, 200) → viewport centre (500, 500): delta (200, 300).
         var pasted = model.Components.Skip(2).ToList();
-        Assert.Equal(100.0, pasted[0].X, Eps);
-        Assert.Equal(100.0, pasted[0].Y, Eps);
-        Assert.Equal(700.0, pasted[1].X, Eps);
-        Assert.Equal(500.0, pasted[1].Y, Eps);
+        Assert.Equal(200.0, pasted[0].X, Eps);
+        Assert.Equal(300.0, pasted[0].Y, Eps);
+        Assert.Equal(800.0, pasted[1].X, Eps);
+        Assert.Equal(700.0, pasted[1].Y, Eps);
     }
 
     [Fact]
@@ -281,21 +284,21 @@ public class SchematicPasteAndDragTests
 
         CopyAllAndPaste(model, vm);
 
-        // Grab the pasted copy by its wire (offset one grid step from the original's).
+        // Grab the pasted copy by its wire (centred in the view, (200, 300) off the original's).
         var pastedWire = model.Wires[1];
-        Assert.Equal((100.0, 100.0), pastedWire.Points[0]);
-        vm.OnPointerPressed(100, 400, KeyModifiers.None);
+        Assert.Equal((200.0, 300.0), pastedWire.Points[0]);
+        vm.OnPointerPressed(200, 500, KeyModifiers.None);
         Assert.Equal(3, vm.Selection.Count);
 
-        for (int i = 1; i <= 3; i++) vm.OnPointerMoved(100 + i * 200, 400 + i * 200, leftDown: true);
-        vm.OnPointerReleased(700, 1000);
+        for (int i = 1; i <= 3; i++) vm.OnPointerMoved(200 + i * 200, 500 + i * 200, leftDown: true);
+        vm.OnPointerReleased(800, 1100);
 
         // The pasted copy moved by (600, 600); the originals did not move at all.
         Assert.Equal(0.0,   model.Components[0].X, Eps);
         Assert.Equal(0.0,   model.Components[0].Y, Eps);
-        Assert.Equal(700.0, model.Components[2].X, Eps);
-        Assert.Equal(700.0, model.Components[2].Y, Eps);
-        Assert.Equal((700.0, 700.0), model.Wires[1].Points[0]);
+        Assert.Equal(800.0, model.Components[2].X, Eps);
+        Assert.Equal(900.0, model.Components[2].Y, Eps);
+        Assert.Equal((800.0, 900.0), model.Wires[1].Points[0]);
     }
 
     // ── Reported alongside: "Save Schematic As…" suggested ".csch" twice ──────

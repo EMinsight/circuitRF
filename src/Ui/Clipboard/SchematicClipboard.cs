@@ -44,7 +44,8 @@ public static class SchematicClipboard
     {
         if (components.Count == 0 && wires.Count == 0 && canvasObjects.Count == 0) return;
 
-        string json = SchematicPersistence.SerializeSelection(components, wires, canvasObjects, gridSize, netLabels, technologyPath);
+        string json = SchematicPersistence.SerializeSelection(
+            WithAbsoluteCellRefs(components, schematicDirectory), wires, canvasObjects, gridSize, netLabels, technologyPath);
 
         var (variant, transparent) = ClipboardRenderPolicy.Resolve();
         var renderTheme = SchematicRenderTheme.FromTheme(ThemeService.Active, variant);
@@ -106,11 +107,14 @@ public static class SchematicClipboard
     /// <c>NetLabels</c> are anchored to the returned wires, so they follow any offset applied to them.
     /// <c>TechnologyPath</c> is the technology the source schematic resolved when it was copied, or null.
     /// </summary>
+    /// <para><paramref name="destinationDirectory"/> is the pasting schematic's folder: every cell reference the
+    /// fragment carries (absolute on the clipboard, <see cref="WithAbsoluteCellRefs"/>) is made relative to it again.</para>
     public static async Task<(List<EditableComponent> Comps, List<EditableWire> Wires,
         List<EditableCanvasObject> CanvasObjs, double SourceGridSize,
         List<EditableNetLabel> NetLabels, string? TechnologyPath)?> PasteAsync(
         IClipboard clipboard,
-        double offsetX = 100, double offsetY = 100)
+        double offsetX = 100, double offsetY = 100,
+        string? destinationDirectory = null)
     {
         string? json = null;
         try { json = await clipboard.TryGetTextAsync(); }
@@ -130,6 +134,7 @@ public static class SchematicClipboard
                 nc.Y += offsetY;
                 newComps.Add(nc);
             }
+            RelativizeCellRefs(newComps, destinationDirectory);
 
             var newWires = new List<EditableWire>(wires.Count);
             var newLabels = new List<EditableNetLabel>(labels.Count);
@@ -168,6 +173,47 @@ public static class SchematicClipboard
         }
         catch { return null; }
     }
+
+    // ── Cell references across sheets (brief DFR26-5 R-dfr26-5-4) ─────────────
+
+    /// <summary>
+    /// The components as the clipboard carries them: a <c>CellRef</c> is relative to the schematic that holds it,
+    /// so a part pasted into a sheet in another folder resolved its symbol against the wrong one and drew a
+    /// placeholder box — an imported schematic's parts live beside their source sheet, and its large IC symbol and test
+    /// point came across as boxes whose pins no wire met. Each relative reference is made absolute against
+    /// <paramref name="sourceDirectory"/> here and relative to the destination again on paste
+    /// (<see cref="RelativizeCellRefs"/>), so it is a stored relative reference wherever it lands. A reference that is
+    /// already absolute, or names a cell through a workspace alias, means the same thing from any sheet and is left
+    /// alone; so is everything when the source has no folder.
+    /// </summary>
+    public static IReadOnlyList<EditableComponent> WithAbsoluteCellRefs(
+        IReadOnlyList<EditableComponent> components, string? sourceDirectory)
+    {
+        if (sourceDirectory is null || !components.Any(c => IsSheetRelative(c.CellRef))) return components;
+        return [.. components.Select(c =>
+        {
+            if (!IsSheetRelative(c.CellRef)) return c;
+            var clone = c.Clone();
+            clone.CellRef = ExternalCellRef.ResolveCellDir(c.CellRef, sourceDirectory)
+                            ?? Path.GetFullPath(Path.Combine(sourceDirectory, RefPath.ToNative(c.CellRef!)));
+            return clone;
+        })];
+    }
+
+    /// <summary>The paste half of <see cref="WithAbsoluteCellRefs"/>: each absolute <c>CellRef</c> becomes the reference
+    /// <see cref="ExternalCellRef.MakeCellRef"/> writes from <paramref name="destinationDirectory"/> — relative, or
+    /// through a workspace alias when the cell is in a referenced workspace. Without a destination folder (a sheet never
+    /// saved) it stays absolute, which still resolves.</summary>
+    public static void RelativizeCellRefs(IEnumerable<EditableComponent> components, string? destinationDirectory)
+    {
+        if (destinationDirectory is null) return;
+        foreach (var c in components)
+            if (c.CellRef is { } r && !ExternalCellRef.IsExternalRef(r) && Path.IsPathRooted(r))
+                c.CellRef = RefPath.ToStored(ExternalCellRef.MakeCellRef(destinationDirectory, r));
+    }
+
+    private static bool IsSheetRelative(string? cellRef)
+        => cellRef is { Length: > 0 } && !ExternalCellRef.IsExternalRef(cellRef) && !Path.IsPathRooted(cellRef);
 
     // ── Private rendering helpers ─────────────────────────────────────────────
 

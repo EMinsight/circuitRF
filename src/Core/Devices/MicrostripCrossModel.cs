@@ -57,6 +57,16 @@ namespace CircuitRF.Core.Devices;
 /// frequency term in the source; static Hammerstad-Jensen Z0/eeff feed the through/stub Lw values
 /// only where <see cref="HammerstadJensen"/> itself is invoked for the validity-range machinery
 /// (R7/R-pc-12 — the same static physics <see cref="MicrostripLineModel"/> uses).
+///
+/// <b>Arms (brief DFR26-5 R-dfr26-5-3): the cross simulates the arms it draws</b>, as
+/// <see cref="MicrostripTeeModel"/> does. <c>L1</c>-<c>L4</c> run from the centre to each pin
+/// (<c>MCrossPCell</c>); arms 1/3 carry MLIN sections of <c>L − max(W2, W4)/2</c> and arms 2/4 of
+/// <c>L − max(W1, W3)/2</c>, with the junction between them (<see cref="JunctionArms"/>). When BOTH
+/// arms of one pair have no metal past the other pair, the drawn shape is a straight line with the
+/// short pair's pins on it: the cross is then the other pair's two full lines meeting at those pins,
+/// with no junction (arms 2/4 are tested first). One short arm alone is a tee-shaped cross and still
+/// carries the junction. A cross declaring no length is the junction alone, as it always simulated,
+/// reported once.
 /// </summary>
 public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
 {
@@ -70,14 +80,31 @@ public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
     private bool _warnedAsymmetry;
     private bool _warnedEpsR;
 
+    // The arm sections, pin k → junction port k (null = no line), or — in a straight-line limit — the
+    // long pair's full lines. All null and not straight when no length is declared: the junction alone.
+    private readonly MicrostripLineModel?[] _arms = new MicrostripLineModel?[4];
+    private readonly string? _unmodelledArms;
+
+    /// <summary>Which pair forms a straight line with no junction: 0 = none, 1 = arms 1/3 (arms 2/4
+    /// have no metal past them), 2 = arms 2/4.</summary>
+    public int StraightLinePair { get; }
+
+    /// <summary>The length of line each arm carries (m) — 0 for an arm with none.</summary>
+    public IReadOnlyList<double> ArmSectionLengths { get; }
+
     /// <summary>R-mk-7/8 (brief-mklopf-performance-and-messages.md): routes this instance's
     /// validity-range warnings into ElaboratedNetlist.Warnings via the engine's post-Stamp drain —
     /// see IReportsWarnings' own doc comment. This model's own separate direct console notices
     /// below are pre-existing, out of this brief's stated scope, and are untouched.</summary>
-    public IReadOnlyList<(string Key, string Message)> DrainWarnings() => _reporter.Drain();
+    public IReadOnlyList<(string Key, string Message)> DrainWarnings()
+        => [.. _reporter.Drain(), .. JunctionArms.DrainSections(_arms)];
 
+    /// <param name="armLengthsMeters">L1-L4, each arm's length from the centre to its pin as drawn; an
+    /// entry is null where the instance declares none, and a null or all-null list is the junction
+    /// alone (a file written before the lengths existed).</param>
     public MicrostripCrossModel(double w1Meters, double w2Meters, double w3Meters, double w4Meters,
-        double hMeters, double tMeters, double epsR, double sigmaSPerM, double tanD, string instancePath)
+        double hMeters, double tMeters, double epsR, double sigmaSPerM, double tanD, string instancePath,
+        IReadOnlyList<double?>? armLengthsMeters = null, double roughnessMeters = 0.0)
     {
         _w1 = w1Meters;
         _w2 = w2Meters;
@@ -88,7 +115,43 @@ public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
         _epsR = epsR;
         _instancePath = instancePath;
         _reporter = new MicrostripValidityReporter(instancePath);
-        _ = (tMeters, sigmaSPerM, tanD); // conductor/dielectric loss: not part of this quasi-static LC model
+
+        var declared = armLengthsMeters ?? [null, null, null, null];
+        double[] widths = [w1Meters, w2Meters, w3Meters, w4Meters];
+        var lengths = new double[4];
+        if (declared.All(l => l is null))
+        {
+            _unmodelledArms = "declares no arm lengths (L1-L4), so its arms are not simulated — only the "
+                + "junction is. Set L1-L4 to simulate the arms the layout draws.";
+        }
+        else
+        {
+            double halfX = Math.Max(w2Meters, w4Meters) / 2.0;   // the ±Y arms cross arms 1/3 here
+            double halfY = Math.Max(w1Meters, w3Meters) / 2.0;   // and the ±X arms cross arms 2/4
+            double PastPlane(int k) => (declared[k] ?? 0.0) - (k % 2 == 0 ? halfX : halfY);
+            bool NoMetalPast(int k) => declared[k] is not null && PastPlane(k) <= JunctionArms.ZeroLengthMeters;
+
+            StraightLinePair = NoMetalPast(1) && NoMetalPast(3) ? 1
+                : NoMetalPast(0) && NoMetalPast(2) ? 2
+                : 0;
+            for (int k = 0; k < 4; k++)
+            {
+                bool longPair = StraightLinePair != 0 && k % 2 == StraightLinePair - 1;
+                bool shortPair = StraightLinePair != 0 && !longPair;
+                lengths[k] = shortPair ? 0.0
+                    : longPair ? Math.Max(0.0, declared[k] ?? 0.0)
+                    : Math.Max(0.0, PastPlane(k));
+                _arms[k] = JunctionArms.Section(lengths[k], widths[k], hMeters, tMeters, epsR, sigmaSPerM, tanD,
+                    roughnessMeters, instancePath);
+                if (_arms[k] is null) lengths[k] = 0.0;
+            }
+
+            var missing = Enumerable.Range(0, 4).Where(k => declared[k] is null).Select(k => $"L{k + 1}").ToArray();
+            if (missing.Length > 0)
+                _unmodelledArms = $"declares no {string.Join(", ", missing)}, so "
+                    + (missing.Length == 1 ? "that arm is" : "those arms are") + " not simulated.";
+        }
+        ArmSectionLengths = lengths;
     }
 
     /// <summary>True when the R11 opposing-pair-mean approximation is in effect for this
@@ -109,8 +172,8 @@ public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
 
         if (omega <= 0.0)
         {
-            // DC: ideal inductors short, the shunt capacitors open — all four ports collapse to
-            // one node, the true DC limit of this same LC network.
+            // DC: ideal inductors short, the shunt capacitors open, the arm lines are lossless at
+            // DC — all four ports collapse to one node, the true DC limit of this same network.
             var gDc = new Complex(1.0e9, 0.0);
             mna.AddAdmittance(n1, n2, gDc);
             mna.AddAdmittance(n1, n3, gDc);
@@ -118,6 +181,35 @@ public sealed class MicrostripCrossModel : ComponentModel, IReportsWarnings
             return;
         }
 
+        if (_unmodelledArms is not null)
+            _reporter.ReportOnce("MCross:Arms", $"MCROSS {_unmodelledArms}");
+
+        if (StraightLinePair != 0)
+        {
+            // A straight line with the short pair's pins on it: the long pair's lines meet at the
+            // first short pin, and the second is tied to it.
+            double freqHz = omega / (2.0 * Math.PI);
+            int[] n = [n1, n2, n3, n4];
+            int a = StraightLinePair - 1, mid = a == 0 ? 1 : 0;
+            JunctionArms.StampLine(mna, n[a], n[mid], _arms[a], freqHz);
+            JunctionArms.StampLine(mna, n[mid], n[a + 2], _arms[a + 2], freqHz);
+            JunctionArms.StampTie(mna, n[mid], n[mid + 2]);
+            return;
+        }
+
+        if (_arms.All(x => x is null))
+        {
+            StampJunction(mna, n1, n2, n3, n4, omega);
+            return;
+        }
+
+        JunctionArms.Stamp(mna, [n1, n2, n3, n4], _arms, omega,
+            (block, ports) => StampJunction(block, ports[0], ports[1], ports[2], ports[3], omega));
+    }
+
+    /// <summary>The Gupta-Garg-Chadha cross network on its four reference-plane nodes.</summary>
+    private void StampJunction(IMnaContext mna, int n1, int n2, int n3, int n4, double omega)
+    {
         if (!_warnedEpsR && (_epsR < 9.0 || _epsR > 10.8))
         {
             Console.Error.WriteLine(

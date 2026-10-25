@@ -1,8 +1,8 @@
 namespace CircuitRF.Ui.Schematic;
 
 /// <summary>
-/// The wire a TWO-TERMINAL PART shorts out the moment it is placed, and the rule for when circuitRF
-/// may clear it.
+/// The wire a part shorts out the moment it is placed across it — a two-terminal part, or the two
+/// through pins of a tee or cross — and the rule for when circuitRF may clear it.
 ///
 /// <para><b>Why this exists.</b> The natural gesture for putting a part in series is to drop it onto
 /// the wire whose current is to go through it — at which point both of its pins land on that wire
@@ -13,8 +13,9 @@ namespace CircuitRF.Ui.Schematic;
 /// <para><b>There is no list of kinds, and deliberately so.</b> It began as an IProbe affordance and
 /// grew a second kind (the WSProbe) by the end of the same week; the list was the part that had to
 /// be remembered, and a part left off it fails by doing nothing. What qualifies is asked
-/// GEOMETRICALLY instead, here and nowhere else: exactly two pins, both landing on ONE straight
-/// segment of wire. A part whose pins are not collinear with the run — a vertical R dropped on a
+/// GEOMETRICALLY instead, here and nowhere else: exactly two pins landing on ONE straight segment
+/// of wire, and any other pins off it (brief DFR26-5: an MTEE dropped along a wire cuts between pins
+/// 1 and 2, its branch left for the user; an MCROSS cuts between the two pins on the wire). A part whose pins are not collinear with the run — a vertical R dropped on a
 /// horizontal wire, an MBEND, whose two pins are at right angles — cannot satisfy it and never
 /// triggers, so the gesture itself is the opt-in. R, L, C, NonlinearC, SRLC, a diode, a TLIN, a
 /// 2-port SnP, a two-pin cell of the user's own and both series probes all reach it by the same
@@ -72,8 +73,8 @@ public static class SeriesPartInsertion
 
     /// <summary>
     /// The spans <paramref name="part"/> would be shorted by — one per wire carrying the run, or
-    /// empty when there is none, when the part is not two-terminal, or when removing them would
-    /// change the circuit. <paramref name="part"/> is the component about to be placed and is NOT
+    /// empty when there is none, when no single pair of the part's pins lies on the run, or when
+    /// removing them would change the circuit. <paramref name="part"/> is the component about to be placed and is NOT
     /// expected to be in <paramref name="model"/> yet — which is also what keeps its own pins out of
     /// the "something else is in the way" scan. For a DRAG, <paramref name="part"/> is a copy at the
     /// landing position and <paramref name="moving"/> is the part itself, still at its start: its
@@ -84,17 +85,17 @@ public static class SeriesPartInsertion
     {
         const double tol = SchematicEditModel.ConnectTolerance;
 
-        // Exactly two pins IS the membership test — see the class remarks. A one-pin part has no
-        // span, and a part with three or more has no unambiguous pair to break the run between.
-        var defs = model.PortDefsOf(part);
-        if (defs.Count != 2) return [];
-        var a = model.PortWorldOf(part, defs[0]);
-        var b = model.PortWorldOf(part, defs[1]);
-        if (SchematicGeometry.CoincidentPoints(a.X, a.Y, b.X, b.Y, tol)) return [];
+        // Exactly two pins ON THE SEGMENT is the membership test — see the class remarks. A one-pin
+        // part has no span; a part with more pins qualifies when exactly two of them land on one
+        // straight segment and the rest are off it (brief DFR26-5 R-dfr26-5-2): an MTEE's through
+        // pins along a wire, its branch pin left for the user; an MCROSS's two collinear pins.
+        var pins = model.PortDefsOf(part).Select(d => model.PortWorldOf(part, d)).ToList();
+        if (pins.Count < 2) return [];
 
-        // Both pins on ONE straight segment. Two pins on two different segments of the same run
+        // The pair on ONE straight segment. Two pins on two different segments of the same run
         // means it turns a corner between them, which is not the shape this affordance is for.
         List<ShortedSpan> found = [];
+        (int A, int B)? pair = null;
         foreach (var w in model.Wires)
         {
             var pts = w.Points;
@@ -102,8 +103,18 @@ public static class SeriesPartInsertion
             {
                 var (px, py) = pts[i];
                 var (qx, qy) = pts[i + 1];
-                if (!SchematicGeometry.PointOnSegment(a.X, a.Y, px, py, qx, qy, tol)) continue;
-                if (!SchematicGeometry.PointOnSegment(b.X, b.Y, px, py, qx, qy, tol)) continue;
+                var on = Enumerable.Range(0, pins.Count)
+                    .Where(k => SchematicGeometry.PointOnSegment(pins[k].X, pins[k].Y, px, py, qx, qy, tol))
+                    .ToList();
+                if (on.Count < 2) continue;
+                if (on.Count > 2) return [];   // three pins on one run: no unambiguous pair to break between
+
+                // Every wire carrying the run must be carrying the SAME pair — a cross dropped where
+                // two wires meet it on different pairs is not one series cut.
+                if (pair is { } seen && seen != (on[0], on[1])) return [];
+                pair = (on[0], on[1]);
+                var (a, b) = (pins[on[0]], pins[on[1]]);
+                if (SchematicGeometry.CoincidentPoints(a.X, a.Y, b.X, b.Y, tol)) return [];
 
                 // One wire doubling back over its own run: two cuts on one wire object, which the
                 // cut command has no shape for. Rare, and not what a doubled run looks like —
@@ -114,8 +125,29 @@ public static class SeriesPartInsertion
                 found.Add(new ShortedSpan(w, i, aFirst ? a : b, aFirst ? b : a));
             }
         }
+        if (found.Count == 0) return [];
 
-        return found.Count > 0 && SpanIsClear(model, found, moving) ? found : [];
+        // The part's other pins must be off every wire being cut, not just off the span: a branch pin
+        // on another segment of the same wire would stay tied to one of the cut pieces, still shorting
+        // that pin to one of the pair.
+        for (int k = 0; k < pins.Count; k++)
+        {
+            if (k == pair!.Value.A || k == pair.Value.B) continue;
+            foreach (var cut in found)
+                if (OnWire(cut.Wire, pins[k].X, pins[k].Y, tol)) return [];
+        }
+
+        return SpanIsClear(model, found, moving) ? found : [];
+    }
+
+    private static bool OnWire(EditableWire w, double x, double y, double tol)
+    {
+        var pts = w.Points;
+        if (pts.Count == 1) return SchematicGeometry.CoincidentPoints(x, y, pts[0].X, pts[0].Y, tol);
+        for (int i = 0; i < pts.Count - 1; i++)
+            if (SchematicGeometry.PointOnSegment(x, y, pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y, tol))
+                return true;
+        return false;
     }
 
     /// <summary>

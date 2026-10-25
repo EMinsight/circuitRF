@@ -3127,11 +3127,11 @@ public static class ComponentTypeRegistry
                         .. SignalGroundLayerParams];
 
             // MTee: microstrip T-junction — W1/W2 (through arms, may differ), W3 (branch), and each
-            // arm's own drawn length L1/L2/L3. The lengths are ARTWORK only (MicrostripTeeModel has
-            // no length term — the junction's reference planes are at the arm edges), but they must
-            // be declared rather than derived: deriving arm length from arm width, as this cell used
-            // to, makes a width gripper move the junction and the other two pins along the
-            // perpendicular axis.
+            // arm's own drawn length L1/L2/L3. MicrostripTeeModel simulates them as MLIN sections from
+            // each pin to the junction's reference planes at the crossing arm's edge (brief DFR26-5), so
+            // the same geometry gives the same answer as an MLIN. They must be declared rather than
+            // derived: deriving arm length from arm width, as this cell used to, makes a width gripper
+            // move the junction and the other two pins along the perpendicular axis.
             //
             // Each L defaults to its OWN W (owner's call, 2026-08-12) — a square stub per arm, which
             // is the smallest thing that still reads as a junction with pins at its own edge, and

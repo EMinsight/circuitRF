@@ -1,0 +1,29 @@
+; Brief DFR26-5 R-dfr26-5-3 regression: a microstrip tee and cross simulate the arms they draw.
+; Four independent circuits on the FR-4 fallback substrate (H 1.6 mm, Er 4.4); no analysis, the
+; test stamps them and compares their port blocks. See README.md.
+
+; 1. A tee whose branch has no metal past the through line (L3 = W1/2) is two lines meeting at
+;    pin 3: with pin 3 open it equals one MLIN of L1 + L2, exactly.
+MTEE:T1   s1a  s1b  s1c  W1=3 mm  W2=3 mm  W3=1.5 mm  L1=4 mm  L2=6 mm  L3=1.5 mm
+MLIN:TL1  s1x  s1y  W=3 mm  L=10 mm
+
+; 2. A tee with a real branch is its junction behind arm lines of L1 - W3/2, L2 - W3/2 and
+;    L3 - max(W1, W2)/2, built here by hand from the junction alone (no L) and three MLINs.
+MTEE:T2   t2a  t2b  t2c  W1=3 mm  W2=3 mm  W3=1.5 mm  L1=4 mm  L2=6 mm  L3=5 mm
+MLIN:TA   h2a  j2a  W=3 mm  L=3.25 mm
+MLIN:TB   h2b  j2b  W=3 mm  L=5.25 mm
+MLIN:TC   h2c  j2c  W=1.5 mm  L=3.5 mm
+MTEE:TJ   j2a  j2b  j2c  W1=3 mm  W2=3 mm  W3=1.5 mm
+
+; 3. A cross whose arms 2 and 4 have no metal past arms 1/3 (L2 = L4 = W1/2) is the line of arms
+;    1 and 3: with pins 2 and 4 open it equals one MLIN of L1 + L3, exactly.
+MCROSS:X3 x3a  x3b  x3c  x3d  W1=3 mm  W2=1.5 mm  W3=3 mm  W4=1.5 mm  L1=4 mm  L2=1.5 mm  L3=6 mm  L4=1.5 mm
+MLIN:TL3  x3x  x3y  W=3 mm  L=10 mm
+
+; 4. A cross with four real arms is its junction behind lines of L - (crossing width)/2.
+MCROSS:X4 c4a  c4b  c4c  c4d  W1=3 mm  W2=1.5 mm  W3=3 mm  W4=1.5 mm  L1=4 mm  L2=5 mm  L3=6 mm  L4=3 mm
+MLIN:XA   h4a  j4a  W=3 mm  L=3.25 mm
+MLIN:XB   h4b  j4b  W=1.5 mm  L=3.5 mm
+MLIN:XC   h4c  j4c  W=3 mm  L=5.25 mm
+MLIN:XD   h4d  j4d  W=1.5 mm  L=1.5 mm
+MCROSS:XJ j4a  j4b  j4c  j4d  W1=3 mm  W2=1.5 mm  W3=3 mm  W4=1.5 mm

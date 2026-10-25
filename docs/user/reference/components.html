@@ -1771,7 +1771,16 @@ refused. Conductor thickness enters through the line part only.</p>
 			MTEE
 	</text></svg></span>
 </span><figcaption>MTEE</figcaption></figure>
-<p>A three-port microstrip T-junction. <code>W1</code>, <code>W2</code> and <code>W3</code> are the widths of the three arms.</p>
+<p>A three-port microstrip T-junction. <code>W1</code>, <code>W2</code> and <code>W3</code> are the widths of the three arms, and <code>L1</code>,
+<code>L2</code> and <code>L3</code> their lengths from the junction's centre to each pin — the shape the layout draws.</p>
+<p>The arms are simulated as microstrip lines, with the junction model between them. A through arm carries
+<code>L1 − W3/2</code> (or <code>L2 − W3/2</code>) of line, the branch <code>L3 − max(W1, W2)/2</code>: the junction model starts where
+the crossing arm's edge is. When the branch reaches no further than the through line's edge, the tee is
+a straight line with pin 3 on it, and it simulates as exactly that — two lines of <code>L1</code> and <code>L2</code> meeting
+at pin 3 — so with pin 3 open it gives the same answer as an MLIN of <code>L1 + L2</code>. Any longer branch
+brings the junction model in.</p>
+<p>A tee with no <code>L</code> values (from a file saved before they existed) simulates the junction alone, and the
+run says its arms are not simulated.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>1</td></tr>
@@ -1800,7 +1809,13 @@ refused. Conductor thickness enters through the line part only.</p>
 			MCROSS
 	</text></svg></span>
 </span><figcaption>MCROSS</figcaption></figure>
-<p>A four-port microstrip cross-junction, with a width per arm.</p>
+<p>A four-port microstrip cross-junction, with a width (<code>W1</code>–<code>W4</code>) and a length from the centre
+(<code>L1</code>–<code>L4</code>) per arm.</p>
+<p>The arms are simulated as microstrip lines with the junction model between them, as for the
+<a href="#mtee">MTEE</a>: arms 1 and 3 carry <code>L − max(W2, W4)/2</code> of line, arms 2 and 4 <code>L − max(W1, W3)/2</code>. When
+arms 2 and 4 both stop at the edge of arms 1 and 3, the cross is a straight line — the lines of <code>L1</code> and
+<code>L3</code> with pins 2 and 4 on it — and with those pins open it equals an MLIN of <code>L1 + L3</code>. The same holds
+the other way round. A cross with no <code>L</code> values simulates the junction alone, and says so.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>1</td></tr>

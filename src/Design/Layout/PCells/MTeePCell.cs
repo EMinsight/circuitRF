@@ -13,8 +13,9 @@ namespace CircuitRF.Design.Layout.PCells;
 /// relocated the junction and both other pins along the perpendicular axis. A cell that declares no
 /// length still gets the old derivation, so nothing already drawn moves — see
 /// <see cref="PCellGeometryHelpers.StubLengthFactor"/> and <see cref="PCellGeometryHelpers.ResolveArmLength"/>.
-/// The arms remain ARTWORK: <c>MicrostripTeeModel</c> has no length term, so a longer arm draws
-/// longer and simulates identically. Real line length is a separate, user-placed MLIN.
+/// <c>MicrostripTeeModel</c> simulates these arms as MLIN sections to its reference planes (brief
+/// DFR26-5), so a longer arm draws longer AND simulates longer; a cell with no length declared
+/// simulates as the junction alone.
 ///
 /// <b>docs/sonnet-briefs/brief-L5-followups.md §2 (R-L5f-5): the branch direction is DEFINED BY
 /// THE SYMBOL, not by a coordinate sign.</b> The MTee symbol's own port 3 sits at schematic-canvas

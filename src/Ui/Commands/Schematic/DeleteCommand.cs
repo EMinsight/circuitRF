@@ -53,6 +53,48 @@ internal sealed class DeleteCommand : IUiCommand
             for (int i = 0; i < model.Dots.Count; i++)
                 if (model.Dots[i].Id == id) { _dots.Add(new(model.Dots[i], i)); break; }
         }
+
+        TakeLabelsOnDeletedPins();
+    }
+
+    /// <summary>
+    /// A free-standing net label names the pin it sits on — an imported schematic puts one on every pin it joined by
+    /// name rather than by wire. Deleting the part takes such a label with it, as deleting a wire takes the labels
+    /// anchored to it (brief DFR26-5 R-dfr26-5-4): left behind it floats on the sheet naming nothing. A label that
+    /// something staying still meets — another part's pin, a wire through the point — keeps naming that, and stays.
+    /// </summary>
+    private void TakeLabelsOnDeletedPins()
+    {
+        if (_comps.Count == 0) return;
+        const double tol = SchematicEditModel.ConnectTolerance;
+        var gone = _comps.Select(c => c.Component).ToHashSet();
+        var goneWires = _wires.Select(w => w.Wire).ToHashSet();
+        var taken = _labels.Select(l => l.Label).ToHashSet();
+        var pins = gone.SelectMany(c => _model.PortDefsOf(c).Select(d => _model.PortWorldOf(c, d))).ToList();
+
+        bool Touched(double x, double y)
+            => _model.Components.Any(c => !gone.Contains(c)
+                   && _model.PortDefsOf(c).Any(d => _model.PortWorldOf(c, d) is var p
+                                                    && SchematicGeometry.CoincidentPoints(p.X, p.Y, x, y, tol)))
+               || _model.Wires.Any(w => !goneWires.Contains(w) && OnWire(w, x, y, tol));
+
+        for (int i = 0; i < _model.NetLabels.Count; i++)
+        {
+            var l = _model.NetLabels[i];
+            if (l.IsAnchored || taken.Contains(l)) continue;
+            if (!pins.Any(p => SchematicGeometry.CoincidentPoints(p.X, p.Y, l.X, l.Y, tol))) continue;
+            if (Touched(l.X, l.Y)) continue;
+            _labels.Add(new(l, i));
+        }
+    }
+
+    private static bool OnWire(EditableWire w, double x, double y, double tol)
+    {
+        var pts = w.Points;
+        if (pts.Count == 1) return SchematicGeometry.CoincidentPoints(pts[0].X, pts[0].Y, x, y, tol);
+        for (int i = 0; i + 1 < pts.Count; i++)
+            if (SchematicGeometry.PointOnSegment(x, y, pts[i].X, pts[i].Y, pts[i + 1].X, pts[i + 1].Y, tol)) return true;
+        return false;
     }
 
     public void Execute()

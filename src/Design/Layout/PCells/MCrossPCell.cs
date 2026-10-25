@@ -12,8 +12,9 @@ namespace CircuitRF.Design.Layout.PCells;
 /// <b>Each arm carries its own drawn length (<c>L1</c>-<c>L4</c>), independent of its width</b> —
 /// same owner report and same reasoning as <see cref="MTeePCell"/>: the old <c>2.5 ×</c> width
 /// derivation made a width gripper move that arm's own pin along the arm. A cell that declares no
-/// length still gets the old derivation, so nothing already drawn moves. The arms are ARTWORK;
-/// <c>MicrostripCrossModel</c> has no length term.
+/// length still gets the old derivation, so nothing already drawn moves. <c>MicrostripCrossModel</c>
+/// simulates these arms as MLIN sections to its reference planes (brief DFR26-5); a cell with no length
+/// declared simulates as the junction alone.
 /// </summary>
 public static class MCrossPCell
 {

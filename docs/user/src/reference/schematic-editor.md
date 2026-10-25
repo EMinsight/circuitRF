@@ -98,6 +98,26 @@ While a placement is armed, <kbd>R</kbd> rotates the ghost 90° counter-clockwis
 <kbd>Shift</kbd>+<kbd>R</kbd> clockwise — the same two keys that rotate a selection when nothing is
 armed, so there is one pair of rotate keys to remember rather than two.
 
+**Dropping a part along a wire puts it in series.** When two of its pins land on one straight stretch
+of wire, the wire between them is removed, so the part breaks into the run instead of being shorted by
+it. That holds for a two-pin part, for an MTEE whose pins 1 and 2 lie along the wire (pin 3 is left for
+you to wire) and for an MCROSS along the wire between its two pins on it. Nothing is cut when anything
+else meets the wire between the pins — a junction, another wire, another part's pin, a net label — or
+when the part's other pins also touch the wire.
+
+### Copy and paste {#paste}
+
+<kbd>Ctrl</kbd>+<kbd>V</kbd> (<kbd>⌘</kbd>+<kbd>V</kbd> on macOS) shows the copied parts as a ghost
+that follows the cursor, snapped to the connection grid. Click to place them there; <kbd>Esc</kbd>
+puts nothing down. Nothing connects to the ghost while it moves. **Edit ▸ Paste** does the same while
+the cursor is over the canvas; from the menu with the cursor elsewhere, the parts land in the middle
+of the view. A single part pasted along a wire goes in series, as a placed one does.
+
+Parts keep their symbols when pasted into a schematic in another folder, so a part copied out of an
+imported schematic arrives as its own symbol rather than a box. A net label sitting on a copied pin
+comes with it; deleting a part takes the net label that sits on its pin, unless another pin or a wire
+also meets it there.
+
 <div class="callout note">
 <span class="label">The ghost is the real symbol, not a stand-in</span>
 <p>For a part from an imported kit the ghost is built by resolving the cell's own primary symbol, not
@@ -212,7 +232,7 @@ at the top of the schematic.
 | **Esc** | Cancel the current tool, or clear the selection |
 | **Shift+G** | Cycle the snap mode |
 | **Ctrl/Cmd+A** | Select all |
-| **Ctrl/Cmd+C**, **Ctrl/Cmd+X**, **Ctrl/Cmd+V** | Copy, cut, paste |
+| **Ctrl/Cmd+C**, **Ctrl/Cmd+X**, **Ctrl/Cmd+V** | Copy, cut, paste ([at the cursor](#paste)) |
 | **Ctrl/Cmd+=**, **Ctrl/Cmd+−** | Zoom in, out |
 | **Ctrl/Cmd+]**, **Ctrl/Cmd+[** | Push into the selected cell instance; pop out |
 
