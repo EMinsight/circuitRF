@@ -200,6 +200,15 @@ board.
 Before anything changes, a confirmation lists each layer, marked when it is hidden or locked, with how many
 shapes it keeps, cuts at the edge and removes, then the instance counts. **Crop** applies it as a single undo.
 
+**Crop to New Cell…**, beside it on the right-click menu, makes the same cut as a copy. Drag the box, name the
+cell, and the same confirmation appears with the cell's name in it. **Create** writes the cropped copy as a new
+cell beside this one and opens it. This board is not changed and nothing is placed on it. Bitmaps are not copied.
+Use it when the corner is to become a cell of its own, for example to set it up for EM.
+
+Group into Cell takes only what is selected, and a selection never reaches a hidden or locked layer. To group
+after a crop, show every layer and make each one selectable first. Group into Cell's confirmation names any plane
+it would leave behind, and **Include them** adds what it would leave out to the group.
+
 ### Cut Clearances into Planes {#cut-clearances}
 
 A placed [TESTPAD](components.html#testpad) declares a round cut-out, `ClearD` across, on each conductor its

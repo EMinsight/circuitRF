@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Threading;
 using CircuitRF.Ui;
@@ -16,12 +18,19 @@ using CircuitRF.Ui.Views.DataDisplay;
 using CircuitRF.Ui.Views.Signals;
 using CircuitRF.Ui.ViewModels.Dock;
 using CircuitRF.Ui.Views.Tuning;
+using CircuitRF.Ui.Controls;
+using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Messages;
+using CircuitRF.Ui.Views.Layout;
+using CircuitRF.Design.Layout;
 
 // UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] [--results <dir>]
 //            [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
 // UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
 // UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
+// UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]
+//            [--rclick x,y] [--menu <header>] [--type <text>] [--button <label>]
 //
 // Opens the display through DisplayWindowViewModel.LoadAllAsync — the GUI's own Open — and photographs one
 // real view: the plot canvas of the active tab, plot n's Plot Inspector (its trace cards), or the whole Data
@@ -35,11 +44,18 @@ using CircuitRF.Ui.Views.Tuning;
 // Carrier[i]), waits for its preview — generated through the cache a simulation reads — and photographs the
 // window; --tab 1 shows the second preview tab (EVM, Pulse or Frequency). --standalone opens it as Tools ▸ Signal
 // Designer does, on no MOD_Source; --iq then reads an I/Q file through Load custom.
+//
+// --clay opens the layout editor view on a .clay, its technology resolved as the workspace resolves it, fitted. A step
+// point written @x,y is in the layout's micrometres. --rclick opens the canvas's context menu, --menu clicks one of its
+// items by header (prefix), --type types into the open dialog's text box and --button clicks a dialog button by its
+// label. --hide and --lock untick a layer's row in the layer list. Messages print as they are posted. An open context
+// menu is drawn in the window's own frame; a dialog is its own window, so a capture also writes <out>.dialog.png.
 
 // --c3d is the 3D editor's picture: no Avalonia window, so it branches off before the headless platform starts (Snapshot3D.cs).
 if (args.Contains("--c3d")) return Snapshot3D.Run(args);
 
-string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null;
+string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null;
+var layerToggles = new List<(string Name, bool Hide)>();
 bool standalone = false;
 var signal = new List<string>();
 int plotIndex = 1, previewTab = 0;
@@ -59,25 +75,30 @@ for (int i = 0; i < args.Length; i++)
         case "--standalone": standalone = true; break;
         case "--iq" when i + 1 < args.Length: iq = Path.GetFullPath(args[++i]); break;
         case "--tuning" when i + 1 < args.Length: tuning = Path.GetFullPath(args[++i]); break;
+        case "--clay" when i + 1 < args.Length: clay = Path.GetFullPath(args[++i]); break;
+        case "--hide" when i + 1 < args.Length: layerToggles.Add((args[++i], true)); break;
+        case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--size" when i + 1 < args.Length:
             var wh = args[++i].Split('x');
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
             sizeGiven = true;
             break;
-        case "--click" or "--drag" or "--key" or "--shot" when i + 1 < args.Length:
+        case "--click" or "--drag" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button"
+            when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
             break;
         default: cdd = args[i]; break;
     }
 }
-if ((cdd is null && signal.Count == 0 && !standalone && tuning is null) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
                           + "       UiSnapshot --signal \"<carrier>\" ... -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]\n"
-                          + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]");
+                          + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]\n"
+                          + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]");
     return 2;
 }
 
@@ -90,7 +111,35 @@ AppBuilder.Configure<SnapshotApp>()
 
 Window host;
 TuningTool? tuningTool = null;
-if (tuning is not null)
+LayoutCanvas? layoutCanvas = null;
+LayoutEditorViewModel? layoutVm = null;
+if (clay is not null)
+{
+    // The layout editor as the workspace opens a path-backed layout: the view model on the file, its technology
+    // resolved from the document's TechRef, the layer list's own rows for hide and lock, the real LayoutEditorView.
+    var model = LayoutPersistence.LoadFromFile(clay);
+    layoutVm = new LayoutEditorViewModel(model, clay, new ConsoleSink());
+    var (resolution, _) = TechnologyResolver.ResolveForDocument(model.TechRef, clay, null, new TechnologyCache());
+    layoutVm.Technology = resolution.Tech;   // ApplyTechResolution is internal; TechRefFrom falls back to the stored TechRef
+    layoutVm.OpenCreatedLayout = p => { Console.WriteLine($"opens {p}"); return Task.CompletedTask; };
+    foreach (var (name, hide) in layerToggles)
+    {
+        var row = layoutVm.LayerRows.FirstOrDefault(r => r.Name == name);
+        if (row is null)
+        {
+            Console.Error.WriteLine($"no layer '{name}'; the layer list has: {string.Join(", ", layoutVm.LayerRows.Select(r => r.Name))}");
+            return 2;
+        }
+        if (hide) row.Visible = false; else row.Selectable = false;
+    }
+    host = new Window { Width = width, Height = height,
+                        Content = new LayoutEditorView { DataContext = new LayoutDocument(Path.GetFileName(clay), layoutVm, clay) } };
+    host.Show();
+    Pump();
+    layoutCanvas = host.GetVisualDescendants().OfType<LayoutCanvas>().First();
+    layoutCanvas.ZoomToFit();
+}
+else if (tuning is not null)
 {
     // The Tuning window as the shell hosts it: a TuningTool whose panel follows one schematic.
     var (model, _, _) = SchematicPersistence.LoadFromFile(tuning);
@@ -209,6 +258,48 @@ foreach (var (kind, arg) in steps)
         case "--shot":
             Capture(arg);
             break;
+        case "--rclick":
+        {
+            var p = PointOf(arg);
+            host.MouseDown(p, MouseButton.Right, RawInputModifiers.None);
+            host.MouseUp(p, MouseButton.Right, RawInputModifiers.None);
+            break;
+        }
+        case "--menu":
+        {
+            // The item's own Click handler, raised on the real MenuItem the menu was built with; then the menu closes,
+            // as a click on an item closes it.
+            var menu = OpenContextMenu() ?? throw new InvalidOperationException("--menu: no context menu is open");
+            var all = MenuItems(menu.Items.OfType<MenuItem>()).ToList();
+            var item = all.FirstOrDefault(m => m.Header is string h && h.StartsWith(arg, StringComparison.Ordinal));
+            if (item is null)
+                throw new InvalidOperationException($"--menu '{arg}': the menu has {string.Join(" | ", all.Select(m => m.Header))}");
+            if (!item.IsEnabled) Console.WriteLine($"--menu '{arg}': the item is disabled ({ToolTip.GetTip(item)})");
+            else item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            menu.Close();
+            break;
+        }
+        case "--type":
+        {
+            var dialog = TopDialog() ?? throw new InvalidOperationException("--type: no dialog is open");
+            var box = dialog.GetVisualDescendants().OfType<TextBox>().First();
+            box.Focus();
+            box.SelectAll();
+            dialog.KeyTextInput(arg);
+            break;
+        }
+        case "--button":
+        {
+            // A real press and release on the button's centre, in the dialog's own window.
+            var dialog = TopDialog() ?? throw new InvalidOperationException("--button: no dialog is open");
+            var buttons = dialog.GetVisualDescendants().OfType<Button>().Where(b => b.IsVisible).ToList();
+            var button = buttons.FirstOrDefault(b => b.Content is string c && c == arg)
+                ?? throw new InvalidOperationException($"--button '{arg}': the dialog has {string.Join(" | ", buttons.Select(b => b.Content))}");
+            var c = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), dialog)!.Value;
+            dialog.MouseDown(c, MouseButton.Left, RawInputModifiers.None);
+            dialog.MouseUp(c, MouseButton.Left, RawInputModifiers.None);
+            break;
+        }
     }
     Pump();
     if (tuningTool is not null)
@@ -238,9 +329,41 @@ void Capture(string path)
     Pump();
     host.CaptureRenderedFrame()!.Save(path);
     Console.WriteLine($"wrote {path}");
+    if (TopDialog() is { } dialog)
+    {
+        string d = Path.ChangeExtension(path, ".dialog.png");
+        dialog.CaptureRenderedFrame()!.Save(d);
+        Console.WriteLine($"wrote {d} ({dialog.Title})");
+    }
 }
 
-static Point PointOf(string xy)
+Window? TopDialog() => host.OwnedWindows.LastOrDefault(w => w.IsVisible);
+
+ContextMenu? OpenContextMenu() => layoutCanvas?.ContextMenu is { IsOpen: true } m ? m : null;
+
+static IEnumerable<MenuItem> MenuItems(IEnumerable<MenuItem> items)
+{
+    foreach (var m in items)
+    {
+        yield return m;
+        foreach (var sub in MenuItems(m.Items.OfType<MenuItem>())) yield return sub;
+    }
+}
+
+// x,y in the window's DIPs; @x,y in the layout's micrometres, through the canvas's own viewport.
+Point PointOf(string xy)
+{
+    if (xy.StartsWith('@') && layoutCanvas is not null && layoutVm is not null)
+    {
+        var w = ParsePoint(xy[1..]);
+        double dbu = layoutVm.Model.DbuPerMicron;
+        var (sx, sy) = layoutCanvas.WorldToScreen(w.X * dbu, w.Y * dbu);
+        return layoutCanvas.TranslatePoint(new Point(sx, sy), host)!.Value;
+    }
+    return ParsePoint(xy);
+}
+
+static Point ParsePoint(string xy)
 {
     var parts = xy.Split(',');
     return new Point(double.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture),
@@ -271,4 +394,11 @@ sealed class SnapshotApp : Application
         app.Initialize();
         foreach (var template in app.DataTemplates) DataTemplates.Add(template);
     }
+}
+
+/// <summary>The Messages panel, for --clay: each line printed as it is posted.</summary>
+sealed class ConsoleSink : IMessageSink
+{
+    public void Post(MessageLevel level, string text, string? filePath = null) => Console.WriteLine($"[{level}] {text}");
+    public void Clear() { }
 }

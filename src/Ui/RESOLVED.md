@@ -40660,3 +40660,31 @@ redraws the window and pointer-over is re-read, so the strip blinked at the top 
 `CircuitRfStyles.axaml` now gives the `:pointerover` state the theme's own non-hover rule
 (`IsVisibleAutoHideOrHiddenConverter`). Checked headlessly against the real theme: hover showed the strip
 before the override and does not after. The selector names a template part — re-check on a Dock upgrade.
+
+## Crop to New Cell, and the ground fill a grouped corner left behind (brief DFR27-6, 2026-10-25)
+
+- **The missing ground fill was not a defect in Crop or Group into Cell.** In the designer's before/after
+  workspaces the board was never cropped: its shapes still spanned the whole board, and the shapes before less the
+  shapes grouped equalled the shapes left, exactly. Every square millimetre of every copper layer was either in the
+  new cell or still on the board. The inner planes are board-sized polygons, so the marquee never enclosed them
+  (the "reaching past" case of R-dfr26-2-3). The two-step workflow (Crop, then select all and group) let a skipped
+  or undone crop pass without anything looking wrong.
+- **Crop to New Cell** (`LayoutEditorViewModel.CommitCropToNewCell`) is that workflow in one step that cannot lose
+  anything. It is `LayoutCrop.Crop`'s result written through Group into Cell's own cell-writing path, now one
+  helper (`WriteCellLayout`: resolution, unit, snap, `TechRefFrom`, rebased instances, `.ccell` primary layout).
+  The board is not changed, so there is no undo entry. The copy keeps the board's coordinates (no translate), so it
+  lines up with the board it came from. Instances whose origin is inside are CLONED before rebasing, because the
+  helper rebases in place. Bitmaps stay out, since their path is relative to the source document. The cell goes
+  beside the board's own cell folder (`CropToNewCellParentDir`), else at the workspace root. It opens through
+  `OpenCreatedLayout`, wired to `OpenOrActivateLayoutAsync` in `WireRetargetSeam`.
+- **A plane left behind is named first** (`GroupIntoCellPlanesLeftOutText`): a left-out shape whose box covers
+  the whole selection, on a layer a stackup Conductor row draws on. With no conductor rows in the technology
+  nothing counts as copper and the line is not shown; the counts still are.
+- **Include them** is the confirmation's third button (`SaveChangesDialog`'s `DontSave` slot). It adds every
+  shape the left-out count includes and then groups. It takes one pass against the selection's box. The box grows
+  with what it adds, and anything that newly overlaps is reported after the group rather than chased.
+- **Checked as the GUI runs, headlessly**, with `tools/UiSnapshot --clay` (its new layout-editor mode), on the Power
+  Rail example's four-layer board. In each case: a real right-click, the menu item, the drag, the name typed, and the
+  dialog's own buttons clicked. Crop to New Cell with GND hidden and IN3 locked left the board's `.clay` with the
+  same hash, and the new cell held the GND plane cut to the box. A marquee group named the GND plane on the first
+  line, and Include them took the plane and the outline.

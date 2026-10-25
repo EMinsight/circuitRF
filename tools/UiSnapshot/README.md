@@ -91,6 +91,30 @@ Set `CRF_STATE_DIR` to a scratch folder so the run neither reads nor writes your
 
 A quick document to look at: `circuitrf plot run.npy -o x.png --trace … --write-cdd x.cdd`, then snapshot `x.cdd`.
 
+## The layout editor
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --clay <file.clay> -o out.png [--hide <layer>] [--lock <layer>] \
+    [--size WxH] [steps]
+```
+
+The real `LayoutEditorView` on a `LayoutDocument`, the technology resolved from the document's `TechRef`, fitted.
+Messages print as they are posted. Besides the steps below:
+
+| Option | |
+|---|---|
+| `--hide`, `--lock` | Untick a layer's row in the layer list (its own `Visible`/`Selectable`). Repeat for several. |
+| `@x,y` | Any step's point in the layout's micrometres instead of window DIPs, through the canvas's viewport. |
+| `--rclick x,y` | Right press and release: the canvas's context menu opens. It is drawn in the window's own frame. |
+| `--menu <header>` | Clicks the open context menu's item whose header starts with this (submenus searched), then closes it. A miss lists the headers. |
+| `--type <text>` | Types into the open dialog's first text box, replacing what is there. |
+| `--button <label>` | A real click on the open dialog's button with this label. A miss lists the buttons. |
+
+A capture while a dialog is open also writes `<out>.dialog.png`, the dialog's own window. A commanded "open" of
+another document (Crop to New Cell's new cell) prints `opens <path>`; there is no workspace to open it in.
+
+A drag that STARTS on a shape moves it, as in the editor: begin a marquee off the board.
+
 ## How it is faithful
 
 - **The display is opened by `DisplayWindowViewModel.LoadAllAsync`** — the GUI's own File ▸ Open — so the plots,

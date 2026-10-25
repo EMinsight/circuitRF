@@ -1572,6 +1572,28 @@ public sealed class LayoutCanvas : Control
         return ok;
     }
 
+    /// <summary>brief-dfr27-6 R-dfr27-6-2: name the cell, show Crop's confirmation with that name, write it.</summary>
+    private async Task CropToNewCellAsync(LayoutCropResult plan)
+    {
+        if (_viewModel is null) return;
+        var owner = TopLevel.GetTopLevel(this) as Window;
+        if (owner is null) return;
+        if (_viewModel.CropToNewCellParentDir is not { } parentDir)
+        {
+            _viewModel.ReportError("Crop to New Cell needs an open workspace to create the new cell in.");
+            return;
+        }
+
+        string? name = await new InputNameDialog("Crop to New Cell", "New cell name:").ShowDialog<string?>(owner);
+        if (name is null) return;
+
+        var dialog = new SaveChangesDialog(_viewModel.CropSummary(plan, name),
+            saveLabel: "Create", dontSaveLabel: null, cancelLabel: "Cancel", title: "Crop to New Cell");
+        bool ok = await dialog.ShowDialog<SaveChangesResult>(owner) == SaveChangesResult.Save;
+        InvalidateVisual();
+        if (ok) _viewModel.CommitCropToNewCell(plan, parentDir, name);
+    }
+
     private async Task ShowGroupIntoCellAsync()
     {
         if (_viewModel is null) return;
@@ -1591,12 +1613,19 @@ public sealed class LayoutCanvas : Control
 
         // R-L3c-6: undo removes the instance and restores the shapes/instances, but does NOT delete
         // the cell folder just created — say so up front, not only after the fact.
+        // brief-dfr27-6: a plane left behind is named FIRST, ahead of everything else; whatever is left out can be
+        // taken too with Include them.
+        string? leftOut = _viewModel.GroupIntoCellLeftOutText;
         var confirm = new SaveChangesDialog(
+            (_viewModel.GroupIntoCellPlanesLeftOutText is { } planes ? planes + "\n\n" : "") +
             $"Create cell '{name}' from the current selection {_viewModel.GroupIntoCellOutcomeText ?? ""}. " +
-            (_viewModel.GroupIntoCellLeftOutText is { } leftOut ? leftOut + " " : "") +
+            (leftOut is not null ? leftOut + " " : "") +
             "Undoing this afterward will restore the selection but will not delete the cell folder.",
-            saveLabel: "Create", dontSaveLabel: null, cancelLabel: "Cancel", title: "Group into Cell");
-        if (await confirm.ShowDialog<SaveChangesResult>(owner) != SaveChangesResult.Save) return;
+            saveLabel: "Create", dontSaveLabel: leftOut is not null ? "Include them" : null, cancelLabel: "Cancel",
+            title: "Group into Cell");
+        var answer = await confirm.ShowDialog<SaveChangesResult>(owner);
+        if (answer == SaveChangesResult.Cancel) return;
+        if (answer == SaveChangesResult.DontSave) _viewModel.IncludeGroupIntoCellLeftOut();
 
         _viewModel.CommitGroupIntoCell(parentDir, name);
         InvalidateVisual();
@@ -1695,6 +1724,12 @@ public sealed class LayoutCanvas : Control
         if (_viewModel.CropToRectangleAvailability.CanExecute)
             ToolTip.SetTip(cropItem, "Drag a box: every shape on every layer, hidden and locked ones included, is cut to it");
         cropItem.Click += (_, _) => _viewModel.ArmCropToRectangle(ConfirmCropAsync);
+
+        // brief-dfr27-6: the same crop written as a new cell — the board is not changed, so nothing can be lost.
+        var cropCellItem = AddAvailItem("Crop to New Cell…", _viewModel.CropToRectangleAvailability);
+        if (_viewModel.CropToRectangleAvailability.CanExecute)
+            ToolTip.SetTip(cropCellItem, "Drag a box: a copy of every layer, hidden and locked ones included, cut to it, becomes a new cell; this board is not changed");
+        cropCellItem.Click += (_, _) => _viewModel.ArmCropToNewCell(CropToNewCellAsync);
 
         Sep();
         AddAvailItem("Offset…", _viewModel.OffsetAvailability).Click += async (_, _) => await ShowOffsetDialogAsync();

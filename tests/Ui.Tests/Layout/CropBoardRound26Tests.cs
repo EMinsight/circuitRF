@@ -8,7 +8,8 @@ namespace CircuitRF.Ui.Tests.Layout;
 
 /// <summary>
 /// brief-dfr26-2: Crop to Rectangle (every layer, one undo entry, holes kept, vias and instances by their anchor, the
-/// outline rebuilt as the intersection) and Group into Cell's technology reference and left-out shapes.
+/// outline rebuilt as the intersection) and Group into Cell's technology reference and left-out shapes; brief-dfr27-6:
+/// Crop to New Cell, the plane named first, and Include them.
 /// </summary>
 [Collection(LayoutTextOutlineTypefaceCollection.Name)]
 public sealed class CropBoardRound26Tests : IDisposable
@@ -199,14 +200,101 @@ public sealed class CropBoardRound26Tests : IDisposable
             m.Shapes.Add(new RectShape { Layer = Shown, X1 = 0, Y1 = 1500, X2 = 9000, Y2 = 1600 });         // reaches past the box
             m.Shapes.Add(new RectShape { Layer = Shown, X1 = 1000, Y1 = 1000, X2 = 2000, Y2 = 2000 });
         }, Path.Combine(_ws, "top.clay"));
-        vm.OnPointerPressed(500, 500, Avalonia.Input.KeyModifiers.None);
-        vm.OnPointerMoved(2500, 2500, leftDown: true, Avalonia.Input.KeyModifiers.None);
-        vm.OnPointerReleased(2500, 2500, Avalonia.Input.KeyModifiers.None);
+        // The hidden fill is copper: a stackup conductor draws on its layer.
+        var tech = Tech();
+        tech.Stackup.Layers.Add(new StackupLayer { Kind = StackupKind.Conductor, Name = "L2", DrawingLayers = [Hidden] });
+        vm.Technology = tech;
+        MarqueeSelect(vm, 500, 500, 2500, 2500);
         Assert.Equal(new[] { 2 }, vm.SelectedIndices);
 
         Assert.True(vm.CommitGroupIntoCell(_ws, "Part"));
 
-        Assert.Contains(sink.Posted, p => p.Level == MessageLevel.Info &&
-                                          p.Text.Contains("1 on hidden or locked layers") && p.Text.Contains("1 reaching past"));
+        var note = Assert.Single(sink.Posted, p => p.Level == MessageLevel.Info && p.Text.StartsWith("Group into Cell:"));
+        Assert.StartsWith("Group into Cell: The plane on Plane stays behind", note.Text);   // R-dfr27-6-1: first
+        Assert.Contains("1 on hidden or locked layers", note.Text);
+        Assert.Contains("1 reaching past", note.Text);
+    }
+
+    private static void MarqueeSelect(LayoutEditorViewModel vm, double x1, double y1, double x2, double y2)
+    {
+        vm.OnPointerPressed(x1, y1, Avalonia.Input.KeyModifiers.None);
+        vm.OnPointerMoved(x2, y2, leftDown: true, Avalonia.Input.KeyModifiers.None);
+        vm.OnPointerReleased(x2, y2, Avalonia.Input.KeyModifiers.None);
+    }
+
+    [Fact]
+    public void GroupIntoCell_IncludeThem_TakesTheLeftOutShapesToo()
+    {
+        var (vm, _, _) = Editor(m =>
+        {
+            m.Shapes.Add(new PolygonShape { Layer = Hidden, Xy = [0, 0, 9000, 0, 9000, 9000, 0, 9000] });
+            m.Shapes.Add(new RectShape { Layer = Shown, X1 = 0, Y1 = 1500, X2 = 9000, Y2 = 1600 });
+            m.Shapes.Add(new RectShape { Layer = Shown, X1 = 1000, Y1 = 1000, X2 = 2000, Y2 = 2000 });
+        }, Path.Combine(_ws, "top.clay"));
+        MarqueeSelect(vm, 500, 500, 2500, 2500);
+
+        vm.IncludeGroupIntoCellLeftOut();
+        Assert.True(vm.CommitGroupIntoCell(_ws, "Part"));
+
+        Assert.Equal(3, LayoutPersistence.LoadFromFile(Path.Combine(_ws, "Part", "layout", "Part.clay")).Shapes.Count);
+    }
+
+    [Fact]
+    public void CropToNewCell_CopiesWhatCropWouldKeep_AndLeavesTheBoardByteIdentical()
+    {
+        File.WriteAllText(Path.Combine(_ws, ".cws"), "{}");
+        string techPath = Path.Combine(_ws, "tech", "board.ctech");
+        Directory.CreateDirectory(Path.GetDirectoryName(techPath)!);
+        TechPersistence.SaveToFile(techPath, Tech());
+
+        string parentCell = CellFolder.CreateCellFolder(Path.Combine(_ws, "boards"), "Board");
+        string clay = Path.Combine(CellFolder.SubFolderPath(parentCell, ViewType.Layout), "Board.clay");
+        var model = new LayoutView { DbuPerMicron = 1000, TechRef = "../../../tech/board.ctech" };
+        model.Shapes.Add(new PolygonShape   // a ground fill spanning the box, on a hidden layer
+        {
+            Layer = Hidden, Net = "GND", Xy = [0, 0, 10_000, 0, 10_000, 10_000, 0, 10_000],
+            Holes = [[1000, 1000, 2000, 1000, 2000, 2000, 1000, 2000]],
+        });
+        model.Shapes.Add(new RectShape { Layer = Locked, X1 = 3000, Y1 = 3000, X2 = 8000, Y2 = 3500 });
+        model.Shapes.Add(new RectShape { Layer = Shown, X1 = 500, Y1 = 500, X2 = 900, Y2 = 900 });
+        model.Shapes.Add(new PathShape
+        {
+            Layer = Outline, Width = 200, End = PathEndStyle.Round, Xy = [0, 0, 10_000, 0, 10_000, 10_000, 0, 10_000, 0, 0],
+        });
+        LayoutPersistence.SaveToFile(clay, model);
+        byte[] before = File.ReadAllBytes(clay);
+        string serialized = LayoutPersistence.Serialize(model);
+
+        LayoutEditorViewModel Open(LayoutView m)
+        {
+            var (resolution, _) = TechnologyResolver.ResolveForDocument(m.TechRef, clay, null, new TechnologyCache());
+            resolution.Tech!.Layers.Single(l => l.Key == Hidden).Visible = false;
+            resolution.Tech.Layers.Single(l => l.Key == Locked).Selectable = false;
+            var v = new LayoutEditorViewModel(m, clay, new Sink());
+            v.ApplyTechResolution(resolution);
+            return v;
+        }
+        var vm = Open(model);
+        string? opened = null;
+        vm.OpenCreatedLayout = p => { opened = p; return Task.CompletedTask; };
+
+        string? newClay = vm.CommitCropToNewCell(vm.PlanCropToRectangle(0, 0, 5000, 5000), vm.CropToNewCellParentDir!, "Corner");
+
+        Assert.Equal(Path.Combine(_ws, "boards", "Corner", "layout", "Corner.clay"), newClay);   // beside the board's cell
+        Assert.Equal(newClay, opened);
+        Assert.Equal(serialized, LayoutPersistence.Serialize(model));
+        Assert.Equal(before, File.ReadAllBytes(clay));
+        Assert.Empty(vm.UndoRedo.Entries);
+
+        var cropped = LayoutPersistence.Deserialize(serialized);
+        Open(cropped).CropToRectangle(0, 0, 5000, 5000);
+        var copy = LayoutPersistence.LoadFromFile(newClay!);
+        static Dictionary<LayerKey, (int, double)> PerLayer(LayoutView v) => v.Shapes.GroupBy(s => s.Layer)
+            .ToDictionary(g => g.Key, g => (g.Count(), g.Sum(Area)));
+        Assert.Equal(PerLayer(cropped), PerLayer(copy));
+        Assert.Equal(4, PerLayer(copy).Count);
+
+        var (again, _) = TechnologyResolver.ResolveForDocument(copy.TechRef, newClay, null, new TechnologyCache());
+        Assert.Equal(Path.GetFullPath(techPath), again.ResolvedPath);
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -26,6 +27,8 @@ public sealed partial class LayoutEditorViewModel
     /// <summary>Asked with the computed crop and its summary before anything changes; null applies at once (a test,
     /// or a host with no window).</summary>
     private Func<LayoutCropResult, string, Task<bool>>? _cropConfirm;
+    /// <summary>Set while the drag is Crop to New Cell's: handed the computed crop to name, confirm and write.</summary>
+    private Func<LayoutCropResult, Task>? _cropToNewCell;
     private bool _cropArmed;
     private (long X, long Y)? _cropPress;
     private long _cropCurX, _cropCurY;
@@ -43,6 +46,7 @@ public sealed partial class LayoutEditorViewModel
     public void ArmCropToRectangle(Func<LayoutCropResult, string, Task<bool>>? confirm)
     {
         _cropConfirm = confirm;
+        _cropToNewCell = null;
         _cropArmed   = true;
         _cropPress   = null;
         OnPropertyChanged(nameof(IsPickingCropRectangle));
@@ -56,8 +60,25 @@ public sealed partial class LayoutEditorViewModel
         _cropArmed   = false;
         _cropPress   = null;
         _cropConfirm = null;
+        _cropToNewCell = null;
         OnPropertyChanged(nameof(IsPickingCropRectangle));
         RebuildOverlay();
+    }
+
+    /// <summary>
+    /// brief-dfr27-6 R-dfr27-6-2 — Crop to New Cell: the same drag, but <paramref name="createCell"/> is handed the
+    /// computed crop (to ask the name, show the confirmation and call <see cref="CommitCropToNewCell"/>) and this
+    /// board is never changed.
+    /// </summary>
+    public void ArmCropToNewCell(Func<LayoutCropResult, Task> createCell)
+    {
+        _cropConfirm   = null;
+        _cropToNewCell = createCell;
+        _cropArmed     = true;
+        _cropPress     = null;
+        OnPropertyChanged(nameof(IsPickingCropRectangle));
+        ReportMessage("Crop to New Cell: drag a box around the part of the board to copy. Every layer is cut to it, " +
+                      "hidden and locked ones included, into a new cell; this board is not changed. Escape cancels.");
     }
 
     private void CropPress(double wx, double wy)
@@ -91,8 +112,10 @@ public sealed partial class LayoutEditorViewModel
         }
 
         var confirm = _cropConfirm;
+        var toNewCell = _cropToNewCell;
         CancelCropPick();
         var plan = PlanCropToRectangle(p.X, p.Y, sx, sy);
+        if (toNewCell is not null) { _ = toNewCell(plan); return; }
         if (confirm is null) { ApplyCrop(plan); return; }
         _ = ConfirmThenApplyAsync(plan, confirm);
     }
@@ -116,14 +139,18 @@ public sealed partial class LayoutEditorViewModel
 
     /// <summary>
     /// What the confirmation shows: one row per layer that has anything on it, marked when it is hidden or
-    /// locked, then the instances, the bitmaps left alone and the outline.
+    /// locked, then the instances, the bitmaps left alone and the outline. With <paramref name="newCellName"/> it is
+    /// Crop to New Cell's: the same rows, headed by the cell they are copied into.
     /// </summary>
-    public string CropSummary(LayoutCropResult plan)
+    public string CropSummary(LayoutCropResult plan, string? newCellName = null)
     {
         var sb = new StringBuilder();
         string w = LayoutUnits.Format(plan.Rect.MaxX - plan.Rect.MinX, DisplayUnit, Model.DbuPerMicron);
         string h = LayoutUnits.Format(plan.Rect.MaxY - plan.Rect.MinY, DisplayUnit, Model.DbuPerMicron);
-        sb.Append($"Crop every layer to {w} × {h} {UnitSuffix(DisplayUnit)}:\n");
+        sb.Append(newCellName is null
+            ? $"Crop every layer to {w} × {h} {UnitSuffix(DisplayUnit)}:\n"
+            : $"Copy every layer, cropped to {w} × {h} {UnitSuffix(DisplayUnit)}, into the new cell '{newCellName}' — " +
+              "this board is not changed:\n");
         foreach (var l in plan.Layers)
         {
             var def = ResolveLayerDef(l.Layer);
@@ -142,7 +169,9 @@ public sealed partial class LayoutEditorViewModel
         if (instances > 0)
             sb.Append($"\nInstances: {plan.KeptInstances} kept, {plan.RemovedInstances.Count} removed (each follows its origin)");
         if (plan.BitmapsUntouched > 0)
-            sb.Append($"\n{Plural(plan.BitmapsUntouched, "bitmap", "bitmaps")} left as they are");
+            sb.Append(newCellName is null
+                ? $"\n{Plural(plan.BitmapsUntouched, "bitmap", "bitmaps")} left as they are"
+                : $"\n{Plural(plan.BitmapsUntouched, "bitmap", "bitmaps")} not copied");
         return sb.ToString();
     }
 
@@ -152,14 +181,10 @@ public sealed partial class LayoutEditorViewModel
     /// </summary>
     public void ApplyCrop(LayoutCropResult plan)
     {
-        for (int k = 0; k < plan.ReplacedIndices.Count; k++)
+        if (!CropPlanIsCurrent(plan))
         {
-            int i = plan.ReplacedIndices[k];
-            if (i >= Model.Shapes.Count || !ReferenceEquals(Model.Shapes[i], plan.Originals[k]))
-            {
-                _messageSink?.Warning("Crop to Rectangle: the layout changed before the crop was applied — nothing was cut. Crop again.");
-                return;
-            }
+            _messageSink?.Warning("Crop to Rectangle: the layout changed before the crop was applied — nothing was cut. Crop again.");
+            return;
         }
 
         var removed = plan.ReplacedIndices.Select((i, k) => (i, plan.Originals[k])).ToList();
@@ -182,5 +207,78 @@ public sealed partial class LayoutEditorViewModel
             $"edge, {gone} removed{instances}{outline}.");
         if (plan.BitmapsUntouched > 0)
             _messageSink?.Info($"Crop to Rectangle: {Plural(plan.BitmapsUntouched, "bitmap", "bitmaps")} left untouched — a picture is not cropped.");
+    }
+
+    private bool CropPlanIsCurrent(LayoutCropResult plan)
+    {
+        for (int k = 0; k < plan.ReplacedIndices.Count; k++)
+        {
+            int i = plan.ReplacedIndices[k];
+            if (i >= Model.Shapes.Count || !ReferenceEquals(Model.Shapes[i], plan.Originals[k])) return false;
+        }
+        return true;
+    }
+
+    /// <summary>Where Crop to New Cell writes its cell: beside this one when this layout is a cell's, else at the
+    /// workspace root (Group into Cell's folder). Null with neither.</summary>
+    public string? CropToNewCellParentDir =>
+        CurrentLayoutPath is { Length: > 0 } path &&
+        CellFolder.SiblingView(path, ViewType.Layout, ViewType.Layout).CellDir is { } cellDir
+            ? Path.GetDirectoryName(cellDir)
+            : WorkspaceRootDir;
+
+    /// <summary>Opens a layout this editor just created (Crop to New Cell's cell); wired by the workspace.</summary>
+    public Func<string, Task>? OpenCreatedLayout { get; set; }
+
+    /// <summary>
+    /// brief-dfr27-6 R-dfr27-6-2: writes <paramref name="plan"/> as a new cell under <paramref name="parentDir"/> —
+    /// a cropped COPY of the board: every layer, hidden and locked included, the outline rebuilt, the instances
+    /// whose origin is inside, at the coordinates they have here so the copy lines up with the board. Bitmaps are a
+    /// picture whose path is relative to this document, so they stay out. <b>This board is not changed and nothing
+    /// is placed on it</b>, so there is no undo entry — the whole command is one step and cannot lose anything.
+    /// The cell is written through Group into Cell's own path (<see cref="WriteCellLayout"/>) and then opened.
+    /// Returns the new layout's path, or null after reporting why.
+    /// </summary>
+    public string? CommitCropToNewCell(LayoutCropResult plan, string parentDir, string cellName)
+    {
+        if (!CropPlanIsCurrent(plan))
+        {
+            _messageSink?.Warning("Crop to New Cell: the layout changed before the cell was written — nothing was created. Crop again.");
+            return null;
+        }
+
+        string cellDir;
+        try { cellDir = CellFolder.CreateCellFolder(parentDir, cellName); }
+        catch (Exception ex)
+        {
+            _messageSink?.Error($"Crop to New Cell: {ex.Message}");
+            return null;
+        }
+
+        var removed = plan.RemovedInstances.ToHashSet();
+        var instances = Model.Instances.Where((_, i) => !removed.Contains(i)).Select(LayoutGeometry.Clone).ToList();
+        string layoutPath;
+        try
+        {
+            layoutPath = WriteCellLayout(cellDir, cellName, plan.Shapes, instances,
+                                         InstanceBaseDir.Length > 0 ? InstanceBaseDir : parentDir);
+        }
+        catch (Exception ex)
+        {
+            TryDeleteCellFolder(cellDir);
+            _messageSink?.Error($"Crop to New Cell: {ex.Message}");
+            return null;
+        }
+
+        if (plan.AnyCurvedOperand) WarnCurvedOperandOnce("Crop to New Cell");
+        int cut = plan.Layers.Sum(l => l.Cut);
+        _messageSink?.Success(
+            $"Crop to New Cell: created '{cellName}' — {Plural(plan.Shapes.Count, "shape", "shapes")} on " +
+            $"{Plural(plan.Layers.Count, "layer", "layers")} ({cut} cut at the edge), {Plural(instances.Count, "instance", "instances")}. " +
+            "This board is unchanged.");
+        if (plan.BitmapsUntouched > 0)
+            _messageSink?.Info($"Crop to New Cell: {Plural(plan.BitmapsUntouched, "bitmap", "bitmaps")} not copied — a picture is not cropped.");
+        _ = OpenCreatedLayout?.Invoke(layoutPath);
+        return layoutPath;
     }
 }

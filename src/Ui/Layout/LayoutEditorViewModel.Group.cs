@@ -57,7 +57,8 @@ public sealed partial class LayoutEditorViewModel
             return false;
         }
 
-        string? leftOut = GroupIntoCellLeftOutText;   // before the selection is replaced by the new instance
+        // Before the selection is replaced by the new instance.
+        string? leftOut = string.Join("\n", new[] { GroupIntoCellPlanesLeftOutText, GroupIntoCellLeftOutText }.OfType<string>());
         var shapes = _selectedIndices.Select(i => Model.Shapes[i]).ToList();
         var instances = _selectedInstanceIndices.Select(i => Model.Instances[i]).ToList();
 
@@ -101,36 +102,9 @@ public sealed partial class LayoutEditorViewModel
             return false;
         }
 
-        // A selected INSTANCE's own CellRef was resolved relative to THIS document's InstanceBaseDir —
-        // moving it into the new cell's own layout/ directory (a different directory) means it must be
-        // rebased, exactly like a cross-directory paste already rebases (LayoutFragment.RebaseInstances) —
-        // never left pointing at a path that only happened to be correct in the OLD location.
-        string newCellLayoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
-
-        var newView = new LayoutView
-        {
-            DbuPerMicron = Model.DbuPerMicron,
-            DisplayUnit = Model.DisplayUnit,
-            SnapDbu = Model.SnapDbu,
-            TechRef = TechRefFrom(newCellLayoutDir),
-        };
-        newView.Shapes.AddRange(contents.Shapes);
-        foreach (var inst in contents.Instances)
-        {
-            inst.CellRef = LayoutFlatten.RebaseCellRef(inst.CellRef, effectiveParentDir, newCellLayoutDir);
-            newView.Instances.Add(inst);
-        }
-
         try
         {
-            string layoutFileName = cellName + ".clay";
-            string layoutFilePath = Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), layoutFileName);
-            LayoutPersistence.SaveToFile(layoutFilePath, newView);
-
-            string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
-            var ccell = CellPersistence.LoadFromFile(ccellPath);
-            ccell.PrimaryLayout = layoutFileName;
-            CellPersistence.SaveToFile(ccellPath, ccell);
+            WriteCellLayout(cellDir, cellName, contents.Shapes, contents.Instances, effectiveParentDir);
         }
         catch (Exception ex)
         {
@@ -160,8 +134,45 @@ public sealed partial class LayoutEditorViewModel
         _messageSink?.Success(
             $"Group into Cell: created '{cellName}' ({contents.Shapes.Count} shape(s), {contents.Instances.Count} instance(s)). " +
             "Undo restores this selection but does not delete the cell folder.");
-        if (leftOut is { } note) _messageSink?.Info("Group into Cell: " + note);
+        if (leftOut.Length > 0) _messageSink?.Info("Group into Cell: " + leftOut);
         return true;
+    }
+
+    /// <summary>
+    /// Writes <paramref name="cellName"/>'s primary layout into the freshly created <paramref name="cellDir"/>: the
+    /// parent's resolution, display unit, snap and technology (<see cref="TechRefFrom"/>), and the shapes and
+    /// instances given. Shared by Group into Cell and Crop to New Cell (brief-dfr27-6 R-dfr27-6-2). Throws on an I/O
+    /// failure; the caller removes the folder. An instance is REBASED in place: its CellRef was resolved against
+    /// <paramref name="sourceDir"/> and the new layout lives in a different folder, exactly like a cross-directory
+    /// paste (<c>LayoutFragment.RebaseInstances</c>) — so the caller hands over copies, never the board's own.
+    /// </summary>
+    private string WriteCellLayout(string cellDir, string cellName, IEnumerable<LayoutShape> shapes,
+                                   IEnumerable<LayoutInstance> instances, string sourceDir)
+    {
+        string newCellLayoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
+        var newView = new LayoutView
+        {
+            DbuPerMicron = Model.DbuPerMicron,
+            DisplayUnit = Model.DisplayUnit,
+            SnapDbu = Model.SnapDbu,
+            TechRef = TechRefFrom(newCellLayoutDir),
+        };
+        newView.Shapes.AddRange(shapes);
+        foreach (var inst in instances)
+        {
+            inst.CellRef = LayoutFlatten.RebaseCellRef(inst.CellRef, sourceDir, newCellLayoutDir);
+            newView.Instances.Add(inst);
+        }
+
+        string layoutFileName = cellName + ".clay";
+        string layoutFilePath = Path.Combine(newCellLayoutDir, layoutFileName);
+        LayoutPersistence.SaveToFile(layoutFilePath, newView);
+
+        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        var ccell = CellPersistence.LoadFromFile(ccellPath);
+        ccell.PrimaryLayout = layoutFileName;
+        CellPersistence.SaveToFile(ccellPath, ccell);
+        return layoutFilePath;
     }
 
     /// <summary>
@@ -192,28 +203,74 @@ public sealed partial class LayoutEditorViewModel
     {
         get
         {
-            if (_selectedIndices.Count == 0 && _selectedInstanceIndices.Count == 0) return null;
-            var box = Bbox.Empty;
-            foreach (var i in _selectedIndices) box = box.Union(LayoutGeometry.BboxOf(Model.Shapes[i]));
-            foreach (var i in _selectedInstanceIndices) box = box.Union(CellHierarchy.InstanceBbox(Model.Instances[i], InstanceBaseDir));
-            if (box.IsEmpty) return null;
+            var leftOut = GroupIntoCellLeftOut();
+            if (leftOut.Count == 0) return null;
 
-            var selected = _selectedIndices.ToHashSet();
-            int hidden = 0, beyond = 0;
-            for (int i = 0; i < Model.Shapes.Count; i++)
-            {
-                if (selected.Contains(i) || !LayoutGeometry.BboxOf(Model.Shapes[i]).Intersects(box)) continue;
-                var def = ResolveLayerDef(Model.Shapes[i].Layer);
-                if (!def.Visible || !def.Selectable) hidden++; else beyond++;
-            }
-            if (hidden + beyond == 0) return null;
-
+            int hidden = leftOut.Count(i => ResolveLayerDef(Model.Shapes[i].Layer) is { Visible: false } or { Selectable: false });
+            int beyond = leftOut.Count - hidden;
             var parts = new List<string>();
             if (hidden > 0) parts.Add($"{hidden} on hidden or locked layers");
             if (beyond > 0) parts.Add($"{beyond} reaching past the selection (a ground fill is one)");
-            return $"{hidden + beyond} shape(s) overlapping the selection are not in it and stay where they are — " +
-                   $"{string.Join(", ", parts)}. To take a region whole, Crop to Rectangle first.";
+            return $"{leftOut.Count} shape(s) overlapping the selection are not in it and stay where they are — " +
+                   $"{string.Join(", ", parts)}. Include them takes them too; to take a region whole, on every " +
+                   "layer, use Crop to New Cell.";
         }
+    }
+
+    /// <summary>
+    /// brief-dfr27-6 R-dfr27-6-1: the left-out case that loses a ground plane, named on its own line ahead of the
+    /// counts. A left-out shape whose box covers the whole selection, on a layer a stackup conductor draws on, is
+    /// a plane the selection could never have enclosed. Null when there is none.
+    /// </summary>
+    public string? GroupIntoCellPlanesLeftOutText
+    {
+        get
+        {
+            var leftOut = GroupIntoCellLeftOut();
+            if (leftOut.Count == 0 || Technology is not { } tech) return null;
+            var copper = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor)
+                             .SelectMany(l => l.DrawingLayers).ToHashSet();
+            var box = GroupIntoCellSelectionBox();
+            var layers = leftOut.Select(i => Model.Shapes[i])
+                                .Where(s => copper.Contains(s.Layer) && Covers(LayoutGeometry.BboxOf(s), box))
+                                .Select(s => s.Layer).Distinct()
+                                .Select(k => ResolveLayerDef(k).Name).ToList();
+            if (layers.Count == 0) return null;
+            return $"The plane on {string.Join(", ", layers)} stays behind: it covers the whole selection, so the " +
+                   "selection does not hold it.";
+        }
+    }
+
+    private static bool Covers(Bbox outer, Bbox inner) =>
+        outer.Contains(inner.MinX, inner.MinY) && outer.Contains(inner.MaxX, inner.MaxY);
+
+    /// <summary>R-dfr27-6-3: adds every shape <see cref="GroupIntoCellLeftOutText"/> counts — those on hidden or
+    /// locked layers and those reaching past the selection, wherever they overlap its box — to the selection, so
+    /// Group into Cell takes them.</summary>
+    public void IncludeGroupIntoCellLeftOut()
+    {
+        var add = GroupIntoCellLeftOut();
+        if (add.Count > 0) SetSelection(_selectedIndices.Concat(add).ToList(), clearOtherKind: false);
+    }
+
+    private Bbox GroupIntoCellSelectionBox()
+    {
+        var box = Bbox.Empty;
+        foreach (var i in _selectedIndices) box = box.Union(LayoutGeometry.BboxOf(Model.Shapes[i]));
+        foreach (var i in _selectedInstanceIndices) box = box.Union(CellHierarchy.InstanceBbox(Model.Instances[i], InstanceBaseDir));
+        return box;
+    }
+
+    /// <summary>Indices of the unselected shapes whose box overlaps the selection's.</summary>
+    private List<int> GroupIntoCellLeftOut()
+    {
+        var box = GroupIntoCellSelectionBox();
+        if (box.IsEmpty) return [];
+        var selected = _selectedIndices.ToHashSet();
+        var leftOut = new List<int>();
+        for (int i = 0; i < Model.Shapes.Count; i++)
+            if (!selected.Contains(i) && LayoutGeometry.BboxOf(Model.Shapes[i]).Intersects(box)) leftOut.Add(i);
+        return leftOut;
     }
 
     private static void TryDeleteCellFolder(string cellDir)

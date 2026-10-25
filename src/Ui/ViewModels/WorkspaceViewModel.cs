@@ -5825,6 +5825,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // prose. Fire-and-forget because both commit paths are reached from synchronous pointer/drop
         // handling; the placement is re-entered from inside the task once a remedy has been applied.
         vm.RequestTechnologyRemedy = (check, cellRef, at) => _ = ShowTechnologyRemedyAsync(vm, check, cellRef, at);
+        // brief-dfr27-6: Crop to New Cell opens the cell it wrote.
+        vm.OpenCreatedLayout = OpenOrActivateLayoutAsync;
     }
 
     /// <summary>

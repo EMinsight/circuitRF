@@ -414,6 +414,13 @@ the 3D view's board and air box match the crop.</li>
 </ul>
 <p>Before anything changes, a confirmation lists each layer, marked when it is hidden or locked, with how many
 shapes it keeps, cuts at the edge and removes, then the instance counts. <strong>Crop</strong> applies it as a single undo.</p>
+<p><strong>Crop to New Cell…</strong>, beside it on the right-click menu, makes the same cut as a copy. Drag the box, name the
+cell, and the same confirmation appears with the cell's name in it. <strong>Create</strong> writes the cropped copy as a new
+cell beside this one and opens it. This board is not changed and nothing is placed on it. Bitmaps are not copied.
+Use it when the corner is to become a cell of its own, for example to set it up for EM.</p>
+<p>Group into Cell takes only what is selected, and a selection never reaches a hidden or locked layer. To group
+after a crop, show every layer and make each one selectable first. Group into Cell's confirmation names any plane
+it would leave behind, and <strong>Include them</strong> adds what it would leave out to the group.</p>
 <h3 id="cut-clearances">Cut Clearances into Planes</h3>
 <p>A placed <a href="components.html#testpad">TESTPAD</a> declares a round cut-out, <code>ClearD</code> across, on each conductor its
 <code>ClearLayers</code> names. A ground pour cuts it on its own; a plane that is drawn artwork, as on an imported board, does
