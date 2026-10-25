@@ -12,6 +12,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using CircuitRF.Ui.DataDisplay;
 using CircuitRF.Ui.DataDisplay.Controls;
@@ -250,11 +251,14 @@ public partial class PlotContainerView : UserControl
             vm.RequestRemoveSelf();
     }
 
-    // Routes the MarkerAdded event from PlotControl to the VM for undo recording.
+    // Routes the MarkerAdded event from PlotControl to the VM for undo recording (which also selects
+    // it), then gives the plot the keyboard once the menu that added it has closed, so the arrows
+    // step the new marker without a click on it first (R-dfr26-6-4).
     private void OnMarkerAdded(Marker marker, Trace trace)
     {
         if (DataContext is PlotContainerViewModel vm)
             vm.OnMarkerAdded(marker, trace);
+        Dispatcher.UIThread.Post(() => _plotControl.Focus(), DispatcherPriority.Background);
     }
 
     // ---- Move: press ------------------------------------------------

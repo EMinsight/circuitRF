@@ -95,6 +95,10 @@ namespace CircuitRF.Render.DataDisplay
         Surface3D,
     }
 
+    /// <summary>Where a plot draws its legend (R-dfr26-6-2): nowhere, in the plot box's top-right
+    /// corner, or in a band under the plot.</summary>
+    public enum LegendPlacement { Off, Inside, Below }
+
     public static class PlotTypeExtensions
     {
         public static string Description(this PlotType t) => t switch
@@ -353,6 +357,14 @@ namespace CircuitRF.Render.DataDisplay
         /// and back. This is a property of the PLOT.
         /// </remarks>
         public bool ShowSmithAdmittanceGrid { get; set; }
+
+        /// <summary>
+        /// The legend — one entry per trace, its line beside its name (R-dfr26-6-2). <b>Off by default
+        /// on every plot type</b>: a Rect plot already names its traces on the Y axis, and a Smith or
+        /// Polar one on its label strips and the rows under the chart. Drawn on Rect, Smith and Polar.
+        /// A property of the plot, for <see cref="ShowSmithAdmittanceGrid"/>'s reason.
+        /// </summary>
+        public LegendPlacement Legend { get; set; }
 
         /// <summary>
         /// Draw the limits of the goals this plot's traces draw (brief-yield-8 R-ya8-3). <b>Null is the default:

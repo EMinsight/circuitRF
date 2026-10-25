@@ -1145,6 +1145,8 @@ namespace CircuitRF.Render.DataDisplay
             float vpBottom  = (float)((tf.Viewport.Y + tf.Viewport.Height) * h);
             float vpCenterX = (vpLeft + vpRight) / 2f;
             float vpCenterY = (vpTop  + vpBottom) / 2f;
+            // The X label is centred in the margin ABOVE a Below legend's band (R-dfr26-6-2).
+            float xh        = h - (float)LegendRenderer.BelowBandPx(plot, canvasSize);
 
             var rects = new LabelHitRects();
 
@@ -1195,7 +1197,7 @@ namespace CircuitRF.Render.DataDisplay
                 if (plot.XLabelsDiffer)
                 {
                     var xTraces = plot.XLabelTraces;
-                    float top = vpBottom + (h - vpBottom) / 2f
+                    float top = vpBottom + (xh - vpBottom) / 2f
                               - rowH * (xTraces.Count - 1) / 2f + xFont.Size * 0.35f;
                     for (int i = 0; i < xTraces.Count; i++)
                     {
@@ -1220,7 +1222,7 @@ namespace CircuitRF.Render.DataDisplay
                     {
                         float tw = RendererText.MeasureTextWithFallback(xLabel, xFont, xFallback);
                         float tx = vpCenterX - tw / 2f;
-                        float ty = vpBottom + (h - vpBottom) / 2f + xFont.Size * 0.35f;
+                        float ty = vpBottom + (xh - vpBottom) / 2f + xFont.Size * 0.35f;
                         RendererText.DrawLeftTextWithFallback(canvas, xLabel, tx, ty, xFont, xFallback, paint);
                         rects.XLabel = new SKRect(tx, ty - xFont.Size, tx + tw, ty + xFont.Size * 0.5f);
                     }
@@ -1490,6 +1492,8 @@ namespace CircuitRF.Render.DataDisplay
             float vpBottom  = (float)((tf.Viewport.Y + tf.Viewport.Height) * h);
             float vpCenterX = (vpLeft + vpRight) / 2f;
             float vpCenterY = (vpTop  + vpBottom) / 2f;
+            // The X label is centred in the margin ABOVE a Below legend's band (R-dfr26-6-2).
+            float xh        = h - (float)LegendRenderer.BelowBandPx(plot, canvasSize);
 
             var rects = new LabelHitRects();
 
@@ -1507,7 +1511,7 @@ namespace CircuitRF.Render.DataDisplay
             {
                 float tw = ApproxWidth(plot.XLabel, xLabelSzPx);
                 float tx = vpCenterX - tw / 2f;
-                float ty = vpBottom + (h - vpBottom) / 2f + xLabelSzPx * 0.35f;
+                float ty = vpBottom + (xh - vpBottom) / 2f + xLabelSzPx * 0.35f;
                 rects.XLabel = new SKRect(tx, ty - xLabelSzPx * 1.2f, tx + tw, ty + xLabelSzPx * 0.5f);
             }
 

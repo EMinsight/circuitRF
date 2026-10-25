@@ -1549,6 +1549,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             PolarDbUnit                 = plot.PolarDbUnit,
             PolarAngleLabels            = plot.ShowPolarAngleLabels,
             SmithAdmittanceGrid         = plot.ShowSmithAdmittanceGrid,
+            Legend                      = plot.Legend,
             SpecLines                   = plot.ShowSpecLines,
             SurfaceAzimuthDeg           = plot.SurfaceCamera.AzimuthDeg,
             SurfaceElevationDeg         = plot.SurfaceCamera.ElevationDeg,

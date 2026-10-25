@@ -222,6 +222,16 @@ namespace CircuitRF.Render.DataDisplay
         private static PlotRect ComputeViewport(Plot plot, (double W, double H) canvasSize)
         {
             var v = ComputeViewportCore(plot, canvasSize);
+            // A legend BELOW a rectangular plot takes its band out of the plot box, so the tick labels
+            // and the X label move up with the box's bottom (R-dfr26-6-2). A Smith or Polar canvas is
+            // made taller for it instead (PlotCanvasGeometry.BottomLabelExtraLogical), as it is for the
+            // rows under the chart, so the disc keeps its size.
+            if (plot.PlotType == PlotType.Rect && canvasSize.H > 0
+                && LegendRenderer.BelowBandPx(plot, canvasSize) is > 0 and var legendPx)
+            {
+                double band = Math.Min(legendPx / canvasSize.H, v.Height * 0.4);
+                v = new PlotRect(v.X, v.Y, v.Width, v.Height - band);
+            }
             // A band reserved above a rectangular plot's axes (Plot.TopBandPx): the axes move down by it and the title
             // stays in the margin above it. Capped so the band can never take the plot box.
             if (plot.PlotType == PlotType.Rect && plot.TopBandPx > 0 && canvasSize.H > 0)
@@ -489,6 +499,9 @@ namespace CircuitRF.Render.DataDisplay
                     AxesRenderer.DrawTitleAndAxisLabels(canvas, canvasSize, plot, tf, theme, aliasFor, alwaysShowSource);
                 else if (plot.PlotType.IsComplex())
                     AxesRenderer.DrawComplexXLabels(canvas, canvasSize, plot, tf, theme);
+
+                // ---- The legend (R-dfr26-6-2): over the curves, under the markers ----
+                LegendRenderer.Draw(canvas, canvasSize, plot, tf, theme, aliasFor, alwaysShowSource);
             }
 
             if (detail == PlotDetail.Full)

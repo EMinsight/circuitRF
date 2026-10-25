@@ -64,6 +64,7 @@ public static class PlotConfigLoader
         plot.PolarDbUnit                 = pc.PolarDbUnit ?? "";
         plot.ShowPolarAngleLabels        = pc.PolarAngleLabels;
         plot.ShowSmithAdmittanceGrid     = pc.SmithAdmittanceGrid;
+        plot.Legend                      = pc.Legend;
         plot.ShowSpecLines               = pc.SpecLines;
         plot.SurfaceCamera               = PatternCamera.New(pc.SurfaceAzimuthDeg, pc.SurfaceElevationDeg, pc.SurfaceZoom);
         plot.SurfaceColorMap             = pc.SurfaceColorMap;

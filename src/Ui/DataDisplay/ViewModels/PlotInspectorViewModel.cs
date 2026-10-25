@@ -212,6 +212,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsSurfacePlot));
         OnPropertyChanged(nameof(HasPatternScale));
         OnPropertyChanged(nameof(HasPatternControls));
+        OnPropertyChanged(nameof(ShowLegendControl));
         OnPropertyChanged(nameof(CanEditPolarDbReference));
         OnPropertyChanged(nameof(PolarAngleLabels));
         RefreshPolarDbUnitOptions();
@@ -456,6 +457,27 @@ public partial class PlotInspectorViewModel : ViewModelBase
             _plot.ShowSpecLines = value;
             OnPropertyChanged();
             PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>The Legend control is offered on every plot kind that draws one (R-dfr26-6-2).</summary>
+    public bool ShowLegendControl => IsRectPlot || IsSmithPlot || IsPolarPlot;
+
+    public static IReadOnlyList<LegendPlacement> LegendPlacements { get; } =
+        [LegendPlacement.Off, LegendPlacement.Inside, LegendPlacement.Below];
+
+    /// <summary>Where the legend is drawn — <see cref="Plot.Legend"/>, off by default. A structure change
+    /// as well as a redraw: Below makes a Smith or Polar canvas taller, as the rows under it do.</summary>
+    public LegendPlacement Legend
+    {
+        get => _plot.Legend;
+        set
+        {
+            if (_plot.Legend == value) return;
+            _plot.Legend = value;
+            OnPropertyChanged();
+            PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+            PlotStructureChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 

@@ -193,6 +193,9 @@ public static class PlotCanvasGeometry
             double side    = Math.Min(availW, availH);
             double natural = width * (1.0 - PlotRenderer.ComplexTopMarginBase - bearings) - side;
 
+            // A legend BELOW the chart sits under the rows (R-dfr26-6-2), so the canvas grows by its band.
+            rowsH += LegendRenderer.BelowBandPx(plot, width, lw);
+
             return Math.Max(0, rowsH - natural);
         }
     }

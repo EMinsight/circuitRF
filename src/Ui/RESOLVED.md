@@ -1,5 +1,46 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Designer round 26 — plots and tuning: a legend, arrow keys, a curve that changed on its own (brief DFR26-6, 2026-10-24)
+
+**The cross-circuit redraw was not reproduced, and the path offers no way for it to happen.** Gate:
+`PlotsAndTuningRound26Tests.TuningOneCircuit_NeverMovesTheOthersCurve` — the designer's two independent L-C notches
+(1.45 nH / 1.7 pF on ports 1-2, 2 nH / 0.7 pF on 3-4, 1-6 GHz), the first inductor driven through the real
+`TuneSession.ForCircuit` → `DataSourceLibraryViewModel.Publish` → `OnLibraryChanged` path with a deferred
+`FrameScheduler`, so requests arrive while an evaluation is in flight and publications arrive while a frame is still
+drawing. S43 is compared bit for bit with the untuned run twice: in every evaluated DataSet (the engine) and on the
+plot after every UI action and every frame end (the display). Explored once at 5,000 requests — about 2,500
+evaluations, 1,249 of them published over a frame in progress — with no mismatch at either end; the gate keeps 1,000.
+What the reading of the path rules out: `TuneSession` has one evaluation in flight and replaces, never merges, the
+pending request; each evaluation copies the bench and elaborates afresh (`PreparedCircuit` is never mutated), so
+there is no partial re-solve of the matrix; a frame waiting behind another is REPLACED by the newest whole DataSet,
+never combined with it; and `ReseedSliceIfCubeShapeChanged` leaves a slice alone when the axis set is the same, which
+a tuning result's always is. Treat a recurrence as a new report and ask for the `.cdd` and the bench.
+
+**The legend** (`LegendRenderer`, `Plot.Legend`, `.cdd` `Legend`, `plot --legend`). Off by default on EVERY plot type:
+Smith and Polar already name each trace on a label strip and a coloured row under the chart, which is the condition the
+brief gave for defaulting them Off too. Off is not written, so an untouched `.cdd` keeps its bytes. **The Below band's
+height depends on the trace count and the canvas only, never on label text** — it decides where a Rect plot box ends,
+and that box is also computed by every hit test through `PlotRenderer.BuildTransforms`, which has no alias resolver
+and no source-prefix setting to measure text with; a label too long for its grid cell is cut short instead. Rect takes
+the band out of the plot box (the X label is centred in what is left above it); Smith and Polar keep the disc and grow
+the canvas instead, through `PlotCanvasGeometry.BottomLabelExtraLogical`, as they do for their rows. Dashed and dotted
+samples are drawn as segments, for `StatisticsRenderer`'s reason (Skia's SVG device drops a stroke's path effect).
+**The Inside box is dressed as a marker info box is, by the same setting** (`MarkerBoxTransparentBackground`, on by
+default: border only, no fill). A plot paints no background of its own — the host or the export decides it, and the
+export default is transparent — so the first version's own white fill showed as a white patch on any page that was
+not white. And the label's room is passed in, not worked back out of the box width: in floats that came back a hair
+short of the widest label and put an ellipsis on every one.
+
+**Tuning keys.** Up/Down on a row (its slider or its ⋮ button) move to the previous/next row with a slider
+(`TuningPanelViewModel.NeighbourRow`, skipping a disabled one) and are consumed at the ends too, since the slider's own
+Up/Down would otherwise change the value; Left/Right step the value; text boxes return earlier and keep their arrows.
+
+**Markers.** A menu-added marker is selected in `PlotContainerViewModel.OnMarkerAdded` (its info box exists by then:
+`PlotChanged` rebuilds the boxes synchronously before `MarkerAdded` fires) and the plot takes focus once the menu has
+closed. Smith/Polar step along the locus ranked by each point's cube X sample through `_pointSample` (a pattern's back
+branch at the negated angle, which is its drawing order); a family on a complex plane does not step, and a freely
+placed marker never does. The Multi toggle's tooltip now says what it is for.
+
 ## Designer round 26 — paste at the pointer, a tee in series, imported parts that travel (brief DFR26-5, 2026-10-24)
 
 **Paste follows the pointer** (`SchematicViewModel.PasteGhost.cs`). The old rule kept an in-view fragment where it

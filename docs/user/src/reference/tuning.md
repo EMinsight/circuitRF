@@ -70,9 +70,10 @@ reads (`Wvar`) instead, and everything that reads it follows.
 
 Each row has a slider, a box holding the current value, the unit, and the range under the slider.
 
-- **Drag the slider**, or **type a value and press Enter** (Esc puts the box back). The arrow keys move
-  the focused slider one step, Shift with an arrow ten steps, Page Up and Page Down a tenth of the
-  range.
+- **Drag the slider**, or **type a value and press Enter** (Esc puts the box back). With a slider
+  focused, **Up** and **Down** move to the previous and next row, and **Left** and **Right** move the
+  value one step; Shift with Left or Right moves it ten steps, and Page Up and Page Down a tenth of the
+  range. A value box you are typing in keeps its own arrow keys.
 - **The range** is the minimum and maximum under the slider. Click either one to change it. The first
   time a value is tuned its range is guessed: half to twice the value for a positive number, or 0–1 in
   its own unit for zero. The range is shown in the value's own unit, so pF stays pF.

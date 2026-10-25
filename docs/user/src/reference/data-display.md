@@ -221,6 +221,12 @@ assigned to a **secondary (right-hand) Y axis** on a rectangular plot, which is 
 efficiency in per cent share one frame legibly. Autoscale is on until you set a limit; setting one turns
 it off for that axis, so a figure you have framed deliberately does not re-frame itself on the next run.
 
+**Legend** in the Plot Inspector draws a box naming each trace beside a short sample of its line, in
+its colour and line style. **Inside** puts it in the top-right corner of the plot; **Below** puts it in a
+band under the plot. It is **Off** to begin with, on every plot type: a rectangular plot already names
+its traces on the Y axis, and a Smith or polar plot on the label strips beside the chart and the rows
+under it. The setting is saved in the `.cdd`, and `circuitrf render` and `circuitrf plot` draw it too.
+
 ## The decibel floor {#db-floor}
 
 **A decibel trace bottoms out at −250 dB.** Below that the curve is drawn flat at −250, and a readout
@@ -250,6 +256,14 @@ Drop a marker on a trace to read its value. Markers are per-trace, they persist 
 on a load-pull contour they read the interpolated **surface** rather than the nearest grid point — which
 is the point of fitting a surface at all. The maximum-power and maximum-efficiency locations are flagged
 on a contour plot automatically.
+
+**The arrow keys step a selected marker** from one sample to the next — Right or Up to the next higher
+x, Left or Down to the next lower — on a rectangular, Smith or polar plot. On a Smith or polar plot the
+marker walks along the curve in frequency order. A marker you have just added from the plot's **Add
+Marker** menu is already selected, so the arrows move it straight away.
+
+**To read every trace at one x**, turn on **Multi** in the marker's properties. The marker becomes a
+vertical line across the plot, and its info box lists each trace's value at that x.
 
 ## Monte Carlo statistics {#statistics}
 

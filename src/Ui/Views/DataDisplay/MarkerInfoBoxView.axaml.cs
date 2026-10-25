@@ -353,7 +353,7 @@ public partial class MarkerInfoBoxView : UserControl
     /// </summary>
     protected override void OnKeyDown(KeyEventArgs e)
     {
-        if (Vm is { } vm && vm.PlotType.IsRect() &&
+        if (Vm is { } vm && (vm.PlotType.IsRect() || vm.PlotType.IsComplex()) &&
             e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
         {
             int direction = e.Key is Key.Up or Key.Right ? +1 : -1;

@@ -475,9 +475,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         public Func<int, bool>? StepSelectedMarkersHandler { get; set; }
 
         /// <summary>
-        /// On a Rect plot, Up/Right steps the selected marker(s) to the next-higher x-axis sample and
-        /// Down/Left to the next-lower — fine movement that snaps to actual data points. For harmonic /
-        /// mixIndex spectral axes the step follows frequency (useful for tight two-tone IMD spacings).
+        /// On a Rect, Smith or Polar plot, Up/Right steps the selected marker(s) to the next-higher x-axis
+        /// sample and Down/Left to the next-lower — fine movement that snaps to actual data points. For
+        /// harmonic / mixIndex spectral axes the step follows frequency (useful for tight two-tone IMD
+        /// spacings); on Smith / Polar it walks the locus in frequency order.
         /// </summary>
         protected override void OnKeyDown(KeyEventArgs e)
         {
@@ -502,7 +503,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 return;
             }
 
-            if (_plot is not null && _plot.PlotType.IsRect() &&
+            if (_plot is not null && (_plot.PlotType.IsRect() || _plot.PlotType.IsComplex()) &&
                 e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
             {
                 int direction = e.Key is Key.Up or Key.Right ? +1 : -1;

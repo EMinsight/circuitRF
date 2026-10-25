@@ -591,7 +591,13 @@ public partial class SmithChartView : UserControl
         plot.MarkerRemoved += (_, _) => vm.HarvestMarkers();
 
         plot.MarkerMoved += (_, _) => { container.OnMarkerMoved(); vm.HarvestMarkers(); };
-        plot.MarkerAdded += (marker, trace) => { container.OnMarkerAdded(marker, trace); vm.HarvestMarkers(); };
+        plot.MarkerAdded += (marker, trace) =>
+        {
+            container.OnMarkerAdded(marker, trace);
+            vm.HarvestMarkers();
+            // The arrows step a marker just added from the menu (R-dfr26-6-4).
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => plot.Focus(), Avalonia.Threading.DispatcherPriority.Background);
+        };
         container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
 
         SyncPlotTheme();

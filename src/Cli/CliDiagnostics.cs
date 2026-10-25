@@ -3127,6 +3127,11 @@ internal static class CliDiagnostics
         "plot: --db-ring '{value}' is not a positive ring spacing in decibels (10 is the default).",
         ("value", value));
 
+    public static Diagnostic PlotLegendMalformed(string value) => Diagnostic.Create(
+        "plot.legend.malformed", DiagnosticSeverity.Error,
+        "plot: --legend '{value}' is not one of 'off', 'inside' or 'below'. 'inside' draws it in the "
+      + "plot box's top-right corner; 'below' in a band under the plot.", ("value", value));
+
     public static Diagnostic PlotDbRefMalformed(string value) => Diagnostic.Create(
         "plot.radial.ref-malformed", DiagnosticSeverity.Error,
         "plot: --db-ref '{value}' is neither 'peak' nor a number. 'peak' normalises the outer ring "

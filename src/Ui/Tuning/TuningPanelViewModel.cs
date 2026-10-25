@@ -103,6 +103,18 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
     public bool HasRows => Rows.Count > 0;
 
+    /// <summary>The row Up (−1) or Down (+1) moves to from <paramref name="row"/> — the nearest one with
+    /// a slider, skipping a disabled row — or null at either end, where the key does nothing
+    /// (R-dfr26-6-3).</summary>
+    public TuningRowViewModel? NeighbourRow(TuningRowViewModel row, int direction)
+    {
+        int at = Rows.IndexOf(row);
+        if (at < 0 || direction == 0) return null;
+        for (int i = at + Math.Sign(direction); i >= 0 && i < Rows.Count; i += Math.Sign(direction))
+            if (Rows[i].IsEnabled) return Rows[i];
+        return null;
+    }
+
     public TuningAddViewModel Add { get; }
 
     public TuningScopeViewModel ScopeSettings { get; }

@@ -342,7 +342,7 @@
             </Border>
 
             <ScrollViewer Grid.Row="4" HorizontalScrollBarVisibility="Disabled">
-                <ItemsControl ItemsSource="{Binding Rows}">
+                <ItemsControl x:Name="RowsList" ItemsSource="{Binding Rows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="tun:TuningRowViewModel">
                             <Border Classes="row" Classes.lagging="{Binding IsLagging}" Padding="6,3,4,3">
@@ -366,7 +366,8 @@
                                     <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1"
                                             Value="{Binding Position}" IsVisible="{Binding IsEnabled}"
                                             Classes="tuning" VerticalAlignment="Center"
-                                            Focusable="True" Tag="{Binding}"/>
+                                            Focusable="True" Tag="{Binding}"
+                                            ToolTip.Tip="Up/Down: previous or next value · Left/Right: one step (Shift: ten) · Page Up/Down: a tenth of the range"/>
                                     <TextBox Grid.Row="0" Grid.Column="2" Text="{Binding ValueBoxText}"
                                              IsVisible="{Binding IsEnabled}" Classes="tuningValue"
                                              Width="64" FontSize="12" Padding="4,1" MinHeight="0" Margin="4,0,2,0"

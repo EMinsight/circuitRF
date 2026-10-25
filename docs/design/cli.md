@@ -2535,6 +2535,10 @@ result that records none is refused (`plot.spec-lines.no-goals`) rather than dra
 for byte. `TrialPlotParityTests` does the same for a pass/fail family with a P1–P99 envelope (brief-yield-9
 R-ya9-7). Selecting a trial is the window's alone — a picture has no one to click it.
 
+**`--legend off|inside|below`** is the Plot Inspector's Legend (brief-dfr26-6 R-dfr26-6-2): each trace's line beside its
+name, in the plot box's top-right corner or in a band under the plot, on a rect, Smith or polar plot. Absent is
+`off`, the window's default, and `off` is not written to the `.cdd`; anything else is refused (`plot.legend.malformed`).
+
 ```
 circuitrf plot div.yield.npy -o h.svg --trace cube=trials.goal:Vout:worst,stat=histogram,fit=normal --spec-lines
 circuitrf plot div.yield.npy -o ys.svg --trace cube=trials.pass,stat=yieldsens,param=R1.R

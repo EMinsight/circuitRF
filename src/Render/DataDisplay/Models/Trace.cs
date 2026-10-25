@@ -4148,11 +4148,16 @@ namespace CircuitRF.Render.DataDisplay
         /// the next HIGHER x (Up/Right arrow), &lt; 0 to the next lower (Down/Left). Stepping is done in
         /// ascending display-x order, so spectral axes (harmonic, mixIndex) step in <em>frequency</em> — the
         /// products are stored in lattice order, not sorted. Network/SNP traces step along the frequency axis.
-        /// Returns true if the marker actually moved (false at an axis end, or for contour / Smith / Polar).
+        /// On Smith / Polar the marker walks the locus in the order of the cube's own x samples — frequency
+        /// for an S-parameter — and a network trace steps its frequency as it does on Rect (R-dfr26-6-4).
+        /// Returns true if the marker actually moved (false at an axis end, for a contour, or for a family
+        /// on a complex plane, whose markers are not resolved in two dimensions).
         /// </summary>
         public bool StepMarkerAlongX(Marker m, int direction)
         {
-            if (direction == 0 || IsContourTrace || IsComplexPlanePlot) return false;
+            // A freely-placed marker is where it was put, not a reading of this trace (Marker.FreePosition).
+            if (direction == 0 || IsContourTrace || m.FreePosition) return false;
+            if (IsComplexPlanePlot && IsCubeBound && !MarkersResolve2D) return false;
 
             // ── Cube-bound traces: normal sweep X, mixIndex spectra, harmonic stems, and families ──
             if (IsCubeBound)
@@ -4167,6 +4172,31 @@ namespace CircuitRF.Render.DataDisplay
                     int next = CubeMarkerIndex(m) + direction;
                     if (next < 0 || next >= pts.Count) return false;
                     m.PositionStatic = pts[next];
+                    return true;
+                }
+
+                // A Smith or Polar locus: Points are (Re, Im), so rank them by the x sample each one
+                // stands on. A whole-plane pattern's back branch carries the negated angle, which is
+                // the order it is drawn in.
+                if (MarkersResolve2D)
+                {
+                    var key = new double[pts.Count];
+                    bool mapped = _pointSample.Count == pts.Count && _cubeXValues is not null;
+                    for (int i = 0; i < key.Length; i++)
+                    {
+                        if (!mapped) { key[i] = i; continue; }
+                        int s = _pointSample[i];
+                        double x = _cubeXValues![s < 0 ? ~s : s];
+                        key[i] = s < 0 ? -x : x;
+                    }
+                    var byKey = new int[pts.Count];
+                    for (int i = 0; i < byKey.Length; i++) byKey[i] = i;
+                    Array.Sort(byKey, (a, b) => key[a] != key[b] ? key[a].CompareTo(key[b]) : a.CompareTo(b));
+
+                    int cur = CubeMarkerIndex(m);
+                    int at  = Array.IndexOf(byKey, cur) + direction;
+                    if (at < 0 || at >= byKey.Length) return false;   // at an end — no wrap
+                    m.PositionStatic = pts[byKey[at]];
                     return true;
                 }
 

@@ -247,6 +247,15 @@
                       FontSize="11" Margin="0,0,8,2"
                       ToolTip.Tip="Draw the limits of the goals these traces show"/>
 
+            <!-- R-dfr26-6-2: the legend — off, in the plot box's corner, or under the plot. -->
+            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ShowLegendControl}">
+                <TextBlock Text="Legend" FontSize="11" VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding LegendPlacements}"
+                          SelectedItem="{Binding Legend, Mode=TwoWay}"
+                          Width="96" Padding="5,3" FontSize="11"
+                          ToolTip.Tip="A box naming each trace beside a sample of its line"/>
+            </StackPanel>
+
             <WrapPanel IsVisible="{Binding HasPatternControls}">
 
                 <!-- The mode switch is the POLAR plot's; a surface's radius is dB by construction and

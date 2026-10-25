@@ -247,7 +247,7 @@
                         IsVisible="{Binding ShowMultiDeltaControls}">
                 <ToggleButton Classes="seg-btn"
                               IsChecked="{Binding IsMulti, Mode=TwoWay}"
-                              ToolTip.Tip="Multi-marker mode">
+                              ToolTip.Tip="Multi-marker: one x, every trace's value — a line marker across the plot">
                     Multi
                 </ToggleButton>
                 <ToggleButton Classes="seg-btn"

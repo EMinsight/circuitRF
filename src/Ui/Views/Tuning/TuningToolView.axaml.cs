@@ -17,8 +17,8 @@ namespace CircuitRF.Ui.Views.Tuning;
 
 /// <summary>
 /// The Tuning panel (brief-tuneopt-4). Everything a row DOES is on <see cref="TuningRowViewModel"/>;
-/// this file only routes keys and pointer releases to it — the slider's arrows, Shift+arrows and Page
-/// keys (overview §3), Enter/Esc in the number box, the min/max boxes that open in place — and paints
+/// this file only routes keys and pointer releases to it — Up/Down between rows, Left/Right, Shift and
+/// Page keys on the value (overview §3, R-dfr26-6-3), Enter/Esc in the number box, the min/max boxes that open in place — and paints
 /// the status dot. A timer re-reads the session's lag while one runs, so "1.4 s behind" counts up.
 /// </summary>
 public partial class TuningToolView : UserControl
@@ -145,23 +145,45 @@ public partial class TuningToolView : UserControl
             return;
         }
 
-        if (SliderOf(source) is { Tag: TuningRowViewModel sliderRow })
+        // Anywhere else in a row — its slider, or its ⋮ button: Up/Down choose the parameter,
+        // Left/Right change it (R-dfr26-6-3). A text box returned above, so it keeps its own arrows.
+        if ((SliderOf(source)?.Tag ?? (source as Button)?.DataContext) is not TuningRowViewModel focused || _panel is null)
+            return;
+
+        if (e.Key is Key.Up or Key.Down)
         {
-            bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            (int dir, TuningNudge size)? nudge = e.Key switch
-            {
-                Key.Right or Key.Up => (+1, shift ? TuningNudge.TenSteps : TuningNudge.Step),
-                Key.Left or Key.Down => (-1, shift ? TuningNudge.TenSteps : TuningNudge.Step),
-                Key.PageUp   => (+1, TuningNudge.Page),
-                Key.PageDown => (-1, TuningNudge.Page),
-                _ => null,
-            };
-            if (nudge is { } n)
-            {
-                sliderRow.Nudge(n.dir, n.size);
-                e.Handled = true;
-            }
+            if (_panel.NeighbourRow(focused, e.Key == Key.Down ? +1 : -1) is { } next) FocusSliderOf(next);
+            e.Handled = true;   // at an end too: the slider's own Up/Down would change the value
+            return;
         }
+
+        bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        (int dir, TuningNudge size)? nudge = e.Key switch
+        {
+            Key.Right    => (+1, shift ? TuningNudge.TenSteps : TuningNudge.Step),
+            Key.Left     => (-1, shift ? TuningNudge.TenSteps : TuningNudge.Step),
+            Key.PageUp   => (+1, TuningNudge.Page),
+            Key.PageDown => (-1, TuningNudge.Page),
+            _ => null,
+        };
+        if (nudge is { } n && focused.IsEnabled)
+        {
+            focused.Nudge(n.dir, n.size);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>Gives <paramref name="row"/>'s slider the keyboard and scrolls it into view.</summary>
+    private void FocusSliderOf(TuningRowViewModel row)
+    {
+        if (RowsList.ContainerFromItem(row) is not { } container) return;
+        foreach (var v in container.GetVisualDescendants())
+            if (v is Slider { Tag: TuningRowViewModel r } slider && ReferenceEquals(r, row) && slider.Classes.Contains("tuning"))
+            {
+                slider.Focus(NavigationMethod.Directional);
+                slider.BringIntoView();
+                return;
+            }
     }
 
     private static void CommitBound(TuningRowViewModel row, string? which)

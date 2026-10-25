@@ -158,6 +158,9 @@ internal static class PlotVerb
         // them; it is refused on its own terms below.
         public bool                 AngleLabels;
 
+        // The legend (R-dfr26-6-2): off, in the plot box's corner, or in a band under the plot.
+        public LegendPlacement      Legend;
+
         // One trace per cut instead of two (owner request, 2026-09-11). Plot-level rather than
         // per-trace because it is a statement about how every cut on this plot is DRAWN, and a plot
         // with one cut drawn each way would be a picture nobody asked for.
@@ -547,6 +550,12 @@ internal static class PlotVerb
 
                 case "--angle-labels":
                     o.AngleLabels = true; continue;
+
+                case "--legend" when i + 1 < args.Length:
+                    if (!Enum.TryParse(args[++i], ignoreCase: true, out o.Legend) || !Enum.IsDefined(o.Legend)
+                        || int.TryParse(args[i], out _))
+                        return JsonRun.Fail(CliDiagnostics.PlotLegendMalformed(args[i]));
+                    continue;
 
                 case "--whole-plane":
                     o.WholePlane = true; continue;
@@ -1420,6 +1429,7 @@ internal static class PlotVerb
         container.PolarDbReferenceValue = o.DbRefValue;
         container.PolarDbUnit           = o.DbUnit;
         container.PolarAngleLabels      = o.AngleLabels;
+        container.Legend                = o.Legend;
         container.SpecLines             = o.SpecLines;
 
         var cam = o.Camera ?? PatternCamera.Default;

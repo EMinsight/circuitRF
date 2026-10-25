@@ -135,6 +135,12 @@ public sealed class PlotContainerConfig
     /// default</b>, for <see cref="PolarAngleLabels"/>'s reason.</summary>
     public bool                 SmithAdmittanceGrid   { get; set; }
 
+    /// <summary>The legend (<c>Plot.Legend</c>, R-dfr26-6-2). <b>Off is not written</b>, so a display
+    /// that never turned one on saves the bytes it saved before.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public LegendPlacement      Legend                { get; set; }
+
     // ---- The 3D pattern surface (ANT-10 §2) ---------------------------------
     //
     //  Two angles and a zoom, not a matrix — see PatternCamera for why. Defaults are

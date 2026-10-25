@@ -728,9 +728,14 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// <summary>
     /// Called by PlotContainerView when PlotControl fires its MarkerAdded event.
     /// Routes to DataDisplayViewModel to record an undo command.
+    /// A marker added from a menu is also SELECTED (R-dfr26-6-4), so the arrow keys step it at once
+    /// rather than after a click on it.
     /// </summary>
     public void OnMarkerAdded(Marker marker, Trace trace)
-        => _parent.RecordMarkerAdded(marker, trace, this);
+    {
+        _parent.RecordMarkerAdded(marker, trace, this);
+        if (FindMarkerInfoBoxVm(marker) is { } box) _parent.SelectOnly(box);
+    }
 
     /// <summary>
     /// Removes the given marker from its trace with undo/redo support.
@@ -776,14 +781,14 @@ public partial class PlotContainerViewModel : ViewModelBase
     /// Arrow-key fine movement: steps every selected marker by one x-axis sample
     /// (<paramref name="direction"/> &gt; 0 = next higher x, &lt; 0 = next lower; spectral axes step in
     /// frequency). Drives the move from EITHER the plot canvas or a focused info box, so both surfaces
-    /// behave identically. Rect, non-contour only. Repositions each info box and redraws via the light
+    /// behave identically. Rect, Smith and Polar; never a contour. Repositions each info box and redraws via the light
     /// <c>OnMarkerMoved</c> path — NOT a full info-box rebuild — so keyboard focus on the info box
     /// survives repeated presses; the redraw also marks the document dirty. Returns true when at least
     /// one selected marker was eligible (so the caller consumes the arrow key even at an axis end).
     /// </summary>
     public bool StepSelectedMarkers(int direction)
     {
-        if (direction == 0 || PlotVM.Plot.PlotType != PlotType.Rect) return false;
+        if (direction == 0 || PlotVM.Plot.PlotType is not (PlotType.Rect or PlotType.Smith or PlotType.Polar)) return false;
 
         bool eligible = false, moved = false;
         foreach (var marker in GetSelectedMarkers().ToList())
