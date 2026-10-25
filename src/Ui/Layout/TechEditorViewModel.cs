@@ -464,17 +464,41 @@ public sealed partial class TechEditorViewModel : ObservableObject
     public void SaveAs(string newPath)
     {
         if (string.IsNullOrWhiteSpace(newPath)) return;
-        // brief-em3d-53 R-em3d53-1e — a relative library reference is re-pointed so the copy names the same
-        // file from its new place; put back if the write fails.
+
+        // brief-dfr26-3 R-dfr26-3-4 — into the user technology folder the libraries travel WITH it, beside
+        // the copy under the same references, because that folder is what new workspaces copy from and a
+        // reference climbing back into one workspace would break the moment that workspace moved.
+        IReadOnlyList<(string Reference, string Json)> carried = [];
+        bool intoUserLibrary = TechnologyCatalog.IsInUserDirectory(newPath);
+        if (intoUserLibrary)
+        {
+            string? refusal;
+            try { carried = TechnologyCatalog.LibrariesToCarry(FilePath, Working.MaterialLibraries, out refusal); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { refusal = ex.Message; }
+            if (refusal is not null)
+            {
+                SaveError?.Invoke($"Couldn't save technology to '{newPath}': {refusal}");
+                return;
+            }
+        }
+
+        // brief-em3d-53 R-em3d53-1e — elsewhere a relative library reference is re-pointed so the copy names
+        // the same file from its new place. brief-dfr26-3 R-dfr26-3-3 — and the copy is a NEW technology:
+        // its Name follows the new file name (the editor has no Name field, so there is no typed name to
+        // keep). Both are put back if the write fails.
         var refsBefore = Working.MaterialLibraries?.ToList();
-        RepointLibraries(FilePath, newPath);
+        string nameBefore = Working.Name;
+        if (!intoUserLibrary) RepointLibraries(FilePath, newPath);
+        Working.Name = Path.GetFileNameWithoutExtension(newPath);
         try
         {
             TechPersistence.SaveToFile(newPath, Working);
+            TechnologyCatalog.WriteLibrariesBeside(newPath, carried);
         }
         catch (Exception ex)
         {
             Working.MaterialLibraries = refsBefore;
+            Working.Name = nameBefore;
             SaveError?.Invoke($"Couldn't save technology to '{newPath}': {ex.Message}");
             return;
         }
@@ -485,6 +509,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         TechSavedAs?.Invoke(oldPath, newPath);
         ResolveLibrariesInPlace();
         RebuildAll();
+        OnPropertyChanged(nameof(Working));   // the header shows Working.Name
     }
 
     // ── Snapshot undo plumbing (internal — used by row view models) ───────────

@@ -108,7 +108,7 @@ public static class GerberTechnologyChoices
 
         foreach (var entry in catalog)
         {
-            var tech = TechnologyCatalog.Load(entry);
+            var tech = TechnologyCatalog.Load(entry, out string? libraryNote);
             int conductors = ConductorCount(tech);
             string copy = System.IO.Path.Combine(workspaceRoot, "tech", entry.Id + ".ctech");
             bool editedCopy = File.Exists(copy) && !SameText(copy, TechnologyCatalog.LoadRawJson(entry));
@@ -122,7 +122,7 @@ public static class GerberTechnologyChoices
                     ? $"{System.IO.Path.Combine("tech", entry.Id + ".ctech")} is already in this workspace and "
                     + "differs from the built-in technology; it is offered above as the workspace's own."
                     : $"Built into circuitRF: a copy is written to {System.IO.Path.Combine("tech", entry.Id + ".ctech")} "
-                    + "and used from there.",
+                    + "and used from there." + (libraryNote is null ? "" : " " + libraryNote),
                 tech) { Usable = !editedCopy });
         }
 

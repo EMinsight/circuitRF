@@ -23132,3 +23132,48 @@ not in the cuts themselves. Not changed here.
 **The planar solver on the same board** refuses at extraction: the setup's levels include Bottom Copper, which lies below
 every ground reference, with Stackup.Bottom = Open — "no ground plane below the lowest analysis level 'Bottom Copper'". Left
 as it is (out of scope).
+
+## brief-dfr26-3 — technology files: the ten-layer stackup, Save As that renames, libraries that travel (2026-10-24)
+
+**`pcb-10layer_FR-4_1.7mm_1oz` ships.** A 2+6+2 build: ten coppers (35 µm outer, 18 µm inner), nine FR-4 dielectrics
+(εr 4.4, tanδ 0.02), 1.718 mm overall, ground references on Inner 1 and Inner 8, `Top = Bottom = Open`. Six spans on six
+drill drawing layers: `Via 1-10` (layer 7, the six-layer's `Drill`), `Laser 1-2`, `Laser 2-3`, `Buried 3-8`,
+`Laser 8-9`, `Laser 9-10` (22-26), all plated with a 25 µm wall. Inner 5-8 take drawing layers 18-21; everything else is
+the six-layer's numbering and colours. Default via 0.6 mm pad / 0.3 mm drill — the size every through via on the
+designer's board carries, which is also the six-layer's. **The two outer dielectrics are 71 µm**; an earlier import of
+the same board read 73 µm, and 71 is the figure in the stackup the designer asked to ship. The board-specific parts of
+the file it was built from were not carried over: a name taken from the Gerber folder, drill spans named after the
+board's drill files, a routing-file span with no `SpanFromLayer`/`SpanToLayer` (dropped), and `Bottom = Ground`.
+
+**The six-layer's `Bottom` is `Open` now.** Its Bottom Copper is a signal layer and is not a ground reference, so a
+`Ground` boundary put a plane against signal artwork; the ten-layer inherited the mistake from it.
+`TechnologyFilesRound26Tests.EveryShippedGroundBoundarySitsAgainstAGroundReferenceConductor` checks every shipped
+technology: a `Ground` side's outermost non-via entry must be a ground-reference conductor.
+
+**Save As kept the old identity — exactly one property: `Name`.** Reproduced by opening an imported board's technology
+and saving it under a new file name: `Name` stayed the board's folder name. Library references were already re-pointed
+for the new place (R-em3d53-1e), and `Name` is the only identity field a `.ctech` has; the drill-span names and the rest
+are content, which Save As copies on purpose. `TechEditorViewModel.SaveAs` now sets `Name` to the new file stem. The
+editor has no Name field (the header is a TextBlock), so there is never a typed name to keep. A failed write puts the
+Name back along with the references.
+
+**An installed technology could lose its material library.** `TechnologyCatalog.Install` copied a relatively named
+library only when it existed beside the SOURCE and said nothing otherwise. A technology saved from the editor into the
+user folder never went through `Install` at all, and its reference was re-pointed back into the workspace it came from.
+Either way an installed `.ctech` named a `generic-materials.cmat` that was not there, and every load of it refused —
+including each Gerber import mapped onto it (`GerberTechnologyChoices.Build` loads every catalog entry, and
+`WorkspaceCreate.InstallTechnology` reads its libraries through `LibraryFiles`). Now:
+- `TechnologyCatalog.LibrariesToCarry` is the one rule for anything written into `UserDirectory`. A library at the source
+  is read from there; a missing `generic-materials.cmat` takes `MaterialLibraries.GenericRawJson()`; any other missing
+  library is a refusal naming it, returned before anything is written. `Install` and the editor's Save As into the user
+  folder both use it. The Save As keeps the references as they are and writes the libraries beside the copy, rather than
+  re-pointing them into the workspace. `WriteLibrariesBeside` never overwrites a file already there.
+- `TechnologyCatalog.Load(entry, out note)` reads a user technology whose bare `generic-materials.cmat` is missing on the
+  built-in library, with one note. The Settings tab shows the note; the Gerber dialog appends it to the row's text.
+  `LibraryFiles` does the same, so the workspace copy gets a real file. Any other missing library still refuses.
+
+**`StackupSceneTests.ASpecRowLinesUpWithItsBand_OnEveryShippedTechnology`'s worst-row ceiling went from 20 to 30 px.**
+The ten-layer put Inner 2's spec row 25.8 px off its band: four thin layers above each 460 µm core form one label cluster
+taller than their bands, so the cluster spreads (Inner 7, Dielectric 5 and Dielectric 8 sit 18-19 px off for the same
+reason). The mean is unaffected: 6.9 px over the ten-layer's 19 bands, against the 8 px ceiling. That mean is what fails
+at the old padding (39.4 px).

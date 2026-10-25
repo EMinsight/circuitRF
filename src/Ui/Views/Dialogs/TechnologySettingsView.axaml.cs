@@ -113,7 +113,8 @@ public partial class TechnologySettingsView : UserControl
         // A user file can be deleted or corrupted between the listing and this read, so the summary
         // is the one place the tab has to survive not being able to read what it just listed.
         TechnologySummary summary;
-        try   { summary = TechnologySummary.Of(TechnologyCatalog.Load(row.Entry)); }
+        string? libraryNote;
+        try   { summary = TechnologySummary.Of(TechnologyCatalog.Load(row.Entry, out libraryNote)); }
         catch (Exception ex)
         {
             DetailLayers.Text = DetailStackup.Text = DetailThickness.Text =
@@ -141,9 +142,10 @@ public partial class TechnologySettingsView : UserControl
 
         // The two states worth saying out loud, and nothing else. A row that is simply one of several
         // offered technologies needs no sentence.
-        Notice(row.IsDefault
+        string? defaultNote = row.IsDefault
             ? "New workspaces open on this one. Every new workspace can still choose another, or None."
-            : null);
+            : null;
+        Notice(string.Join(" ", new[] { defaultNote, libraryNote }.Where(s => s is not null)) is { Length: > 0 } text ? text : null);
     }
 
     private static string Count(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";

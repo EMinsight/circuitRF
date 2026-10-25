@@ -332,7 +332,7 @@
   ],
   "Stackup": {
     "Top": "Open",
-    "Bottom": "Ground",
+    "Bottom": "Open",
     "Layers": [
       {
         "Kind": "Conductor",

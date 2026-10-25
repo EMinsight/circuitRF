@@ -69,6 +69,66 @@ drawn on them.</p>
 <p>A layout names a technology (or leaves the name blank to mean the workspace default). Everything
 else — the layer table, the DRC rules, the default display unit — lives in the same file. See
 <a href="layout-editor.html#technology">The Layout Editor</a> for the rest of it.</p>
+<h3 id="shipped">The technologies circuitRF ships</h3>
+<p>New Workspace, <strong>File ▸ Import ▸ Gerber</strong> and <code>circuitrf new workspace --tech</code> all offer these. Each one
+is copied into the workspace's <code>tech/</code> folder, and from then on it is your own file to edit.</p>
+<table>
+<thead>
+<tr>
+<th>Technology</th>
+<th>Conductors</th>
+<th>Overall</th>
+<th>Drill spans</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PCB 2-Layer FR-4 (70mil, 1oz)</td>
+<td>2</td>
+<td>1.85 mm</td>
+<td>through</td>
+</tr>
+<tr>
+<td>PCB 2-Layer RO4350B (20mil, 1oz)</td>
+<td>2</td>
+<td>0.58 mm</td>
+<td>through</td>
+</tr>
+<tr>
+<td>PCB 2-Layer RO4350B (30mil, 1oz)</td>
+<td>2</td>
+<td>0.83 mm</td>
+<td>through</td>
+</tr>
+<tr>
+<td>PCB 4-Layer FR-4 (62mil, 1/0.5oz)</td>
+<td>4</td>
+<td>1.58 mm</td>
+<td>through, Top Copper to Inner 1</td>
+</tr>
+<tr>
+<td>PCB 6-Layer FR-4 (1.6 mm, 1/0.5oz)</td>
+<td>6</td>
+<td>1.6 mm</td>
+<td>through</td>
+</tr>
+<tr>
+<td>PCB 10-Layer FR-4 (1.7 mm, 1/0.5 oz)</td>
+<td>10</td>
+<td>1.718 mm</td>
+<td>through 1-10, laser 1-2, 2-3, 8-9, 9-10, buried 3-8</td>
+</tr>
+<tr>
+<td>MMIC GaAs (2 Layer Metal + MIM, 100um)</td>
+<td>4</td>
+<td>0.112 mm</td>
+<td>backside via, Metal1-Metal2 post, MIM via</td>
+</tr>
+</tbody>
+</table>
+<p>The ten-layer board is a 2+6+2 build with ground planes on Inner 1 and Inner 8, so each outer signal
+layer sits 71 µm above or below its own plane. Its bottom side is open air rather than a ground plane,
+so Bottom Copper can carry signal artwork like Top Copper.</p>
 <p><strong>A missing technology does not block drawing, but it does block an EM run.</strong> Layers fall back to a
 generated palette and editing carries on; the EM run refuses rather than inventing a stackup, because
 there is no honest default for &quot;how far above the ground plane is this trace&quot;.</p>

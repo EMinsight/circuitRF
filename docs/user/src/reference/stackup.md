@@ -43,6 +43,25 @@ A layout names a technology (or leaves the name blank to mean the workspace defa
 else — the layer table, the DRC rules, the default display unit — lives in the same file. See
 [The Layout Editor](layout-editor.html#technology) for the rest of it.
 
+### The technologies circuitRF ships {#shipped}
+
+New Workspace, **File ▸ Import ▸ Gerber** and `circuitrf new workspace --tech` all offer these. Each one
+is copied into the workspace's `tech/` folder, and from then on it is your own file to edit.
+
+| Technology | Conductors | Overall | Drill spans |
+|---|---|---|---|
+| PCB 2-Layer FR-4 (70mil, 1oz) | 2 | 1.85 mm | through |
+| PCB 2-Layer RO4350B (20mil, 1oz) | 2 | 0.58 mm | through |
+| PCB 2-Layer RO4350B (30mil, 1oz) | 2 | 0.83 mm | through |
+| PCB 4-Layer FR-4 (62mil, 1/0.5oz) | 4 | 1.58 mm | through, Top Copper to Inner 1 |
+| PCB 6-Layer FR-4 (1.6 mm, 1/0.5oz) | 6 | 1.6 mm | through |
+| PCB 10-Layer FR-4 (1.7 mm, 1/0.5 oz) | 10 | 1.718 mm | through 1-10, laser 1-2, 2-3, 8-9, 9-10, buried 3-8 |
+| MMIC GaAs (2 Layer Metal + MIM, 100um) | 4 | 0.112 mm | backside via, Metal1-Metal2 post, MIM via |
+
+The ten-layer board is a 2+6+2 build with ground planes on Inner 1 and Inner 8, so each outer signal
+layer sits 71 µm above or below its own plane. Its bottom side is open air rather than a ground plane,
+so Bottom Copper can carry signal artwork like Top Copper.
+
 **A missing technology does not block drawing, but it does block an EM run.** Layers fall back to a
 generated palette and editing carries on; the EM run refuses rather than inventing a stackup, because
 there is no honest default for "how far above the ground plane is this trace".

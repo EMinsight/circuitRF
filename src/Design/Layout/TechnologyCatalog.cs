@@ -175,10 +175,105 @@ public static class TechnologyCatalog
     }
 
     /// <summary>The parsed technology, from wherever this entry's bytes are.</summary>
-    public static Technology Load(TechnologyCatalogEntry entry)
-        => entry.Origin == TechnologyOrigin.Shipped
-            ? ShippedTechnologies.Load(new ShippedTechnologyEntry(entry.Id, entry.ResourceName!))
-            : TechPersistence.LoadFromFile(entry.FilePath!);
+    public static Technology Load(TechnologyCatalogEntry entry) => Load(entry, out _);
+
+    /// <summary>
+    /// As <see cref="Load(TechnologyCatalogEntry)"/>, saying in <paramref name="note"/> when a user
+    /// technology's <see cref="MaterialLibraries.GenericFileName"/> was missing beside it and the built-in
+    /// one was read in its place (brief-dfr26-3 R-dfr26-3-4). Installs made before the install copied that
+    /// file name it and lack it; failing every import on them would punish the user for a file whose
+    /// content is known. Any other missing library still refuses, as a workspace's own copy does.
+    /// </summary>
+    public static Technology Load(TechnologyCatalogEntry entry, out string? note)
+    {
+        note = null;
+        if (entry.Origin == TechnologyOrigin.Shipped)
+            return ShippedTechnologies.Load(new ShippedTechnologyEntry(entry.Id, entry.ResourceName!));
+
+        string path = entry.FilePath!;
+        var disk = MaterialLibraries.Disk(path);
+        bool fellBack = false;
+        var loader = disk with
+        {
+            Locate = reference =>
+            {
+                string located = disk.Locate(reference);
+                if (!MissingGeneric(reference, located)) return located;
+                fellBack = true;
+                return MaterialLibraries.Shipped.Locate(reference);
+            },
+            Read = id => id.StartsWith(MaterialLibraries.ShippedPrefix, StringComparison.Ordinal)
+                ? MaterialLibraries.Shipped.Read(id) : disk.Read(id),
+            ReadInterfaces = id => id.StartsWith(MaterialLibraries.ShippedPrefix, StringComparison.Ordinal)
+                ? MaterialLibraries.Shipped.ReadInterfaces!(id) : disk.ReadInterfaces?.Invoke(id),
+        };
+        var tech = TechPersistence.LoadFromFile(path, loader);
+        if (fellBack)
+            note = $"'{MaterialLibraries.ResolvePath(path, MaterialLibraries.GenericFileName)}' is missing, so "
+                 + $"'{Path.GetFileName(path)}' was read with circuitRF's built-in {MaterialLibraries.GenericFileName}.";
+        return tech;
+    }
+
+    /// <summary>A reference naming <see cref="MaterialLibraries.GenericFileName"/> by a bare relative name
+    /// whose file is not there — the one missing library whose content is known.</summary>
+    private static bool MissingGeneric(string reference, string located)
+        => !Path.IsPathRooted(Core.RefPath.ToNative(reference))
+        && string.Equals(Path.GetFileName(Core.RefPath.ToNative(reference)), MaterialLibraries.GenericFileName,
+                         StringComparison.OrdinalIgnoreCase)
+        && !File.Exists(located);
+
+    /// <summary>True when <paramref name="ctechPath"/> sits directly in <see cref="UserDirectory"/> —
+    /// where a technology is offered from, so where it must carry its libraries with it.</summary>
+    public static bool IsInUserDirectory(string ctechPath)
+        => string.Equals(
+            Path.TrimEndingDirectorySeparator(Path.GetDirectoryName(Path.GetFullPath(ctechPath)) ?? ""),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(UserDirectory)),
+            OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The libraries a technology at <paramref name="sourcePath"/> names by a RELATIVE reference, each
+    /// with the bytes it should be written with beside a copy of that technology — every path that writes
+    /// a <c>.ctech</c> into <see cref="UserDirectory"/> goes through this (brief-dfr26-3 R-dfr26-3-4).
+    /// A library present at the source is read from there. A missing
+    /// <see cref="MaterialLibraries.GenericFileName"/> takes the built-in bytes, since that file's content
+    /// is known and nothing is guessed. Any other missing library is a refusal naming it, returned in
+    /// <paramref name="refusal"/> before anything is written.
+    /// </summary>
+    public static IReadOnlyList<(string Reference, string Json)> LibrariesToCarry(
+        string sourcePath, IEnumerable<string>? references, out string? refusal)
+    {
+        refusal = null;
+        var list = new List<(string, string)>();
+        foreach (string reference in references ?? [])
+        {
+            if (Path.IsPathRooted(Core.RefPath.ToNative(reference))) continue;
+            string from = MaterialLibraries.ResolvePath(sourcePath, reference);
+            if (File.Exists(from))
+                list.Add((reference, File.ReadAllText(from)));
+            else if (MissingGeneric(reference, from))
+                list.Add((reference, MaterialLibraries.GenericRawJson()));
+            else
+            {
+                refusal = $"'{Path.GetFileName(sourcePath)}' names the material library '{reference}', which is not "
+                        + $"at '{from}'. Put the library there, or remove it from the technology, and try again.";
+                return [];
+            }
+        }
+        return list;
+    }
+
+    /// <summary>Writes each of <paramref name="libraries"/> where <paramref name="targetPath"/>'s own
+    /// reference lands, never over a file already there — that one is the user's.</summary>
+    public static void WriteLibrariesBeside(string targetPath, IReadOnlyList<(string Reference, string Json)> libraries)
+    {
+        foreach (var (reference, json) in libraries)
+        {
+            string to = MaterialLibraries.ResolvePath(targetPath, reference);
+            if (File.Exists(to)) continue;
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.WriteAllText(to, json);
+        }
+    }
 
     /// <summary>
     /// The still-authored JSON bytes — what <see cref="Workspace.WorkspaceCreate"/> writes verbatim
@@ -196,7 +291,8 @@ public static class TechnologyCatalog
     /// what <see cref="Workspace.WorkspaceCreate"/> copies beside the technology so the copied
     /// <c>.ctech</c>'s references still resolve on disk (brief-em3d-53 R-em3d53-1c). An absolute
     /// reference is not copied: it already names one file wherever the copy lands. Throws for a named
-    /// library that cannot be read, before anything is written.
+    /// library that cannot be read, before anything is written — except a user technology's missing
+    /// <see cref="MaterialLibraries.GenericFileName"/>, which takes the built-in bytes.
     /// </summary>
     public static IReadOnlyList<(string Reference, string Json)> LibraryFiles(TechnologyCatalogEntry entry)
     {
@@ -205,9 +301,16 @@ public static class TechnologyCatalog
         foreach (string reference in refs)
         {
             if (Path.IsPathRooted(Core.RefPath.ToNative(reference))) continue;
-            string json = entry.Origin == TechnologyOrigin.Shipped
-                ? MaterialLibraries.ShippedRawJson(Path.GetFileName(Core.RefPath.ToNative(reference)))
-                : File.ReadAllText(MaterialLibraries.ResolvePath(entry.FilePath!, reference));
+            string json;
+            if (entry.Origin == TechnologyOrigin.Shipped)
+                json = MaterialLibraries.ShippedRawJson(Path.GetFileName(Core.RefPath.ToNative(reference)));
+            else
+            {
+                // R-dfr26-3-4: a user technology missing its generic library takes the built-in one,
+                // as Load does, so the workspace copy resolves rather than the import failing.
+                string from = MaterialLibraries.ResolvePath(entry.FilePath!, reference);
+                json = MissingGeneric(reference, from) ? MaterialLibraries.GenericRawJson() : File.ReadAllText(from);
+            }
             list.Add((reference, json));
         }
         return list;
@@ -254,6 +357,18 @@ public static class TechnologyCatalog
                 $"'{Path.GetFileName(sourcePath)}' could not be read as a technology: {e.Message}");
         }
 
+        // brief-dfr26-3 R-dfr26-3-4: the libraries it names by a relative reference come with it — read
+        // BEFORE anything is written, so a refusal leaves no half-installed technology behind.
+        IReadOnlyList<(string Reference, string Json)> libraries;
+        string? missing;
+        try { libraries = LibrariesToCarry(sourcePath, tech.MaterialLibraries, out missing); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new TechnologyInstallResult(null,
+                $"A material library '{Path.GetFileName(sourcePath)}' names could not be read: {e.Message}");
+        }
+        if (missing is not null) return new TechnologyInstallResult(null, missing);
+
         if (Find(id) is { } clash)
             return new TechnologyInstallResult(null, clash.IsUserInstalled
                 ? $"A technology called '{id}' is already installed. Remove it first, or rename the file you are "
@@ -273,17 +388,7 @@ public static class TechnologyCatalog
 
             // brief-em3d-53: the libraries it names by a relative reference come with it, or the
             // installed copy would refuse to load for want of a file left behind.
-            foreach (string reference in tech.MaterialLibraries ?? [])
-            {
-                if (Path.IsPathRooted(Core.RefPath.ToNative(reference))) continue;
-                string from = MaterialLibraries.ResolvePath(sourcePath, reference);
-                string to = MaterialLibraries.ResolvePath(target, reference);
-                if (File.Exists(from) && !File.Exists(to))
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
-                    File.Copy(from, to);
-                }
-            }
+            WriteLibrariesBeside(target, libraries);
 
             return new TechnologyInstallResult(
                 new TechnologyCatalogEntry(id, tech.Name, TechnologyOrigin.User, ResourceName: null, target),
