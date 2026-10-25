@@ -147,7 +147,9 @@ public sealed class TestPadModel : ComponentModel, IReportsWarnings
     {
         var g = Geometry;
         // ABCD of the chain from pin 1 to pin 2: series L segments with each plane's shunt barrel C and each unused
-        // pad's C between them, at their points along the via, then the pad's shunt C at pin 2.
+        // pad's C between them, at their points along the via. The pad's shunt C at pin 2 is added to Y22 afterwards,
+        // not chained: a side-fed pad has no via, so B is only the series floor and A = 1 + B·jωC rounds to 1 — the
+        // chained pad would vanish from A/B.
         Complex a = 1, b = 0, c = 0, d = 1;
         void Series(Complex z) { b += a * z; d += c * z; }
         void Shunt(Complex y) { a += b * y; c += d * y; }
@@ -168,11 +170,9 @@ public sealed class TestPadModel : ComponentModel, IReportsWarnings
             }
             Series(new Complex(0, omega * l * (g.ViaLength - at) / g.ViaLength));
         }
-        Shunt(new Complex(0, omega * g.PadCapacitance));
-
         b = ViaModel.SeriesFloor(b);
-        // Reciprocal (AD − BC = 1): Y = [D/B, −1/B; −1/B, A/B].
-        return (d / b, -1 / b, a / b);
+        // Reciprocal (AD − BC = 1): Y = [D/B, −1/B; −1/B, A/B]; a shunt at pin 2 adds to Y22 alone.
+        return (d / b, -1 / b, a / b + new Complex(0, omega * g.PadCapacitance));
     }
 
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)

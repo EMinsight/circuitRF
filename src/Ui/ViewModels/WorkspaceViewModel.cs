@@ -7187,20 +7187,34 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Directory.CreateDirectory(techDir);
 
-            var tech = result.Starter switch
+            // A catalog technology or a picked file is copied from its own authored .ctech (R-misc-6's "one authored
+            // representation, not two"), and so are the material libraries it names by a relative reference, so the
+            // copy resolves from tech/ as the original did — WorkspaceCreate copies a New Workspace's the same way.
+            TechnologyCatalogEntry? source = result.Starter switch
+            {
+                NewTechnologyStarter.Catalog => TechnologyCatalog.Find(result.CatalogId)
+                    ?? throw new InvalidOperationException($"technology '{result.CatalogId}' is no longer installed"),
+                NewTechnologyStarter.File => new TechnologyCatalogEntry(
+                    Path.GetFileNameWithoutExtension(result.FilePath!), "", TechnologyOrigin.User, null, result.FilePath),
+                _ => null,
+            };
+            var tech = source is not null ? TechnologyCatalog.Load(source) : result.Starter switch
             {
                 NewTechnologyStarter.Mmic  => StarterTechnologies.MmicGaAs(),
                 NewTechnologyStarter.Empty => StarterTechnologies.Empty(),
-                // The 4-layer starter exists only as an authored .ctech — R-misc-6's "one authored
-                // representation, not two". There is deliberately no Pcb4Layer() beside
-                // Pcb2Layer(): a C# transcription of it would be a second copy to drift.
-                NewTechnologyStarter.Pcb4  => ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz"),
                 _                          => StarterTechnologies.Pcb2Layer(),
             };
+            var libraries = source is not null ? TechnologyCatalog.LibraryFiles(source) : [];
             tech.Name = result.Name;
 
             var techPath = Path.Combine(techDir, $"{result.Name}.ctech");
             TechPersistence.SaveToFile(techPath, tech);
+            foreach (var (reference, json) in libraries)
+            {
+                string libPath = MaterialLibraries.ResolvePath(techPath, reference);
+                Directory.CreateDirectory(Path.GetDirectoryName(libPath)!);
+                if (!File.Exists(libPath)) File.WriteAllText(libPath, json);
+            }
 
             if (result.SetAsDefault)
             {

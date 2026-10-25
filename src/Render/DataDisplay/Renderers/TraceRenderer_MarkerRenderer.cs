@@ -551,6 +551,26 @@ namespace CircuitRF.Render.DataDisplay
         //  (PlotControl.Render) and passed in — never call GetTransparentAccent
         //  from inside a ICustomDrawOperation.Render which runs on the compositor thread.
 
+        /// <summary>
+        /// The clip a marker's glyph is drawn in: the plot box, raised at the top by the triangle and the name above
+        /// it when the marker's own data point is INSIDE the box. A marker on a trace that runs along the top edge
+        /// otherwise lost its whole glyph to the clip, though its point was in view; a marker panned out of view is
+        /// still cut by the box, which is what the clip is for.
+        /// </summary>
+        public static SKRect GlyphClip(SKRect viewportClip, Marker marker, Trace trace, TransformSet tf,
+                                       (double W, double H) canvasSize)
+        {
+            var dl = trace.GetMarkerDataLocation(marker);
+            if (!tf.XIsPlottable(dl.X)) return viewportClip;
+            var px = tf.ToCanvas(dl.X, dl.Y, trace.UseSecondaryAxis);
+            if (px.X < viewportClip.Left || px.X > viewportClip.Right || px.Y < viewportClip.Top || px.Y > viewportClip.Bottom)
+                return viewportClip;
+            float ts = SymbolTextSize(marker, canvasSize);
+            var raised = viewportClip;
+            raised.Top -= 2 * ts + 6f;
+            return raised;
+        }
+
         public static void DrawSymbol(
             SKCanvas             canvas,
             (double W, double H) canvasSize,

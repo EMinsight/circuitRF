@@ -1308,6 +1308,14 @@ public static class ComponentTypeRegistry
     /// a matter of adding it here, but only where a parameter is genuinely independent of its
     /// neighbours.</para>
     /// </summary>
+    /// <summary>
+    /// True when this type's own default for <paramref name="parameterName"/> is EMPTY — a row such as a test pad's
+    /// <c>ClearD</c> or a via's <c>Drill</c>, where empty means "follow the technology". Clearing such a row is a value
+    /// the user can choose, not a typing slip to revert.
+    /// </summary>
+    public static bool HasEmptyDefault(SymbolKind kind, string parameterName)
+        => DefaultParameters(kind, 2).Any(d => string.Equals(d.Name, parameterName, StringComparison.Ordinal) && d.Expression.Length == 0);
+
     public static bool IsRemovableParameter(SymbolKind kind, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(parameterName)) return false;
@@ -3834,6 +3842,10 @@ public static class ComponentTypeRegistry
                 ViaSubstrateInjection.GroundLayerParam => LayerChoiceKind.Ground,
                 _ => null,
             };
+        // A test pad's conductor and its via's far end take any conductor, as a via's two ends do. ClearLayers names
+        // several, so it stays text.
+        if (kind == SymbolKind.TestPad)
+            return paramName is TestPadInjection.PadLayerParam or TestPadInjection.ViaFromParam ? LayerChoiceKind.Signal : null;
         // A broadside pair's two strips each take a signal conductor.
         if (BroadsideSubstrateInjection.IsBroadsideKind(kind))
             return BroadsideSubstrateInjection.LayerParams.Contains(paramName) ? LayerChoiceKind.Signal : null;

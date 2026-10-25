@@ -638,6 +638,31 @@ public sealed class PanAndMarkerLabelTests : IDisposable
         Assert.True(inside > 0, "the marker glyph must still be drawn when its data point is in view");
     }
 
+    /// <summary>A marker on a trace that runs along the TOP edge of the box: its point is in view, so its triangle and
+    /// name rise above the edge rather than being cut off whole (designer round 27).</summary>
+    [Fact]
+    public void MarkerGlyph_PointInViewAtTheTopEdge_DrawsAboveTheBox()
+    {
+        var plot = new Plot(PlotType.Rect, FreqUnit.GHz);
+        var trace = SweptTrace(PlotType.Rect);
+        plot.Traces.Add(trace);
+        var marker = new Marker(trace, Freqs[2], isMulti: false, isDelta: false, index: 1);
+        double y = trace.GetMarkerDataLocation(marker).Y;
+        plot.Axes.Window = new PlotRect(1.0, y - 39.5, 4.0, 40.0);   // the point half a dB under the top
+
+        using var withoutMarker = Render(plot);
+        trace.Markers.Add(marker);
+        using var withMarker = Render(plot);
+
+        var clip = PlotRenderer.ViewportClipRect(plot.Axes.Viewport, Canvas);
+        int above = 0;
+        for (int py = 0; py < (int)clip.Top; py++)
+        for (int px = (int)clip.Left; px <= (int)clip.Right; px++)
+            if (withoutMarker.GetPixel(px, py) != withMarker.GetPixel(px, py)) above++;
+
+        Assert.True(above > 0, "the glyph of a marker whose point is in view must not be clipped at the top edge");
+    }
+
     /// <summary>Smith/Polar exception: the clip is the SQUARE viewport that bounds the chart
     /// circle, so a marker outside the unit circle but inside that square still renders — the
     /// owner's "allowed to pan into the corners of the circle".</summary>

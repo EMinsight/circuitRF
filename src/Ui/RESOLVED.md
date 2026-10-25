@@ -40565,3 +40565,26 @@ a group still share one, since that placement's own artwork moved with them. Onl
 
 Gates: `tests/Ui.Tests/Layout/RatsnestRound26Tests.cs` — Cut then Paste fails on the old taken-set rule, and the
 held-back-read test fails on the old overlay.
+
+## Designer round 27 (2026-10-25): parameter rows that could not be emptied, New Technology's starters, marker card
+
+- **An emptied parameter row reverted.** `ParameterRowViewModel.CommitExpression` treats an empty box as a typing slip
+  for an ordinary parameter, which is right for `R` but wrong for every row whose type DEFAULTS it to empty — a TESTPAD's
+  `ClearLayers`/`ClearD`/`Drill`/…, a VIA's dimensions — where empty means "follow the technology". Once a value was
+  typed there it could never be taken back out. `ComponentTypeRegistry.HasEmptyDefault` now says which rows those are,
+  from the type's own defaults, and the commit lets them through.
+- **TESTPAD's `PadLayer` and `ViaFrom` are conductor pickers** (`LayerChoiceKindFor`), as a VIA's ends are. Typed, a
+  name that missed ("Top Copper" for "Top Copper (1 oz)") fell back to the bottom conductor with only a Messages line.
+  `ClearLayers` names several and is still text.
+- **New Technology offered four hard-coded radio buttons**, so a technology circuitRF ships (the ten-layer stackup) or
+  the user installed could only start a new WORKSPACE, never a technology in an existing one; the row also overflowed
+  the 420 px dialog. It is now a list: the three C# starters, then every `TechnologyCatalog.All` entry by its own name,
+  then a `.ctech` file. A catalog or file starter is copied with the material libraries it names relatively, as
+  `WorkspaceCreate` copies one, so the copy resolves from `tech/`.
+- **The marker card has a close button.** It is a flyout's content from both places it opens, so the button closes
+  the logical-ancestor `Popup`; the flyout follows.
+- **The Plot Inspector's footer Close became a ✕ in the corner, on the flyout only.** The view model is shared with
+  the Properties panel (one per plot), so whether there is a popup to close is a fact about the VIEW:
+  `PlotInspectorView.IsFlyout`, set by `PlotControl.ShowPlotInspector`. The ✕ shares its line with the centred
+  plot-type row; a plot of fixed type hides that row and the next one has buttons at its right end, which the ✕
+  covered, so in that case the rows step down by the button's height (`UpdateCloseRoom`).

@@ -5307,3 +5307,11 @@ as well as the GPU. `TraceRenderer.AppendClippedCircle` keeps each circle to the
 is still `AddCircle`; a larger one contributes only its arcs inside the box, sampled in double precision
 (`TransformSet.ToCanvasPrecise`) with a 0.05 px chord sag. Gate: the second test in
 `OutOfRangeLineTests`, which draws those two circles at 1600 px and fails without the fix.
+
+## A marker at the top edge lost its glyph (designer round 27, 2026-10-25)
+
+The marker glyph is clipped to the plot box so a marker PANNED out of view stops at the axes (the 2026-08-21 fix). The
+triangle and name sit ABOVE the data point, so a marker on a trace running along the top edge had its point in view
+and its whole glyph clipped away. `MarkerRenderer.GlyphClip` raises the clip's top by the glyph's height when the data
+point is inside the box, and returns the box unchanged otherwise. Gate:
+`PanAndMarkerLabelTests.MarkerGlyph_PointInViewAtTheTopEdge_DrawsAboveTheBox` (fails with the plain box clip).

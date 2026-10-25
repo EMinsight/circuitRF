@@ -175,7 +175,8 @@
     <Border Background="{DynamicResource SystemChromeMediumLowColor}"
             CornerRadius="8"
             Padding="10">
-        <StackPanel Spacing="6">
+        <Grid>
+        <StackPanel x:Name="InspectorRows" Spacing="6">
 
             <!-- ── §B Row 1: Segmented plot-type header (centered) ─────────
                  HIDDEN on a fixed read-out (Plot.IsFixedReadout): that plot is the kind it is, and
@@ -2055,13 +2056,26 @@
                 </Border>
             </ScrollViewer>
 
-            <!-- ── Footer ─────────────────────────────────────────────────── -->
-            <Separator/>
-            <Button Content="Close"
-                    Command="{Binding CloseCommand}"
-                    HorizontalAlignment="Center"
-                    HorizontalContentAlignment="Center"
-                    Padding="12,4,12,4"/>
         </StackPanel>
+
+        <!-- The flyout's close button, the marker card's ✕. Shown only when PlotControl opens this view as a
+             flyout (IsFlyout): the Properties panel hosts the same view model and has no popup to close. It sits
+             beside the centred plot-type row; when that row is hidden the rows step down to give it room
+             (PlotInspectorView.UpdateCloseRoom), or it would cover the row's right-hand buttons. -->
+        <Button x:Name="FlyoutCloseButton"
+                Content="✕"
+                Command="{Binding CloseCommand}"
+                IsVisible="False"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,-6,-6,0"
+                FontSize="10"
+                Padding="5,2"
+                MinWidth="0"
+                Height="22"
+                VerticalContentAlignment="Center"
+                Background="Transparent"
+                ToolTip.Tip="Close"/>
+        </Grid>
     </Border>
 </UserControl>

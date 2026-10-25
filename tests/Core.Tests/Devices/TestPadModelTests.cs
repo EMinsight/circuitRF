@@ -51,6 +51,25 @@ public class TestPadModelTests
         Assert.True(Yin(f0 * 0.999).Magnitude > 100 * Yin(f0 * 0.5).Magnitude);
     }
 
+    /// <summary>A side-fed pad has no via, so its two pins are one node and the pad is a plain shunt C there. It was
+    /// once chained through the ABCD with only the series floor in front of it, and A/B dropped it entirely.</summary>
+    [Fact]
+    public void SideFedPad_IsItsShuntCapacitance()
+    {
+        var model = Assert.IsType<TestPadModel>(ComponentModelFactory.TryCreate("TESTPAD", new Dictionary<string, Value>
+        {
+            ["D"] = new(1.5e-3), ["Hpad"] = new(71e-6), ["Erpad"] = new(4.4),
+        }));
+        double omega = 2 * Math.PI * 2.44e9;
+        var (y11, y12, y22) = model.Admittance(omega);
+
+        // The total admittance to ground of the joined pins: Y11 + 2·Y12 + Y22.
+        Complex shunt = y11 + 2 * y12 + y22;
+        double c = model.Geometry.PadCapacitance;
+        Assert.True(c > 1e-12);
+        Assert.Equal(omega * c, shunt.Imaginary, omega * c * 1e-6);
+    }
+
     [Fact]
     public void APlaneInClearLayers_TakesClearD_AndTheOthersTheirOwnClearance()
     {

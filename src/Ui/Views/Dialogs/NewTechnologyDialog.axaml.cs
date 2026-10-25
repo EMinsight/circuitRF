@@ -1,24 +1,28 @@
+using System.Collections.Generic;
 using System.IO;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
+using CircuitRF.Design.Layout;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
-/// <summary>The starting point chosen in the New Technology dialog. <see cref="Pcb4"/> was added
-/// on a user report that most of their boards are 4-layer (2026-08-30); unlike the other three it
-/// resolves through <c>ShippedTechnologies</c> rather than a C# object initializer, which is
-/// R-misc-6's "one authored representation, not two" — see <c>OrphanTechnologyDialog</c>'s own note
-/// on the same choice.</summary>
-public enum NewTechnologyStarter { Pcb, Pcb4, Mmic, Empty }
+/// <summary>What a new technology is copied from. <see cref="Catalog"/> is any technology the catalog offers —
+/// shipped or user-installed (<c>TechnologyCatalog.All</c>), so a stackup circuitRF ships is offered here as it is by
+/// New Workspace; <see cref="File"/> is a <c>.ctech</c> the user picks.</summary>
+public enum NewTechnologyStarter { Pcb, Mmic, Empty, Catalog, File }
 
 /// <summary>
 /// Result returned by <see cref="NewTechnologyDialog"/> on OK. Name is the validated technology
 /// name (also used as the .ctech file stem — technology names, like cell names, are filesystem
 /// path components, so <see cref="NameValidator"/> is sufficient without a separate slug step).
+/// <paramref name="CatalogId"/> is set for <see cref="NewTechnologyStarter.Catalog"/>,
+/// <paramref name="FilePath"/> for <see cref="NewTechnologyStarter.File"/>.
 /// </summary>
-public sealed record NewTechnologyResult(string Name, NewTechnologyStarter Starter, bool SetAsDefault);
+public sealed record NewTechnologyResult(string Name, NewTechnologyStarter Starter, bool SetAsDefault,
+                                         string? CatalogId = null, string? FilePath = null);
 
 /// <summary>
 /// Custom "New Technology…" modal. Mirrors <see cref="NewWorkspaceDialog"/>'s return-or-null
@@ -29,7 +33,35 @@ public partial class NewTechnologyDialog : Window
 {
     private readonly string? _techDir;
 
-    public NewTechnologyDialog() => InitializeComponent();
+    /// <summary>One row of the starting-point list.</summary>
+    private sealed record StarterItem(string Label, NewTechnologyStarter Kind, string? CatalogId = null)
+    {
+        public override string ToString() => Label;
+    }
+
+    private static readonly StarterItem FromFileItem = new("From a .ctech file…", NewTechnologyStarter.File);
+    private StarterItem? _lastPicked;
+    private string? _pickedFile;
+    private bool _picking;
+
+    public NewTechnologyDialog()
+    {
+        InitializeComponent();
+        // The three built-in starters first, then every technology the catalog holds — shipped and the user's own —
+        // by its own name, then a file. The catalog is what New Workspace offers, so a stackup circuitRF ships is
+        // never missing here.
+        var items = new List<StarterItem>
+        {
+            new("PCB (2-layer) starter", NewTechnologyStarter.Pcb),
+            new("MMIC starter", NewTechnologyStarter.Mmic),
+            new("Empty", NewTechnologyStarter.Empty),
+        };
+        foreach (var e in TechnologyCatalog.All)
+            items.Add(new(e.IsUserInstalled ? $"{e.Name} (yours)" : e.Name, NewTechnologyStarter.Catalog, e.Id));
+        items.Add(FromFileItem);
+        StarterCombo.ItemsSource = items;
+        StarterCombo.SelectedIndex = 0;
+    }
 
     /// <param name="techDir">Absolute path of the workspace's tech/ folder (may not exist yet).</param>
     /// <param name="suggestedName">Initial name shown in the field, pre-selected.</param>
@@ -62,12 +94,39 @@ public partial class NewTechnologyDialog : Window
         if (NameValidator.Validate(name) is not null) return;
         if (_techDir is not null && File.Exists(Path.Combine(_techDir, $"{name}.ctech"))) return;
 
-        var starter = StarterMmicRadio.IsChecked == true ? NewTechnologyStarter.Mmic
-            : StarterEmptyRadio.IsChecked == true          ? NewTechnologyStarter.Empty
-            : StarterPcb4Radio.IsChecked == true           ? NewTechnologyStarter.Pcb4
-            : NewTechnologyStarter.Pcb;
+        if (StarterCombo.SelectedItem is not StarterItem item) return;
+        if (item.Kind == NewTechnologyStarter.File && _pickedFile is null) return;
 
-        Close(new NewTechnologyResult(name, starter, SetAsDefaultCheck.IsChecked == true));
+        Close(new NewTechnologyResult(name, item.Kind, SetAsDefaultCheck.IsChecked == true,
+                                      item.CatalogId, item.Kind == NewTechnologyStarter.File ? _pickedFile : null));
+    }
+
+    /// <summary>Choosing the file row opens the picker at once; cancelling it puts the previous row back, so the
+    /// list never rests on a file row with no file.</summary>
+    private async void OnStarterChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_picking || StarterCombo is null || StarterCombo.SelectedItem is not StarterItem item) return;
+        if (item.Kind != NewTechnologyStarter.File) { _lastPicked = item; UpdateView(); return; }
+
+        _picking = true;
+        try
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Start From a Technology",
+                AllowMultiple = false,
+                FileTypeFilter = [new FilePickerFileType("circuitRF Technology") { Patterns = ["*.ctech"] }],
+            });
+            if (files.Count > 0 && files[0].TryGetLocalPath() is { } path)
+            {
+                _pickedFile = path;
+                _lastPicked = item;
+            }
+            else
+                StarterCombo.SelectedItem = _lastPicked ?? (StarterCombo.ItemsSource as IList<StarterItem>)![0];
+        }
+        finally { _picking = false; }
+        UpdateView();
     }
 
     private void UpdateView()
@@ -85,7 +144,14 @@ public partial class NewTechnologyDialog : Window
         ValidationMessage.Text      = message;
         ValidationMessage.IsVisible = message is not null;
 
-        OkButton.IsEnabled = name.Length > 0 && message is null;
+        bool fileRow = StarterCombo?.SelectedItem is StarterItem { Kind: NewTechnologyStarter.File };
+        if (StarterFileLabel is not null)
+        {
+            StarterFileLabel.Text      = fileRow && _pickedFile is not null ? _pickedFile : "";
+            StarterFileLabel.IsVisible = fileRow && _pickedFile is not null;
+        }
+
+        OkButton.IsEnabled = name.Length > 0 && message is null && (!fileRow || _pickedFile is not null);
 
         if (name.Length > 0 && message is null)
         {

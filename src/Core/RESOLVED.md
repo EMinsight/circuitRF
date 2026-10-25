@@ -3858,3 +3858,13 @@ identity with the junction-only stamp).
   The injection writes the technology's value into it when empty and no longer writes `Bp`.
 - **The model's stub on the board config is 1.76 pF against the solve's 1.45 (+21 %)**: the designer's pad formula
   (1.54 pF) ignores the antipad under the pad's centre, which the brief left out of scope.
+
+## A side-fed TESTPAD stamped nothing (designer round 27, 2026-10-25)
+
+- **Symptom**: with `Feed` = N, E, S or W the pad changed nothing — S21 through a line carrying one was the bare line's,
+  though the run's note named its 1.54 pF.
+- **Cause**: `TestPadModel.Admittance` chained the pad's shunt C at the end of the via's ABCD and converted with the
+  reciprocal form `Y = [D/B, −1/B; −1/B, A/B]`. A side-fed pad has no via, so `B` is only `ViaModel.SeriesFloor`'s
+  1e-9 and `A = 1 + B·jωC` is exactly 1 in floating point: the C lived only in `C`, which that form never reads.
+- **Fix**: the pad's admittance is added to `Y22` after the conversion — exact for any `B`, since a shunt at port 2
+  adds to `Y22` alone. Via-fed results are unchanged. Test: `TestPadModelTests.SideFedPad_IsItsShuntCapacitance`.

@@ -102,10 +102,21 @@
             Padding="10">
         <StackPanel Spacing="8">
 
-            <!-- Name — label + box on one row -->
-            <Grid ColumnDefinitions="Auto,8,*">
+            <!-- Name — label + box on one row, and the card's close button. A click outside also closes it,
+                 but switching Multi or Δ re-lays the plot under the pointer and that is not obvious. -->
+            <Grid ColumnDefinitions="Auto,8,*,4,Auto">
                 <TextBlock Grid.Column="0" Text="Marker Name" Classes="label"/>
                 <TextBox  Grid.Column="2" Text="{Binding Name}"/>
+                <Button   Grid.Column="4"
+                          Content="✕"
+                          FontSize="10"
+                          Padding="5,2"
+                          MinWidth="0"
+                          Height="22"
+                          VerticalContentAlignment="Center"
+                          Background="Transparent"
+                          ToolTip.Tip="Close"
+                          Click="OnCloseClick"/>
             </Grid>
 
             <!-- Frequency — committed on Enter, snapped to nearest data point;

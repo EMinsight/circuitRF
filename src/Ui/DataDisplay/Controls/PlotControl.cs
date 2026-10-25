@@ -769,7 +769,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             _inspectorVm = ContainerProvider?.Invoke()?.Inspector
                            ?? new PlotInspectorViewModel(_plot, () => { }, _library);
 
-            // Point the shared inspector's Close button at this flyout while it is open.
+            // Point the shared inspector's close (the flyout's ✕) at this flyout while it is open.
             _inspectorVm.SetCloseAction(() => _inspectorFlyout?.Hide());
             _inspectorVm.PlotNeedsRedraw += OnInspectorPlotNeedsRedraw;
 
@@ -778,7 +778,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             _inspectorVm.ColorPickStarted += OnInspectorColorPickStarted;
             _inspectorVm.ColorPickEnded   += OnInspectorColorPickEnded;
 
-            var view = new PlotInspectorView { DataContext = _inspectorVm };
+            var view = new PlotInspectorView { DataContext = _inspectorVm, IsFlyout = true };
             _inspectorView = view;
 
             var (flyoutAnchor, hOffset, vOffset) = ComputeStableAnchor(

@@ -867,7 +867,8 @@ public sealed partial class ParameterRowViewModel : ObservableObject
 
     /// <summary>Commit the staged expression to the model (no-op if unchanged). An empty expression
     /// is a no-op for every ordinary parameter (clearing a field reverts to the prior value on the
-    /// next refresh) — EXCEPT a layer-choice parameter (R-tec-8), where empty is itself a meaningful,
+    /// next refresh) — EXCEPT a layer-choice parameter (R-tec-8), or a row whose type defaults it to
+    /// empty (<see cref="ComponentTypeRegistry.HasEmptyDefault"/>), where empty is itself a meaningful,
     /// committable value ("follow the technology" / "(Default)").</summary>
     public void CommitExpression()
     {
@@ -878,7 +879,8 @@ public sealed partial class ParameterRowViewModel : ObservableObject
 
         string expr = StagedExpression.Trim();
         if (expr == _param.Expression) return;
-        if (expr.Length == 0 && !IsLayerChoiceParam && _blankChoiceLabel is null) return;
+        if (expr.Length == 0 && !IsLayerChoiceParam && _blankChoiceLabel is null
+            && !ComponentTypeRegistry.HasEmptyDefault(_ownerSymbol, _param.Name)) return;
         if (TryRetuneLineFrequency(expr, _param.Unit)) return;
         _schematicVm.Execute(new EditParameterCommand(_schematicVm.EditModel, _param, expr, _param.Unit));
     }

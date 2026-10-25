@@ -538,9 +538,10 @@ namespace CircuitRF.Render.DataDisplay
                         // unclipped its triangle and name kept going, over the tick labels and
                         // outside the axes entirely. On Smith/Polar the viewport is the SQUARE
                         // that bounds the chart circle, so this clip still lets a marker sit in
-                        // the corners outside the circle — which is what those plots want.
+                        // the corners outside the circle — which is what those plots want. A marker whose
+                        // point IS in view keeps its glyph above the top edge (MarkerRenderer.GlyphClip).
                         canvas.Save();
-                        canvas.ClipRect(viewportClip);
+                        canvas.ClipRect(MarkerRenderer.GlyphClip(viewportClip, marker, trace, tf, canvasSize));
                         MarkerRenderer.DrawSymbol(canvas, canvasSize, marker, trace, tf, theme,
                             isSelected:     selectedMarkers?.Contains(marker) ?? false,
                             selectionColor: selectionColor);

@@ -30,6 +30,14 @@ its `Items`, never the instance (`NativeMenu.SetMenu` a second time on the same 
 crash on a later dispatcher-queued reset even when the throw itself is swallowed). See
 `src/Ui/RESOLVED.md`'s harmonicaRF R3A entry.
 
+**Prefer a picker to a text box whenever the valid values can be listed** (owner rule, 2026-10-25). Before
+adding a `TextBox` for a value, ask whether the set of acceptable answers is known — a stackup conductor, a
+technology, a cell, a port, an enum — and if it is, offer a `ComboBox` (or a checklist for several values)
+instead. A typed name that does not match is a silent wrong answer (a TESTPAD `PadLayer` of "Top Copper"
+against a conductor called "Top Copper (1 oz)" fell back to the bottom layer); a picker makes the misspelling
+impossible. The parameter dialog already has the machinery: `ComponentTypeRegistry.LayerChoiceKindFor` for
+conductor names, `EnumParamOptions` for fixed sets.
+
 **A ComboBox selection pushed from a view-model notification must be assigned AFTER its items, in the
 same code path.** A XAML `ItemsSource` binding is attached when the DataContext reaches the ComboBox —
 *after* a code-behind handler subscribed in `OnDataContextChanged` — so a handler that sets

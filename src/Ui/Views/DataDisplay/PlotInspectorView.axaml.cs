@@ -22,6 +22,24 @@ public partial class PlotInspectorView : UserControl
         _traceScrollViewer = this.FindControl<ScrollViewer>("TraceScrollViewer");
     }
 
+    /// <summary>True when this view is a flyout's content, which shows the ✕ in its corner. The view model is shared
+    /// with the Properties panel, so this is a fact about the VIEW, set by the host that made it.</summary>
+    public bool IsFlyout
+    {
+        get => FlyoutCloseButton.IsVisible;
+        set { FlyoutCloseButton.IsVisible = value; UpdateCloseRoom(); }
+    }
+
+    /// <summary>The ✕ shares the top line with the centred plot-type row. A plot of fixed type hides that row, and
+    /// the next one has buttons at its right end, so the rows step down by the button's height.</summary>
+    private void UpdateCloseRoom()
+    {
+        if (InspectorRows is null || FlyoutCloseButton is null) return;   // before InitializeComponent
+        InspectorRows.Margin = IsFlyout && _vm is { CanChangePlotType: false }
+            ? new Thickness(0, FlyoutCloseButton.Height + 2, 0, 0)
+            : default;
+    }
+
     // Plot-type Help: open the Reference Guide's Plot Types chapter at the current type.
     private void OnPlotTypeHelp(object? sender, RoutedEventArgs e)
     {
@@ -46,6 +64,7 @@ public partial class PlotInspectorView : UserControl
 
         if (_vm is not null)
             _vm.Traces.CollectionChanged += OnTracesCollectionChanged;
+        UpdateCloseRoom();
     }
 
     /// <summary>

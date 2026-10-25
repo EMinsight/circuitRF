@@ -59,6 +59,23 @@ public sealed class TestPadRound26Tests : IDisposable
 
     // ── Test 1: artwork ──────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Designer round 27: the pad's two conductor rows are pickers of the stackup's conductors, so a name that
+    /// misses (a "Top Copper" for "Top Copper (1 oz)") cannot be typed; and every row whose own default is empty can be
+    /// emptied again in the dialog, since empty there means "follow the technology".</summary>
+    [Fact]
+    public void ConductorRowsArePickers_AndEmptyDefaultRowsCanBeCleared()
+    {
+        Assert.Equal(ComponentTypeRegistry.LayerChoiceKind.Signal,
+                     ComponentTypeRegistry.LayerChoiceKindFor(SymbolKind.TestPad, "PadLayer"));
+        Assert.Equal(ComponentTypeRegistry.LayerChoiceKind.Signal,
+                     ComponentTypeRegistry.LayerChoiceKindFor(SymbolKind.TestPad, "ViaFrom"));
+        Assert.Null(ComponentTypeRegistry.LayerChoiceKindFor(SymbolKind.TestPad, "ClearLayers"));
+
+        foreach (string row in new[] { "ClearLayers", "ClearD", "Drill", "FeedW", "InnerPadD", "AntipadD", "PortNum" })
+            Assert.True(ComponentTypeRegistry.HasEmptyDefault(SymbolKind.TestPad, row), row);
+        Assert.False(ComponentTypeRegistry.HasEmptyDefault(SymbolKind.TestPad, "D"));
+    }
+
     [Fact]
     public void ViaFed_DrawsThePadOnPadLayer_TheDrillOnTheThroughSpan_AndNothingBetween()
     {
