@@ -1,6 +1,6 @@
 # circuitRF
 
-**Cross-platform EDA tool for RF design — for the RF community, by the RF community.**
+**EDA tool for RF design — for the RF community, by the RF community.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
@@ -22,8 +22,6 @@ electromagnetic solver** over the layout's own substrate stackup. **3D editor** 
 
 circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; academic researchers; and capable hobbyists.** It is written in **C# / .NET 10**, with an **Avalonia 12** GUI rendered through **SkiaSharp**, and it was built largely **AI-assisted** (see
 [AI-assisted development](#ai-assisted-development)).
-
-> **Status:** 1.5.5. Please file issues.
 
 ## Features
 - schematic + circuit simulation (DC, S-param, HB, Loadpull, Envelope)
@@ -82,29 +80,25 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 ## Download
 
-> **circuitRF 1.5.5 is the current stable release.** Beta versions are published as GitHub
-> pre-releases, and *Settings ▸ Security & Permissions ▸ Include beta releases* is what puts them on
-> your update channel. It is ticked by default — untick it to receive stable releases only.
-
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.5.5-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.5/circuitRF-1.5.5-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.5.5-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.5/circuitRF-1.5.5-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.5.5-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.5/circuitRF-1.5.5-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.5.6-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.6/circuitRF-1.5.6-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.5.6-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.6/circuitRF-1.5.6-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.5.6-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.6/circuitRF-1.5.6-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.5.5-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.5/circuitRF-1.5.5-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.5.5-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.5/circuitRF-1.5.5-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.5.6-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.6/circuitRF-1.5.6-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.5.6-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.6/circuitRF-1.5.6-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.5.5-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.5/circuitRF-1.5.5-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.5.5-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.5/circuitRF-1.5.5-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.5.6-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.6/circuitRF-1.5.6-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.5.6-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.6/circuitRF-1.5.6-linux-arm64.tar.gz) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.5.5-linux-x64.tar.gz
-./circuitRF-1.5.5/install.sh
+tar xzf circuitRF-1.5.6-linux-x64.tar.gz
+./circuitRF-1.5.6/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
@@ -171,9 +165,7 @@ exists. The layers, the engines, the enforced framework firewall and the source 
 
 ---
 
-## Getting started
-
-You can help develop circuitRF using **Windows**, **macOS**, or **Linux**.
+## Developing circuitRF - Getting started
 
 ### 1. Install the tools
 
@@ -379,20 +371,6 @@ the same reason. There are no screenshots in this documentation and there are no
 what the generator produces. Run it after a UI change that moves a figure. The design note is
 [`docs/design/user-docs-factory.md`](docs/design/user-docs-factory.md).
 
-### Slide decks
-
-The same sources also produce four landscape PDF decks into `docs/slides/` (git-ignored, a build
-product). Both options default to everything:
-
-```bash
-dotnet run --project tools/DocGen -- --slides docs/slides                                # all 4, light + dark
-dotnet run --project tools/DocGen -- --slides docs/slides --deck overview --theme dark
-```
-
-- `--deck overview | new-user | quick-start | reference` — why adopt it; first principles; the fast
-  path for engineers who already use simulators; the Reference Guide in outline. Comma-separated.
-- `--theme light | dark | both` — picks the **screenshots** as well as the page colour.
-
 ---
 
 ## Contributing
@@ -402,9 +380,8 @@ and **RF domain knowledge counts as much as software experience.** You don't nee
 programmer — MATLAB/Python scripting experience plus an AI assistant is plenty.
 
 **Good first contributions:**
-- Build a circuit in the schematic editor and **report what's confusing or broken**
-- Improve a design note in `docs/design/`, or a `CLAUDE.md`, where the docs lag the code.
-- Pick up a **roadmap** item (the noise green field is wide open).
+- Report Issues
+- Use AI Agent to report issues, resolve them and initiate pull requests (PR)
 
 **The ground rules:**
 - The [architecture](ARCHITECTURE.md) is layered and the **UI firewall is enforced** — keep Avalonia out of
@@ -414,7 +391,7 @@ programmer — MATLAB/Python scripting experience plus an AI assistant is plenty
 - The core is **MIT** — never ingest GPL code.
 - Each subsystem has a `CLAUDE.md` with its local conventions; read the relevant one before diving in.
 
-Open an issue to discuss anything substantial before a large PR, so we can point you at the right design
+Substantial issues or new features should be discussed before a large PR, so we can point you at the right design
 note (and save you rework).
 
 ---
