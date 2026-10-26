@@ -204,8 +204,11 @@ public sealed class Scene3DObject
 /// <para>brief-em3d-48 — an array element's object draws its prototype's range: <see cref="Element"/> says which element
 /// (−1 for none) and <see cref="Offset"/> is that element's translation, scene-local metres, which every reader of the
 /// vertex buffer adds (the GPU through the element's per-draw transform).</para>
+/// <para>brief-em3d-138 — <see cref="Free"/>: a slab's outline walls rebuilt round a conductor lying on them (Scene3DWalls). They
+/// coincide with nothing, so they draw with no polygon offset (<see cref="Scene3DFramePlan.TieOf(Scene3DModel, in Scene3DBatch)"/>);
+/// such a batch follows its object's other one directly.</para>
 public readonly record struct Scene3DBatch(uint ObjectId, int MaterialSlot, int FirstIndex, int IndexCount, bool Translucent,
-                                           int Element = -1, Vector3 Offset = default);
+                                           int Element = -1, Vector3 Offset = default, bool Free = false);
 
 /// <summary>An object's lines (a port's arrow, the box's edges): a line list of
 /// <see cref="VertexCount"/> vertices from <see cref="FirstVertex"/> in the line buffer.</summary>

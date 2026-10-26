@@ -333,6 +333,10 @@ public sealed class Scene3DFramePlan
             _ => Scene3DDepthTie.None,
         };
 
+    /// <summary>brief-em3d-138 — where batch <paramref name="b"/> stands: its object's tie, except a slab's free walls (Scene3DWalls),
+    /// which coincide with nothing and take no polygon offset — a face ending on a biased face leaks within the bias.</summary>
+    public static Scene3DDepthTie TieOf(Scene3DModel scene, in Scene3DBatch b) => b.Free ? Scene3DDepthTie.None : TieOf(scene, b.ObjectId);
+
     /// <summary>The lowest and highest tie, for a backend that makes one state per tie (D3D11's rasterizer states).</summary>
     public const Scene3DDepthTie TieMin = Scene3DDepthTie.Underlay, TieMax = Scene3DDepthTie.Field;
 
@@ -503,7 +507,7 @@ public sealed class Scene3DFramePlan
                 var b = batches[k];
                 if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
                     Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount,
-                        tie: TieOf(scene, b.ObjectId));
+                        tie: TieOf(scene, b));
             }
             for (int e = 0; e < _elements; e++)
             {
@@ -518,7 +522,7 @@ public sealed class Scene3DFramePlan
                     if (whole && !b.Translucent) continue;
                     if (view.IsVisible(b.ObjectId) && scene.Objects[b.ObjectId - 1].Pickable && preview?.IsMoving(b.ObjectId) != true)
                         Add(ref PickDraws, ref PickDrawCount, Scene3DPipeline.Pick, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, ElementSlot(e),
-                            TieOf(scene, b.ObjectId));
+                            TieOf(scene, b));
                 }
             }
         }
@@ -544,7 +548,7 @@ public sealed class Scene3DFramePlan
                 // brief-em3d-101 — an image sheet's colour IS its image: its own triangles stay in the ID and selection passes.
                 if (_surfaceOf[b.ObjectId - 1] >= 0) AddImage(scene, preview, _surfaceOf[b.ObjectId - 1], translucent: false);
                 else AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
-                              tie: TieOf(scene, b.ObjectId));
+                              tie: TieOf(scene, b));
             }
         }
         // brief-em3d-48 R-em3d48-3a — each element: ONE draw of its prototype's opaque triangles under its own transform
@@ -564,7 +568,7 @@ public sealed class Scene3DFramePlan
                 var b = batches[k];
                 if (!b.Translucent && !Faded(b.ObjectId) && view.IsDrawn(b.ObjectId))
                     AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, e,
-                             TieOf(scene, b.ObjectId));
+                             TieOf(scene, b));
             }
         }
         // brief-em3d-29 — the field's slice and surfaces, opaque, before anything translucent; at a coincident face the field
@@ -627,7 +631,7 @@ public sealed class Scene3DFramePlan
             var b = batches[_order[k]];
             if (_surfaceOf[b.ObjectId - 1] >= 0) AddImage(scene, preview, _surfaceOf[b.ObjectId - 1], translucent: true);
             else AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, b.Element,
-                          tie: TieOf(scene, b.ObjectId));
+                          tie: TieOf(scene, b));
         }
         ClearFaded();
     }
@@ -799,10 +803,10 @@ public sealed class Scene3DFramePlan
             var b = batches[_order[k]];
             if (_chromeOf[b.ObjectId - 1] == Material)
                 AddMoved(preview, b.ObjectId, Scene3DPipeline.PbrTranslucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
-                         b.Element, TieOf(scene, b.ObjectId));
+                         b.Element, TieOf(scene, b));
             else if (_surfaceOf[b.ObjectId - 1] >= 0) AddImage(scene, preview, _surfaceOf[b.ObjectId - 1], translucent: true);
             else AddMoved(preview, b.ObjectId, Scene3DPipeline.Translucent, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
-                          b.Element, TieOf(scene, b.ObjectId));
+                          b.Element, TieOf(scene, b));
         }
         ClearFaded();
     }
@@ -816,12 +820,12 @@ public sealed class Scene3DFramePlan
         if (_chromeOf[id - 1] == Material)
         {
             if (!_realTranslucent[id - 1])
-                AddMoved(preview, id, Scene3DPipeline.Pbr, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, element, TieOf(scene, id));
+                AddMoved(preview, id, Scene3DPipeline.Pbr, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, element, TieOf(scene, b));
             return;
         }
         if (b.Translucent) return;
         if (element < 0 && _surfaceOf[id - 1] >= 0) AddImage(scene, preview, _surfaceOf[id - 1], translucent: false);
-        else AddMoved(preview, id, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, element, TieOf(scene, id));
+        else AddMoved(preview, id, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true, element, TieOf(scene, b));
     }
 
     /// <summary>Whether an element's one opaque draw (its group's default-opaque objects) is all material the realistic view draws
@@ -1093,10 +1097,11 @@ public sealed class Scene3DFramePlan
                     Thicken(from);
                 }
                 if (view.Mode == Scene3DSelectMode.Face && _batchOf[id - 1] is int t and >= 0)
-                {
-                    var tb = batches[t];
-                    AddMoved(preview, id, Scene3DPipeline.OnTop, Scene3DBuffer.Scene, tb.FirstIndex, tb.IndexCount, identity: false, tb.Element);
-                }
+                    for (; t < batches.Length && batches[t].ObjectId == id; t++)
+                    {
+                        var tb = batches[t];
+                        AddMoved(preview, id, Scene3DPipeline.OnTop, Scene3DBuffer.Scene, tb.FirstIndex, tb.IndexCount, identity: false, tb.Element);
+                    }
             }
             for (int k = 0; k < limit; k++)
             {
@@ -1259,7 +1264,7 @@ public sealed class Scene3DFramePlan
         Array.Fill(_edgeOf, -1);
         Array.Fill(_batchOf, -1);
         for (int k = 0; k < scene.EdgeBatches.Length; k++) _edgeOf[scene.EdgeBatches[k].ObjectId - 1] = k;
-        for (int k = 0; k < scene.Batches.Length; k++) _batchOf[scene.Batches[k].ObjectId - 1] = k;
+        for (int k = scene.Batches.Length - 1; k >= 0; k--) _batchOf[scene.Batches[k].ObjectId - 1] = k;   // an object's first
         _surfaceOf = new int[scene.Objects.Length];
         Array.Fill(_surfaceOf, -1);
         for (int k = 0; k < scene.ImageBatches.Length; k++)

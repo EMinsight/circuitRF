@@ -5438,6 +5438,8 @@ Three artefacts on a 10-layer board in the 3D editor, two in the default view an
   fight-free on Metal. **`BehindSlopeScale` is now 1/16**, 8× that, for rasterisers with coarser sub-pixel precision
   (Vulkan only guarantees 4 bits). The shadow pass, which took `DepthBias(Behind)`, keeps its 2 as `ShadowSlopeScale`:
   acne wants the larger factor and nothing leaks there.
+  **Amended 2026-10-26 (brief-em3d-138, below):** 1/16 did not close it. The dots it left were the same leak, and carving
+  the walls is what closed them.
 - **Seen first through a build that had not been rebuilt.** A before/after A/B restored the fixed source and rendered
   with `--no-build`, so a later sweep drew the OLD geometry and looked like a new artefact; every rebuild was clean. An A/B
   that swaps a source file needs its rebuild in the same step as the swap.
@@ -5473,3 +5475,60 @@ Field report on the PowerAmplifier example: Gt_dB vs Pout_dBm plotted over Pin; 
 - Gate: `Ui.Tests/PlotVersusSweepGrowthTests` (Pin → +RFfreq → +VDD, and a fresh card on all three).
   `PlotVersusCardTests.TheSummaryTracksTheYSidesRoles_IncludingAPinnedValue` now sets its starting roles itself, since
   its [Pin, RFfreq] fixture seeds RFfreq as X.
+
+## A board's side walls: carved where copper reaches them, drawn with no bias (brief-em3d-138, 2026-10-26)
+
+Amends "The realistic dashes were the bias itself" above. Windows screenshots of a ten-layer board showed a dotted line of
+light pixels along each inner copper layer at the board's side, and they looked like a D3D11 fault. **They were the same
+leak, at 1× on every platform**: Metal drew 335 dots against Windows' 352, each one the lit copper top's own colour, and a
+high-DPI (2×) screen hides them because each dot covers a quarter of the area. Lowering the slope factor only thins the band
+(side-wall dots at 1/16 → 1/32 → 1/64 → 1/128: 195, 97, 49, 26), and at 0 the copper's side faces fight the wall. **Any face
+that ends on a biased face leaks.**
+
+- **`Scene3DWalls` carves; it doesn't bias.** It is a sibling of `Scene3DBores`, run after it on the bores' output. Where a
+  prism conductor (extruded polygon or box) has an edge collinear with a slab's outline edge, on the same side, that part of
+  the wall is not drawn, because the copper's side face is that surface. The wall round it coincides with nothing, so it
+  draws with no polygon offset. Its triangles come last in the mesh, and `Accumulator.Finish` gives them a second batch
+  right after the object's first, with `Scene3DBatch.Free` set. `Scene3DFramePlan.TieOf(scene, batch)` makes a free batch
+  `None`, and every colour/translucent/ID/moved-preview draw, `Scene3DPicking` and `Scene3DIdPatch` read the tie through
+  it. The shadow pass keeps `ShadowBias` for every draw. Side-wall dots on that board at its stored camera: **195 → 0**.
+  Two orthographic and two perspective views at other yaws also count 0. Every pixel that changed was a dot: 203 in the
+  realistic view, and in the default view the 132 columns where the hidden top thickened a band's edge by one pixel.
+- **A conductor just above or below a slab leaks too.** After the first carve, 26 dots remained, all along the bottom
+  copper. That copper lies UNDER the bottom slab and touches it only along a line, and its top face (on the slab's bottom
+  cap) ends on the wall the same way. Such a conductor is a cut of no height: it carves nothing, but it frees the wall
+  next to it and adds its vertices to the wall's.
+- **Freeing the whole wall leaked the other way.** Cull is off on every backend, so a free wall seen from behind met its
+  slab's still-biased cap along the rim. On the 1/16-px band of that shared edge the back face won, which showed as 12
+  dark dots along the board's far top edge. **Only the wall round each conductor is free.** That region is the cut grown
+  by the conductor's thickness (at most a quarter of the slab), and not grown along the wall for a cut of no height,
+  because there the band lies on the cap's rim and only the conductor covers it. The rest of a rebuilt wall keeps its
+  slab's bias. A free piece meets a biased piece in the same plane without overlapping it, so that seam can't leak.
+- **The wall is rebuilt as strips.** Heights come from the slab, each conductor and each free band. Each strip is
+  zippered between the breaks its two lines need: the caps' own vertices on the slab's top and bottom, every conductor
+  vertex on the wall's line at each height the conductor reaches, and every strip end above or below. So no conductor
+  vertex is a T-junction on a wall piece. **The caps are not touched**, so a conductor vertex on the slab's top or bottom
+  line is a T-junction on the cap's rim. Splitting the cap triangle there into a fan was tried and drew a dot of its own,
+  because the fan's slivers take a different slope-scaled bias. The T-junction it repaired drew nothing in any view
+  rendered.
+- **Conservative where it can't see the faces.** A wall keeps today's treatment (uncarved and biased) if any of these
+  touches it: a prism lying against it from outside; any other conductor shape whose bound reaches it (a sweep, a STEP
+  body, a sheet standing on its edge); or a vertical cylinder whose drawn ring meets what is left of the wall by more than
+  a point at a notch's end. That last rule lets a barrel standing in the notch `Scene3DBores` cut at the board's edge leave
+  the carve alone, while a cylinder tangent to the wall stops it.
+- **Edge lines and snap.** A carved slab's edge lines are found on its UNCARVED surface (`Accumulator.Object`'s
+  `edgeMesh`), so the rim round the copper is not an edge line and the cap/wall rim still is. The count is unchanged.
+  Snap features (`Scene3DFeatureTable`) are built from the carved mesh, so they gain the copper/dielectric boundary on the
+  wall, which is a real edge.
+- **Clip plane.** Caps are drawn from back faces, and the carved slab is no longer closed. Where the wall is missing the
+  copper fills that volume, and its back faces are the cap there. CPU realistic pictures clipped on x through the copper
+  band and on y beside it matched the uncarved slab's pixel for pixel, except for the old dots.
+- **Hiding the copper shows the slot.** The wall stays carved when a conductor is hidden or drawn as a wireframe, because
+  visibility is a view toggle and the carve is built with the scene. `Scene3DBores` behaves the same way for a barrel's pads.
+- **Cost.** A carved slab costs one more tessellation (its own surface, then the carve), once per prototype and never per
+  element. `HierarchyGateTests.Gate1` now counts it. A slab edit that keeps the carve's shape still patches.
+
+Gates: `MetalPrecedenceTests.TheRealisticView_ShowsNoHiddenCopperTop_AlongTheBoardsSide` (0 copper-top pixels at three
+yaws, where it allowed 10; 21 came through at −40° with the carve off) and `…_DrawsTheCoppersSide_AllAlongItsBandOnTheWall`;
+`BoardSideWallTests` (the strips and copper sides tile the wall with no copper vertex mid-edge; a tangent cylinder leaves the
+wall biased; a carved slab's two batches, their ties, picks on each, the edge-line count, and the patch).

@@ -26,12 +26,23 @@ public static class Scene3DFaces
         {
             var el = scene.Elements[o.Element];
             for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++)
-                if (scene.Batches[k].ObjectId == id) return (scene.Batches[k].FirstIndex, scene.Batches[k].IndexCount, scene.Batches[k].Offset);
+                if (scene.Batches[k].ObjectId == id) return Run(scene, k);
             return (0, 0, default);
         }
-        foreach (var b in scene.Batches)
-            if (b.ObjectId == id) return (b.FirstIndex, b.IndexCount, b.Offset);
+        for (int k = 0; k < scene.Batches.Length; k++)
+            if (scene.Batches[k].ObjectId == id) return Run(scene, k);
         return (0, 0, default);
+    }
+
+    /// <summary>brief-em3d-138 — the object's range from its batch <paramref name="k"/>: a slab's free walls are a second batch right
+    /// after its first, over the indices that follow.</summary>
+    private static (int First, int Count, Vector3 Offset) Run(Scene3DModel scene, int k)
+    {
+        var b = scene.Batches[k];
+        int count = b.IndexCount;
+        for (int j = k + 1; j < scene.Batches.Length && scene.Batches[j].ObjectId == b.ObjectId && scene.Batches[j].FirstIndex == b.FirstIndex + count; j++)
+            count += scene.Batches[j].IndexCount;
+        return (b.FirstIndex, count, b.Offset);
     }
 
     /// <summary>brief-em3d-75 — the triangles of face <paramref name="face"/> of object <paramref name="id"/>, scene-local

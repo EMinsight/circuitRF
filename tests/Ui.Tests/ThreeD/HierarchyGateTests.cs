@@ -67,7 +67,9 @@ public sealed class HierarchyGateTests : IDisposable
         int k = scene.Objects.Count(o => o.Element < 0 && o.Name.StartsWith("U1[0,0,0]/", StringComparison.Ordinal));
         Assert.True(k >= 1, string.Join(" ", scene.Notes));
         Assert.Equal(1, vm.ChildrenElaborated);
-        Assert.True(k == vm.TessellationMisses, $"{vm.TessellationMisses} tessellations for {k}: " +
+        // brief-em3d-138 — a slab whose wall a copper reaches costs two tessellations, still once per prototype: its own surface, then carved.
+        int carved = scene.Batches.Count(b => b.Free && b.Element < 0);
+        Assert.True(k + carved == vm.TessellationMisses, $"{vm.TessellationMisses} tessellations for {k} + {carved} carved: " +
             string.Join(", ", scene.Objects.Where(o => o.Element < 0).Select(o => o.Name)));   // the prototype's objects, once
         Assert.Equal(399, scene.Elements.Length);
         Assert.Equal(400 * k, scene.Objects.Count(o => o.Name.StartsWith("U1[", StringComparison.Ordinal)));
@@ -83,7 +85,7 @@ public sealed class HierarchyGateTests : IDisposable
         Settle(vm);
         Frame(v, plan);
         Assert.Equal(1, vm.ChildrenElaborated);
-        Assert.Equal(k, vm.TessellationMisses);
+        Assert.Equal(k + carved, vm.TessellationMisses);
         Assert.Equal(419, v.Scene.Elements.Length);
         var patch = Scene3DPatch.Between(before, v.Scene);
         Assert.NotNull(patch);

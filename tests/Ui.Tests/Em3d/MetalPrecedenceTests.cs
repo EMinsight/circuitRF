@@ -234,11 +234,9 @@ public sealed class MetalPrecedenceTests
         Assert.All(lines, v => Assert.Equal(lo.Z, v.Z, tol));
     }
 
-    /// <summary>A copper layer embedded in the slab above it and reaching the board's side: its top face meets the slab's
-    /// wall along that edge and is hidden. The realistic picture shows none of it — with the dielectric's slope factor at 2
-    /// the top face came through the wall as a lit line along the copper's edge (owner report, 2026-10-25).</summary>
-    [Fact]
-    public void TheRealisticView_ShowsNoHiddenCopperTop_AlongTheBoardsSide()
+    /// <summary>A copper layer embedded in the slab above it and reaching the board's side (0.6 mm either side of x = 0, on
+    /// y = −1 mm), its top face hidden; the realistic view of it, and the copper top's own colour from that view.</summary>
+    private static (Scene3DModel Scene, Viewer3DViewState View, Camera3D Cam, uint Copper) BoardSide(float yawDeg)
     {
         var materials = new[] { new Em3dMaterial("Sub", 4.4, null, 0, 1, 0), new Em3dMaterial("Cu", 1, null, 0, 1, 5.8e7) };
         Em3dSolid Slab(string name, double z0, double z1)
@@ -249,34 +247,68 @@ public sealed class MetalPrecedenceTests
 
         const int w = 480, h = 360;
         var cam = Camera3D.Fit(scene.ContentMin, scene.ContentMax, w / (float)h, Projection3D.Orthographic);
-        (cam.Yaw, cam.Pitch, cam.Distance) = (-60 * MathF.PI / 180, 35 * MathF.PI / 180, 0.8e-3f);
+        (cam.Yaw, cam.Pitch, cam.Distance) = (yawDeg * MathF.PI / 180, 35 * MathF.PI / 180, 0.8e-3f);
         cam.Target = scene.ToLocal(0, -1 * mm, 0.11 * mm);
         var look = new CircuitRF.Design.ThreeD.C3dLook { Shadows = false, AmbientOcclusion = false, Ground = false };
         var view = new Viewer3DViewState { Camera = cam, Realistic = true, Look = CircuitRF.Render.Scene3D.Look.RealisticLook.From(look) };
         view.Environment = CircuitRF.Render.Scene3D.Look.EnvironmentPrefilter.Studio(view.Look.Studio);
         view.Adopt(scene, null);
         Array.Fill(view.Visible, true);
-        uint copperId = scene.Objects.Single(o => o.Name == "copper").Id;
+        return (scene, view, cam, scene.Objects.Single(o => o.Name == "copper").Id);
+    }
 
-        byte[] Draw() => CircuitRF.Render.Scene3D.Look.RealisticPicture.Take(scene, view, null, w, h, supersample: 1).Rgba;
-        (int R, int G, int B) At(byte[] px, Vector3 world)
+    private const int SideW = 480, SideH = 360;
+
+    private static byte[] Draw(Scene3DModel scene, Viewer3DViewState view)
+        => CircuitRF.Render.Scene3D.Look.RealisticPicture.Take(scene, view, null, SideW, SideH, supersample: 1).Rgba;
+
+    private static (int R, int G, int B) At(byte[] px, Camera3D cam, Vector3 world)
+    {
+        var q = cam.Project(world, SideW, SideH);
+        int i = ((int)q.Y * SideW + (int)q.X) * 4;
+        return (px[i], px[i + 1], px[i + 2]);
+    }
+
+    private static int Diff((int R, int G, int B) a, (int R, int G, int B) b) => Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
+
+    /// <summary>The copper's top face meets the slab's wall along that edge and is hidden: the realistic picture shows none of it.
+    /// With the dielectric's slope factor at 2 the top face came through the wall as a lit line along the copper's edge (owner
+    /// report, 2026-10-25), and at 1/16 as dots; brief-em3d-138 carved the wall where the copper lies on it and drew the rest with
+    /// no bias, which closes it at every view rather than thinning it.</summary>
+    [Fact]
+    public void TheRealisticView_ShowsNoHiddenCopperTop_AlongTheBoardsSide()
+    {
+        foreach (float yaw in new[] { -40f, -60f, -115f })
         {
-            var q = cam.Project(world, w, h);
-            int i = ((int)q.Y * w + (int)q.X) * 4;
-            return (px[i], px[i + 1], px[i + 2]);
+            var (scene, view, cam, copperId) = BoardSide(yaw);
+            // The copper top's own colour, from this view with the slabs hidden — what a pixel of it coming through would be.
+            for (uint id = 1; id <= scene.Objects.Length; id++) view.Visible[id - 1] = id == copperId;
+            var top = At(Draw(scene, view), cam, scene.ToLocal(0, -0.5 * mm, 0.118 * mm));
+            Array.Fill(view.Visible, true);
+            var px = Draw(scene, view);
+            var side = At(px, cam, scene.ToLocal(0, -1 * mm, 0.109 * mm));
+            Assert.True(Diff(side, top) > 60, $"yaw {yaw}: the copper's side {side} and top {top} are too alike for the picture to show one through the other");
+            int through = 0;
+            for (int i = 0; i < px.Length; i += 4)
+                if (Diff((px[i], px[i + 1], px[i + 2]), top) < 24) through++;
+            Assert.True(through == 0, $"yaw {yaw}: {through} pixels of the hidden copper top came through the slab's wall");
         }
+    }
 
-        // The copper top's own colour, from this view with the slabs hidden — what a pixel of it coming through would be.
-        for (uint id = 1; id <= scene.Objects.Length; id++) view.Visible[id - 1] = id == copperId;
-        var top = At(Draw(), scene.ToLocal(0, -0.5 * mm, 0.118 * mm));
-        Array.Fill(view.Visible, true);
-        var px = Draw();
-        var side = At(px, scene.ToLocal(0, -1 * mm, 0.109 * mm));
-        Assert.True(Math.Abs(side.R - top.R) + Math.Abs(side.G - top.G) + Math.Abs(side.B - top.B) > 60,
-                    $"the copper's side {side} and top {top} are too alike for the picture to show one through the other");
-        int through = 0;
-        for (int i = 0; i < px.Length; i += 4)
-            if (Math.Abs(px[i] - top.R) + Math.Abs(px[i + 1] - top.G) + Math.Abs(px[i + 2] - top.B) < 24) through++;
-        Assert.True(through <= 10, $"{through} pixels of the hidden copper top came through the slab's wall");
+    /// <summary>brief-em3d-138 — with no bias left to help it, the copper's side still wins where it lies on the board's side: every
+    /// sample along the band at the wall is the copper side's colour, not the slab's.</summary>
+    [Fact]
+    public void TheRealisticView_DrawsTheCoppersSide_AllAlongItsBandOnTheWall()
+    {
+        var (scene, view, cam, _) = BoardSide(-60);
+        var px = Draw(scene, view);
+        var side = At(px, cam, scene.ToLocal(0, -1 * mm, 0.109 * mm));
+        var wall = At(px, cam, scene.ToLocal(0, -1 * mm, 0.2 * mm));
+        Assert.True(Diff(side, wall) > 60, $"the copper's side {side} and the slab's wall {wall} are too alike to tell apart");
+        for (double x = -0.4; x <= 0.4; x += 0.05)
+        {
+            var c = At(px, cam, scene.ToLocal(x * mm, -1 * mm, 0.109 * mm));
+            Assert.True(Diff(c, side) < 24, $"at x = {x:0.00} mm the band is {c}, not the copper's side {side}");
+        }
     }
 }

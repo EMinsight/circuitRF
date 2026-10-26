@@ -32,7 +32,7 @@ public static class Scene3DPicking
             if (!Visible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
             // 3D editor round 3 / bugs round 9 — the tie at a coincident face (Scene3DDraw.Tie): a dielectric gives way to
             // metal, metal to a via, a via to a port.
-            float give = 1 + Scene3DFramePlan.TieNdc(Scene3DFramePlan.TieOf(scene, b.ObjectId));
+            float give = 1 + Scene3DFramePlan.TieNdc(Scene3DFramePlan.TieOf(scene, b));
             for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
             {
                 var v0 = P(verts[scene.Indices[i]]) + b.Offset; var v1 = P(verts[scene.Indices[i + 1]]) + b.Offset; var v2 = P(verts[scene.Indices[i + 2]]) + b.Offset;
@@ -71,7 +71,7 @@ public static class Scene3DPicking
         {
             if (!Visible(visible, b.ObjectId) || !scene.Objects[b.ObjectId - 1].Pickable) continue;
             // 3D editor round 3 / bugs round 9 — the depth bias the GPU gives the draw (Scene3DDraw.Tie).
-            float bias = Scene3DFramePlan.TieNdc(Scene3DFramePlan.TieOf(scene, b.ObjectId));
+            float bias = Scene3DFramePlan.TieNdc(Scene3DFramePlan.TieOf(scene, b));
             for (int i = b.FirstIndex; i < b.FirstIndex + b.IndexCount; i += 3)
             {
                 // brief-em3d-48 — an element's batch is its prototype's triangles under the element's offset, and the
@@ -260,7 +260,12 @@ public static class Scene3DPicking
                 var v0 = P(verts[scene.Indices[i]]) + batch.Offset; var v1 = P(verts[scene.Indices[i + 1]]) + batch.Offset; var v2 = P(verts[scene.Indices[i + 2]]) + batch.Offset;
                 if (Intersect(a, d, v0, v1, v2, out float t) && t > endFraction && t < 1 - endFraction && t < first) first = t;
             }
-            if (first < float.MaxValue) hits.Add((batch.ObjectId, first));
+            // brief-em3d-138 — an object's batches are adjacent (a slab's free walls follow it): one crossing per object
+            if (first < float.MaxValue)
+            {
+                if (hits.Count > 0 && hits[^1].Id == batch.ObjectId) hits[^1] = (batch.ObjectId, Math.Min(first, hits[^1].T));
+                else hits.Add((batch.ObjectId, first));
+            }
         }
         return hits;
     }

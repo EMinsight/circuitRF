@@ -359,6 +359,7 @@ public static class Scene3DBuilder
         var faceImageObjects = new HashSet<string>(options.FaceImages?.Select(u => u.Object) ?? [], StringComparer.Ordinal);
         var faceMeshes = new Dictionary<string, (Em3dTriangleMesh Mesh, IReadOnlyList<string> Faces, bool Sheet, bool Dim)>(StringComparer.Ordinal);
         var bores = Scene3DBores.Of(problem);
+        var walls = Scene3DWalls.Of(problem);
         var solidRuns = new RunTracker(b);
         var sheetRuns = new RunTracker(b);
         bool Dim(string name) => options.Context?.Invoke(name) == true;
@@ -416,9 +417,20 @@ public static class Scene3DBuilder
             else if (ghost == Scene3DGhost.Inert) dim = true;
             var solid = s;
             // A plated via's bore carves the barrel and the pads it passes through — in the drawing only (Scene3DBores).
-            var mesh = bores?.Carved(s) is { } carved ? Tessellate(carved.Key, carved.Make)
-                     : NamedSurface(s.Primitive, FacesOf(s.Name)) ? Tessellate((s.Primitive, SurfaceKey), () => AsFaceZero(Em3dTessellation.Of(solid)))
-                     : Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
+            var (innerKey, innerMake) = bores?.Carved(s) is { } carved ? carved
+                : NamedSurface(s.Primitive, FacesOf(s.Name)) ? ((object)(s.Primitive, SurfaceKey), () => AsFaceZero(Em3dTessellation.Of(solid)))
+                : ((object)s.Primitive, () => Em3dTessellation.Of(solid));
+            var mesh = Tessellate(innerKey, innerMake);
+            // brief-em3d-138 — and a slab's outline walls where a conductor's side lies on them (Scene3DWalls): the wall round the
+            // conductor comes last and draws with no depth bias. Its edge lines stay the uncarved surface's.
+            Em3dTriangleMesh? edgeMesh = null;
+            int free = 0;
+            if (walls?.Carved(s, innerKey, mesh) is { } walled)
+            {
+                edgeMesh = mesh;
+                mesh = Tessellate(walled.Key, walled.Make);
+                free = walled.Free;
+            }
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
             if (faceImageObjects.Contains(s.Name)) faceMeshes[s.Name] = (mesh, FacesOf(s.Name), false, dim);
             // brief-em3d-105 R-em3d105-4 — its look, from the one resolver, with the palette colour it would otherwise be drawn in.
@@ -436,7 +448,8 @@ public static class Scene3DBuilder
                 Context = dim, Wireframe = wire, Transparency = see,
             }, mesh, wire && s.Primitive is Em3dCylinder c0 ? CylinderGenerators(c0).Select(q => (q, wireEdge)) : null,
                faces: true, features: Features(s.Name, mesh, sheet: false, (s.Primitive as Em3dShapeSolid)?.Edges), wireEdges: wire ? wireEdge : null,
-               look: look, kernelEdges: s.Primitive is Em3dShapeSolid { Edges.Count: > 0 } shape && ReferenceEquals(mesh.Vertices, shape.Display.Vertices) ? shape : null);
+               look: look, kernelEdges: s.Primitive is Em3dShapeSolid { Edges.Count: > 0 } shape && ReferenceEquals(mesh.Vertices, shape.Display.Vertices) ? shape : null,
+               freeTriangles: free, edgeMesh: edgeMesh);
             if (place is { } p0) solidRuns.Prototype(p0, s.Name);
             else solidRuns.Break();
         }
@@ -1040,6 +1053,8 @@ public static class Scene3DBuilder
         private readonly List<Scene3DLook?> _looks = [];
         public bool SplitShading { get; init; } = true;
         private readonly List<uint[]> _objIndices = [];
+        /// <summary>brief-em3d-138 — parallel to <see cref="_objIndices"/>: how many of its triangles, at the end, are free walls.</summary>
+        private readonly List<int> _objFree = [];
         private readonly List<Scene3DVertex> _lines = [];
         private readonly List<Scene3DLineBatch> _lineBatches = [];
         private readonly List<(uint Id, List<Scene3DVertex> Lines)> _edges = [];
@@ -1124,9 +1139,12 @@ public static class Scene3DBuilder
         /// shared by two faces) and collect the feature edges. <paramref name="sheet"/>: the whole mesh is
         /// face 0.</summary>
         /// <paramref name="wireEdges"/>: also draw the feature edges, always, in that colour — a wireframe object.
+        /// <paramref name="freeTriangles"/>: brief-em3d-138 — the mesh's last triangles: a slab's wall round a conductor lying on it (Scene3DWalls),
+        /// a batch of their own; <paramref name="edgeMesh"/>: the surface the feature edges are found on, when not the mesh's own.
         public void Object(Scene3DObject o, Em3dTriangleMesh? mesh, IEnumerable<(Point3 P, uint Rgba)>? lines = null,
                            bool faces = false, bool sheet = false, Scene3DFeatureRef features = default, uint? wireEdges = null,
-                           IReadOnlyList<uint>? vertexRgba = null, Scene3DLook? look = null, Em3dShapeSolid? kernelEdges = null)
+                           IReadOnlyList<uint>? vertexRgba = null, Scene3DLook? look = null, Em3dShapeSolid? kernelEdges = null,
+                           int freeTriangles = 0, Em3dTriangleMesh? edgeMesh = null)
         {
             _features.Add(features);
             _looks.Add(look);
@@ -1191,7 +1209,7 @@ public static class Scene3DBuilder
                     welded[k] = wk;
                 }
                 var edgeFaces = new Dictionary<(int, int), (int F0, int F1, int Count)>();
-                void Edge(int a, int c, int f)
+                void Edge(int[] welded, int a, int c, int f)
                 {
                     a = welded[a]; c = welded[c];
                     var key = a < c ? (a, c) : (c, a);
@@ -1207,7 +1225,25 @@ public static class Scene3DBuilder
                     idx[w++] = V(welded[t.A], f);
                     idx[w++] = V(welded[t.B], f);
                     idx[w++] = V(welded[t.C], f);
-                    Edge(t.A, t.B, f); Edge(t.B, t.C, f); Edge(t.C, t.A, f);
+                    if (edgeMesh is null) { Edge(welded, t.A, t.B, f); Edge(welded, t.B, t.C, f); Edge(welded, t.C, t.A, f); }
+                }
+                // brief-em3d-138 — a carved slab's edges are its uncarved surface's: the rim round a conductor lying on its wall is no
+                // edge of the slab, and the cap's rim, now meeting wall pieces split where the conductor ends, still is.
+                if (edgeMesh is not null)
+                {
+                    weld.Clear();
+                    var welds = new int[edgeMesh.Vertices.Count];
+                    for (int k = 0; k < welds.Length; k++)
+                    {
+                        if (!weld.TryGetValue(edgeMesh.Vertices[k], out int wk)) weld[edgeMesh.Vertices[k]] = wk = k;
+                        welds[k] = wk;
+                    }
+                    foreach (var t in edgeMesh.Triangles)
+                    {
+                        int f = t.Face < 0 ? FaceUnknown : t.Face;
+                        Edge(welds, t.A, t.B, f); Edge(welds, t.B, t.C, f); Edge(welds, t.C, t.A, f);
+                    }
+                    q = [.. edgeMesh.Vertices.Select(local)];
                 }
                 var edges = new List<Scene3DVertex>();
                 if (kernelEdges is not null) KernelEdges(kernelEdges, edges, id, o.Rgba);
@@ -1225,6 +1261,7 @@ public static class Scene3DBuilder
             }
             if (mesh is not null) idx = Shade(obj.FirstVertex, idx);
             obj.VertexCount = _verts.Count - obj.FirstVertex;
+            _objFree.Add(mesh is null ? 0 : Math.Clamp(freeTriangles, 0, idx.Length / 3));
             if (lines is not null || (wireEdges is not null && featureEdges is { Count: > 0 }))
             {
                 int first = _lines.Count;
@@ -1315,8 +1352,11 @@ public static class Scene3DBuilder
                     var o = _objects[k];
                     if (o.Translucent != translucent || _objIndices[k].Length == 0) continue;
                     _objIndices[k].CopyTo(indices, at);
-                    batches.Add(new Scene3DBatch(o.Id, o.MaterialSlot, at, _objIndices[k].Length, translucent));
-                    at += _objIndices[k].Length;
+                    // brief-em3d-138 — a slab's free walls (Scene3DWalls), last in its triangles, are a batch of their own right after it
+                    int length = _objIndices[k].Length, free = _objFree[k] * 3;
+                    if (length > free) batches.Add(new Scene3DBatch(o.Id, o.MaterialSlot, at, length - free, translucent));
+                    if (free > 0) batches.Add(new Scene3DBatch(o.Id, o.MaterialSlot, at + length - free, free, translucent, Free: true));
+                    at += length;
                 }
 
             var bmin = new Vector3(float.MaxValue); var bmax = new Vector3(float.MinValue);
@@ -1357,8 +1397,10 @@ public static class Scene3DBuilder
 
             // brief-em3d-48 — the prototypes, then every element's objects and batches, AFTER everything that owns bytes.
             int ownedObjects = _objects.Count, ownedBatches = batches.Count, ownedEdges = edgeBatches.Count;
-            var batchOf = new Dictionary<uint, int>();
-            for (int k = 0; k < batches.Count; k++) batchOf[batches[k].ObjectId] = k;
+            // an object's batches (two for a slab with free walls, adjacent) as their first index and count
+            var batchOf = new Dictionary<uint, (int First, int Count)>();
+            for (int k = 0; k < batches.Count; k++)
+                batchOf[batches[k].ObjectId] = batchOf.TryGetValue(batches[k].ObjectId, out var run) ? (run.First, run.Count + 1) : (k, 1);
             var groups = new List<Scene3DInstanceGroup>();
             foreach (var (protoIndex, count) in _groups)
             {
@@ -1369,13 +1411,16 @@ public static class Scene3DBuilder
                 {
                     var o = _objects[protoIndex + k];
                     gmin = Vector3.Min(gmin, o.Min); gmax = Vector3.Max(gmax, o.Max);
-                    if (!batchOf.TryGetValue(o.Id, out int bi)) continue;
-                    var pb = batches[bi];
-                    tris += pb.IndexCount / 3;
-                    if (pb.Translucent) continue;
-                    if (opaqueFirst == -1) { opaqueFirst = pb.FirstIndex; opaqueCount = pb.IndexCount; }
-                    else if (opaqueFirst >= 0 && opaqueFirst + opaqueCount == pb.FirstIndex) opaqueCount += pb.IndexCount;
-                    else opaqueFirst = -2;
+                    if (!batchOf.TryGetValue(o.Id, out var run)) continue;
+                    for (int bi = run.First; bi < run.First + run.Count; bi++)
+                    {
+                        var pb = batches[bi];
+                        tris += pb.IndexCount / 3;
+                        if (pb.Translucent) continue;
+                        if (opaqueFirst == -1) { opaqueFirst = pb.FirstIndex; opaqueCount = pb.IndexCount; }
+                        else if (opaqueFirst >= 0 && opaqueFirst + opaqueCount == pb.FirstIndex) opaqueCount += pb.IndexCount;
+                        else opaqueFirst = -2;
+                    }
                 }
                 if (opaqueFirst < 0) opaqueCount = opaqueFirst == -1 ? 0 : -1;
                 groups.Add(new Scene3DInstanceGroup(firstId, count, Math.Max(opaqueFirst, 0), opaqueCount, tris, gmin, gmax));
@@ -1409,8 +1454,9 @@ public static class Scene3DBuilder
                     _objects.Add(obj);
                     var f = _features[d.Proto];
                     _features.Add(f.Table is null ? f : new Scene3DFeatureRef(f.Table, f.Dx + d.Dx, f.Dy + d.Dy, f.Dz + d.Dz, true));
-                    if (batchOf.TryGetValue(proto.Id, out int bi))
-                        batches.Add(batches[bi] with { ObjectId = id, Element = index, Offset = offset });
+                    if (batchOf.TryGetValue(proto.Id, out var run))
+                        for (int bi = run.First; bi < run.First + run.Count; bi++)
+                            batches.Add(batches[bi] with { ObjectId = id, Element = index, Offset = offset });
                     if (edgeOf.TryGetValue(proto.Id, out int ei))
                         edgeBatches.Add(edgeBatches[ei] with { ObjectId = id, Element = index, Offset = offset });
                     bmin = Vector3.Min(bmin, obj.Min); bmax = Vector3.Max(bmax, obj.Max);
