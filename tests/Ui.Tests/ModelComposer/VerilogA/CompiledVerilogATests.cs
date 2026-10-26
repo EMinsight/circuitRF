@@ -31,7 +31,7 @@ namespace CircuitRF.Ui.Tests.ModelComposer.VerilogA;
 /// 1e-8 apart.</para>
 /// </summary>
 // Serialised with every class that mutates the process-wide ExternalDeviceRegistry or the worker's tools folder.
-[Collection("ExternalDeviceRegistry")]
+[Collection(ExternalDeviceRegistryCollection.Name)]
 public sealed class CompiledVerilogATests : IDisposable
 {
     private readonly ITestOutputHelper _output;

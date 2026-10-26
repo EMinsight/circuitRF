@@ -3761,3 +3761,7 @@ it and its source. Found when an ideal 0 V source on an SDD's thermal port let t
   because it never had a refusal and was silently wrong. Gate: `HbPinnedPortTests`.
 - **When building an isothermal SDD bench by hand, hold the thermal node with a small resistor or an ideal source
   alike now** — before this fix only the resistor gave the right answer in harmonic balance.
+- **A pinned node now sets a residual floor.** Its row carries Y = 1/1 µΩ = 1e6 S, so round-off in V alone (~1e-16 ×
+  a volt or so) leaves ~1e-10 A on it: a `Tol=` at or below that is unreachable, and Newton stalls at its last
+  line-search halving instead of converging. `ExternalDeviceHbDcConsistencyTests` (an ideal `V_1Tone` on the gate) sat at
+  1.05e-10 against `Tol=1e-10` and was moved to 1e-9. That this fix is what turned it red is inferred from the code, not bisected.

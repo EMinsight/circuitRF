@@ -2,6 +2,7 @@
 # Board: Sensor board
 # Units: mm
 # Origin: symbol origin
+# Rotation: degrees counter-clockwise as seen from the top. A bottom-side part is flipped about its Y axis before it is rotated
 Refdes,X,Y,Rotation,Side,Footprint
 FB1,4.4,10.3,0,top,C0603
 C1,26.6,16.2,0,top,C0402

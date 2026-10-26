@@ -938,6 +938,8 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["MicrostripKlopfModel"]  = Activity.Passive,
         ["ViaModel"]              = Activity.Passive,
         ["ViaGroundModel"]        = Activity.Passive,
+        // TESTPAD (brief-dfr26-7): a via's L split by its barrel and pad C to ground — lossless and passive.
+        ["TestPadModel"]          = Activity.Passive,
         // The four MMIC passives (AA-1): R, L and C networks of non-negative elements with a
         // dielectric loss, all stamped as a plain admittance block — passive by construction.
         ["MimCapModel"]           = Activity.Passive,

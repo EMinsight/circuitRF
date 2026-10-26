@@ -67,6 +67,9 @@ public sealed class ExternalDeviceHbDcConsistencyTests : IDisposable
     /// A common-source stage with a resistive drain load, so the DEVICE sets the operating point.
     /// An ideal source on every terminal would fix the answer before either engine ran, and the
     /// comparison would prove nothing.
+    ///
+    /// <para><c>Tol=1e-9</c>, not tighter: the ideal source on <c>n_gate</c> pins that interface node, which HB
+    /// regularizes as 1 µΩ in series (Y = 1e6 S), so round-off in V alone leaves ~1e-10 A on its row.</para>
     /// </summary>
     private static string Netlist(double driveV) => $"""
         V_1Tone:Vdrive  n_gate 0    Freq=2e9  V={N(driveV)}  Phase=0  Vdc=-1.5
@@ -77,7 +80,7 @@ public sealed class ExternalDeviceHbDcConsistencyTests : IDisposable
             beta=0.06 vth=-2.5 lambda=0.02 alpha=1.5 delta=0.2 \
             cgs=2e-12 cgd=2e-13 ggs=1e-6
 
-        analysis HB1 type=hb Tone=2e9 MaxHarm=3 Tol=1e-10
+        analysis HB1 type=hb Tone=2e9 MaxHarm=3 Tol=1e-9
         """;
 
     private static ElaboratedNetlist Elaborate(double driveV, out TestBench bench)

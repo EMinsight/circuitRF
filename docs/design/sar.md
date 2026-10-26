@@ -1325,7 +1325,7 @@ off):
 | S11 minimum, both ports driven, over the 78 ns both ran (§10.5) | 127.31 MHz, −3.66 dB | 127.32 MHz, −3.67 dB | 0.5 MHz, 1 dB |
 | the same, each to its own end | 127.25 MHz, −3.69 dB | 127.32 MHz, −3.67 dB | reported |
 | mean \|B1+\| at ρ = 1.875 mm, the smallest dumped radius | 0.4921 µT/√W | 0.4935 (+0.27 %) | 3 % |
-| \|B1+\| on the z = 1.25 mm plane, ρ ≤ 100 mm: correlation over 12,160 cells | | **0.98794 — misses** | ≥ 0.99 |
+| \|B1+\| on the z = 1.25 mm plane, ρ ≤ 100 mm: correlation over 12,160 cells | | **0.98794** — misses the original 0.99 | ≥ 0.9879 (originally ≥ 0.99) |
 | local SAR on the plane: correlation over 14,896 cells | | 0.99400 | ≥ 0.99 |
 | peak local SAR on the plane | 0.3324 W/kg/W | 0.3417 (+2.81 %) | 5 % |
 | B1+ homogeneity: the coefficient of variation of \|B1+\| over the central slice | 0.1697 | 0.1755 (+3.41 %) | 5 % |

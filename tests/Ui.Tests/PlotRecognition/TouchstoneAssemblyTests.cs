@@ -9,7 +9,7 @@ using Xunit.Abstractions;
 namespace CircuitRF.Ui.Tests.PlotRecognition;
 
 [Collection(SkiaFontsTypefaceCollection.Name)]
-public sealed class TouchstoneAssemblyTests(PlotPictureSet pictures, ITestOutputHelper output) : IClassFixture<PlotPictureSet>
+public sealed class TouchstoneAssemblyTests(ITestOutputHelper output) : IClassFixture<PlotPictureSet>
 {
     private TouchstoneAssemblyResult Build(params string[] pngs)
     {

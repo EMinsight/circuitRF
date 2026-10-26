@@ -16,7 +16,7 @@ namespace CircuitRF.Ui.Tests.ModelComposer.VerilogA;
 /// <c>TjQ</c>; with it the module holds the same charge — S at the bias point, and an HB sweep to compression. Unset, it
 /// refuses with its own sentence.
 /// </summary>
-[Collection("ExternalDeviceRegistry")]
+[Collection(ExternalDeviceRegistryCollection.Name)]
 public sealed class VerilogALinearChargeTests : IDisposable
 {
     private readonly ITestOutputHelper _output;

@@ -98,7 +98,7 @@ public sealed class SchematicSynthTests : IDisposable
                 double x = p.LocalX - body.CenterX, y = p.LocalY - body.CenterY;
                 // A quarter turn clockwise on a y-down page is (x, y) → (−y, x).
                 for (int k = 0; k < back / 90; k++) (x, y) = (-y, x);
-                var (u, v) = pins[p.Name];
+                var (u, v) = pins[p.Name!];
                 if ((u < 0.4 && x > -1) || (u > 0.6 && x < 1) || (v < 0.4 && y > -1) || (v > 0.6 && y < 1))
                     wrong.Add($"{kind} pin {p.Name}: at ({x:0}, {y:0}) from the body centre, canonically ({u}, {v})");
             }

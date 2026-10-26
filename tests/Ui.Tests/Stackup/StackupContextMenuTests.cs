@@ -641,7 +641,7 @@ public class StackupContextMenuTests
     [Fact]
     public void ASmallTechnologyGetsNoOverflowItem()
     {
-        var vm = Editor();
+        var vm = Editor(ShippedTechnologies.Load("pcb-2layer_FR-4_70mil_1oz"));
         var canvas = Canvas(vm);
         Assert.True(vm.Working.Layers.Count <= StackupCanvas.ContextMenuLayerLimit);
         string name = vm.Working.Stackup.Layers.First(l => l.Kind == StackupKind.Conductor).Name;

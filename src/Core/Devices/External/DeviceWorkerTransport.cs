@@ -54,6 +54,16 @@ public interface IDeviceWorkerTransport : IDisposable
     /// report. Default implementation for a transport with no process behind it.</para>
     /// </summary>
     string ErrorOutputAfterConnectionFailure() => RecentErrorOutput;
+
+    /// <summary>
+    /// The same lines, read when a LIVE worker has just refused a point in-band — after its error stream has gone briefly
+    /// quiet, so a line the worker wrote before its reply is not still in flight when the refusal is composed.
+    ///
+    /// <para>The worker flushes its error stream before it writes the reply, but the two are different pipes read by
+    /// different threads, and nothing orders the host's two reads. Bounded and short: this is a refusal path, not a solve.
+    /// Default implementation for a transport with no process behind it.</para>
+    /// </summary>
+    string ErrorOutputAfterRefusal() => RecentErrorOutput;
 }
 
 /// <summary>
@@ -89,6 +99,11 @@ public readonly record struct DeviceWorkerLogLine(string Provider, string Comman
 /// reading it means the pipe fills, and the worker then blocks forever inside a write — presenting
 /// as a hang partway through a long solve, with no error anywhere. The drain also gives
 /// <see cref="RecentErrorOutput"/> something to report.</para>
+///
+/// <para><b>A DEDICATED thread, not <c>BeginErrorReadLine</c>.</b> That one delivers lines from the thread pool, and with
+/// every core busy — a full test run, or a solve — the pool fell far enough behind that a model's own "fatal" line, written
+/// before the reply that refused the point, was not there when the refusal was composed; a warning written at the first
+/// evaluation was still missing after a whole DC solve. A thread reads regardless of what the pool is doing.</para>
 /// </summary>
 public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
 {
@@ -103,6 +118,8 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     private const int MirroredLineLimit = 500;
 
     private readonly Process       _process;
+    private readonly Thread        _errorReader;
+    private long                   _errorLinesRead;
     private readonly Queue<string> _errorLines = new();
     private readonly Lock          _errorGate  = new();
     private readonly string        _provider;
@@ -120,18 +137,30 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
         Origin    = origin;
         _provider = provider;
 
-        _process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data is null) return;
-            lock (_errorGate)
-            {
-                _errorLines.Enqueue(e.Data);
-                while (_errorLines.Count > RetainedErrorLines) _errorLines.Dequeue();
-            }
+        _errorReader = new Thread(DrainErrorOutput) { IsBackground = true, Name = "worker-stderr" };
+        _errorReader.Start();
+    }
 
-            Mirror(e.Data);
-        };
-        _process.BeginErrorReadLine();
+    /// <summary>Reads the worker's error stream to its end, one line at a time, on <see cref="_errorReader"/>.</summary>
+    private void DrainErrorOutput()
+    {
+        try
+        {
+            var reader = _process.StandardError;
+            string? line;
+            while ((line = reader.ReadLine()) is not null)
+            {
+                lock (_errorGate)
+                {
+                    _errorLines.Enqueue(line);
+                    while (_errorLines.Count > RetainedErrorLines) _errorLines.Dequeue();
+                }
+                Interlocked.Increment(ref _errorLinesRead);
+
+                Mirror(line);
+            }
+        }
+        catch { /* the worker, or its stream, is gone; what was read is kept */ }
     }
 
     /// <summary>
@@ -392,6 +421,24 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
         lock (_errorGate) return string.Join(Environment.NewLine, _errorLines);
     }
 
+    /// <summary>How long the error stream must stay quiet, and the most a refusal waits for it.</summary>
+    private static readonly TimeSpan RefusalQuietPeriod = TimeSpan.FromMilliseconds(10),
+                                     RefusalSettleLimit = TimeSpan.FromMilliseconds(100);
+
+    public string ErrorOutputAfterRefusal()
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        long seen = Interlocked.Read(ref _errorLinesRead);
+        var quietSince = TimeSpan.Zero;
+        while (clock.Elapsed < RefusalSettleLimit && clock.Elapsed - quietSince < RefusalQuietPeriod)
+        {
+            Thread.Sleep(2);
+            long now = Interlocked.Read(ref _errorLinesRead);
+            if (now != seen) { seen = now; quietSince = clock.Elapsed; }
+        }
+        return RecentErrorOutput;
+    }
+
     private int _flushed;
 
     /// <summary>How long to wait for a dead worker's last words. Ample for a pipe already at end of
@@ -413,11 +460,9 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     /// surfaced in a full-solution run afterwards. <c>AWorkerThatDiesImmediately_…</c> is the guard,
     /// and it must be run repeatedly, not once, to mean anything.</para>
     ///
-    /// <para><c>WaitForExit()</c> with NO timeout is the only overload that also waits for the
-    /// redirected readers to reach end of stream; the timed one returns as soon as the process is
-    /// gone and leaves whatever it wrote still in flight. So it is run off-thread under a bound of
-    /// its own — a grandchild holding the pipe open must not wedge the path trying to explain a
-    /// failure.</para>
+    /// <para>The process's exit is not enough: whatever it wrote may still be in flight to the reader. So the wait is for
+    /// the exit AND for <see cref="_errorReader"/> to reach end of stream, run off-thread under a bound of its own — a
+    /// grandchild holding the pipe open must not wedge the path trying to explain a failure.</para>
     ///
     /// <para>Only ever waits on a process that has ALREADY exited, so nothing is slowed down while a
     /// worker is alive and merely refusing a request in-band.</para>
@@ -447,13 +492,13 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
         // begun. The measurement then reads exactly like the race it was added to close, which is
         // how it survived. A thread starts regardless of what the pool is doing.
         //
-        // WaitForExit() with NO timeout is still the overload, because it is the only one that also
-        // waits for the redirected readers to reach end of stream. It runs off-thread so a
-        // grandchild holding the pipe open cannot wedge the failure path.
+        // The exit, then the error reader's end of stream: the reader is our own thread, so
+        // WaitForExit() does not wait for it. Off-thread so a grandchild holding the pipe open
+        // cannot wedge the failure path.
         bool completed;
         try
         {
-            var waiter = new Thread(() => { try { _process.WaitForExit(); } catch { } })
+            var waiter = new Thread(() => { try { _process.WaitForExit(); _errorReader.Join(); } catch { } })
                 { IsBackground = true, Name = "worker-exit-flush" };
             waiter.Start();
             completed = waiter.Join(FlushTimeout);

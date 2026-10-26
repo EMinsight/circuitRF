@@ -125,5 +125,5 @@ public sealed class CmcCacheTests
     }
 
     private static Dictionary<string, byte[]> Snapshot(string folder) =>
-        Directory.GetFiles(folder).ToDictionary(Path.GetFileName, File.ReadAllBytes)!;
+        Directory.GetFiles(folder).ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
 }

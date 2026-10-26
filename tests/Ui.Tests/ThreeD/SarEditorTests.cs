@@ -138,7 +138,7 @@ public sealed class SarEditorTests : IDisposable
         ClickAt(vm, 40, 30, 0);
         var le = Assert.Single(vm.Document.LumpedElements);
         Assert.Equal(("C1", "1", "pF"), (le.Name, le.C, le.CUnit));
-        Assert.Empty(vm.Document.Objects.Where(o => o.Name == "C1"));
+        Assert.DoesNotContain(vm.Document.Objects, o => o.Name == "C1");
 
         vm.UndoRedo.Undo();
         Assert.Empty(vm.Document.LumpedElements);

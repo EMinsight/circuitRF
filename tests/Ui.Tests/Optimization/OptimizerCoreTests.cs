@@ -298,7 +298,7 @@ public sealed class ComplexLSectionTests
 public sealed class OptimizationPauseResumeTests
 {
     [Fact]
-    public void PausedAndResumed_IsTheUninterruptedRun()
+    public async Task PausedAndResumed_IsTheUninterruptedRun()
     {
         string cnl = OptCircuits.LSection("simplex", "maxiter=40");
         var whole = OptimizationRun.Create(OptCircuits.Prepare(cnl)).Run();
@@ -314,7 +314,7 @@ public sealed class OptimizationPauseResumeTests
         Assert.True(run.IsPaused);
         Assert.Equal(heldAt, run.Evaluations);
         run.Resume();
-        var resumed = task.Result;
+        var resumed = await task;
 
         Assert.Equal(whole.Log.Count, resumed.Log.Count);
         Assert.All(whole.Log.Zip(resumed.Log), p =>

@@ -65,7 +65,7 @@ public sealed class MmicRecognitionDeckTests(ITestOutputHelper output) : IDispos
     {
         var tech = ShippedTechnologies.Load(GaAs);
 
-        Assert.Empty(TechValidation.Analyze(tech).Where(p => p.Area == TechProblemArea.Drc));
+        Assert.DoesNotContain(TechValidation.Analyze(tech), p => p.Area == TechProblemArea.Drc);
         Assert.Equal(6, tech.DeviceRules.Count);
 
         var film = tech.Stackup.Layers.Single(l => l.Name == "MIM Dielectric");

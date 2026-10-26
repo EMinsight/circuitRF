@@ -26,5 +26,13 @@
 				}
 			]
 		}
-	]
+	],
+	"Look": {
+		"ShowEdges": true,
+		"ShowGrid": true,
+		"ShowOverlays": true,
+		"ShowPorts": true,
+		"ShowBoundaries": true,
+		"ShowImages": true
+	}
 }

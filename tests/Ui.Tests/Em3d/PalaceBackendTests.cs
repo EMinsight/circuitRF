@@ -31,7 +31,7 @@ namespace CircuitRF.Ui.Tests.Em3d;
 
 // Em3dRenderExplainTests' collection: its gate 6 reads the process-wide mesher/solver counter these
 // gates advance, so the two classes never run at the same time.
-[Collection(SkiaFontsTypefaceCollection.Name)]
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
 {
     private const double Um = 1e-6;

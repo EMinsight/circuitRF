@@ -1,6 +1,7 @@
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Avalonia.Input;
 using CircuitRF.Ui.Layout;
 
@@ -162,9 +163,11 @@ public class LayoutDuplicateWithOffsetTests
         Assert.True(ccw >= 0 && cw > ccw, "the two Rotate items are gone or reordered");
         Assert.True(dup > cw, "Duplicate… must come after the Rotate pair");
 
-        // Nothing else may be added between them, or Duplicate stops being "below Rotate".
+        // Nothing else may be added between them, or Duplicate stops being "below Rotate" — except Flip
+        // (brief-bsp-2), the third transform, which sits with the Rotate pair.
         string between = src[(cw + 1)..dup];
-        Assert.DoesNotContain("AddAvailItem(", between);
+        Assert.Single(Regex.Matches(between, @"AddAvailItem\("));
+        Assert.Contains("AddAvailItem(_viewModel.FlipHeader", between);
     }
 
     /// <summary>Ctrl+D and the menu item run the SAME method, so the offset prompt cannot appear on

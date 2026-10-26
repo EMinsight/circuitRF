@@ -132,7 +132,7 @@ public sealed class SchematicImageRecognitionTests : IDisposable
         // As drawn, the drawing is the same circuit, with the picture kept beside it and laid under it.
         var drawn = NetExtractor.Extract(run.Schematic!).TestBench;
         Assert.Equal(Connectivity(want), Connectivity(drawn));
-        Assert.Empty(run.Report.Findings.Where(f => f.Class == RecognitionFindingClass.PicturePlacementFallbacks));
+        Assert.DoesNotContain(run.Report.Findings, f => f.Class == RecognitionFindingClass.PicturePlacementFallbacks);
         var underlay = Assert.Single(run.Schematic!.CanvasObjects.OfType<EditableBitmap>());
         Assert.False(underlay.IsLocked);   // an ordinary picture: selected, moved, resized or deleted like any other
         // A label only where the picture writes a net's name — not one per net, as a redrawn netlist has.

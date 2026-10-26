@@ -167,7 +167,7 @@ public sealed class ReferenceImageTests : IDisposable
         var e = vm.Elaboration!;
         Assert.DoesNotContain(C3dElaborator.NoMaterialWarning(name), e.Warnings);
         Assert.Contains(vm.Viewer.Scene.ImageBatches, b => vm.Viewer.Scene.Object(b.ObjectId)!.Name == name);
-        Assert.Empty(C3dValidation.Validate(vm.Document, _ => true, null, vm.FilePath).Where(d => d.Id == "c3d.material.missing"));
+        Assert.DoesNotContain(C3dValidation.Validate(vm.Document, _ => true, null, vm.FilePath), d => d.Id == "c3d.material.missing");
         vm.TreeGrouping = C3dTreeGrouping.Primitive;
         Assert.Contains(vm.Tree, g => g.Header == C3dEditorViewModel.NotModeledHeader && g.Items.Any(i => i.Name == name && i.Detail!.Contains("quad.png")));
 
@@ -620,57 +620,17 @@ public sealed class ReferenceImageTests : IDisposable
         Assert.NotNull(vm.Tool);
     }
 
-    // ── gate 14: the CLI ─────────────────────────────────────────────────────────────────────
-
-    /// <summary><c>check</c> warns on an image file that is not there and exits 0; <c>render --iso</c> as a PROCESS writes the
-    /// in-process renderer's SVG byte for byte, and the SVG carries the picture as an &lt;image&gt;.</summary>
-    [Fact]
-    public void Gate14_Cli_CheckWarns_RenderIsoMatchesAndCarriesTheImage()
-    {
-        var (ws, dir) = Workspace();
-        string png = Quadrants(Path.Combine(ws, "ref", "quad.png"));
-        string path = Write(dir, [Box("b", "Gold", 0, 0, -10, 100, 100, 10),
-                                  Sheet("image1", C3dPlane.XY, 0, 0, 100, 80, C3dImages.Store(Path.Combine(dir, "cell.c3d"), png)),
-                                  Sheet("lost", C3dPlane.XY, 200, 0, 10, 10, "../../ref/missing.png")]);
-        var (code, so, se) = Cli("check", path);
-        Assert.True(code == 0, so + se);
-        Assert.Contains("missing.png", so + se);
-        Assert.Contains("cannot be drawn", so + se);
-
-        string svg = Path.Combine(_root, "iso.svg");
-        var (exit, stdout, stderr) = Cli("render", path, "-o", svg, "--iso", "--size", "400x300");
-        Assert.True(exit == 0, stderr + stdout);
-        string fromCli = File.ReadAllText(svg);
-        Assert.Contains("<image", fromCli);
-
-        var e = new C3dElaborator().Elaborate(C3dPersistence.LoadFromFile(path), path, Path.Combine(ws, ".cws"));
-        var problem = C3dProblemAssembly.ViewProblem(e.Solids, e.Sheets, e.Materials, [], C3dProblemAssembly.ExtentBox(e.Extent()!.Value));
-        problem = CircuitRF.Render.Em3dSceneImages.WithImageSheets(problem, e);
-        var theme = CircuitRF.Render.ThemeResolver.Resolve(CircuitRF.Render.ThemeResolver.DefaultThemeName, ws);
-        var style = new CircuitRF.Render.Em3dRenderStyle(CircuitRF.Render.Em3dSectionRenderer.ObjectColours(problem, e.Origins, e.Technology, theme, CircuitRF.Render.ColorVariant.Light),
-                                                         theme, CircuitRF.Render.ColorVariant.Light, CircuitRF.Render.DocumentExtents.DefaultMargin, Transparent: false)
-        {
-            ObjectTransparency = Scene3DTransparency.MapOf(e.Provenance),
-        };
-        var scene = CircuitRF.Render.Em3dSectionScene.Build(problem, CircuitRF.Render.Em3dView.Iso);
-        scene = scene with { Images = CircuitRF.Render.Em3dSceneImages.Of(problem, e.Images, CircuitRF.Render.Em3dSectionScene.Project) };
-        Assert.Equal(2, scene.Images.Count);                 // the missing one is drawn as the placeholder
-        string inProcess = System.Text.Encoding.UTF8.GetString(CircuitRF.Cli.VectorPage.Svg(400, 300, c => CircuitRF.Render.Em3dSectionRenderer.Draw(c, 400, 300, scene, style)));
-        // Skia numbers a document's clip paths and images per PROCESS (RenderCliVerbTests' StripSkiaIds): only those may differ
-        Assert.Equal(StripSkiaIds(inProcess), StripSkiaIds(fromCli));
-    }
-
     internal static string StripSkiaIds(string svg) => System.Text.RegularExpressions.Regex.Replace(svg, @"\b(cl|img|gr|fp)_[0-9a-z]+\b", "$1_N");
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────
 
-    private static C3dBox Box(string name, string? material, long x, long y, long z, long sx, long sy, long sz)
+    internal static C3dBox Box(string name, string? material, long x, long y, long z, long sx, long sy, long sz)
         => new() { Name = name, Material = material, Min = new C3dPoint3(x * Um, y * Um, z * Um), Size = new C3dPoint3(sx * Um, sy * Um, sz * Um) };
 
     private static void Settle(C3dEditorViewModel vm)
         => Assert.True(SpinWait.SpinUntil(() => vm.AdoptedGeneration == vm.Viewer.Source.Requested, TimeSpan.FromSeconds(30)), "the scene never settled");
 
-    private static (int ExitCode, string StdOut, string StdErr) Cli(params string[] args)
+    internal static (int ExitCode, string StdOut, string StdErr) Cli(params string[] args)
     {
         string repo = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(repo, "circuitRF.slnx"))) repo = Path.GetDirectoryName(repo)!;
@@ -716,9 +676,11 @@ public sealed class ReferenceImageTests : IDisposable
             Image = new C3dImage { Path = imagePath },
         };
 
-    private (string Ws, string Dir) Workspace()
+    private (string Ws, string Dir) Workspace() => Workspace(_root);
+
+    internal static (string Ws, string Dir) Workspace(string root)
     {
-        string ws = Path.Combine(_root, "ws" + Guid.NewGuid().ToString("N")[..6]);
+        string ws = Path.Combine(root, "ws" + Guid.NewGuid().ToString("N")[..6]);
         Directory.CreateDirectory(ws);
         TechPersistence.SaveToFile(Path.Combine(ws, "tech.ctech"), new Technology
         {
@@ -731,7 +693,7 @@ public sealed class ReferenceImageTests : IDisposable
         return (ws, dir);
     }
 
-    private static string Write(string dir, List<C3dObject> objects)
+    internal static string Write(string dir, List<C3dObject> objects)
     {
         string path = Path.Combine(dir, "cell.c3d");
         C3dPersistence.SaveToFile(path, new C3dDocument { Objects = objects });
@@ -773,5 +735,62 @@ public sealed class ReferenceImageTests : IDisposable
             bmp.Encode(f, SKEncodedImageFormat.Png, 100);
         }
         return px;
+    }
+}
+
+/// <summary>
+/// Gate 14 of <see cref="ReferenceImageTests"/>, in a class of its own: it compares rendered TEXT bytes against a CLI
+/// process, which is <see cref="SkiaFontsTypefaceCollection"/>'s membership rule — and a class can be in one collection
+/// only, while the rest of <see cref="ReferenceImageTests"/> reads <c>Viewer3DCollection</c>'s counters. In that collection,
+/// a typeface override set by another class once gave the in-process text a <c>font-weight</c> the CLI's did not have.
+/// </summary>
+[Collection(SkiaFontsTypefaceCollection.Name)]
+public sealed class ReferenceImageCliTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-img101-cli-" + Guid.NewGuid().ToString("N")[..12]);
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, true); } catch { /* best effort */ }
+    }
+
+    // ── gate 14: the CLI ─────────────────────────────────────────────────────────────────────
+
+    /// <summary><c>check</c> warns on an image file that is not there and exits 0; <c>render --iso</c> as a PROCESS writes the
+    /// in-process renderer's SVG byte for byte, and the SVG carries the picture as an &lt;image&gt;.</summary>
+    [Fact]
+    public void Gate14_Cli_CheckWarns_RenderIsoMatchesAndCarriesTheImage()
+    {
+        var (ws, dir) = ReferenceImageTests.Workspace(_root);
+        string png = ReferenceImageTests.Quadrants(Path.Combine(ws, "ref", "quad.png"));
+        string path = ReferenceImageTests.Write(dir, [ReferenceImageTests.Box("b", "Gold", 0, 0, -10, 100, 100, 10),
+                                                      ReferenceImageTests.Sheet("image1", C3dPlane.XY, 0, 0, 100, 80, C3dImages.Store(Path.Combine(dir, "cell.c3d"), png)),
+                                                      ReferenceImageTests.Sheet("lost", C3dPlane.XY, 200, 0, 10, 10, "../../ref/missing.png")]);
+        var (code, so, se) = ReferenceImageTests.Cli("check", path);
+        Assert.True(code == 0, so + se);
+        Assert.Contains("missing.png", so + se);
+        Assert.Contains("cannot be drawn", so + se);
+
+        string svg = Path.Combine(_root, "iso.svg");
+        var (exit, stdout, stderr) = ReferenceImageTests.Cli("render", path, "-o", svg, "--iso", "--size", "400x300");
+        Assert.True(exit == 0, stderr + stdout);
+        string fromCli = File.ReadAllText(svg);
+        Assert.Contains("<image", fromCli);
+
+        var e = new C3dElaborator().Elaborate(C3dPersistence.LoadFromFile(path), path, Path.Combine(ws, ".cws"));
+        var problem = C3dProblemAssembly.ViewProblem(e.Solids, e.Sheets, e.Materials, [], C3dProblemAssembly.ExtentBox(e.Extent()!.Value));
+        problem = CircuitRF.Render.Em3dSceneImages.WithImageSheets(problem, e);
+        var theme = CircuitRF.Render.ThemeResolver.Resolve(CircuitRF.Render.ThemeResolver.DefaultThemeName, ws);
+        var style = new CircuitRF.Render.Em3dRenderStyle(CircuitRF.Render.Em3dSectionRenderer.ObjectColours(problem, e.Origins, e.Technology, theme, CircuitRF.Render.ColorVariant.Light),
+                                                         theme, CircuitRF.Render.ColorVariant.Light, CircuitRF.Render.DocumentExtents.DefaultMargin, Transparent: false)
+        {
+            ObjectTransparency = Scene3DTransparency.MapOf(e.Provenance),
+        };
+        var scene = CircuitRF.Render.Em3dSectionScene.Build(problem, CircuitRF.Render.Em3dView.Iso);
+        scene = scene with { Images = CircuitRF.Render.Em3dSceneImages.Of(problem, e.Images, CircuitRF.Render.Em3dSectionScene.Project) };
+        Assert.Equal(2, scene.Images.Count);                 // the missing one is drawn as the placeholder
+        string inProcess = System.Text.Encoding.UTF8.GetString(CircuitRF.Cli.VectorPage.Svg(400, 300, c => CircuitRF.Render.Em3dSectionRenderer.Draw(c, 400, 300, scene, style)));
+        // Skia numbers a document's clip paths and images per PROCESS (RenderCliVerbTests' StripSkiaIds): only those may differ
+        Assert.Equal(ReferenceImageTests.StripSkiaIds(inProcess), ReferenceImageTests.StripSkiaIds(fromCli));
     }
 }

@@ -365,7 +365,7 @@ public sealed class TestPadRound26Tests : IDisposable
         var inner = r.Shapes.OfType<CircleShape>().Where(c => InnerKeys.Contains(c.Layer)).ToList();
         Assert.Equal(InnerKeys[..7], inner.Select(c => c.Layer));
         Assert.All(inner, c => Assert.Equal(300_000, c.R));
-        Assert.Empty(Generate(("PadLayer", Bottom), ("ViaFrom", Top)).Shapes.OfType<CircleShape>().Where(c => InnerKeys.Contains(c.Layer)));
+        Assert.DoesNotContain(Generate(("PadLayer", Bottom), ("ViaFrom", Top)).Shapes.OfType<CircleShape>(), c => InnerKeys.Contains(c.Layer));
     }
 
     [Fact]

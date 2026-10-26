@@ -40,7 +40,7 @@ public sealed class StepSolidTests : IDisposable
         var (a, b) = (part.Solids[0], part.Solids[1]);
         Assert.Equal((1, 6, true), (a.Index, a.Faces, a.Closed));
         Assert.Equal(1 * Mm3, a.VolumeUm3, 1e-6 * Mm3);   // 2 × 1 × 0.5 mm
-        Assert.Equal([0.0, 0.0, 1.0], a.Colour);
+        Assert.Equal([0.0, 0.0, 1.0], a.Colour!);
         Assert.False(a.Mixed);
         Assert.Equal("lead", a.Name);
         Assert.Equal((2, 6, true), (b.Index, b.Faces, b.Closed));

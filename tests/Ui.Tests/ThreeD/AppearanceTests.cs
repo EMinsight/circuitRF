@@ -232,7 +232,7 @@ public sealed class AppearanceTests : IDisposable
         Assert.Equal(Scene3DBuilder.AppearanceSlots, full.Appearances.Length);
         Assert.Equal(1, full.AppearanceFallbacks);
         int defaultSlot = full.Objects.Single(o => o.Name == "s0").AppearanceSlot;
-        var fell = Assert.Single(full.Objects.Where(o => o.Name.StartsWith('s') && o.AppearanceSlot == defaultSlot && o.Name != "s0"));
+        var fell = Assert.Single(full.Objects, o => o.Name.StartsWith('s') && o.AppearanceSlot == defaultSlot && o.Name != "s0");
         Assert.Equal(AppearanceResolver.ConductorRoughness, full.Appearances[fell.AppearanceSlot].Roughness);
     }
 

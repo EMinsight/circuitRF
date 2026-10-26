@@ -15,7 +15,7 @@ namespace CircuitRF.Ui.Tests.ModelComposer.VerilogA;
 /// same on both placements — DC, S at one bias and one HB point — and a switch naming a part the model lacks changes
 /// nothing.
 /// </summary>
-[Collection("ExternalDeviceRegistry")]
+[Collection(ExternalDeviceRegistryCollection.Name)]
 public sealed class VerilogASwitchTests : IDisposable
 {
     private readonly ITestOutputHelper _output;

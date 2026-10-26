@@ -23,7 +23,7 @@ using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Examples;
 
-[Collection(SkiaFontsTypefaceCollection.Name)]
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class Em3dWavePortsExampleTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _tmp = Path.Combine(Path.GetTempPath(), "crf-em3d117-" + Guid.NewGuid().ToString("N")[..12]);

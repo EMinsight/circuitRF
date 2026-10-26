@@ -189,7 +189,7 @@ public sealed class DeviceWorkerInstance : IExternalDeviceInstance
     /// </summary>
     private string WithWorkerOutput(string message)
     {
-        string errors = _channel.RecentErrorOutput;
+        string errors = _channel.ErrorOutputAfterRefusal;
 
         if (string.IsNullOrWhiteSpace(errors)) return message;
 

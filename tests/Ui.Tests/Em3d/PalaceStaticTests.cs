@@ -22,7 +22,7 @@ namespace CircuitRF.Ui.Tests.Em3d;
 //  2-4 with CRF_WRITE_STATIC_FIXTURES=1; nothing rewrites it otherwise.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-[Collection(SkiaFontsTypefaceCollection.Name)]
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
 {
     private const double Um = 1e-6;

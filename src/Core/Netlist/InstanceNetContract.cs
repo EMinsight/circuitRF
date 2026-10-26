@@ -333,6 +333,12 @@ public static class InstanceNetContract
             // a chosen circuit; this is the absence of one, and it still has the two ends every
             // matching network has.
             case "MATCH":  p["Design"] = new Expressions.Value(Convert.ToBase64String("{}"u8)); break;
+
+            // A modulated source refuses a missing carrier frequency or average power; any pair stands in.
+            case "MOD_SOURCE":
+                p["Fc"]   = new Expressions.Value(1e9);
+                p["Pavg"] = new Expressions.Value(0.0);
+                break;
         }
         return p;
     }

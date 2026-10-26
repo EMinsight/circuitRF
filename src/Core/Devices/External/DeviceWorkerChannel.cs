@@ -44,6 +44,12 @@ public sealed class DeviceWorkerChannel(IDeviceWorkerTransport transport) : IDis
     public string RecentErrorOutput => transport.RecentErrorOutput;
 
     /// <summary>
+    /// <see cref="RecentErrorOutput"/>, read just after the worker refused a point in-band: waits briefly for its error
+    /// stream to go quiet, so the line explaining the refusal is not still in flight (<see cref="IDeviceWorkerTransport.ErrorOutputAfterRefusal"/>).
+    /// </summary>
+    public string ErrorOutputAfterRefusal => transport.ErrorOutputAfterRefusal();
+
+    /// <summary>
     /// Send one command and read its reply.
     /// </summary>
     /// <param name="writeCommand">

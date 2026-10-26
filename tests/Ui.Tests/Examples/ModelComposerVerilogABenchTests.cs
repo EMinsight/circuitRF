@@ -28,7 +28,7 @@ using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Examples;
 
-[Collection("ExternalDeviceRegistry")]
+[Collection(ExternalDeviceRegistryCollection.Name)]
 public sealed class ModelComposerVerilogABenchTests : IDisposable
 {
     private static readonly string Ws = Path.Combine(ModelCliFixture.RepoRoot(), "examples", ModelComposerExampleAuthoring.Folder);

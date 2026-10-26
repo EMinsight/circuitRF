@@ -102,7 +102,7 @@ public sealed class EmergeWavePortTests(ITestOutputHelper output) : IDisposable
                  "Size": [{"Expr": "len", "Unit": "Mm"}, {"Expr": "w", "Unit": "Mm"}, 35000]}
                 """));
         var variables = cell["Variables"]!.AsArray().Where(v => (string)v!["Name"]! is not ("wa" or "wb" or "s")).Select(v => v!.DeepClone()).ToList();
-        variables.Add(JsonNode.Parse("""{"Name": "w", "Expression": "1.575", "Unit": "Mm"}"""));
+        variables.Add(JsonNode.Parse("""{"Name": "w", "Expression": "1.575", "Unit": "Mm"}""")!);
         cell["Variables"] = new JsonArray([.. variables]);
         cell["MeshRegions"] = new JsonArray();
         cell["Ports"] = JsonNode.Parse("""

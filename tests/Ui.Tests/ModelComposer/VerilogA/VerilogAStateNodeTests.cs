@@ -14,7 +14,7 @@ namespace CircuitRF.Ui.Tests.ModelComposer.VerilogA;
 /// against the same <c>.cmodel</c> placed as a <c>ComposedFET</c> — DC, S at one bias and one HB point. Skips with a reason
 /// when no compiler or worker is reachable.
 /// </summary>
-[Collection("ExternalDeviceRegistry")]
+[Collection(ExternalDeviceRegistryCollection.Name)]
 public sealed class VerilogAStateNodeTests : IDisposable
 {
     private readonly ITestOutputHelper _output;

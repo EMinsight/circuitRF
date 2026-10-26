@@ -3935,3 +3935,17 @@ operand must go through Add/Sub/Mul/Div": `Value.Pow` was scalar-only, and `pow(
 under a fractional exponent is taken in complex arithmetic, which is the scalar `^`'s rule and agrees with
 `sqrt()` on a cube. `Value.Pow` and `pow()` route any cube operand to it; `pow()` on two numbers is unchanged.
 Gate: `Core.Tests/Expressions/PowerOnACubeTests`.
+
+## A worker's own log line could miss the refusal it explains (2026-10-26)
+
+A compiled model that refuses a point writes its reason to stderr ("model fatal: … needs the bias point") and the worker
+flushes it BEFORE writing the reply, but the host read stderr through `BeginErrorReadLine`, which delivers lines from the
+thread pool. With every core busy (a full test run; equally a solve) the pool fell far enough behind that the refusal was
+composed without the model's sentence, and a warning written at a DC solve's first evaluation was still missing when the
+solve had finished. Both only under load; both classes passed alone.
+
+- **Fix:** `ProcessDeviceWorkerTransport` reads stderr on a dedicated thread, and the exit flush now joins that thread (the
+  no-timeout `WaitForExit()` waits only for the ASYNC readers, so it no longer covers ours).
+- **Two pipes are still two pipes:** nothing orders the host's read of the reply against its read of the log. So the
+  failed-point report (`DeviceWorkerInstance.WithWorkerOutput`) reads `ErrorOutputAfterRefusal`, which waits for 10 ms of
+  quiet on the error stream, at most 100 ms. Only that path waits — a healthy evaluation never does.

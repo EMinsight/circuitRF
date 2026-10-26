@@ -1,5 +1,5 @@
 refusal (none)
-note The sweep's 0 Hz point is not in the 3D problem: a full-wave solver has no DC solution to give it.
+note The sweep's 0 Hz point is answered by circuitRF's conduction solve of the conductors, not by the 3D solver.
 note 5 shape(s) came from 1 placed instance(s), flattened into world coordinates for extraction.
 note Dielectric 'MIM Dielectric' exists only where 'Nitride' is drawn, and nothing is drawn there, so it is not in the 3D problem.
 note Port 1 ('1') at (-110, -125 µm) was taken to be on the conductor's low-y (bottom) end (inferred from the nearest conductor boundary) of level 0 ('Metal1'), driving current in the +y direction, at 50 Ω.

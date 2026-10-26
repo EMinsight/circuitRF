@@ -15,7 +15,7 @@ namespace CircuitRF.Ui.Tests.ModelComposer.VerilogA;
 /// <c>ti</c>, one pole or a Foster ladder with its slope, the instance's <c>Rth</c>, <c>Cth</c> and <c>Temp</c>, and the
 /// thermal pin left unconnected or wired — against the same <c>.cmodel</c> placed as a <c>ComposedFET</c>.
 /// </summary>
-[Collection("ExternalDeviceRegistry")]
+[Collection(ExternalDeviceRegistryCollection.Name)]
 public sealed class VerilogAThermalTests : IDisposable
 {
     private readonly ITestOutputHelper _output;
@@ -74,7 +74,7 @@ public sealed class VerilogAThermalTests : IDisposable
         var nl = Elaborate(bench + VaBench.VerilogA(va, instance));
         Assert.True(NonlinearDcEngine.Run(nl, Tight).Converged);
         Assert.DoesNotContain(nl.Components, c => c.InstancePath.Contains("__ambient__", StringComparison.Ordinal));
-        Assert.Empty(nl.Warnings.Where(w => w.Contains("thermal", StringComparison.Ordinal)));
+        Assert.DoesNotContain(nl.Warnings, w => w.Contains("thermal", StringComparison.Ordinal));
     }
 
     /// <summary>The pin wired to an external thermal resistance, which sits in parallel with the model's own network, agrees

@@ -104,7 +104,7 @@ public sealed class RealisticViewTests : IDisposable
 
         Realistic(view);
         var bare = Draws(Plan(scene, view, mesh));
-        Assert.Empty(bare.Where(d => Scene3DFramePlan.ChromeOf(scene, d) is not null));
+        Assert.DoesNotContain(bare, d => Scene3DFramePlan.ChromeOf(scene, d) is not null);
         // A wireframe object (no material) IS its edges: they are drawn with the Edges row off, or it is invisible but for hover.
         foreach (var o in scene.Objects.Where(o => o.Wireframe))
             Assert.Contains(bare, d => d.Object == o.Id && d.Pipeline == Scene3DPipeline.Lines && d.Buffer == Scene3DBuffer.SceneLines);

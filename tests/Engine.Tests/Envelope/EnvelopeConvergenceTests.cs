@@ -52,8 +52,8 @@ public sealed class EnvelopeConvergenceTests
     [Fact]
     public void AStepTheLineSearchCannotTake_IsRetakenInSubSteps()
     {
-        // At 35 dBm one standard step near 0.3 µs does not converge even with the line search.
-        var (ds, notes) = Run(Bench(35, "standard", 0.35e-6));
+        // At 38 dBm a standard step near 0.3 µs does not converge even with the line search.
+        var (ds, notes) = Run(Bench(38, "standard", 0.35e-6));
 
         Assert.True(double.IsFinite(ds["Pout_avg_dBm"].RealValues[0]));
         Assert.Contains(notes, n => n.Contains("sub-steps", StringComparison.Ordinal));

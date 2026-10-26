@@ -778,7 +778,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
     /// JSON.
     /// </summary>
     [Fact]
-    public void PrintConfig_IsAConfigurationThatStartsTheServerItDescribes()
+    public async Task PrintConfig_IsAConfigurationThatStartsTheServerItDescribes()
     {
         string kits = Path.Combine(Root, "kits");
         Directory.CreateDirectory(kits);
@@ -796,7 +796,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         var outTask = proc.StandardOutput.ReadToEndAsync();
         var errTask = proc.StandardError.ReadToEndAsync();
         proc.WaitForExit();
-        string stdout = outTask.GetAwaiter().GetResult(), stderr = errTask.GetAwaiter().GetResult();
+        string stdout = await outTask, stderr = await errTask;
 
         Assert.True(proc.ExitCode == 0, stderr);
         Assert.Contains("claude mcp add circuitrf -- ", stderr, StringComparison.Ordinal);

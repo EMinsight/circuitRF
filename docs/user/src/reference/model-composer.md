@@ -1008,7 +1008,7 @@ small with its |ΔS|; double-click one to choose it. A topology of your own is p
 Every edit — a value, a lock, a bound, a tie, an exclusion, a step setting, a network choice — is one undo step
 (⌘Z / ⇧⌘Z). A run is not: it is repeated by running again, and its result stays until the next run replaces it.
 
-## Headless {#headless}
+## From a script or an agent {#headless}
 
 Every run of this window is a [`model`](cli.html#model) verb noun — `model import`, `model deembed`, `model fit`,
 `model check-charge`, `model validate`, `model export`, `model report` — calling the same function, so a document built in

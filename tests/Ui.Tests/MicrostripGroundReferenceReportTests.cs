@@ -251,7 +251,7 @@ public sealed class MicrostripGroundReferenceReportTests(ITestOutputHelper outpu
         }
 
         // The VIAGND is the via: nothing generated beside it, nothing remembered.
-        Assert.Empty(target.Shapes.OfType<ViaShape>().Where(GroundArtwork.IsGroundVia));
+        Assert.DoesNotContain(target.Shapes.OfType<ViaShape>(), GroundArtwork.IsGroundVia);
         Assert.Empty(target.GroundViaKeys);
         foreach (var (part, via) in new[] { ("L1", "VIAG_L1"), ("C1", "VIAG_C1") })
         {

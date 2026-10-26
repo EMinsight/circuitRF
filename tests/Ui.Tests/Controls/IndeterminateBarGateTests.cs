@@ -18,21 +18,21 @@ public sealed class IndeterminateBarGateTests
         var bar = new ProgressBar { IsIndeterminate = true };
         var row = new Border { Child = bar };
         var panel = new StackPanel { Children = { row } };
-        Assert.True(bar.Classes.Contains(":indeterminate"));
+        Assert.Contains(":indeterminate", bar.Classes);
         Assert.False(IndeterminateBarGate.IsHeld(bar));
 
         row.IsVisible = false;
         Assert.False(bar.IsIndeterminate);
-        Assert.False(bar.Classes.Contains(":indeterminate"));
+        Assert.DoesNotContain(":indeterminate", bar.Classes);
         Assert.True(bar.GetBaseValue(ProgressBar.IsIndeterminateProperty).GetValueOrDefault());
 
         panel.IsVisible = false;                                  // a second hidden ancestor changes nothing
         row.IsVisible = true;
-        Assert.False(bar.Classes.Contains(":indeterminate"));
+        Assert.DoesNotContain(":indeterminate", bar.Classes);
 
         panel.IsVisible = true;
         Assert.True(bar.IsIndeterminate);
-        Assert.True(bar.Classes.Contains(":indeterminate"));
+        Assert.Contains(":indeterminate", bar.Classes);
         Assert.False(IndeterminateBarGate.IsHeld(bar));
     }
 
@@ -42,7 +42,7 @@ public sealed class IndeterminateBarGateTests
         var bar = new ProgressBar();
         var row = new Border { Child = bar, IsVisible = false };
         bar.IsIndeterminate = true;                               // indeterminate while already hidden: never animates
-        Assert.False(bar.Classes.Contains(":indeterminate"));
+        Assert.DoesNotContain(":indeterminate", bar.Classes);
 
         bar.SetValue(ProgressBar.IsIndeterminateProperty, false, BindingPriority.LocalValue);
         row.IsVisible = true;

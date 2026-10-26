@@ -32,7 +32,7 @@ using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.Examples;
 
-[Collection(SkiaFontsTypefaceCollection.Name)]
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class Em3dExampleTests(ITestOutputHelper output) : IDisposable
 {
     private const long SixteenGiB = 16L << 30;

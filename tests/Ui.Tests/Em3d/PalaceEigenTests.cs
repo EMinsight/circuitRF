@@ -24,7 +24,7 @@ namespace CircuitRF.Ui.Tests.Em3d;
 //  nothing rewrites it otherwise.
 // ══════════════════════════════════════════════════════════════════════════════════════════════
 
-[Collection(SkiaFontsTypefaceCollection.Name)]
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
 {
     private const double Mm = 1e-3, Um = 1e-6;

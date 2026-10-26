@@ -284,9 +284,9 @@ public sealed class LayoutFlipTests : IDisposable
                 LayoutRenderer.Draw(canvas, board, t, vp,
                     new LayoutRenderOptions { Theme = LayoutRenderTheme.Light, ShowGrid = false, BaseDir = _ws });
             using var data = stream.DetachAsData();
-            // Skia's SVG device numbers clip paths per process, so two identical frames differ only there.
+            // Skia's SVG device numbers clip paths per process (in hex), so two identical frames differ only there.
             return System.Text.RegularExpressions.Regex.Replace(
-                System.Text.Encoding.UTF8.GetString(data.ToArray()), @"cl_\d+", "cl");
+                System.Text.Encoding.UTF8.GetString(data.ToArray()), @"\bcl_[0-9a-fA-F]+\b", "cl_");
         }
 
         Assert.NotEqual(Picture(shown: true), Picture(shown: false));   // drawn while Silk Bottom is visible

@@ -36,6 +36,7 @@ public sealed class ChargeFitAdjointTests(ITestOutputHelper output)
         var dq = new List<double[]>();
         var cTruth = new List<double[]>();
         var qTruth = new List<double[]>();
+        Span<double> gg = stackalloc double[2], gd = stackalloc double[2];
         foreach (var (vgs, vds) in held)
         {
             var t = truth.Evaluate(new PortVoltages([vgs, vds]));
@@ -43,7 +44,6 @@ public sealed class ChargeFitAdjointTests(ITestOutputHelper output)
             double[] tc = [t.Dc[0, 0], t.Dc[0, 1], t.Dc[1, 0], t.Dc[1, 1]];
             dc.Add([c11 - tc[0], c12 - tc[1], c21 - tc[2], c22 - tc[3]]);
             cTruth.Add(tc);
-            Span<double> gg = stackalloc double[2], gd = stackalloc double[2];
             var (qg, qd) = model.Charges([vgs, vds], gg, gd);
             double[] tq = [t.Q[0] - q0[0], t.Q[1] - q0[1]];
             dq.Add([qg - tq[0], qd - tq[1]]);

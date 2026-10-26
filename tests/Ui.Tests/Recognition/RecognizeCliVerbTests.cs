@@ -123,7 +123,7 @@ public sealed class RecognizeCliVerbTests(ITestOutputHelper output) : IDisposabl
 
         // R-as7-8: check finds nothing to say about it, and explain resolves where it came from.
         var check = JsonNode.Parse(Cli("check", csch, "--json").StdOut)!;
-        Assert.Empty(check["diagnostics"]!.AsArray().Where(d => d!["severity"]!.GetValue<string>() is "warning" or "error"));
+        Assert.DoesNotContain(check["diagnostics"]!.AsArray(), d => d!["severity"]!.GetValue<string>() is "warning" or "error");
         var explain = JsonNode.Parse(Cli("explain", csch, "--ref", "../../Board/layout/Board.clay", "--json").StdOut)!;
         Assert.Equal(Path.GetFullPath(clay), explain["result"]!["explain"]!["reference"]!["resolvedPath"]!.GetValue<string>());
         Assert.Contains(explain["result"]!["explain"]!["walks"]!.AsArray(), w => w!["step"]!.GetValue<string>() == "artwork source");

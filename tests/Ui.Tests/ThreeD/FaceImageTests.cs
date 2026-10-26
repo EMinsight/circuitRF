@@ -570,7 +570,7 @@ public sealed class FaceImageTests : IDisposable
         Assert.True(Covers(10e-6, 10e-6));
 
         var vm = Open(path);                                              // and the view clips it the same way
-        Assert.False(Assert.Single(vm.Viewer.Scene.PlacedFaceImages).Triangles.Any(t => Inside(t, 50e-6, 50e-6)));
+        Assert.DoesNotContain(Assert.Single(vm.Viewer.Scene.PlacedFaceImages).Triangles, t => Inside(t, 50e-6, 50e-6));
     }
 
     private static bool Inside((Point3 A, Point3 B, Point3 C) t, double x, double y)

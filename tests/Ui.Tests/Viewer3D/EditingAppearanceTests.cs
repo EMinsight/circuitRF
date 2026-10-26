@@ -44,7 +44,7 @@ public sealed class EditingAppearanceTests : IDisposable
     // ── 1. the swatch ────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Gate1_TheSwatch_IsDeterministic_AMetalIsNotADielectric_AndRoughnessLowersThePeak()
+    public async Task Gate1_TheSwatch_IsDeterministic_AMetalIsNotADielectric_AndRoughnessLowersThePeak()
     {
         var env = EnvironmentPrefilter.Studio(C3dStudio.Studio);
         var gold = AppearanceColour.FromSrgb(0xFF, 0xE3, 0x9D);
@@ -56,7 +56,7 @@ public sealed class EditingAppearanceTests : IDisposable
         long one = AppearanceSwatch.Evaluations - before;
         Assert.InRange(one, 1, AppearanceSwatch.Size * AppearanceSwatch.Size);         // a counter, never a timing
         var twice = AppearanceSwatch.Shade(Look(1, 0.25), env);
-        var elsewhere = Task.Run(() => AppearanceSwatch.Shade(Look(1, 0.25), env)).Result;
+        var elsewhere = await Task.Run(() => AppearanceSwatch.Shade(Look(1, 0.25), env));
         Assert.Equal(once, twice);
         Assert.Equal(once, elsewhere);
 
@@ -437,7 +437,7 @@ public sealed class EditingAppearanceTests : IDisposable
         Assert.Equal(entries + 1, vm.UndoEntries);
         string saved = C3dPersistence.SerializeLook(vm.Document.Look);
         Assert.Contains("\"Camera\"", saved);
-        Assert.Empty(C3dValidation.Validate(vm.Document, documentPath: vm.FilePath).Where(d => d.Id == "c3d.look.camera"));
+        Assert.DoesNotContain(C3dValidation.Validate(vm.Document, documentPath: vm.FilePath), d => d.Id == "c3d.look.camera");
 
         for (int k = 0; k < 10; k++) vm.Viewer.View.Camera.Orbit(13, 7);    // ten orbit steps
         vm.Viewer.View.Camera.Distance *= 1.7f;

@@ -13,7 +13,7 @@ namespace CircuitRF.Ui.Tests.Em;
 // brief-dfr26-1 — a multilayer board in EM: a port's own level at an edge over inner pours, the 3D pad-to-plane port,
 // and what a Gerber import marks as ground. Synthetic geometry only, on the shipped four-layer technology's stack.
 // In the collection the Gmsh-counting classes share: two tests here start Gmsh, and PalaceRun.GmshInvocations is per process.
-[Collection(SkiaFontsTypefaceCollection.Name)]
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class MultilayerPortRound26Tests : IDisposable
 {
     private const int Dbu = 1000;
@@ -289,7 +289,7 @@ public sealed class MultilayerPortRound26Tests : IDisposable
         Assert.Contains($"'{conductors[0].Name}' (100%) covers as much but is an outer layer", marked, StringComparison.Ordinal);
         Assert.Contains("Technology editor ▸ Stackup", marked, StringComparison.Ordinal);
         Assert.Contains(r.Messages, m => m.Contains("Bottom boundary was set to Open", StringComparison.Ordinal));
-        Assert.Empty(TechValidation.Analyze(tech).Where(p => p.Area == TechProblemArea.Stackup));
+        Assert.DoesNotContain(TechValidation.Analyze(tech), p => p.Area == TechProblemArea.Stackup);
     }
 
     // ── R-dfr26-1-5 ─────────────────────────────────────────────────────────────────────────────

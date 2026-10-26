@@ -23,7 +23,7 @@ namespace CircuitRF.Ui.Tests.Em3d;
 
 // PalaceBackendTests' collection: gates 3 and 8 read process-wide run counters, and gate 8 narrows the
 // shared openEMS discovery for its duration.
-[Collection(SkiaFontsTypefaceCollection.Name)]
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class RunBothTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-both-" + Guid.NewGuid().ToString("N")[..12]);

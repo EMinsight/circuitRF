@@ -22,10 +22,16 @@ using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests.ThreeD;
 
+[Collection(Em3dProcessCountersCollection.Name)]
 public sealed class TerminalWavePortTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "crf-c3d114-" + Guid.NewGuid().ToString("N")[..12]);
     private readonly List<C3dEditorViewModel> _open = [];
+
+    // The view model's "UI thread": queued here and run only by Settle, on the test's own thread. Running a post inline
+    // (a => a()) ran it on whatever background thread posted it, alongside the test — an undo once walked the tree while a
+    // background reply was rebuilding it ("Collection was modified").
+    private readonly System.Collections.Concurrent.ConcurrentQueue<Action> _posted = new();
 
     public void Dispose()
     {
@@ -361,7 +367,7 @@ public sealed class TerminalWavePortTests(ITestOutputHelper output) : IDisposabl
         string ws = Workspace();
         string path = WriteC3d(ws, "Pair", doc);
         var fake = new PatchRecordingBackend();
-        var vm = new C3dEditorViewModel(path, C3dPersistence.LoadFromFile(path), () => fake, () => Path.Combine(ws, ".cws"), a => a());
+        var vm = new C3dEditorViewModel(path, C3dPersistence.LoadFromFile(path), () => fake, () => Path.Combine(ws, ".cws"), _posted.Enqueue);
         _open.Add(vm);
         vm.Viewer.Resized(400, 300);
         vm.Start();
@@ -371,8 +377,12 @@ public sealed class TerminalWavePortTests(ITestOutputHelper output) : IDisposabl
         return vm;
     }
 
-    private static void Settle(C3dEditorViewModel vm)
-        => Assert.True(SpinWait.SpinUntil(() => vm.AdoptedGeneration == vm.Viewer.Source.Requested, TimeSpan.FromSeconds(60)),
+    private void Settle(C3dEditorViewModel vm)
+        => Assert.True(SpinWait.SpinUntil(() =>
+                       {
+                           while (_posted.TryDequeue(out var a)) a();
+                           return vm.AdoptedGeneration == vm.Viewer.Source.Requested;
+                       }, TimeSpan.FromSeconds(60)),
                        "the scene never settled");
 
     private (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)

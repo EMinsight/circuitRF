@@ -129,7 +129,7 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
         Directory.CreateDirectory(_root);
         string python = Path.Combine(_root, "python");
         File.WriteAllText(python, "#!/bin/sh\nsleep 300 &\necho $! > grandchild.pid\necho '0:00:00.100000  INFO   : Calling GMSH mesher'\nwait\n");
-        File.SetUnixFileMode(python, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(python, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         using var cts = new CancellationTokenSource();
         var psi = EmergeRun.StartInfo(python, _root, new Dictionary<string, string>());
         var run = Task.Run(() => EmergeRun.Solve(psi, null, cts.Token, new EmergeStageTracker(null, false), 0));
@@ -184,7 +184,8 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
     /// that differ between any two runs (the write stamp and what the run cost), the frequency column exactly, and S to 1e-9.
     /// <para>Why not S byte for byte: EMerge's multi-threaded solve is not bit-reproducible. Two runs of one input through the
     /// same path differed by up to 2e-12 in S, which printed to ten digits moves the last digit of a few rows (137 of 801 here);
-    /// on one thread two runs were identical. The CLI and Simulate both run on every core (Automatic).</para>
+    /// on one thread two runs were identical. The CLI and Simulate both run on every core (Automatic). Under full-suite load one
+    /// printed value moved by 1.01e-9, hence 1e-8: a different mesh or setup moves S by orders of magnitude more.</para>
     /// </summary>
     [EmergeFact]
     public void TheCavity_Driven_OnEMerge_NotchesAt9955MHz_AndTheCliWritesTheGuisBytes()
@@ -221,7 +222,7 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
         for (int k = 0; k < guiRows.Count; k++)
         {
             Assert.Equal(guiRows[k][0], cliRows[k][0]);
-            for (int c = 1; c < guiRows[k].Length; c++) Assert.Equal(guiRows[k][c], cliRows[k][c], 1e-9);
+            for (int c = 1; c < guiRows[k].Length; c++) Assert.Equal(guiRows[k][c], cliRows[k][c], 1e-8);
         }
     }
 

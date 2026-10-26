@@ -119,7 +119,7 @@ public sealed class YieldPanelEditTests
 public sealed class YieldPanelRunTests
 {
     [Fact]
-    public void PauseAndResume_LeaveTheResultAnUninterruptedRunsBytes_AndStopKeepsTheTrialsItFinished()
+    public async Task PauseAndResume_LeaveTheResultAnUninterruptedRunsBytes_AndStopKeepsTheTrialsItFinished()
     {
         // Paused before the first batch, resumed: the file is the uninterrupted run's, byte for byte.
         var f = new YieldPanelFixture("trials=120 parallel=4");
@@ -134,7 +134,7 @@ public sealed class YieldPanelRunTests
         YieldPanelFixture.Until(() => f.Panel.StatusText == "Paused");
         Assert.True(f.Panel.IsPaused);
         f.Panel.PauseResumeCommand.Execute(null);
-        task.Wait();
+        await task;
         Assert.True(f.Panel.IsFinished);
         Assert.Equal(File.ReadAllBytes(reference), File.ReadAllBytes(f.Panel.ResultPath!));
         Assert.Equal(120, f.Panel.Trials.Count);
@@ -157,7 +157,7 @@ public sealed class YieldPanelRunTests
         var stopped = g.Start();
         YieldPanelFixture.Until(() => g.Panel.StatusText == "Paused");
         g.Panel.StopCommand.Execute(null);
-        stopped.Wait();
+        await stopped;
         var r = g.Panel.Result!;
         Assert.Equal(StatisticalOutcome.Finished, r.Outcome);
         Assert.InRange(r.Trials, 1, 119);
@@ -177,14 +177,14 @@ public sealed class YieldPanelRunTests
 public sealed class YieldPanelParityTests
 {
     [Fact]
-    public void ThePanelsDataSet_IsTheYieldVerbsBytes()
+    public async Task ThePanelsDataSet_IsTheYieldVerbsBytes()
     {
         var f = new YieldPanelFixture();
         string verb = Path.Combine(f.Dir, "verb.npy");
         Assert.Equal(0, OptCli.Run("yield", "estimate", f.Cnl, "-o", verb).Exit);
 
         f.Panel.RunCommand.Execute(null);
-        f.Start().Wait();
+        await f.Start();
         Assert.True(f.Panel.IsFinished, f.Panel.StatusText);
         Assert.Equal(StatisticalRun.ResultPathFor(f.Cnl), f.Panel.ResultPath);
         Assert.Equal(File.ReadAllBytes(verb), File.ReadAllBytes(f.Panel.ResultPath!));

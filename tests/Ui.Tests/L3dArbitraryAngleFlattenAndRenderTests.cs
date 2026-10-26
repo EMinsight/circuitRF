@@ -461,6 +461,8 @@ public sealed class L3dArbitraryAngleFlattenAndRenderTests : IDisposable
             if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") ||
                 file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")) continue;
             if (Path.GetFileName(file) == "LayoutModel.cs") continue;   // the accessor's own home
+            // The numeric layer references no layout type, so a `.Rot` there is its own (the envelope's phase turn).
+            if (file.Contains($"{Path.DirectorySeparatorChar}src{Path.DirectorySeparatorChar}Engine{Path.DirectorySeparatorChar}")) continue;
 
             string code = Regex.Replace(File.ReadAllText(file), @"/\*.*?\*/", "", RegexOptions.Singleline);
             code = Regex.Replace(code, @"//[^\n]*", "");

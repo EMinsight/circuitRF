@@ -157,7 +157,7 @@ public sealed class SpherePrimitiveTests : IDisposable
         Assert.Equal(pad.Kind, ball.Kind);
         Assert.Equal(pad.Rgba, ball.Rgba);
         Assert.Equal(["surface"], ball.FaceNames);
-        Assert.Equal(0, vm.Viewer.Scene.FeaturesOf(ball.Id).Table!.Vertices.Length);   // no corners: no feature edge
+        Assert.Empty(vm.Viewer.Scene.FeaturesOf(ball.Id).Table!.Vertices);   // no corners: no feature edge
 
         SelectFace(vm, "ball", "surface");
         Assert.Equal("surface", vm.FaceSelection()!.Value.Face);

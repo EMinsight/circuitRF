@@ -205,7 +205,7 @@ public sealed class ProcessLimitsTests : IDisposable
     {
         string path = Path.Combine(_root, "stand-in-" + Guid.NewGuid().ToString("N")[..6]);
         File.WriteAllText(path, "#!/bin/sh\n" + body);
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return new ProcessStartInfo(path) { WorkingDirectory = _root, RedirectStandardOutput = true, RedirectStandardError = true };
     }
 

@@ -26,9 +26,12 @@ public sealed class SchematicCanvasViewportPersistenceTests
     {
         string src = StripComments(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "Controls", "SchematicCanvas.cs")));
 
-        // One funnel for every pan/zoom path, and it records.
-        Assert.Single(Regex.Matches(src, @"ViewportChanged\?\.Invoke\("));
-        Assert.Matches(@"(?s)private void RaiseViewportChanged\(\)\s*\{\s*RememberViewport\(\);", src);
+        // One funnel for every pan/zoom path, and it records. The only other raise is a re-fit that follows a
+        // resize (FitOnResize), which keeps following the fit rather than going through the funnel — and records too.
+        Assert.Equal(2, Regex.Matches(src, @"ViewportChanged\?\.Invoke\(").Count);
+        Assert.Matches(@"(?s)private void RaiseViewportChanged\(\)\s*\{\s*_followingFit = false;\s*RememberViewport\(\);", src);
+        Assert.Matches(@"(?s)ZoomToFitInternal\(e\.NewSize\.Width, e\.NewSize\.Height\);\s*RememberViewport\(\);\s*"
+                     + @"InvalidateVisual\(\);\s*ViewportChanged\?\.Invoke\(", src);
         Assert.Matches(@"_editContext\.LastViewport = \(_panX, _panY, _zoom\);", src);
 
         // A canvas that has not yet established a view takes the remembered one instead of fitting.
