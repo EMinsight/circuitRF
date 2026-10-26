@@ -215,6 +215,48 @@ public sealed class CropBoardRound26Tests : IDisposable
         Assert.Contains("1 reaching past", note.Text);
     }
 
+    /// <summary>Armed from the context menu with Select still active, the crop drag has to say so with the crosshair:
+    /// the canvas asks <see cref="LayoutEditorViewModel.IsCanvasPickArmed"/> on every notification
+    /// <see cref="LayoutEditorViewModel.IsCanvasPickProperty"/> names, so arming and releasing must both raise one.</summary>
+    [Fact]
+    public void CropDrag_ArmsTheCrosshairUntilTheBoxIsReleased()
+    {
+        var (vm, _, _) = Editor(m => m.Shapes.Add(new RectShape { Layer = Shown, X1 = 0, Y1 = 0, X2 = 2000, Y2 = 500 }));
+        int notified = 0;
+        vm.PropertyChanged += (_, e) => { if (LayoutEditorViewModel.IsCanvasPickProperty(e.PropertyName)) notified++; };
+
+        vm.ArmCropToNewCell(_ => Task.CompletedTask);
+        Assert.True(vm.IsCanvasPickArmed);
+        Assert.Equal(1, notified);
+
+        vm.OnPointerPressed(100, 100, Avalonia.Input.KeyModifiers.None);
+        vm.OnPointerReleased(100, 100, Avalonia.Input.KeyModifiers.None);
+        Assert.True(vm.IsCanvasPickArmed);   // a click encloses nothing: still armed, still the crosshair
+
+        vm.OnPointerPressed(0, 0, Avalonia.Input.KeyModifiers.None);
+        vm.OnPointerMoved(1000, 1000, leftDown: true, Avalonia.Input.KeyModifiers.None);
+        vm.OnPointerReleased(1000, 1000, Avalonia.Input.KeyModifiers.None);
+        Assert.False(vm.IsCanvasPickArmed);
+        Assert.Equal(2, notified);
+
+        vm.ArmCropToRectangle(null);
+        Assert.True(vm.IsCanvasPickArmed);
+        vm.OnKeyDown(Avalonia.Input.Key.Escape, Avalonia.Input.KeyModifiers.None);
+        Assert.False(vm.IsCanvasPickArmed);
+        Assert.Equal(4, notified);
+
+        string canvas = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "Controls", "LayoutCanvas.cs"));
+        Assert.Contains("_viewModel?.IsCanvasPickArmed == true) { SetCursor(StandardCursorType.Cross)", canvas, StringComparison.Ordinal);
+        Assert.Contains("LayoutEditorViewModel.IsCanvasPickProperty(e.PropertyName)", canvas, StringComparison.Ordinal);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null && !File.Exists(Path.Combine(dir, "circuitRF.slnx"))) dir = Path.GetDirectoryName(dir);
+        return dir!;
+    }
+
     private static void MarqueeSelect(LayoutEditorViewModel vm, double x1, double y1, double x2, double y2)
     {
         vm.OnPointerPressed(x1, y1, Avalonia.Input.KeyModifiers.None);

@@ -1076,6 +1076,21 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     public bool IsPickingPortReturn => _portReturnPickFor is not null;
 
     /// <summary>
+    /// True while a one-shot gesture owns the next press on the canvas whatever tool is active — a Crop drag, an
+    /// EM solve-region drag, a return-conductor or artwork point pick, an Impedance scope tool. The canvas shows
+    /// the crosshair for all of them: armed from a menu or a panel, with the Select tool still active, the arrow
+    /// gave no sign that the next drag would be taken.
+    /// </summary>
+    public bool IsCanvasPickArmed =>
+        _cropArmed || _emRegionPick is not null || _portReturnPickFor is not null
+        || _artworkPointPick is not null || ImpedanceScopeArmed;
+
+    /// <summary>The notifications <see cref="IsCanvasPickArmed"/> can change on.</summary>
+    public static bool IsCanvasPickProperty(string? name) =>
+        name is nameof(IsPickingCropRectangle) or nameof(IsPickingEmRegion) or nameof(IsPickingPortReturn)
+             or nameof(IsPickingArtworkPoint) or nameof(ImpedanceScopeTool);
+
+    /// <summary>
     /// <b>Arms the pick: the next click on metal becomes this port's negative terminal.</b>
     ///
     /// <para>A gesture rather than a pair of coordinate fields, because what is being named is a

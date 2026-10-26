@@ -40688,3 +40688,14 @@ before the override and does not after. The selector names a template part — r
   dialog's own buttons clicked. Crop to New Cell with GND hidden and IN3 locked left the board's `.clay` with the
   same hash, and the new cell held the GND plane cut to the box. A marquee group named the GND plane on the first
   line, and Include them took the plane and the outline.
+
+## Crop and the other one-shot canvas picks show the crosshair (2026-10-26)
+
+Crop to Rectangle and Crop to New Cell, armed from the layout context menu, left the arrow showing, so nothing
+said the next drag would be taken. `LayoutCanvas.UpdateCursor` chose the crosshair from `ActiveTool` alone, and
+every armed pick in `LayoutEditorViewModel.OnPointerPressed` (Crop, the EM solve region, the port return
+conductor, the artwork ground point, the Impedance scope tools) runs with Select still active, so all five had
+the same gap. `LayoutEditorViewModel.IsCanvasPickArmed` is the one question now, asked right after the zoom box,
+and `IsCanvasPickProperty` names the notifications that change it, so the canvas re-asks the moment a pick arms
+or disarms and the arrow comes back once the box is released or Escape is pressed. A pick added to
+`OnPointerPressed` needs a term in both.

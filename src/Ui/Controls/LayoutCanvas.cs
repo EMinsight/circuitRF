@@ -280,7 +280,8 @@ public sealed class LayoutCanvas : Control
 
     private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(LayoutEditorViewModel.ActiveTool))
+        if (e.PropertyName is nameof(LayoutEditorViewModel.ActiveTool)
+            || LayoutEditorViewModel.IsCanvasPickProperty(e.PropertyName))
             UpdateCursor();
         InvalidateVisual();
     }
@@ -2252,6 +2253,11 @@ public sealed class LayoutCanvas : Control
         // The armed magnifier, drawn the way the schematic editor's Zoom Box has always drawn it.
         // Above the grip and tool branches below: while it is armed, none of those gestures can run.
         if (_zoomBoxArmed) { SetCursor(StandardCursorType.Cross); return; }
+
+        // A Crop / solve-region drag or a point pick armed from a menu or panel owns the next press with the
+        // Select tool still active, so the tool branch below would show the arrow. Disarming (the drag
+        // released, Escape) notifies, and the arrow comes back.
+        if (_viewModel?.IsCanvasPickArmed == true) { SetCursor(StandardCursorType.Cross); return; }
 
         // …and an OVERLAY's own armed gesture says the same thing with the same pointer — railRF's
         // pour pick, where the next click makes a rail. Below the pan latch deliberately: panning
