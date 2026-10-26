@@ -65,6 +65,7 @@ public static class DocAnchors
          "reference/em-setup.html", "reference/harmonicarf.html", "reference/wbond.html",
          "reference/match.html", "reference/settings.html", "reference/smith-chart.html",
          "reference/tuning.html", "reference/optimization.html", "reference/signal-designer.html",
+         ViewModels.VarEditorViewModel.MeasHelpPage, ViewModels.VarEditorViewModel.VarHelpPage,
          Layout.MaterialsTableViewModel.HelpPage];
 
     /// <summary>Every destination the application can navigate to, deduplicated.</summary>

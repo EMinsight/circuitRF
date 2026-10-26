@@ -4,7 +4,7 @@ slug: reference/measurements.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Measurements
 lede: A measurement is a named figure of merit computed from a run's results — Gain, PAE, Pout, whatever you can write as an equation over the analysis output. It draws no current and stamps nothing; it is cube algebra evaluated after the analyses finish, and its result plots like any other trace.
-keywords: measure, post-processing, expression, equation, derived result, post process
+keywords: measure, measurement syntax, expression syntax, syntax, how to write a measurement, MEAS, post-processing, expression, equation, derived result, post process, gain vs pout, PAE
 ---
 
 <figure class="symbol"><span class="frame">
@@ -21,6 +21,7 @@ keywords: measure, post-processing, expression, equation, derived result, post p
       <li><a href="#sparam">S-parameters: 1-based ports</a></li>
       <li><a href="#compose">Composition &amp; scope</a></li>
       <li><a href="#swept">Swept variables</a></li>
+      <li><a href="#gain-vs-pout">Gain against output power, at each frequency</a></li>
       <li><a href="#freq">Frequency: <code>freq</code></a></li>
       <li><a href="#spec">Spec checks: the worst value over a band</a></li>
     </ol>
@@ -40,12 +41,24 @@ Drop a **MEAS** component on the schematic (it is an annotation — no ports, no
 netlist) and edit its rows, one per line, exactly like a [VAR](components.html#var) block:
 
 ```netlist
-Gain  = dB( HB1.V("Vout", 1, All) / HB1.V("Vin", 1, All) )   dB
-Pout  = 0.5 * real( HB1.V[:, "Vout", 1] * conj(HB1.I[:, "Iout", 1]) )   W
-PAE   = 100 * (Pout - Pin) / Pdc   %
+Pout_W   = 0.5 * real( HB1.V("Vout", 1) * conj(HB1.I("Iout", 1)) )   W
+Pout_dBm = dBm(Pout_W)                                              dBm
+Gain     = Pout_dBm - Pin                                           dB
+Pin_W    = 10^((Pin - 30)/10)                                       W
+PDC_W    = real( HB1.V("VDD", 0) * HB1.I("IDC", 0) )                W
+PAE      = 100 * (Pout_W - Pin_W) / PDC_W                           %
 ```
 
-Each row is `name = expression [unit]`. Row order — and the order of multiple MEAS components — is
+Here `HB1` is the analysis, `Vout` and `VDD` are net names, `Iout` and `IDC` are
+[IProbe](components.html#iprobe) current probes, and `Pin` is the global variable the source's
+`Pavl` is set from, in dBm. Use your own names. `dBm()` takes watts, which is why `Pout_W` is
+computed first.
+
+Each row is `name = expression [unit]`. The expression is written in the
+[expression language](expressions.html) used everywhere else in circuitRF: its
+[operators](expressions.html#operators) and [functions](expressions.html#constants) work on
+results the same way they work on numbers. What this page adds is how a row reads an analysis's
+results. Row order — and the order of multiple MEAS components — is
 the declaration order the evaluator uses (so later rows can reference earlier ones). A duplicate
 name is a reported conflict; the first definition wins. MEAS at the top testbench level feeds
 `TestBench.Measurements`; a MEAS inside a sub-cell is ignored (with a warning).
@@ -163,7 +176,38 @@ note and does not fail the whole run.
 A global variable that is also a parametric-sweep axis is injected as a **1-D cube** (one element
 per sweep point) rather than a scalar — so `Pin_avail = Pin` over a 10-point `Pin` sweep yields a
 10-element curve. Its axis matches the swept analysis's axis, so it broadcast-aligns: `Gain =
-dB(HB1.V("out",1,All)) - Pin` resolves element-wise. A non-swept global stays a scalar.
+Pout_dBm - Pin` resolves element-wise, one gain per drive level. A non-swept global stays a scalar.
+
+## Gain against output power, at each frequency {#gain-vs-pout}
+
+A measurement computes values. It does not choose what they are plotted against. With `Pin`
+swept inside a sweep over `RFfreq`, the three rows below each give one value per
+(`RFfreq`, `Pin`) point. That is a table with a row for each frequency and a column for each drive
+level:
+
+```netlist
+Pout_W   = 0.5 * real( HB1.V("Vout", 1) * conj(HB1.I("Iout", 1)) )   W
+Pout_dBm = dBm(Pout_W)                                              dBm
+Gain     = Pout_dBm - Pin                                           dB
+```
+
+Gain *against Pout* is a choice about the plot, so you make it in the
+[Data Display](data-display.html#versus), not in the MEAS block. A trace card on `Gain` already
+opens with the innermost sweep, `Pin`, as **X** and the next one out, `RFfreq`, as the family, so
+there is one step: tick **vs X** and pick `Pout_dBm`. Each frequency's curve is drawn against its
+own output power. Typed in the card's spec box, the same trace is:
+
+```text
+Gain vs Pout_dBm
+```
+
+A sweep added later keeps this working. Re-run with a `VDD` sweep around the other two and the
+card stays on Pin as X with one curve per frequency, with `VDD` pinned at its first value; click
+**Fam** on the `VDD` row to draw one curve per supply voltage instead.
+
+Do not put `vs` in a MEAS row. It is part of the trace card's plotting shorthand, not the
+expression language, so a measurement containing it does not evaluate. Headless, `circuitrf plot
+run.npy -o gain.svg --trace "cube=Gain vs Pout_dBm"` draws the same picture.
 
 ## Frequency: `freq` {#freq}
 

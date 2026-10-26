@@ -248,7 +248,7 @@ public sealed partial class Evaluator
             "ln"    => EvalLog(cl, scope),          // alias
             "log10" => EvalLog10(cl, scope),        // cube-aware
             "sqrt"  => EvalSqrt(cl, scope),         // cube-aware
-            "pow"   => BinaryMath(cl, scope, Math.Pow,  Complex.Pow),
+            "pow"   => PowCall(cl, scope),
             // Rounding family. Applied componentwise for Complex, which is the conventional
             // extension and keeps them total rather than throwing on a complex argument.
             "floor" => UnaryMath(cl, scope, Math.Floor,    z => new Complex(Math.Floor(z.Real), Math.Floor(z.Imaginary))),
@@ -700,6 +700,20 @@ public sealed partial class Evaluator
         return kind == ValueKind.Real
             ? new Value(realFn(a.AsReal(), b.AsReal()))
             : new Value(complexFn(a.ToComplex(), b.ToComplex()));
+    }
+
+    /// <summary><c>pow(a, b)</c>: over a cube it is <c>a^b</c>, element-wise; on two numbers it keeps
+    /// its own scalar path.</summary>
+    private Value PowCall(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 2) throw new ArityException(cl.Name, 2, cl.Args.Length);
+        var a = EvalExpr(cl.Args[0], scope);
+        var b = EvalExpr(cl.Args[1], scope);
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube) return Value.Pow(a, b);
+        var kind = Value.CommonArithmeticKind(a, b);
+        return kind == ValueKind.Real
+            ? new Value(Math.Pow(a.AsReal(), b.AsReal()))
+            : new Value(Complex.Pow(a.ToComplex(), b.ToComplex()));
     }
 
     private Value BinaryRealMath(CallExpr cl, Scope scope, Func<double, double, double> fn)

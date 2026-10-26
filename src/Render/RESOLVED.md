@@ -5450,3 +5450,26 @@ Gates: `MetalPrecedenceTests.TheRealisticView_ShowsNoHiddenCopperTop_AlongTheBoa
 applies the same polygon offset: 318 px came through at slope 2, none at 1/16) and
 `PlatedViaAndPerspectiveTests.APlatedBarrel_IsDrawnAsATube_ThroughAHoleInItsPad` (the pad's hole at the barrel's outside,
 the narrow pad's at the bore, the edge pad's notch).
+
+## A "vs" trace broke as re-runs added sweeps; one seed rule for every default (2026-10-26)
+
+Field report on the PowerAmplifier example: Gt_dB vs Pout_dBm plotted over Pin; adding an RFfreq sweep pinned it at
+1 GHz; adding VDD made the trace invalid, and a fresh card could not plot it either.
+
+- **The re-run reseed** (`PlotInspectorViewModel.ReseedSliceIfCubeShapeChanged`) handed the whole `Y vs X` text to
+  `CubeTraceSpecParser`, which does not read `vs`. The bare name was refused, the carry pinned every new axis at index 0,
+  and the spec was rewritten with brackets, so the next reshape could not re-read it either. It now splits on
+  `VersusSpec` first.
+- **A bare X side on three or more axes** asked the parser for its whole-cube reading, which is not one X. That failed,
+  so the X fell through to `TraceExpression` and was refused as "more than one X axis". `VersusResolver` never used
+  that reading (a bare X inherits the Y side's roles by name), so it now resolves the name alone via
+  `CubeTraceSpecParser.TryParseBareName`.
+- **`SeedSlice`** (this project) is now the one default: freq is X when present, else with two or more sweeps the
+  innermost is X and the next one out the family, else the first plottable axis. It was `BuildSeedSlice`, used only by
+  "+ Trace"; a signal picked on a card opened on the OUTER sweep. The trace card's `BuildDefaultSlice`, the carry
+  (`BuildCarriedSliceFromCube`: shared axes keep their roles, a new axis takes the seed's role unless the old slice
+  already fills it) and a bare spec on three or more axes all use it, so `plot --trace "cube=Gain vs Pout"` reads a
+  3-sweep cube the way the card does.
+- Gate: `Ui.Tests/PlotVersusSweepGrowthTests` (Pin → +RFfreq → +VDD, and a fresh card on all three).
+  `PlotVersusCardTests.TheSummaryTracksTheYSidesRoles_IncludingAPinnedValue` now sets its starting roles itself, since
+  its [Pin, RFfreq] fixture seeds RFfreq as X.

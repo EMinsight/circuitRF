@@ -4,7 +4,7 @@ slug: reference/expressions.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Expressions
 lede: One expression language runs everywhere a value can be computed: global variables, component parameters, SDD device equations, and measurements. Anywhere you can type a number, you can type an expression — `2*pi*freq0`, `polar(0.1, 35)`, `if(Vg > Vth, gm*Vg, 0)`.
-keywords: variable, parameter, formula, equation, function, math, conditional, if
+keywords: expression, expression syntax, syntax, grammar, operators, precedence, variable, parameter, formula, equation, function, math, conditional, if
 ---
 
 <nav class="toc">

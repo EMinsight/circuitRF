@@ -878,12 +878,33 @@ internal static class PlotVerb
 
     /// <summary>
     /// One <c>--trace</c> as a <see cref="TraceConfig"/>, with its slice resolved against the cubes
-    /// the result actually holds.
+    /// the result actually holds. A <c>Y vs X</c> spec is split here, exactly as the trace card's spec
+    /// box splits it: everything below builds the Y side, and the X side is carried as the trace's
+    /// <see cref="TraceConfig.XSpec"/>. Handing the whole text to the cube parser instead drew Y
+    /// against its swept axis, because the parser stops at the closing bracket of <c>Gain[~, :]</c>
+    /// and never saw the <c>vs</c> after it.
     /// </summary>
     private static (TraceConfig? Trace, int? Refusal) BuildTrace(
         TraceSpec spec, DataSet data, string sourceRef, int index, PlotType plotType)
     {
-        string text = spec.Text;
+        string yText = spec.Text;
+        string? xText = null;
+        if (VersusSpec.TrySplit(spec.Text, out var ySide, out var xSide, out var versusError))
+        {
+            yText = ySide;
+            xText = xSide;
+        }
+        else if (versusError.Length > 0)
+            return (null, JsonRun.Fail(CliDiagnostics.PlotTraceUnresolved(spec.Raw, spec.Text, versusError)));
+
+        var (tc, refusal) = BuildYTrace(spec, yText, data, sourceRef, index, plotType);
+        if (tc is not null && xText is not null) tc.XSpec = xText;
+        return (tc, refusal);
+    }
+
+    private static (TraceConfig? Trace, int? Refusal) BuildYTrace(
+        TraceSpec spec, string text, DataSet data, string sourceRef, int index, PlotType plotType)
+    {
 
         // An axis function (mean_over, histogram, cdf, … — YA-5 R-ya5-6) reads whole cubes, so the trace is an
         // EXPRESSION, evaluated once by the trace card's own evaluator; its one remaining axis is the X. Checked

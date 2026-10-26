@@ -205,6 +205,13 @@ SP1.S[~, :, 2, 1]               S21 versus frequency, one curve per sweep point
 
 That distinction matters when you change your mind about the sweep: you edit one card, not twenty.
 
+A trace on a result with two or more sweeps opens with the **innermost** sweep as X and the next one
+out as the family, every other axis pinned at its first value. A cube with a frequency axis keeps
+frequency as X. When a re-run adds a sweep, the card keeps the roles you had and the new axis becomes
+the family if the card has none, so a drive sweep wrapped in a frequency sweep draws one curve per
+frequency without a click. A bare name typed in the spec box on three or more axes is read the same
+way.
+
 ## Plotting against another quantity {#versus}
 
 A spec may end with `vs <x-spec>`, which plots the trace against that quantity instead of against the
@@ -213,6 +220,7 @@ cube's own swept axis:
 ```text
 Gain vs Pout
 dB20(HB1.V[:, "Vout", 1]) vs Pout
+Gain[~, :] vs Pout              one curve per RFfreq, each against its own Pout
 ```
 
 This is how you get gain against output power rather than against drive, which is the form a PA designer

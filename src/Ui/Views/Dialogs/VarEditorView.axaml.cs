@@ -57,6 +57,11 @@ public partial class VarEditorView : UserControl
 
     // ── Footer ────────────────────────────────────────────────────────────────
 
+    private void OnHelpClick(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is { } vm) DocLauncher.Open(vm.HelpPage);
+    }
+
     private void OnCloseClick(object? sender, RoutedEventArgs e)
     {
         if (Vm?.IsTextMode == true)

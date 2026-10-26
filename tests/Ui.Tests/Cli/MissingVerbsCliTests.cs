@@ -413,6 +413,39 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("plot.trace.ports-with-slice", Ids(both.StdOut));
     }
 
+    /// <summary>
+    /// <c>Y vs X</c> is split as the trace card's spec box splits it. Handed whole to the cube parser,
+    /// the bracketed form drew Y against its swept axis — the parser stops at <c>]</c> — and the bare
+    /// form the docs show was refused with "Missing '['". An X that does not resolve is refused, not
+    /// drawn as an empty frame.
+    /// </summary>
+    [Fact]
+    public void PlotVersus_CarriesTheXSide_AndRefusesOneThatDoesNotResolve()
+    {
+        string dir = Dir("versus");
+        var ds = new RfCore.Data.DataSet();
+        var freq = new RfCore.Data.Axis("RFfreq", [1e9, 2e9], "Hz");
+        var pin  = new RfCore.Data.Axis("Pin", [0.0, 10.0, 20.0], "dBm");
+        ds.AddToGroup("measurements", "Gain", new RfCore.Data.DataCube([freq, pin], [12.0, 13, 11, 11.5, 12.5, 10.5]));
+        ds.AddToGroup("measurements", "Pout", new RfCore.Data.DataCube([freq, pin], [12.0, 23, 31, 11.5, 22.5, 30.5]));
+        string npy = Path.Combine(dir, "run.npy");
+        RfCore.Export.DataSetExporter.Export(ds, npy, RfCore.Export.ExportFormat.Npy);
+
+        foreach (string typed in new[] { "cube=Gain vs Pout", "cube=Gain[~, :] vs Pout" })
+        {
+            string cdd = Path.Combine(dir, "v.cdd");
+            var run = RunCli("plot", npy, "-o", Path.Combine(dir, "v.svg"), "--trace", typed, "--write-cdd", cdd);
+            Assert.True(run.ExitCode == 0, typed + ": " + run.StdErr + run.StdOut);
+            Assert.Contains("\"XSpec\": \"Pout\"", File.ReadAllText(cdd), StringComparison.Ordinal);
+        }
+
+        string bad = Path.Combine(dir, "bad.svg");
+        var nope = RunCli("plot", npy, "-o", bad, "--trace", "cube=Gain[~, :] vs Nope", "--json");
+        Assert.NotEqual(0, nope.ExitCode);
+        Assert.Contains("plot.trace.unresolved", Ids(nope.StdOut));
+        Assert.False(File.Exists(bad));
+    }
+
     /// <summary>R-aut11-2's "one plotting path, not two", checked as source rather than as
     /// agreement: the verb composes nothing and encodes nothing of its own.</summary>
     [Fact]

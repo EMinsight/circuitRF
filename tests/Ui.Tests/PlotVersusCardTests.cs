@@ -459,6 +459,9 @@ public sealed class PlotVersusCardTests
         try
         {
             var card = BuildCard(lib, path, "Gp_dB");
+            // Start from Pin as X with RFfreq pinned. The seeded roles take the innermost sweep
+            // (RFfreq here) as X and Pin as the family, and this test is about the summary.
+            card.AxisRoles.First(r => r.AxisName == "Pin").IsX = true;
             card.VersusEnabled   = true;
             card.SelectedXGroup  = "HB1";
             card.SelectedXSignal = card.XSignals.First(s => s.CubeName == "HB1.V");

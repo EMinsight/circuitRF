@@ -2679,7 +2679,7 @@ One plot, one axis pair, without writing a data display first.
 
 | Key | What it means |
 |---|---|
-| `cube` | Which cube. Required. It is the same shorthand the trace card's spec box takes, so `S`, `S[:,2,1]`, `Pout` and `mag(V[:,"X1.drain"])` all work. |
+| `cube` | Which cube. Required. It is the same shorthand the trace card's spec box takes, so `S`, `S[:,2,1]`, `Pout` and `mag(V[:,"X1.drain"])` all work, and so does [plotting against another quantity](data-display.html#versus): `cube=Gain[~,:] vs Pout_dBm` draws gain against output power, one curve per value of the outer sweep. An X side that does not resolve is refused (`plot.trace.unresolved`). |
 | `i`, `j` | The **port numbers** of a matrix cube — `i=2,j=1` is S21. Refused together with a bracketed slice: they are the convenience over writing one. |
 | `y` | `db20` (20·log₁₀ — S-parameters, voltages, currents, a probe margin), `db10` (10·log₁₀ — powers), `mag`, `phase`, `real`, `imag` or `conj`. A bare `db` is refused as ambiguous (`plot.trace.db-ambiguous`): in a data display it means 10·log₁₀, while a measurement's `dB()` is 20·log₁₀, and the wrong one draws an S-parameter at half its depth. |
 | `axis` | `left` (the default) or `right`. |

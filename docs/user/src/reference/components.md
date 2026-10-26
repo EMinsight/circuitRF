@@ -2282,6 +2282,11 @@ A port-less annotation holding `name = expression` measurement equations, evalua
 example `Pout_dBm = 10*log10(...)`. Measurements attach at the top test-bench level only. Edit the rows
 in the same multi-line editor as VAR. No fixed parameters.
 
+How to write one: [Measurements](measurements.html) covers reading an analysis's results (nodes,
+probes, harmonics, sweeps and frequency), and [Expressions](expressions.html) covers the language
+itself: [operators](expressions.html#operators), [functions](expressions.html#constants) and
+[units](expressions.html#units). The editor's **Help** button opens the first of these.
+
 ---
 
 ## The full component list

@@ -163,6 +163,15 @@ internal static class RenderDataDisplay
             {
                 var plot = PlotConfigLoader.LoadPlot(pc, sources!);
                 PlotConfigLoader.ResolveDerived(plot, sources!);
+                // `plot` checks every Y spec before it authors the document, but a "vs" X side only
+                // resolves here, against the Y side's slice — so an X that does not read is refused
+                // in the resolver's own words rather than drawn as an empty frame.
+                if (req.Verb == "plot"
+                    && plot.Traces.FirstOrDefault(t => t.IsVersus && !string.IsNullOrEmpty(t.ExpressionError)) is { } bad)
+                {
+                    string spec = VersusSpec.Join(bad.CubeName ?? bad.Expression ?? "", bad.XSpec!);
+                    return JsonRun.Fail(CliDiagnostics.PlotTraceUnresolved(spec, spec, bad.ExpressionError!));
+                }
                 placed.Add(Place(plot, pc, sources!));
                 plotCount++;
             }

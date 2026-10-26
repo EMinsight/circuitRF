@@ -39,52 +39,28 @@ namespace CircuitRF.Render.DataDisplay
             // Split off everything before '['.
             int bracketPos = text.IndexOf('[');
 
-            // Bare cube name (no '[') — synthesize all-':' tokens for the whole cube.
+            // Bare cube name (no '[') — the whole cube.
             if (bracketPos < 0)
             {
-                // The whole text (after any transform prefix) must be a cube name. A transform can be
-                // attached two ways with NO brackets:
-                //   "mag(IMD2)"  — function-call form (what BuildPickerExpression emits for a transformed
-                //                  bare measurement; it MUST round-trip).
-                //   "mag IMD2"   — space-separated (legacy spec-box entry).
-                string barePrefix = text;
-                CubeTransform bareTransform = CubeTransform.None;
-                int fnParen = text.IndexOf('(');
-                if (fnParen > 0 && text.EndsWith(")"))
-                {
-                    string potentialTransform = text[..fnParen].Trim();
-                    string potentialCube      = text[(fnParen + 1)..^1].Trim();
-                    if (TryParseTransform(potentialTransform, out var ft) && ds.Contains(potentialCube))
-                    {
-                        bareTransform = ft;
-                        barePrefix    = potentialCube;
-                    }
-                }
-                else
-                {
-                    int spaceIdx = text.IndexOf(' ');
-                    if (spaceIdx >= 0)
-                    {
-                        string potentialTransform = text[..spaceIdx].Trim();
-                        string potentialCube      = text[(spaceIdx + 1)..].Trim();
-                        if (TryParseTransform(potentialTransform, out var bt) && ds.Contains(potentialCube))
-                        {
-                            bareTransform = bt;
-                            barePrefix    = potentialCube;
-                        }
-                    }
-                }
-                if (!ds.Contains(barePrefix))
+                if (!TryParseBareName(text, ds, out var bareName, out var bareTransform))
                 {
                     error = "Missing '['.";
                     return false;
                 }
-                cubeName  = barePrefix;
+                cubeName  = bareName;
                 transform = bareTransform;
                 var bareCube = ds[cubeName];
                 if (bareCube.Rank == 0)
                 {
                     slice = Array.Empty<AxisSlice>();
+                    return true;
+                }
+                // Three or more axes cannot all be X, and "Gain" on a [VDD, RFfreq, Pin] cube still
+                // means something: the roles the trace card seeds (innermost sweep X, the next one out
+                // the family, the rest pinned). Up to two axes keep the positional reading below.
+                if (bareCube.Rank > 2)
+                {
+                    slice = SeedSlice.Build(bareCube);
                     return true;
                 }
                 var bareTokens = Enumerable.Repeat(":", bareCube.Rank).ToArray();
@@ -242,6 +218,46 @@ namespace CircuitRF.Render.DataDisplay
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// The cube and transform of a spec with no brackets — <c>Gain</c>, <c>mag(IMD2)</c> or the
+        /// legacy <c>mag IMD2</c>. A transform can be attached two ways with NO brackets: the
+        /// function-call form (what BuildPickerExpression emits for a transformed bare measurement;
+        /// it MUST round-trip) and the space-separated spec-box entry. False when the text names no
+        /// cube in <paramref name="ds"/>.
+        /// </summary>
+        public static bool TryParseBareName(string text, DataSet ds, out string cubeName, out CubeTransform transform)
+        {
+            text      = text.Trim();
+            cubeName  = text;
+            transform = CubeTransform.None;
+            int fnParen = text.IndexOf('(');
+            if (fnParen > 0 && text.EndsWith(")"))
+            {
+                string potentialTransform = text[..fnParen].Trim();
+                string potentialCube      = text[(fnParen + 1)..^1].Trim();
+                if (TryParseTransform(potentialTransform, out var ft) && ds.Contains(potentialCube))
+                {
+                    transform = ft;
+                    cubeName  = potentialCube;
+                }
+            }
+            else
+            {
+                int spaceIdx = text.IndexOf(' ');
+                if (spaceIdx >= 0)
+                {
+                    string potentialTransform = text[..spaceIdx].Trim();
+                    string potentialCube      = text[(spaceIdx + 1)..].Trim();
+                    if (TryParseTransform(potentialTransform, out var bt) && ds.Contains(potentialCube))
+                    {
+                        transform = bt;
+                        cubeName  = potentialCube;
+                    }
+                }
+            }
+            return ds.Contains(cubeName);
         }
 
         /// <summary>

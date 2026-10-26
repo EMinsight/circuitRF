@@ -152,6 +152,8 @@ public readonly struct Value
 
     public static Value Pow(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube)
+            return new Value(DataCube.Pow(CubeOperand(a), CubeOperand(b)));
         var kind = CommonArithmeticKind(a, b);
         if (kind == ValueKind.Real)
         {
@@ -162,6 +164,20 @@ public readonly struct Value
             return new Value(result);
         }
         return new Value(Complex.Pow(a.ToComplex(), b.ToComplex()));
+    }
+
+    /// <summary>An operand of a cube operation as a cube: a number becomes a rank-0 cube, which
+    /// broadcasts against any other.</summary>
+    private static DataCube CubeOperand(Value v)
+    {
+        if (v.Kind != ValueKind.Cube) CommonArithmeticKind(v, v);   // refuses a Bool or String operand
+        return v.Kind switch
+        {
+            ValueKind.Cube    => v._cube!,
+            ValueKind.Real    => DataCube.Scalar(v._real),
+            ValueKind.Complex => DataCube.Scalar(v._complex),
+            _                 => throw new System.Diagnostics.UnreachableException(),
+        };
     }
 
     public static Value Negate(Value a) => a.Kind switch

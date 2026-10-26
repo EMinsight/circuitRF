@@ -3295,3 +3295,17 @@ Found while solving the designer's TP149 test-point problem headlessly.
 - **The static matrix printed `-0.00 pF`** for a coupling of a few femtofarads; three decimals now.
 - **`--layer-colors name=#rrggbbff` left the layer at its own 35 % fill.** The alpha was read off the parsed value,
   where `ff` cannot be told from the six-digit form; it is now whether eight digits were written.
+
+## `plot --trace "cube=Y vs X"` drew Y against its swept axis (2026-10-26)
+
+Found checking a field report about plotting gain against output power at each frequency.
+
+- **`BuildTrace` handed the whole `cube=` text to `CubeTraceSpecParser`**, which never splits `vs`. The bracketed form
+  `Gain[~,:] vs Pout` parsed up to the `]` and the rest was silently ignored, so the picture was Gain against Pin with
+  no error. The bare form the docs show, `Gain vs Pout`, was refused with "Missing '['". The usage text already
+  advertised `cube=a vs b` for scatters, which could not parse either.
+- `BuildTrace` now splits on `VersusSpec.TrySplit` first, as the trace card's spec box does, and carries the X side as
+  `TraceConfig.XSpec`. The X side resolves only against the Y side's slice, at render time, so `RenderDataDisplay`
+  refuses a versus trace whose resolve left an `ExpressionError` (`plot.trace.unresolved`, verb `plot` only) rather
+  than writing an empty frame.
+- Gate: `Ui.Tests/Cli/MissingVerbsCliTests.PlotVersus_CarriesTheXSide_AndRefusesOneThatDoesNotResolve`.

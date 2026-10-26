@@ -877,74 +877,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
         return branch?.Labels is { } labels && labels.SequenceEqual(probeNames);
     }
 
-    /// <summary>
-    /// Whether an axis indexes a STRUCTURAL element — which node, which branch, which harmonic, which
-    /// port, which matrix row/column — rather than a condition the run swept.
-    ///
-    /// <para>The distinction is what lets a seeded trace tell "the sweep" from "the circuit": a sweep
-    /// axis is something to plot ALONG or iterate a family over, a structural axis is something to pin
-    /// and let the user repick. <c>freq</c> is deliberately absent — it is a swept condition, and the
-    /// preferred X when a cube has one.</para>
-    /// </summary>
-    private static bool IsStructuralAxis(string name) =>
-        name is "node" or "branch" or "harmonic" or "tone" or "port" or "probe" or "mixIndex"
-             or "opvar" or "i" or "j";
-
-    /// <summary>
-    /// The slice a seeded cube trace opens with. <see cref="TraceRowViewModel.BuildDefaultSlice"/>'s
-    /// answer — first non-structural axis → X, everything else pinned at index 0 — except for the one
-    /// case that answer gets backwards: a cube with TWO OR MORE swept axes and no frequency.
-    ///
-    /// <para><b>The case (owner, 2026-08-18): a curve tracer.</b> A DC analysis swept over VDS and then
-    /// VGS produces <c>DC1.I [VGS × VDS × branch]</c> — each <c>parametric_sweep</c> nesting level
-    /// PREPENDS its axis, so the OUTERMOST sweep is axis 0 and the innermost is last. The default slice
-    /// therefore makes VGS the X axis and pins VDS at its first value: drain current against the GATE
-    /// voltage at VDS = 0, which is a flat line. What every one of those runs exists to produce is
-    /// <c>I[~, :, "IDS"]</c> — current against VDS, one curve per gate step.</para>
-    ///
-    /// <para>So when there are two or more swept axes: X is the INNERMOST (last) one, the outermost
-    /// becomes the family, and structural axes stay pinned at index 0 carrying their label — which is
-    /// what puts the probe's own name <c>"IDS"</c> in the expression rather than a bare index.</para>
-    ///
-    /// <para><b>A cube with a <c>freq</c> axis is left alone</b>, deliberately. Frequency is always the
-    /// natural X, so the default slice is already right there and an S-parameter run already opens on a
-    /// readable plot (S(1,1) over frequency, the sweep pinned) — promoting its sweep to a family would be
-    /// a change to a case that was not broken. Same for a cube with one swept axis: every single-sweep
-    /// HB, every DC operating point and every unswept S-parameter run seeds exactly what it seeded
-    /// before.</para>
-    /// </summary>
-    internal static AxisSlice[] BuildSeedSlice(DataCube cube)
-    {
-        if (cube.Axes.Any(a => a.Name == "freq")) return TraceRowViewModel.BuildDefaultSlice(cube);
-
-        var sweeps = new List<int>();
-        for (int d = 0; d < cube.Rank; d++)
-            if (!IsStructuralAxis(cube.Axes[d].Name)) sweeps.Add(d);
-
-        if (sweeps.Count < 2) return TraceRowViewModel.BuildDefaultSlice(cube);
-
-        int xIdx      = sweeps[^1];
-        int familyIdx = sweeps[^2];
-
-        // Too many members to draw: the renderer already clamps a family at Trace.MaxFamilyCurves and
-        // says so, but a SEEDED trace that silently showed the first 101 of a 500-point sweep would be
-        // claiming to be the whole picture. Past the cap the axis is pinned instead — the corrected X
-        // survives, because current against VDS at one gate voltage is still the right pair of axes, and
-        // the family is one click away in the axis-role editor.
-        if (cube.Axes[familyIdx].Length > Trace.MaxFamilyCurves) familyIdx = -1;
-
-        var slice = new AxisSlice[cube.Rank];
-        for (int d = 0; d < cube.Rank; d++)
-        {
-            var ax = cube.Axes[d];
-            slice[d] =
-                d == xIdx      ? new AxisSlice(ax.Name, AxisRole.KeepAsX, 0)
-              : d == familyIdx ? new AxisSlice(ax.Name, AxisRole.FamilyIterate, 0)
-              : new AxisSlice(ax.Name, AxisRole.PinToIndex, 0,
-                              Label: ax.Labels is { Length: > 0 } labels ? labels[0] : "");
-        }
-        return slice;
-    }
+    /// <summary>The slice a seeded cube trace opens with — <see cref="SeedSlice.Build"/>.</summary>
+    internal static AxisSlice[] BuildSeedSlice(DataCube cube) => SeedSlice.Build(cube);
 
     /// <summary>
     /// <b>The cube a 3D plot should seed a trace on: the first one that can actually BE a
@@ -1515,8 +1449,11 @@ public partial class PlotInspectorViewModel : ViewModelBase
         var sliceOrder = t.Slice.Select(s => s.AxisName);
         if (cubeOrder.SequenceEqual(sliceOrder, StringComparer.Ordinal)) return;
 
-        // Structure or order changed. Re-parse the authored spec against the new cube.
-        if (CubeTraceSpecParser.TryParse(spec, ds, out var cn, out var sl, out var tf, out _)
+        // Structure or order changed. Re-parse the authored spec against the new cube — its Y half
+        // only: the parser does not read "vs", and handed "Gain vs Pout" it refused the bare name and
+        // fell through to the carry below.
+        string ySpec = VersusSpec.TrySplit(spec, out var ySide, out _, out _) ? ySide : spec;
+        if (CubeTraceSpecParser.TryParse(ySpec, ds, out var cn, out var sl, out var tf, out _)
             && sl is not null)
         {
             t.CubeName        = cn;

@@ -33,6 +33,16 @@ public sealed partial class VarEditorViewModel : ObservableObject, IDisposable
     public string DialogTitle => _compKind == SymbolKind.Meas ? "MEAS Measurements" : "VAR Variables";
     public string AddRowLabel => _compKind == SymbolKind.Meas ? "Add Measurement" : "Add Variable";
 
+    /// <summary>The page the Help button opens: for MEAS, the measurement chapter — how a row reads an
+    /// analysis result, over a sweep and by frequency, which is what writing one takes; for VAR, the
+    /// expression language. Both are held by <c>DocAnchors.WholePages</c>.</summary>
+    public string HelpPage => _compKind == SymbolKind.Meas ? MeasHelpPage : VarHelpPage;
+    public string HelpTip  => _compKind == SymbolKind.Meas
+        ? "How to write a measurement: reading analysis results, sweeps and functions"
+        : "How to write an expression: operators, functions, units and variables";
+    internal const string MeasHelpPage = "reference/measurements.html";
+    internal const string VarHelpPage  = "reference/expressions.html";
+
     // ── Undo/Redo (delegate to the owning schematic's stack) ─────────────────
 
     public IRelayCommand UndoCommand { get; }
@@ -138,6 +148,8 @@ public sealed partial class VarEditorViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PanelTitle));
         OnPropertyChanged(nameof(DialogTitle));
         OnPropertyChanged(nameof(AddRowLabel));
+        OnPropertyChanged(nameof(HelpPage));
+        OnPropertyChanged(nameof(HelpTip));
 
         HookSchematicStack(schematicVm);
         _schematicVm.EditModel.Changed += OnModelChanged;

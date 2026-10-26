@@ -636,6 +636,31 @@ namespace RfCore.Data
         public static DataCube operator /(DataCube a, Complex s) => MapToComplex(a, x => new Complex(x, 0) / s, x => x / s);
         public static DataCube operator /(Complex s, DataCube a) => MapToComplex(a, x => s / x, x => s / x);
 
+        /// <summary>
+        /// Element-wise power, broadcast by axis name exactly as the four operators above (a rank-0
+        /// operand is a scalar). A real base that is negative under a non-integer exponent has no real
+        /// power, so — the scalar <c>^</c>'s rule — such a result is taken in complex arithmetic; a cube
+        /// is one kind, so the whole result is then Complex.
+        /// </summary>
+        public static DataCube Pow(DataCube a, DataCube b)
+        {
+            var r = ElementWise(a, b, Math.Pow, Complex.Pow);
+            if (r.DataKind == DataKind.Real && HasNaN(r) && !HasNaN(a) && !HasNaN(b))
+                r = ElementWise(a * Complex.One, b, Math.Pow, Complex.Pow);
+            return r;
+        }
+
+        private static bool HasNaN(DataCube c)
+        {
+            if (c.DataKind == DataKind.Real)
+            {
+                foreach (double x in c._realData!) if (double.IsNaN(x)) return true;
+                return false;
+            }
+            foreach (var z in c._complexData!) if (double.IsNaN(z.Real) || double.IsNaN(z.Imaginary)) return true;
+            return false;
+        }
+
         // ---- Reductions ----------------------------------------
 
         public DataCube Max(string axisName) => Reduce(axisName, (a, b) => a > b, isMin: false);

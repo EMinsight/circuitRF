@@ -3616,58 +3616,26 @@ public partial class TraceRowViewModel : ViewModelBase
         _parent.RebuildAndNotify();
     }
 
+    /// <inheritdoc cref="SeedSlice.DefaultXAxis"/>
+    internal static int DefaultXAxis(RfCore.Data.DataCube cube) => SeedSlice.DefaultXAxis(cube.Axes);
+
+    /// <inheritdoc cref="SeedSlice.DefaultXAxis"/>
+    internal static int DefaultXAxis(RfCore.Data.Axis[] axes) => SeedSlice.DefaultXAxis(axes);
+
     /// <summary>
-    /// Index of the default X axis for a cube: the "freq" axis when present (S/Y/Z parameter cubes and
-    /// any freq-swept cube), else the first non-label (node/branch/opvar) axis. Returns -1 when only
-    /// label axes exist (→ no X → scalar, valid for no-sweep DC).
+    /// The slice a picked signal opens with: <see cref="SeedSlice.Build"/> — for an S cube
+    /// [freq, i, j] (+ optional swept prefix) S(1,1) over frequency with i/j and the sweep pinned; for
+    /// two or more sweeps the innermost as X and the next one out as the family.
     /// </summary>
-    internal static int DefaultXAxis(RfCore.Data.DataCube cube) => DefaultXAxis([.. cube.Axes]);
-
-    /// <inheritdoc cref="DefaultXAxis(RfCore.Data.DataCube)"/>
-    internal static int DefaultXAxis(RfCore.Data.Axis[] axes)
-    {
-        for (int d = 0; d < axes.Length; d++)
-            if (axes[d].Name == "freq") return d;
-        for (int d = 0; d < axes.Length; d++)
-            // `opvar` joins node/branch as a LABEL axis, not a plottable one: its entries are
-            // different quantities (a transconductance beside a capacitance beside a temperature),
-            // so plotting along it draws one line through numbers that share no unit.
-            if (axes[d].Name is not "node" and not "branch" and not "opvar") return d;
-        return -1;
-    }
+    internal static AxisSlice[] BuildDefaultSlice(RfCore.Data.DataCube cube) => SeedSlice.Build(cube);
 
     /// <summary>
-    /// Default slice for a cube: <see cref="DefaultXAxis"/> → KeepAsX, every other axis pinned at index 0
-    /// (carrying its first label for quoted net names). Rank-0 → empty slice. For an S cube
-    /// [freq, i, j] (+ optional swept prefix) this is S(1,1) over frequency with i/j and the sweep pinned.
-    /// </summary>
-    internal static AxisSlice[] BuildDefaultSlice(RfCore.Data.DataCube cube)
-        => BuildDefaultSlice([.. cube.Axes], DefaultXAxis(cube));
-
-    /// <summary>
-    /// The same default slice from AXES ALONE — for a cube that does not exist yet. A WSProbe
+    /// The plain default slice from AXES ALONE — for a cube that does not exist yet. A WSProbe
     /// metric's cube is computed on demand from the run's `wsp` matrix, and the picker needs its
     /// slice before anything has been evaluated; building a throwaway cube just to read its axis
     /// names would allocate the whole sweep to answer a question about its shape.
     /// </summary>
-    internal static AxisSlice[] BuildDefaultSlice(RfCore.Data.Axis[] axes, int xIdx)
-    {
-        int rank = axes.Length;
-        if (rank == 0) return Array.Empty<AxisSlice>();
-        var slice = new AxisSlice[rank];
-        for (int d = 0; d < rank; d++)
-        {
-            var ax = axes[d];
-            if (d == xIdx)
-                slice[d] = new AxisSlice(ax.Name, AxisRole.KeepAsX, 0);
-            else
-            {
-                string lbl = (ax.Labels is { Length: > 0 }) ? ax.Labels[0] : "";
-                slice[d] = new AxisSlice(ax.Name, AxisRole.PinToIndex, 0, Label: lbl);
-            }
-        }
-        return slice;
-    }
+    internal static AxisSlice[] BuildDefaultSlice(RfCore.Data.Axis[] axes, int xIdx) => SeedSlice.Default(axes, xIdx);
 
     /// <summary>
     /// Adds one picker item per ordered (i,j) port pair — S(1,1), S(1,2), S(2,1), … in row-major
@@ -3905,10 +3873,14 @@ public partial class TraceRowViewModel : ViewModelBase
 
     /// <summary>
     /// Builds a slice for <paramref name="cube"/>, preserving as many parameters from
-    /// <paramref name="oldSlice"/> as possible (matched by axis NAME): same role (X vs pinned)
-    /// and the same pin index when in range, else clamped to 0. Axes absent from the old slice
-    /// default to PinToIndex/0. Exactly one axis ends up as X. Label is set from the cube's
-    /// axis labels so node slots render as quoted net names (e.g. "Vout2").
+    /// <paramref name="oldSlice"/> as possible (matched by axis NAME): same role (X, family or
+    /// pinned) and the same pin index when in range, else clamped to 0. Exactly one axis ends up as X.
+    /// Label is set from the cube's axis labels so node slots render as quoted net names (e.g. "Vout2").
+    ///
+    /// <para>An axis absent from the old slice takes the role <see cref="SeedSlice.Build"/> gives it,
+    /// unless the old slice already fills that role. A re-run that wraps a drive sweep in a frequency
+    /// sweep therefore draws one curve per frequency instead of pinning the new axis at its first
+    /// value; a third sweep added after that is pinned, because the family is taken.</para>
     /// </summary>
     internal static AxisSlice[] BuildCarriedSliceFromCube(RfCore.Data.DataCube cube, AxisSlice[]? oldSlice)
     {
@@ -3918,6 +3890,15 @@ public partial class TraceRowViewModel : ViewModelBase
         var old = new System.Collections.Generic.Dictionary<string, AxisSlice>(StringComparer.Ordinal);
         if (oldSlice is not null)
             foreach (var s in oldSlice) old[s.AxisName] = s;
+
+        bool carriedX   = false, carriedFamily = false;
+        foreach (var d in cube.Axes)
+            if (old.TryGetValue(d.Name, out var o))
+            {
+                carriedX      |= o.Role == AxisRole.KeepAsX;
+                carriedFamily |= o.Role == AxisRole.FamilyIterate;
+            }
+        var seed = SeedSlice.Build(cube);
 
         bool anyX = false;
         for (int d = 0; d < rank; d++)
@@ -3938,6 +3919,15 @@ public partial class TraceRowViewModel : ViewModelBase
                     ? ax.Labels[idx] : "";
                 result[d] = new AxisSlice(ax.Name, role, idx, Label: lbl);
                 if (role == AxisRole.KeepAsX) anyX = true;
+            }
+            else if (seed[d].Role == AxisRole.KeepAsX && !carriedX)
+            {
+                result[d] = seed[d];
+                anyX = true;
+            }
+            else if (seed[d].Role == AxisRole.FamilyIterate && !carriedFamily)
+            {
+                result[d] = seed[d];
             }
             else
             {

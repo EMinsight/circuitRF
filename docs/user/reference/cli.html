@@ -3310,7 +3310,7 @@ own folder, which is right for <code>circuitrf netlist filter.cnl --to-schematic
 <tbody>
 <tr>
 <td><code>cube</code></td>
-<td>Which cube. Required. It is the same shorthand the trace card's spec box takes, so <code>S</code>, <code>S[:,2,1]</code>, <code>Pout</code> and <code>mag(V[:,&quot;X1.drain&quot;])</code> all work.</td>
+<td>Which cube. Required. It is the same shorthand the trace card's spec box takes, so <code>S</code>, <code>S[:,2,1]</code>, <code>Pout</code> and <code>mag(V[:,&quot;X1.drain&quot;])</code> all work, and so does <a href="data-display.html#versus">plotting against another quantity</a>: <code>cube=Gain[~,:] vs Pout_dBm</code> draws gain against output power, one curve per value of the outer sweep. An X side that does not resolve is refused (<code>plot.trace.unresolved</code>).</td>
 </tr>
 <tr>
 <td><code>i</code>, <code>j</code></td>

@@ -166,25 +166,34 @@
 
         </Grid>
 
-        <!-- ── Row 3: Footer ─────────────────────────────────────────────────── -->
-        <StackPanel Grid.Row="3"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,8,0,0"
-                    Spacing="6">
-            <Button Content="Apply"
-                    Command="{Binding ApplyTextCommand}"
-                    IsVisible="{Binding IsTextMode}"
+        <!-- ── Row 3: Footer ─────────────────────────────────────────────────────
+             Help at the leading edge, the buttons that act on the editor at the trailing one —
+             the Settings dialog's arrangement. -->
+        <DockPanel Grid.Row="3" Margin="0,8,0,0">
+            <Button DockPanel.Dock="Left"
+                    Content="Help"
+                    Click="OnHelpClick"
+                    ToolTip.Tip="{Binding HelpTip}"
                     FontSize="11"
                     Padding="10,4"
                     MinHeight="0"/>
-            <Button Content="Close"
-                    IsVisible="{Binding ShowClose}"
-                    FontSize="11"
-                    Padding="10,4"
-                    MinHeight="0"
-                    Click="OnCloseClick"/>
-        </StackPanel>
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="6">
+                <Button Content="Apply"
+                        Command="{Binding ApplyTextCommand}"
+                        IsVisible="{Binding IsTextMode}"
+                        FontSize="11"
+                        Padding="10,4"
+                        MinHeight="0"/>
+                <Button Content="Close"
+                        IsVisible="{Binding ShowClose}"
+                        FontSize="11"
+                        Padding="10,4"
+                        MinHeight="0"
+                        Click="OnCloseClick"/>
+            </StackPanel>
+        </DockPanel>
 
     </Grid>
 </UserControl>

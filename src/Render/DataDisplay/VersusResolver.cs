@@ -158,6 +158,19 @@ internal static class VersusResolver
     {
         cube = null; slice = null; transform = CubeTransform.None; error = "";
 
+        // Bare X side (no brackets) → the cube by name, with the Y side's roles inherited by axis
+        // name. Its own whole-cube reading is never used, so it is not asked for: on three or more
+        // axes that reading is not one X, and asking for it sent "Pout" down the expression path,
+        // which refused it as "more than one X axis".
+        if (!xSpec.Contains('[') && ySlice is { Length: > 0 }
+            && CubeTraceSpecParser.TryParseBareName(xSpec, ds, out var bareName, out var bareTransform))
+        {
+            cube      = ds[bareName];
+            transform = bareTransform;
+            slice     = InheritRoles(cube, ySlice);
+            return true;
+        }
+
         if (!CubeTraceSpecParser.TryParse(xSpec, ds, out var cubeName, out var parsed, out transform, out var parseErr))
         {
             // A bracketed spec that failed to parse is a genuine error; a bare name that is simply
@@ -167,10 +180,6 @@ internal static class VersusResolver
         }
         cube = ds[cubeName];
         slice = parsed ?? Array.Empty<AxisSlice>();
-
-        // Bare X side (no brackets) → inherit the Y side's roles by axis name.
-        if (!xSpec.Contains('[') && ySlice is { Length: > 0 })
-            slice = InheritRoles(cube, ySlice);
 
         if (slice.Length != cube.Rank)
         {

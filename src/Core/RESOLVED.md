@@ -3926,3 +3926,12 @@ identity with the junction-only stamp).
 - Gates: `Engine.Tests/PortNumberIdentityTests` (axes [1, 2, 9, 10], `S(10,9)` = 0.5, `S(4,3)` refused naming the
   ports, a single warning); `Ui.Tests/Cli/GappedPortsCliTests` (exit 1 naming 3–8, `.npy` written, the exporter's
   `GappedPorts`).
+
+## `^` and `pow()` refused a swept quantity in a measurement (2026-10-26)
+
+`Pin_W = 10^((Pin - 30)/10)`, the dBm-to-watts step of every PAE measurement, failed over a swept `Pin` with "Cube
+operand must go through Add/Sub/Mul/Div": `Value.Pow` was scalar-only, and `pow()` had its own scalar-only path.
+`DataCube.Pow` now does element-wise power with the same broadcasting by axis name as `+ - * /`. A negative real base
+under a fractional exponent is taken in complex arithmetic, which is the scalar `^`'s rule and agrees with
+`sqrt()` on a cube. `Value.Pow` and `pow()` route any cube operand to it; `pow()` on two numbers is unchanged.
+Gate: `Core.Tests/Expressions/PowerOnACubeTests`.
