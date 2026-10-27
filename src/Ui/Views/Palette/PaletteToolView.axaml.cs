@@ -27,6 +27,99 @@ public partial class PaletteToolView : UserControl
 
         // Activating the panel (clicking its tab) must also put focus in here — see below.
         DataContextChanged += OnDataContextChangedForActivation;
+
+        // The Type menu is built when it opens, from the tool's menu tree as it stands then.
+        TypeFlyout.Opening += OnTypeMenuOpening;
+
+        // The breadcrumb is fitted to the button's width whenever either changes.
+        TypeButton.SizeChanged += (_, _) => FitBreadcrumb();
+        DataContextChanged     += OnDataContextChangedForBreadcrumb;
+    }
+
+    // ── Breadcrumb (R-vl2-1a) ─────────────────────────────────────────────────
+
+    private PaletteTool? _breadcrumbTool;
+
+    private void OnDataContextChangedForBreadcrumb(object? sender, EventArgs e)
+    {
+        if (_breadcrumbTool is not null) _breadcrumbTool.PropertyChanged -= OnToolPropertyChanged;
+        _breadcrumbTool = DataContext as PaletteTool;
+        if (_breadcrumbTool is not null) _breadcrumbTool.PropertyChanged += OnToolPropertyChanged;
+        FitBreadcrumb();
+    }
+
+    private void OnToolPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PaletteTool.SelectedCategory)) FitBreadcrumb();
+    }
+
+    /// <summary>
+    /// The selection's breadcrumb, trimmed from the LEFT a whole level at a time so the narrowest panel
+    /// still names the level chosen: <c>… ▸ Capacitors ▸ Series</c>. Done here rather than by
+    /// <c>TextTrimming.LeadingCharacterEllipsis</c>, which throws in Avalonia 12.0.3 when the text
+    /// mixes fonts — and a <c>▸</c> does.
+    /// </summary>
+    private void FitBreadcrumb()
+    {
+        string full = (DataContext as PaletteTool)?.SelectedCategory?.Breadcrumb ?? "";
+        // The button's content width: its own, less padding, border and the chevron's 18 px.
+        double room = TypeButton.Bounds.Width - TypeButton.Padding.Left - TypeButton.Padding.Right - 2 - 18;
+        TypeText.Text = room <= 0 ? full : FitFromLeft(full, room);
+    }
+
+    private string FitFromLeft(string full, double room)
+    {
+        var levels = full.Split(VendorMenuTree.Step);
+        for (int skip = 0; skip < levels.Length; skip++)
+        {
+            string text = skip == 0 ? full : "…" + VendorMenuTree.Step + string.Join(VendorMenuTree.Step, levels[skip..]);
+            if (skip == levels.Length - 1 || WidthOf(text) <= room) return text;
+        }
+        return full;
+    }
+
+    private double WidthOf(string text)
+    {
+        using var layout = new Avalonia.Media.TextFormatting.TextLayout(
+            text, new Avalonia.Media.Typeface(TypeText.FontFamily), TypeText.FontSize, null);
+        return layout.WidthIncludingTrailingWhitespace;
+    }
+
+    /// <summary>The Type button's menu. A flyout is not in the view's name scope, so it is reached
+    /// through the button rather than by a generated field.</summary>
+    private MenuFlyout TypeFlyout => (MenuFlyout)TypeButton.Flyout!;
+
+    // ── Type menu (brief vendorlib-2 R-vl2-1) ─────────────────────────────────
+
+    private void OnTypeMenuOpening(object? sender, EventArgs e)
+    {
+        TypeFlyout.Items.Clear();
+        if (DataContext is not PaletteTool tool) return;
+        foreach (var node in tool.TypeMenu)
+            TypeFlyout.Items.Add(MenuItemFor(tool, node));
+    }
+
+    /// <summary>One menu item per node, nested as the tree is. A sub-menu is the menu's own: its
+    /// arrow-key navigation is Avalonia's, with nothing added here (R-vl2-1d).</summary>
+    private static Control MenuItemFor(PaletteTool tool, PaletteMenuNode node)
+    {
+        if (node.IsSeparator) return new Separator();
+
+        var item = new MenuItem { Header = node.Header, IsEnabled = node.IsEnabled };
+        if (node.Command is { } command)
+            item.Command = command;
+        else if (node.Entry is { } entry)
+        {
+            item.Click += (_, _) => tool.SelectedCategory = entry;
+            // The current selection is ticked, so the menu says where the palette is.
+            if (entry.SameSelection(tool.SelectedCategory))
+                item.Icon = new Material.Icons.Avalonia.MaterialIcon
+                    { Kind = Material.Icons.MaterialIconKind.Check, Width = 14, Height = 14 };
+        }
+
+        foreach (var child in node.Children)
+            item.Items.Add(MenuItemFor(tool, child));
+        return item;
     }
 
     private void OnTilePressed(object? sender, PointerPressedEventArgs e) => TileScroll.Focus();
@@ -110,9 +203,9 @@ public partial class PaletteToolView : UserControl
 
     private void OnScrollKeyDown(object? sender, KeyEventArgs e)
     {
-        // An open dropdown (the category picker) owns all four keys — it is navigating its own items,
-        // and the grid behind it is not what the user is looking at.
-        if (e.Source is ComboBox { IsDropDownOpen: true }) return;
+        // The Type menu is a popup with its own root, so its keys never pass through here. The part
+        // list is a ListBox, which scrolls itself — and the tile grid behind it is hidden.
+        if (DataContext is PaletteTool { IsVendorSelection: true }) return;
 
         var action = PanelScrollKeys.ActionFor(e.Key, e.Source is TextBox);
         if (action is null) return;

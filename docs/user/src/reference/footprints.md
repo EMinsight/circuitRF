@@ -250,6 +250,12 @@ say. A silent write-back would make an artwork edit change a simulation.
   **exactly as written** rather than snapped to the nearest code, and a bare token that names a real
   case in *both* schemes is reported as ambiguous with both readings named. A column that silently
   set artwork would be the same class of error as the ambiguity itself.
+- **A vendor library part arrives with the footprint of its stated case size.** When its library
+  states the size in both systems (`1005M(0402)`) and the technology is a board, a placed part gets
+  `smt:0402@N`; both codes must name the same row, so the two different 0201 cases never cross. A
+  part whose library states no size, a size this table lacks, or a non-board technology gets None.
+  This is circuitRF's generated pattern for the stated case size, **not** the manufacturer's
+  recommended land.
 - **A railRF part library** (`.crlib`) has a footprint column that is a picker over the same case
   table, and it stores the scheme (`smt:0402`) because a bare token is ambiguous. It stores no
   density: an IPC level belongs to a land pattern, not to a package.

@@ -1255,7 +1255,9 @@ public sealed class SchematicCanvas : Control
             // A kit part's SymbolKind is only a placeholder, so a ghost built from it alone draws a
             // generic box while the DROP places the kit's real symbol — the drag showing one thing
             // and the result another. Resolve the cell's own symbol so both agree.
-            var (ghostPrims, ghostPins) = ResolveGhostSymbol(p.CellDir);
+            var (ghostPrims, ghostPins) = p.Vendor is { } vendor
+                ? VendorGhostSymbol(vendor)
+                : ResolveGhostSymbol(p.CellDir);
 
             _editContext.Overlay = _editContext.Overlay with
             {
@@ -1278,6 +1280,14 @@ public sealed class SchematicCanvas : Control
         return res.State == CellSymbolState.Resolved
             ? (res.Symbol!.Primitives, res.Symbol.Pins)
             : (null, null);
+    }
+
+    /// <summary>A dragged vendor part's ghost: its glyph (the built-in C or L), or the unconfigured SPICE
+    /// box for a part with none — the same choice the click's ghost makes.</summary>
+    private static (IReadOnlyList<SymbolPrimitive>?, IReadOnlyList<SymbolPin>?) VendorGhostSymbol(VendorPartRef vendor)
+    {
+        var glyph = VendorPartPlacement.GhostSymbol(vendor.Glyph);
+        return (glyph.Primitives, glyph.Pins);
     }
 
     private void OnPaletteDragLeave(object? sender, DragEventArgs e)
@@ -1313,6 +1323,8 @@ public sealed class SchematicCanvas : Control
         // click-to-arm gesture takes, so dragging and clicking a tile can never disagree.
         if (payload.CellDir is { Length: > 0 } cellDir)
             _ = _editContext.CommitCellPlacementAsync(cellDir, wx, wy, rotation);
+        else if (payload.Vendor is { } vendor)
+            _editContext.CommitVendorPlacement(vendor, rotation, wx, wy);
         else
             _editContext.CommitPlacement(payload.Kind, payload.PortCount, rotation, wx, wy);
 

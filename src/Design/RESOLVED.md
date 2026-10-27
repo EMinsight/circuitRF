@@ -23831,3 +23831,30 @@ carried `CircuitRF.Design.Workspace`; three fully qualified spellings were updat
 never reads, so a lossy part simulated lossless. `Rser` (and `r`/`c` in either case) on an `L` element now
 become `R`/`C`, and any other override on a native inductor (one that names no model card) is a
 `SpiceNetlistNote` and dropped, rather than silently ignored.
+
+## brief vendorlib-2 — what a placed vendor part is, and its footprint (2026-10-27)
+
+**`VendorPartRef` + `VendorPartPlacement` are the one definition of a placed part** — `File`, `Name`,
+`Glyph`, the `C`/`L` prefix, the footprint — for both the palette's `CommitVendorPlacement` and
+`circuitrf find --parts`. `GlyphOf` moved here from `src/Cli`, where VL-1 had put it.
+
+**`Glyph` is C or L only for a TWO-PORT capacitor or inductor.** That makes a stored C/L mean two
+terminals, which is what lets the symbol be drawn from the instance alone when the library is missing
+and there is no index to ask the port count. `find --parts` used to write `Glyph=C` regardless of ports.
+
+**The glyph is a field of the `spicemodel://` reference** (now `pitch|cfg|glyph|section|name|file`), so
+the symbol cache key changes when it does. With C or L on a `vendorlib://` file, the resolver returns the
+built-in capacitor/inductor (its own unnamed pins, exactly a placed C's) and reads no file; the value comes
+from the in-memory index as `CellSymbolResolution.Caption` and rides on the type label (not a new label
+row: rows 0/1 are type/name in every stored `LabelOffsets`). **A missing library is `NotFound` that still
+carries the symbol** — `ToRenderComponent`, `PortDefsOf` and `EffectivePrimitivesOf` now key on
+"has a symbol" rather than "is Resolved" (identical for every other source, which never sets one on
+NotFound), so the wires to it still connect, and the renderer draws the glyph with the Not Found words over
+it. `NeedsNoBaseDirectory` exempts a glyph-bearing vendor reference, so a scratch schematic draws it too.
+
+**`FootprintDefaults.ForCaseCodes(metric, imperial, technology)`** matches a `SmtCaseTable` row whose
+`Code` is the imperial code AND whose `MetricTwin` is the metric one; either alone is the 0201/0201
+collision. No pair, no row, or no board → None.
+
+**`VendorLibraryIndex.FileReads(root)` counts every read of a library's bytes** (a scan or one block),
+per library root so a gate is not disturbed by another test reading a different library in parallel.

@@ -50,6 +50,23 @@ public sealed record VendorLibraryBuild(
     /// <summary>True when the library holds at least one readable part.</summary>
     public bool IsUsable => Refusal is null;
 
+    private Dictionary<string, VendorLibraryEntry>? _byPart;
+
+    /// <summary>The entry for <paramref name="part"/> (case-insensitive, as duplicates are judged), or
+    /// null. In memory only — what a placed part's label and the palette ask per part.</summary>
+    public VendorLibraryEntry? Find(string? part)
+    {
+        if (string.IsNullOrEmpty(part)) return null;
+        var map = _byPart;
+        if (map is null)
+        {
+            map = new Dictionary<string, VendorLibraryEntry>(Entries.Count, StringComparer.OrdinalIgnoreCase);
+            foreach (var e in Entries) map.TryAdd(e.Part, e);
+            _byPart = map;   // a benign race: two threads build the same map
+        }
+        return map.GetValueOrDefault(part.Trim());
+    }
+
     /// <summary>The top-level folders and their part counts, in path order.</summary>
     public IReadOnlyList<VendorLibraryGroup> Groups =>
         [.. Entries.GroupBy(e => e.Folders.Count > 0 ? e.Folders[0] : "", StringComparer.Ordinal)
@@ -121,6 +138,25 @@ public static class VendorLibraryIndex
 
     private static readonly Dictionary<string, FileScan> _files = new(StringComparer.Ordinal);
     private static readonly Lock _gate = new();
+
+    private static readonly Dictionary<string, long> _fileReads = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// How many times this process has read the bytes of a file of the library at
+    /// <paramref name="root"/> — a scan or one part's block. The palette's responsiveness rule ("a
+    /// keystroke reads no file", brief vendorlib-2 R-vl2-4d) is gated on this counter rather than on a
+    /// clock; it is per library so a gate is not disturbed by another library read in parallel.
+    /// </summary>
+    public static long FileReads(string root)
+    {
+        lock (_gate) return _fileReads.GetValueOrDefault(KeyOf(root));
+    }
+
+    private static void CountRead(string root)
+    {
+        string key = KeyOf(root);
+        lock (_gate) _fileReads[key] = _fileReads.GetValueOrDefault(key) + 1;
+    }
 
     /// <summary>Drops every cached file scan.</summary>
     public static void InvalidateAll() { lock (_gate) { _files.Clear(); _latest.Clear(); } }
@@ -242,6 +278,7 @@ public static class VendorLibraryIndex
                 return hit;
 
         read++;
+        CountRead(root);
         FileScan scan;
         if (length == 0) scan = new FileScan(mtime, 0, FileKind.Empty, [], 0);
         else
@@ -495,6 +532,7 @@ public static class VendorLibraryIndex
     public static string ReadBlock(string libraryRoot, VendorLibraryEntry entry)
     {
         string path = Path.Combine(libraryRoot, CircuitRF.Core.RefPath.ToNative(entry.File));
+        CountRead(libraryRoot);
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         fs.Seek(entry.Offset, SeekOrigin.Begin);
         var buf = new byte[entry.Length];

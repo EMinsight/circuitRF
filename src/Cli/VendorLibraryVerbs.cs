@@ -119,6 +119,10 @@ internal static class VendorLibraryVerbs
             refs = named;
         }
 
+        // The footprint a part would take is the workspace's default technology's answer — the same
+        // one a palette drop into a schematic of this workspace gets (R-vl2-3d).
+        var technology = CircuitRF.Design.Schematic.SchematicTechnology.Resolve(wsRoot, null).Technology;
+
         var q = VendorLibrarySearch.Parse(query);
         var hits = new List<(string Library, VendorLibraryEntry Entry)>();
         foreach (var r in refs)
@@ -149,7 +153,7 @@ internal static class VendorLibraryVerbs
         var rows  = new List<FoundPartJson>(shown.Count);
         foreach (var (lib, e) in shown)
         {
-            var row = ToJson(lib, e);
+            var row = ToJson(lib, e, technology);
             rows.Add(row);
             Console.WriteLine(string.Join('\t',
                 lib, e.Part, e.Header.ValueText(), e.Header.Description ?? e.FileStem,
@@ -164,16 +168,15 @@ internal static class VendorLibraryVerbs
         return 0;
     }
 
-    /// <summary>The <c>Glyph</c> parameter's value for a part: <c>C</c>, <c>L</c>, or blank.</summary>
-    public static string GlyphOf(VendorLibraryEntry e) => e.Header.Quantity switch
+    private static FoundPartJson ToJson(string library, VendorLibraryEntry e, CircuitRF.Design.Layout.Technology? technology)
     {
-        VendorPartQuantity.Capacitance => "C",
-        VendorPartQuantity.Inductance  => "L",
-        _                              => "",
-    };
+        var part = VendorPartRef.For(library, e);
+        // The instance parameters to write are VendorPartPlacement's — the ones a palette drop writes.
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (name, value) in VendorPartPlacement.Parameters(part)) parameters[name] = value;
+        if (VendorPartPlacement.Footprint(part, technology) is { } footprint) parameters["Footprint"] = footprint;
 
-    private static FoundPartJson ToJson(string library, VendorLibraryEntry e)
-        => new(library, e.Part, e.File, e.PortCount, e.Header.Value,
+        return new(library, e.Part, e.File, e.PortCount, e.Header.Value,
                e.Header.Quantity switch
                {
                    VendorPartQuantity.None        => null,
@@ -183,13 +186,8 @@ internal static class VendorLibraryVerbs
                    _                              => "other",
                },
                e.Header.Description, e.Header.FrequencyLowHz, e.Header.FrequencyHighHz,
-               e.Header.CaseMetric, e.Header.CaseImperial,
-               new Dictionary<string, string>(StringComparer.Ordinal)
-               {
-                   ["File"]  = VendorLibraryRefs.RefFor(library, e.File),
-                   ["Name"]  = e.Part,
-                   ["Glyph"] = GlyphOf(e),
-               });
+               e.Header.CaseMetric, e.Header.CaseImperial, parameters);
+    }
 
     internal static bool TryParseLimit(string text, out int limit)
         => int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out limit) && limit > 0;

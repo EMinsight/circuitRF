@@ -58,13 +58,19 @@ Two things about the canvas are worth knowing before you draw on it:
 The palette is where every placeable part lives. It has two controls above the tiles and they do
 different jobs:
 
-- **The category picker.** **All** is the default and shows the whole built-in library in the
+- **The Type menu.** The button shows what is selected, as a path such as
+  *Library ▸ Capacitors ▸ Series*; in a narrow panel the leading levels give way to *…*. Clicking it
+  opens a menu. **All** is the default and shows the whole built-in library in the
   palette's own pinned order — the parts you reach for most, first. **All - Alphabetical** is the
   same set sorted by name, **Common** is a short curated set, and **Recently Used** is what you have
-  placed lately. Below those come the built-in categories — Lumped, Devices, **System**, Nonlinear,
-  Sources, Terminals, Transmission Line, Microstrip, Matching, Data Files — and then one entry per
-  imported kit, with the kit's own groupings indented beneath it. See
-  [PDK integration](pdk-integration.html) for where kit entries come from.
+  placed lately, vendor library parts included. Below those come the built-in categories — Lumped,
+  Devices, **System**, Nonlinear, Sources, Terminals, Transmission Line, Microstrip, Matching, Data
+  Files. Then come one sub-menu per imported kit holding the kit's own groupings, one sub-menu per
+  [vendor part library](pdk-integration.html#vendor) following the library's own folders, and
+  **Add Vendor Library…**. Every sub-menu starts with **All in …**, so a folder can be chosen as well
+  as opened, and a folder holding only one thing is shown as that thing (*Inductors ▸ Series*). A
+  library's files show how many parts each holds. See [PDK integration](pdk-integration.html) for
+  where kit entries come from.
 
   **System** sits directly after Devices, because a system block is a signal-path part and a user who
   has found Devices is one row away from the blocks they want. It holds the ideal blocks a system
@@ -73,10 +79,30 @@ different jobs:
   appear under both. See [System Components](system-components.html).
 - **The search box.** Matches a part's display name and its search terms, and a kit part's kit name
   as well. Searching inside a built-in category narrows within it; searching from All searches
-  everything, built-ins and kits together.
+  everything, built-ins and kits together. From All, a vendor library with matching parts adds one row
+  at the top — *312 parts in Caps match* — which opens that library with the search kept.
 
 The tile grid is a **reflow grid**: the number of columns follows the panel's width, so widening the
 palette gets you more tiles per row rather than bigger tiles.
+
+### A vendor library's parts {#palette-vendor}
+
+Choosing a vendor library, or a folder or file inside it, replaces the tiles with a list of parts. Each
+row shows the part number and its value, then its description and frequency range. The list is sorted
+by value. Click **Part**, **Value**, **Description** or **Range** above it to sort by that, and click
+again to reverse.
+
+The search box filters the list. Every word must match. A word matches when it appears in the part
+number, the description, the file or the folder name, or when it reads as a value: `10p`, `10pF`,
+`2.2n` and `4n7` all find the part whose stated value is that, however the library wrote it. So
+`10p C0G 0402` narrows a series to the one part you want. Typing never waits on the disk; while a
+library is still being read after the workspace opens, the list says *Indexing …* instead.
+
+A row places a part exactly as a tile does: click to arm, or drag onto the schematic. The part is a
+[SPICE Model](components.html#spicemodel) running from the library's own file. A capacitor or inductor
+draws as the ordinary C or L symbol, is named C1, L1, …, and is labelled with its part number and
+value. On a board technology it arrives with the [footprint](footprints.html#imported) of the case
+size its library states.
 
 ## Placing a component {#placing}
 

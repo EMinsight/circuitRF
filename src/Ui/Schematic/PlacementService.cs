@@ -30,6 +30,11 @@ public sealed partial class PlacementService : ObservableObject
     /// </summary>
     public void Toggle(PaletteItem item)
     {
+        if (item.Vendor is { } vendor)
+        {
+            Toggle(vendor);
+            return;
+        }
         if (item.Pdk is not { } pdk)
         {
             Toggle(item.Kind, item.PortCount);
@@ -41,6 +46,18 @@ public sealed partial class PlacementService : ObservableObject
                             string.Equals(cur.PartId,  pdk.PartId,  StringComparison.Ordinal);
 
         Pending = alreadyArmed ? null : new PendingPlacement(item.Kind, item.PortCount, SymbolRotation.R0, pdk);
+    }
+
+    /// <summary>
+    /// Arm a vendor library part, or disarm it when that same part is already armed. Identified by
+    /// library + part (<see cref="VendorPartRef.IsSamePart"/>): every vendor part is a
+    /// <see cref="SymbolKind.SpiceModel"/>, so a kind comparison would treat them all as one entry.
+    /// </summary>
+    public void Toggle(VendorPartRef part)
+    {
+        Pending = part.IsSamePart(Pending?.Vendor)
+            ? null
+            : new PendingPlacement(SymbolKind.SpiceModel, 2, SymbolRotation.R0, Vendor: part);
     }
 
     /// <summary>

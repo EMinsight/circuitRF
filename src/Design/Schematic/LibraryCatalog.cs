@@ -34,7 +34,13 @@ public sealed record PaletteItem(
     /// enum member of its own, so the id is what identifies it — see
     /// <c>LayoutEditorViewModel.PlacePCell</c>.
     /// </summary>
-    string? PCellGeneratorId = null);
+    string? PCellGeneratorId = null,
+    /// <summary>
+    /// Non-null when this tile places a VENDOR LIBRARY part (brief vendorlib-2 R-vl2-2d — a part in
+    /// Recently Used). Its <see cref="Kind"/> is <see cref="SymbolKind.SpiceModel"/>, which every
+    /// vendor part shares, so this is what identifies it.
+    /// </summary>
+    VendorLibraries.VendorPartRef? Vendor = null);
 
 /// <summary>
 /// Identifies one part contributed by an imported kit, and points at whatever artwork that kit

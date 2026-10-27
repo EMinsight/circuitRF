@@ -26,4 +26,8 @@ public sealed record PendingPlacement(
     string? CellDir = null,
     /// <summary>The armed ghost's mirror flag — M / Shift+M before the click, in the placed part's own
     /// mirror-then-rotate convention (<see cref="Commands.Schematic.MirrorCommand"/>).</summary>
-    bool MirrorX = false);
+    bool MirrorX = false,
+    /// <summary>Set when the armed entry is a VENDOR LIBRARY part (brief vendorlib-2 R-vl2-2b). It is
+    /// placed as <see cref="SymbolKind.SpiceModel"/>, the kind every vendor part shares, so the palette
+    /// compares placements by this identity and never by the kind.</summary>
+    VendorPartRef? Vendor = null);

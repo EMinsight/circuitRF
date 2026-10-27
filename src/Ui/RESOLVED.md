@@ -40821,3 +40821,49 @@ it to their list.
 **Workspace open never waits.** `RestoreInstalledPdks` ends by calling `RestoreVendorLibraries`, which only
 STARTS each index build and posts one line per missing library — with a **Repair** action when the user's own
 list knows that name at a folder that exists.
+
+## brief vendorlib-2 — the palette's Type menu and vendor part list (2026-10-27)
+
+**Search stays on the UI thread (R-vl2-4d).** Measured with a scratch harness driving the real
+`PaletteTool` over a generated 35,000-part library, per keystroke (`SearchQuery` set; filter + match +
+property notifications), after JIT warm-up, 360 keystrokes per phase:
+
+| | Release median / max | Debug median / max |
+|---|---:|---:|
+| under the library (filtered, sorted list) | 1.3 ms / 9.5 ms | 3.5 ms / 9.0 ms |
+| under All (one count per library) | 1.3 ms / 1.8 ms | 3.0 ms / 3.4 ms |
+| first selection of the library (35,000 row VMs + the value sort, once per index) | 31 ms | 26 ms |
+| menu tree build at `SetVendorLibraries` | 8 ms | 9 ms |
+
+Every keystroke is under one frame in both builds, and the index's file-read counter stayed at zero, so
+there is no off-thread match. The first, cold keystrokes before tiering read ~10 ms; still under a frame.
+What makes it cheap: row VMs are built once per index and reused (their text formats on first read, so
+only realized rows pay it), a sort is cached per order, and a keystroke only walks the sorted array.
+
+**Virtualization, measured headlessly** (Avalonia.Headless out of tree — `tests/Ui.Tests` runs no Avalonia):
+a 20,000-part selection in a 220 × 600 panel realizes **17** row containers, and **17** after scrolling to
+the last row. The test in the suite holds the shape that number depends on: `VendorList` is a `ListBox`
+with its own panel and no `ScrollViewer` ancestor.
+
+**`TextTrimming.LeadingCharacterEllipsis` throws in Avalonia 12.0.3** (`ShapedTextRun.Split`: "length must
+be greater than zero") on a breadcrumb like `Library ▸ caps ▸ auto ▸ series-c` once it needs trimming — the
+`▸` is shaped from a fallback font, and the prefix-collapse splits a zero-length run. It happened during
+layout, so the real app would have crashed when a deep selection met a narrow panel. The Type button
+fits the breadcrumb in code instead (`PaletteToolView.FitBreadcrumb`): whole leading levels give way to
+`…` until it fits, measured with a `TextLayout`.
+
+**A ListBox row needs `handledEventsToo`** for its press/move/release: the `ListBoxItem` claims the press
+for its own selection. The selection chrome is flattened away (`ListBox.rows`, as the technology editor
+does) — the row shows the ARMED state, which is the palette's, not the list's.
+
+**The `MenuFlyout` inside `Button.Flyout` gets no generated field** from `x:Name` — a flyout is not in the
+view's name scope — so the view reaches it through `TypeButton.Flyout`.
+
+**Recently Used is one list of `RecentPlacement`s** (a kind or a vendor part), persisted in
+`RecentlyPlaced` as strings; a kind keeps its old spelling, so an existing `preferences.json` reads
+unchanged. `SchematicViewModel.VendorPartPlaced` records the PART, since `ComponentPlaced` would only say
+`SpiceModel`.
+
+**A vendor part's File/Name/Glyph rows are placed with `ShowOnSchematic = false`**: the type label already
+reads the part number and the value, and `File = vendorlib://…` on the sheet would say nothing a reader
+needs.

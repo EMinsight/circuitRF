@@ -102,6 +102,44 @@ public partial class WorkspaceViewModel
         {
             Messages.Warning($"Vendor library — the change could not be recorded: {ex.Message}");
         }
+        PublishVendorLibraries();
+    }
+
+    /// <summary>
+    /// Hands the palette this workspace's vendor libraries — each name with the folder it resolves to
+    /// — and the Add Vendor Library… command its Type menu ends with (brief vendorlib-2). Called on
+    /// open, after any change to the list, and whenever the palette tool is re-created.
+    /// </summary>
+    private void PublishVendorLibraries()
+    {
+        if (_factory.PaletteTool is not { } palette) return;
+        EnsureVendorIndexSubscription();
+
+        palette.AddVendorLibraryCommand = AddVendorLibraryCommand;
+
+        var libs = new List<(string Name, string? Root)>();
+        if (CurrentWorkspacePath is { } cwsPath && Path.GetDirectoryName(cwsPath) is { } wsRoot)
+            foreach (var r in TryLoadCws(cwsPath).VendorLibraries ?? [])
+                libs.Add((r.Name, VendorLibraryRefs.ResolveLibraryRoot(wsRoot, r.Name, out _)));
+        palette.SetVendorLibraries(libs);
+    }
+
+    private bool _vendorIndexSubscribed;
+
+    /// <summary>
+    /// A finished index build reaches the palette (its menu, counts and list) and the open schematics
+    /// (a placed part's value caption comes from the index). <see cref="VendorLibraryIndex.Built"/> is
+    /// raised on a pool thread, hence the post.
+    /// </summary>
+    private void EnsureVendorIndexSubscription()
+    {
+        if (_vendorIndexSubscribed) return;
+        _vendorIndexSubscribed = true;
+        VendorLibraryIndex.Built += _ => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            _factory.PaletteTool?.RefreshVendorIndexes();
+            RebuildOpenSchematics();
+        });
     }
 
     /// <summary>The File/Name of every SpiceModel placed in a schematic that is currently OPEN —
@@ -154,6 +192,7 @@ public partial class WorkspaceViewModel
                 Messages.Warning(text + " Repair it in File ▸ Manage Libraries….");
             }
         }
+        PublishVendorLibraries();
     }
 
     /// <summary>The Repair action: <see cref="VendorLibraryRefs.AddOrRepair"/> with the folder the

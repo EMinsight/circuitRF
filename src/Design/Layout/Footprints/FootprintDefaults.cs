@@ -73,4 +73,30 @@ public static class FootprintDefaults
         var found = SmtCaseTable.Find(DefaultCaseCode);
         return found is null ? null : FootprintRef.For(found).ToString();
     }
+
+    /// <summary>
+    /// The <c>Footprint</c> a vendor library part takes from the case size its header states in BOTH
+    /// systems (<c>1005M(0402)</c> → metric <c>1005</c>, imperial <c>0402</c>), or <c>null</c> for
+    /// <b>None</b> — brief vendorlib-2 R-vl2-3d. The palette's placement and <c>circuitrf find
+    /// --parts</c> both ask this, so the two cannot disagree.
+    ///
+    /// <para><b>Both codes must match one row</b>: its <see cref="SmtCase.Code"/> is the imperial code
+    /// and its <see cref="SmtCase.MetricTwin"/> the metric one. Either code alone is ambiguous —
+    /// imperial <c>0201</c> and metric <c>0201</c> are two different parts, 2.4x apart — and the
+    /// header states the pair precisely so that nobody has to guess which was meant.</para>
+    ///
+    /// <para>No pair, a pair the table lacks, or a technology that is not a board gives None. There is
+    /// no nearest size and no reading of a part number: the user picks from the ordinary picker.</para>
+    /// </summary>
+    public static string? ForCaseCodes(string? metric, string? imperial, Technology? technology)
+    {
+        if (string.IsNullOrWhiteSpace(metric) || string.IsNullOrWhiteSpace(imperial)) return null;
+        if (!LandPatternLayers.IsBoardTechnology(technology)) return null;
+
+        foreach (var c in SmtCaseTable.All)
+            if (string.Equals(c.Code, imperial.Trim(), StringComparison.Ordinal) &&
+                string.Equals(c.MetricTwin, metric.Trim(), StringComparison.Ordinal))
+                return FootprintRef.For(c).ToString();
+        return null;
+    }
 }

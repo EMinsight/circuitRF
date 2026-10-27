@@ -22,12 +22,19 @@ namespace CircuitRF.Ui.Schematic;
 /// cannot say WHICH cell was dragged — without the id a dropped vendor cell would place whatever
 /// that placeholder means, which is nothing.
 /// </param>
+/// <param name="Vendor">
+/// Set when the dragged entry is a vendor library part (brief vendorlib-2 R-vl2-2b) — a row of the
+/// part list or a Recently Used tile. Its kind is the <see cref="SymbolKind.SpiceModel"/> every vendor
+/// part shares, so without this a drop would place an unconfigured SPICE box.
+/// </param>
 public sealed record PaletteDragPayload(
-    SymbolKind Kind, int PortCount, string? CellDir = null, string? PCellGeneratorId = null)
+    SymbolKind Kind, int PortCount, string? CellDir = null, string? PCellGeneratorId = null,
+    VendorPartRef? Vendor = null)
 {
-    private const string Prefix      = "circuitrf-palette:";
-    private const string PCellMarker = "@pcell:";
-    private const string CellMarker  = "@cell:";
+    private const string Prefix       = "circuitrf-palette:";
+    private const string PCellMarker  = "@pcell:";
+    private const string CellMarker   = "@cell:";
+    private const string VendorMarker = "@vendor:";
 
     /// <summary>
     /// Compact wire representation: <c>circuitrf-palette:Kind:PortCount</c>, then an optional
@@ -46,6 +53,9 @@ public sealed record PaletteDragPayload(
     public string Serialize()
     {
         var text = $"{Prefix}{Kind}:{PortCount}";
+        // A vendor part never carries a cell or a generator, so its tail stands alone — and last, its
+        // file path being free to hold ':'.
+        if (Vendor is { } vendor) return text + $":{VendorMarker}{vendor.Serialize()}";
         if (PCellGeneratorId is { Length: > 0 } gen) text += $":{PCellMarker}{gen}";
         if (CellDir is { Length: > 0 } dir)          text += $":{CellMarker}{dir}";
         return text;
@@ -75,6 +85,13 @@ public sealed record PaletteDragPayload(
         string countText = c < 0 ? after : after[..c];
         string  tail     = c < 0 ? ""   : after[(c + 1)..];
         if (!int.TryParse(countText, out var portCount)) return false;
+
+        if (tail.StartsWith(VendorMarker, StringComparison.Ordinal))
+        {
+            if (!VendorPartRef.TryParse(tail[VendorMarker.Length..], out var vendor)) return false;
+            result = new PaletteDragPayload(kind, portCount, Vendor: vendor);
+            return true;
+        }
 
         string? generatorId = null;
         if (tail.StartsWith(PCellMarker, StringComparison.Ordinal))

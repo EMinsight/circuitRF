@@ -226,6 +226,10 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// <summary>Fired after each successful component placement via the Place tool.</summary>
     public event Action<SymbolKind>? ComponentPlaced;
 
+    /// <summary>Fired after a vendor library part is placed (brief vendorlib-2 R-vl2-2d) — what Recently
+    /// Used records, since the kind every vendor part shares says nothing about which one it was.</summary>
+    public event Action<VendorPartRef>? VendorPartPlaced;
+
     /// <summary>
     /// Fired after an auto-generated symbol is saved for a cell.
     /// Argument is the absolute cell directory path — subscribers should
@@ -3900,6 +3904,14 @@ public sealed partial class SchematicViewModel : ObservableObject
             }
             catch { /* unresolvable — fall back to the placeholder glyph */ }
         }
+        else if (_placementService?.Pending?.Vendor is { } vendor)
+        {
+            // A vendor part's ghost is the glyph it will land as — the built-in C or L, or the
+            // unconfigured SPICE box for a part with no glyph — never resolved from its file.
+            var glyph = VendorPartPlacement.GhostSymbol(vendor.Glyph);
+            prims = glyph.Primitives;
+            pins  = glyph.Pins;
+        }
         else if (_placementSymbol == SymbolKind.ComposedFET)
         {
             // A dropped composed FET has no File yet, and its glyph carries the thermal pin only once a self-heating
@@ -3946,6 +3958,11 @@ public sealed partial class SchematicViewModel : ObservableObject
             _ = CommitCellPlacementAsync(armedCell, wx, wy, _placementRot, _placementMirrorX);
             return;
         }
+        if (_placementService?.Pending?.Vendor is { } vendor)
+        {
+            CommitVendorPlacement(vendor, _placementRot, wx, wy, _placementMirrorX);
+            return;
+        }
 
         CommitPlacement(_placementSymbol, _placementPortCount, _placementRot, wx, wy, _placementMirrorX);
     }
@@ -3963,6 +3980,44 @@ public sealed partial class SchematicViewModel : ObservableObject
         Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
         SelectPlacedPart(comp.Id);
         ComponentPlaced?.Invoke(kind);
+    }
+
+    /// <summary>
+    /// Places a vendor library part (brief vendorlib-2 R-vl2-3): an ordinary
+    /// <see cref="SymbolKind.SpiceModel"/>, built exactly as a palette drop of one is, then pointed at
+    /// the part — <c>File</c>, <c>Name</c> and <c>Glyph</c> from <see cref="VendorPartPlacement"/>,
+    /// the <c>C</c>/<c>L</c> prefix for those glyphs, and the footprint of the part's own stated case
+    /// size on a board. Shared by the click and the drop.
+    ///
+    /// <para>The three parameters are not drawn as rows: the type label already reads the part number
+    /// and its value, and <c>File = vendorlib://…</c> on the sheet would say nothing a reader needs.</para>
+    /// </summary>
+    public void CommitVendorPlacement(VendorPartRef part, SymbolRotation rotation,
+                                      double worldX, double worldY, bool mirrorX = false)
+    {
+        var comp = BuildPlacedComponent(SymbolKind.SpiceModel, 2, rotation, worldX, worldY, mirrorX);
+
+        foreach (var (name, value) in VendorPartPlacement.Parameters(part))
+        {
+            var row = comp.Parameters.FirstOrDefault(p => p.Name == name);
+            if (row is null) comp.Parameters.Add(row = new EditableParameter { Name = name });
+            row.Expression      = value;
+            row.ShowOnSchematic = false;
+        }
+
+        if (VendorPartPlacement.InstancePrefix(part.Glyph) is { } prefix)
+            comp.InstanceName = SchematicEditModel.NextAvailableName(TakenInstanceNames(), prefix);
+
+        // At placement only, on FootprintDefaults.For's terms (R-fp2-3d). A SpiceModel kind is
+        // offered no default by For, so this is the only footprint the part arrives with.
+        if (VendorPartPlacement.Footprint(part, SchematicTechnology.Of(EditModel)) is { } footprint
+            && !comp.Parameters.Any(p => p.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase)))
+            comp.Parameters.Add(new EditableParameter
+                { Name = ArtworkParameters.FootprintName, Expression = footprint, ShowOnSchematic = false });
+
+        Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
+        SelectPlacedPart(comp.Id);
+        VendorPartPlaced?.Invoke(part);
     }
 
     /// <summary>

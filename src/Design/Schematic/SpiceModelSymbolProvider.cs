@@ -68,6 +68,13 @@ public static class SpiceModelSymbolProvider
     public const string SectionParameter = "Section";
 
     /// <summary>
+    /// The instance parameter a vendor library part stores its glyph in — <c>C</c>, <c>L</c> or blank
+    /// (brief vendorlib-2 R-vl2-3a). Stored on the instance, not looked up, so a schematic whose
+    /// library is missing still draws a capacitor where a capacitor was.
+    /// </summary>
+    public const string GlyphParameter = "Glyph";
+
+    /// <summary>
     /// The parameters the SpiceModel's own dialog panel owns — which file, which definition, and how
     /// the box is drawn. <b>One definition, read by three places</b>: the panel (to keep them out of
     /// the generic rows), the extractor (to keep them out of the netlist), and the row adopter (to
@@ -75,7 +82,7 @@ public static class SpiceModelSymbolProvider
     /// hand-maintained lists, which is the shape of bug this repository has already paid for twice.
     /// </summary>
     public static bool IsPanelParameter(string? name)
-        => name is FileParameter or NameParameter or SectionParameter or "PinConfig" or "Pitch";
+        => name is FileParameter or NameParameter or SectionParameter or GlyphParameter or "PinConfig" or "Pitch";
 
     // ── The reference form ────────────────────────────────────────────────────
 
@@ -94,26 +101,26 @@ public static class SpiceModelSymbolProvider
     /// section is the only thing that changed.</para>
     /// </summary>
     public static string RefFor(string? file, string? name, SnpPinConfig cfg, SnpPitch pitch,
-                               string? section = null)
-        => Scheme + pitch + Separator + cfg + Separator + (section ?? "").Trim() + Separator
-                  + (name ?? "").Trim() + Separator + (file ?? "").Trim();
+                               string? section = null, string? glyph = null)
+        => Scheme + pitch + Separator + cfg + Separator + (glyph ?? "").Trim() + Separator
+                  + (section ?? "").Trim() + Separator + (name ?? "").Trim() + Separator + (file ?? "").Trim();
 
     /// <summary>True when this reference names a SPICE file's definition.</summary>
     public static bool IsSpiceModelRef(string? symbolRef)
         => symbolRef is not null && symbolRef.StartsWith(Scheme, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>The five fields of a reference, or null when it is not one.</summary>
-    public static (SnpPitch Pitch, SnpPinConfig Config, string Section, string Name, string File)?
+    /// <summary>The six fields of a reference, or null when it is not one.</summary>
+    public static (SnpPitch Pitch, SnpPinConfig Config, string Glyph, string Section, string Name, string File)?
         Parse(string? symbolRef)
     {
         if (!IsSpiceModelRef(symbolRef)) return null;
 
-        var fields = symbolRef![Scheme.Length..].Split(Separator, 5);
-        if (fields.Length < 5) return null;
+        var fields = symbolRef![Scheme.Length..].Split(Separator, 6);
+        if (fields.Length < 6) return null;
 
         return (Enum.TryParse<SnpPitch>(fields[0], ignoreCase: true, out var pitch) ? pitch : SnpPitch.Loose,
                 Enum.TryParse<SnpPinConfig>(fields[1], ignoreCase: true, out var cfg) ? cfg : SnpPinConfig.Standard,
-                fields[2], fields[3], fields[4]);
+                fields[2], fields[3], fields[4], fields[5]);
     }
 
     // ── Path resolution ───────────────────────────────────────────────────────
@@ -193,6 +200,10 @@ public static class SpiceModelSymbolProvider
             return new CellSymbolResolution
                 { State = CellSymbolState.Resolved, Symbol = UnconfiguredSymbol(r.Config, r.Pitch) };
 
+        if (VendorLibraries.VendorPartPlacement.GlyphKind(r.Glyph) is { } glyphKind
+            && VendorLibraries.VendorLibraryRefs.IsVendorRef(r.File))
+            return ResolveVendorGlyph(r.File, r.Name, glyphKind, schematicDir);
+
         string? path = ResolvePath(r.File, schematicDir);
         if (path is null) return CellSymbolResolution.NotFoundResult;
 
@@ -205,6 +216,33 @@ public static class SpiceModelSymbolProvider
             return CellSymbolResolution.PrimaryMissingResult;
 
         return new CellSymbolResolution { State = CellSymbolState.Resolved, Symbol = SymbolFor(def, r.Config, r.Pitch) };
+    }
+
+    /// <summary>
+    /// A vendor library part whose <c>Glyph</c> is C or L (brief vendorlib-2 R-vl2-3b): the BUILT-IN
+    /// capacitor or inductor at the standard pitch, so wiring and rotation behave exactly as they do
+    /// for a placed C or L — its pins are the built-in's own, unnamed, as a placed C's are.
+    ///
+    /// <para><b>It reads no file.</b> The glyph comes from the instance's own parameter and the value
+    /// caption from the library's in-memory index (empty while that is still building). A library
+    /// whose folder is missing — or that the workspace does not name — still draws the part, with the
+    /// existing NotFound mark over it: a capacitor that has lost its model is still a capacitor on the
+    /// page, and the wires drawn to it still mean what they did.</para>
+    /// </summary>
+    private static CellSymbolResolution ResolveVendorGlyph(string file, string part, SymbolKind kind, string? schematicDir)
+    {
+        var symbol = BuiltInSymbols.Primitives(kind, 2);
+
+        VendorLibraries.VendorLibraryRefs.TryParse(file, out string library, out _);
+        string? wsRoot = Workspace.WorkspaceRootFinder.WorkspaceDirOf(schematicDir);
+        string? root = wsRoot is null ? null
+            : VendorLibraries.VendorLibraryRefs.ResolveLibraryRoot(wsRoot, library, out _);
+        if (root is null)
+            return new CellSymbolResolution { State = CellSymbolState.NotFound, Symbol = symbol };
+
+        string caption = VendorLibraries.VendorLibraryIndex.Latest(root)?.Find(part)?.Header.ValueText() ?? "";
+        return new CellSymbolResolution
+            { State = CellSymbolState.Resolved, Symbol = symbol, Caption = caption.Length > 0 ? caption : null };
     }
 
     /// <summary>

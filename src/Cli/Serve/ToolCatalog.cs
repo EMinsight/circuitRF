@@ -1146,7 +1146,7 @@ internal static class ToolCatalog
             "List what is under a directory: the workspaces, their cells, each cell's views and the "
           + "analyses it declares. The walk is bounded — the result says how deep it went and whether "
           + "it stopped short. With parts, search a workspace's vendor libraries instead: each match "
-          + "carries the SpiceModel instance parameters to write (File, Name, Glyph). Reads no result and writes nothing.",
+          + "carries the SpiceModel instance parameters to write (File, Name, Glyph, and Footprint on a board when the part states its case size). Reads no result and writes nothing.",
             null, null,
             [
                 new("", [ "find" ],

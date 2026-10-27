@@ -313,6 +313,15 @@ public static class SchematicRenderer
                     cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme,
                     applyForceReadable: true, texts: texts, componentId: c.Id);
             }
+            else if (c.CellRefState is CellSymbolState.NotFound && c.CellRefPrimitives is not null)
+            {
+                // A reference that states its own glyph (a vendor part whose library is missing):
+                // the glyph it was placed as, marked — the wires drawn to it still mean what they did.
+                DrawSymbol(canvas, c.CellRefPrimitives,
+                    cx, cy, c.Rotation, c.MirrorX, panX, panY, zoom, theme,
+                    applyForceReadable: true, texts: texts, componentId: c.Id);
+                DrawCellRefNotFoundMark(canvas, cx, cy, panX, panY, zoom, theme.Warning, texts, c.Id);
+            }
             else if (c.CellRefState is CellSymbolState.NotFound)
             {
                 DrawCellRefNotFoundGlyph(canvas, cx, cy, panX, panY, zoom,
@@ -1292,6 +1301,23 @@ public static class SchematicRenderer
         float fontSize = (float)Math.Max(6.0, zoom * 40);
         using var font  = new SKFont(SkiaFonts.PlexRegular, fontSize);
         canvas.DrawText("Not Found", px, py + font.Size * 0.4f, SKTextAlign.Center, font, textPaint);
+        Place(texts, "Not Found", SchematicTextRole.Chrome, componentId, -1, font, 0f, 0f, 0.0,
+              px, py + font.Size * 0.4f, SKTextAlign.Center);
+    }
+
+    /// <summary>The "Not Found" words alone, in the warning colour, over a glyph that is still drawn.</summary>
+    private static void DrawCellRefNotFoundMark(
+        SKCanvas canvas,
+        double cx, double cy,
+        double panX, double panY, double zoom,
+        SKColor color,
+        Action<SchematicPlacedText>? texts = null, string? componentId = null)
+    {
+        var (px, py) = ToPixel(cx, cy, panX, panY, zoom);
+        float fontSize = (float)Math.Max(6.0, zoom * 40);
+        using var font  = new SKFont(SkiaFonts.PlexRegular, fontSize);
+        using var paint = new SKPaint { IsAntialias = true, Color = color };
+        canvas.DrawText("Not Found", px, py + font.Size * 0.4f, SKTextAlign.Center, font, paint);
         Place(texts, "Not Found", SchematicTextRole.Chrome, componentId, -1, font, 0f, 0f, 0.0,
               px, py + font.Size * 0.4f, SKTextAlign.Center);
     }

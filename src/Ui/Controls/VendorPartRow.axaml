@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
+             x:Class="CircuitRF.Ui.Controls.VendorPartRow"
+             x:DataType="dockVm:VendorPartRowVm">
+
+    <UserControl.Styles>
+        <Style Selector="Border#RowBody:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SystemChromeMediumColor}"/>
+        </Style>
+        <Style Selector="Border#RowBody.armed">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+        </Style>
+        <Style Selector="Border#RowBody.armed:pointerover">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}"/>
+        </Style>
+    </UserControl.Styles>
+
+    <!-- One part, two lines at a fixed height so the virtualizing panel measures every row alike:
+         part number and value, then the description and frequency range. The palette is two glyphs
+         wide by default, too narrow for four columns side by side. Single pointer owner, as a tile is:
+         release without a drag arms, a drag past the threshold drops the part on a canvas. -->
+    <Border x:Name="RowBody"
+            Height="32"
+            Padding="4,2"
+            Background="Transparent"
+            Cursor="Hand"
+            Classes.armed="{Binding IsArmed}"
+            ToolTip.Tip="{Binding ToolTipText}">
+        <StackPanel>
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{Binding Part}" FontSize="11" FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="11" Margin="6,0,0,0"/>
+            </Grid>
+            <TextBlock Text="{Binding Detail}" FontSize="10"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+    </Border>
+
+</UserControl>

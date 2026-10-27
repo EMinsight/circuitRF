@@ -273,6 +273,7 @@ public partial class WorkspaceViewModel
         CellLayoutResolver.InvalidateAll();
 
         _factory.ProjectTreeTool?.Refresh();
+        PublishVendorLibraries();
         RebuildOpenSchematics();
         RepaintOpenLayouts();
 

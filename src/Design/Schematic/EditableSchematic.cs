@@ -675,7 +675,9 @@ public sealed class EditableComponent
                       GetEnumParam("Pitch", SnpPitch.Loose),
                       // The section too: two sections of one file are two different parts, and the
                       // reference IS the symbol cache's key.
-                      Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.SectionParameter)?.Expression)
+                      Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.SectionParameter)?.Expression,
+                      // A vendor part's glyph: what it draws as without its file being read.
+                      Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.GlyphParameter)?.Expression)
                 : null)
         // A composed FET draws the symbol its model (or this instance) names — a library symbol or a
         // .csym beside the .cmodel — and the standard FET glyph when that does not resolve. Both the
@@ -1098,7 +1100,9 @@ public sealed class EditableComponent
         if (cellRefResolution is not null)
         {
             cellRefState = cellRefResolution.State;
-            if (cellRefResolution is { State: CellSymbolState.Resolved, Symbol: { } resolvedSym })
+            // A symbol on ANY state, not only Resolved: a NotFound that states its own glyph (a vendor
+            // part whose library is missing) keeps its pins, so its wires still connect.
+            if (cellRefResolution is { Symbol: { } resolvedSym })
             {
                 cellRefPrimitives = resolvedSym.Primitives;
                 ports = resolvedSym.Pins.Select(pin =>
@@ -1168,6 +1172,10 @@ public sealed class EditableComponent
         // For built-ins the type label comes from the component registry.
         // Param format: "<Name> = <Expression> <Unit>" (spaces around =; unit omitted when empty).
         string typeLabel = ShowTypeLabel ? TypeLabelText() : "";
+        // A source's caption rides on the type label rather than taking a row of its own: rows 0 and
+        // 1 are type and name in every stored LabelOffsets, and a new row would shift them all.
+        if (typeLabel.Length > 0 && cellRefResolution?.Caption is { Length: > 0 } caption)
+            typeLabel += "  " + caption;
         var labels = new List<string>
         {
             typeLabel,
@@ -1700,7 +1708,8 @@ public sealed class SchematicEditModel
     /// <summary>
     /// Single source of a component's pin geometry. Cell-ref-aware:
     ///   CellRef + Resolved  → resolved .csym Symbol.Pins (via <paramref name="cellRefResolutions"/> or CellSymbolResolver)
-    ///   CellRef + NotFound/PrimaryMissing → empty (matches the no-pins render)
+    ///   CellRef + NotFound/PrimaryMissing → empty (matches the no-pins render), unless the
+    ///                                       resolution still carries a symbol (a vendor part's glyph)
     ///   built-in            → SymbolPortDefs.For(Symbol, PortCount), PortIndex = slot
     /// Per-frame callers should use a pre-built snapshot to avoid per-frame resolver calls.
     /// </summary>
@@ -1716,7 +1725,7 @@ public sealed class SchematicEditModel
             else if (SchematicDirectory is not null)
                 res = CellSymbolResolver.Resolve(symRef, SchematicDirectory, HostWorkspaceRoot);
 
-            if (res is { State: CellSymbolState.Resolved, Symbol: { } sym })
+            if (res is { Symbol: { } sym })
             {
                 // R-wbb2-2: pins are returned in PIN-NUMBER order, not list order. For a wBond the
                 // two coincide today (the generator emits them in order), but NetBindings[k] is
@@ -1772,7 +1781,7 @@ public sealed class SchematicEditModel
         else if (SchematicDirectory is not null)
             res = CellSymbolResolver.Resolve(symRef, SchematicDirectory, HostWorkspaceRoot);
 
-        return res is { State: CellSymbolState.Resolved, Symbol: { } sym } ? sym.Primitives : null;
+        return res is { Symbol: { } sym } ? sym.Primitives : null;
     }
 
     /// <summary>

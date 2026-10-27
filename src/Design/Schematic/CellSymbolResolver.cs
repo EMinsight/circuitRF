@@ -58,8 +58,19 @@ public sealed class CellSymbolResolution
     public static readonly CellSymbolResolution PrimaryMissingResult = new() { State = CellSymbolState.PrimaryMissing };
 
     public CellSymbolState State  { get; init; }
-    /// <summary>Non-null when State == Resolved.</summary>
+
+    /// <summary>
+    /// Non-null when State == Resolved. Also non-null on a NotFound whose reference states its own
+    /// glyph (a vendor library part's <c>Glyph</c>, brief vendorlib-2 R-vl2-3a): the part is drawn and
+    /// wired as that glyph, with the NotFound mark over it, rather than replaced by the placeholder.
+    /// </summary>
     public Symbol?         Symbol { get; init; }
+
+    /// <summary>
+    /// Text the source adds after the type label, or null — a vendor part's stated value, read from
+    /// the library's in-memory index.
+    /// </summary>
+    public string?         Caption { get; init; }
 
     /// <summary>
     /// Non-null when this reference only resolved because the owning root's <c>.cmoves</c> said where
@@ -71,7 +82,7 @@ public sealed class CellSymbolResolution
     /// <summary>The same result with a redirect attached. Used by <see cref="CellSymbolResolver"/>'s
     /// early returns, which hand back the shared singletons.</summary>
     public CellSymbolResolution With(MoveRedirectHit? redirect) =>
-        redirect is null ? this : new CellSymbolResolution { State = State, Symbol = Symbol, Redirect = redirect };
+        redirect is null ? this : new CellSymbolResolution { State = State, Symbol = Symbol, Caption = Caption, Redirect = redirect };
 }
 
 /// <summary>
@@ -110,7 +121,11 @@ public static class CellSymbolResolver
         // no base either. Both have to work on an unsaved scratch schematic, where a component that
         // resolved to nothing would render pin-less and read as the drop having failed.
         || (SpiceModelSymbolProvider.Parse(cellRef) is { } r
-                && (r.File.Length == 0 || System.IO.Path.IsPathRooted(r.File)))
+                && (r.File.Length == 0 || System.IO.Path.IsPathRooted(r.File)
+                    // A vendor part with a stated glyph draws it with no base at all — marked
+                    // NotFound when there is no workspace to look its library up in.
+                    || (VendorLibraries.VendorPartPlacement.GlyphKind(r.Glyph) is not null
+                        && VendorLibraries.VendorLibraryRefs.IsVendorRef(r.File))))
         // A composed FET always draws SOMETHING — its fallback is the standard FET glyph — so an
         // unsaved schematic must still get its pins.
         || ComposedFetSymbolProvider.IsComposedFetRef(cellRef);

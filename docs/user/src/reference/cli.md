@@ -2822,10 +2822,12 @@ in the part's name, its description, its file or its folder, or when it reads as
 `10pF`, `2.2n`, `4n7`) equal to the part's stated value within 0.5 %.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf find ~/designs/Amp --parts "10p C0G"
-<span class="output">Caps	TSTC0402A0018	10 pF	1005M(0402)/C0G(-55~125degC)/10[pF]/50[V]	100 MHz – 30 GHz	File=vendorlib://Caps/capacitors/series-a.lib Name=TSTC0402A0018 Glyph=C</span></code></pre>
+<span class="output">Caps	TSTC0402A0018	10 pF	1005M(0402)/C0G(-55~125degC)/10[pF]/50[V]	100 MHz – 30 GHz	File=vendorlib://Caps/capacitors/series-a.lib Name=TSTC0402A0018 Glyph=C Footprint=smt:0402@N</span></code></pre>
 
 Each row ends with **the instance parameters to write** for a SpiceModel component in a `.csch`, so a
-part found here can be placed without another question. Rows are sorted by library, then by value.
+part found here can be placed without another question. They are the parameters the palette writes
+when the part is dropped, `Footprint` included when the workspace's technology is a board and the part
+states its case size in both systems. Rows are sorted by library, then by value.
 At most `--limit` rows are printed (50 by default), and a note says how many matched in all.
 
 <div class="callout">

@@ -300,6 +300,17 @@ already uses is never replaced; the collision is reported.
 `File` parameter uses. A stored reference is therefore **workspace-relative** by convention, with
 the schematic folder as a fallback.
 
+**A vendor library part** (brief vendorlib-2) is this same component with `File =
+vendorlib://<library>/<file>` (resolved through the nearest `.cws`, brief vendorlib-1) and one more
+panel parameter, `Glyph` (`C`, `L` or blank, `VendorPartPlacement.GlyphOf`: set only for a
+two-terminal capacitor or inductor). The glyph is a field of the `spicemodel://` reference, and with
+C or L on a `vendorlib://` file the resolver returns the BUILT-IN capacitor or inductor without reading
+the file — `Resolved` with the value as `CellSymbolResolution.Caption` (from the in-memory index), or
+`NotFound` still carrying that symbol when the library is missing, which the renderer draws with the
+Not Found mark over it. The placement itself — parameters, the `C`/`L` prefix and the footprint from
+the stated case pair (`FootprintDefaults.ForCaseCodes`) — is `VendorPartPlacement`, shared with
+`circuitrf find --parts`.
+
 ---
 
 ## 6. Archiving a workspace that references a SPICE file

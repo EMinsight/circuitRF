@@ -13,18 +13,30 @@
         <!-- Header: category ComboBox + search field (mirrors Project Tree toolbar pattern) -->
         <StackPanel Grid.Row="0" Spacing="3" Margin="4,4,4,2">
 
-            <!-- Category ComboBox -->
-            <ComboBox ItemsSource="{Binding Categories}"
-                      SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
-                      HorizontalAlignment="Stretch"
-                      FontSize="12"
-                      Padding="6,3">
-                <ComboBox.ItemTemplate>
-                    <DataTemplate DataType="dockVm:PaletteCategoryEntry">
-                        <TextBlock Text="{Binding DisplayName}" FontSize="12"/>
-                    </DataTemplate>
-                </ComboBox.ItemTemplate>
-            </ComboBox>
+            <!-- Type button (brief vendorlib-2 R-vl2-1): the selection as a breadcrumb, trimmed from
+                 the LEFT so the narrowest panel still shows the level the user chose, opening a
+                 cascading menu — built-ins flat, a sub-menu per kit, a sub-menu per vendor library
+                 following its own folders. The menu is rebuilt each time it opens (code-behind) and
+                 keeps the menu's own arrow-key navigation. -->
+            <Button x:Name="TypeButton"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    FontSize="12"
+                    Padding="6,3"
+                    ToolTip.Tip="{Binding SelectedCategory.Breadcrumb}">
+                <Button.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedLeft"/>
+                </Button.Flyout>
+                <Grid ColumnDefinitions="*,Auto">
+                    <!-- Text is set in code-behind (FitBreadcrumb): whole leading levels give way
+                         to "…" until it fits. Avalonia's own LeadingCharacterEllipsis throws on this
+                         text (12.0.3, a ▸ shaped from a fallback font) — see src/Ui/RESOLVED.md. -->
+                    <TextBlock x:Name="TypeText" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                    <mi:MaterialIcon Grid.Column="1" Kind="ChevronDown"
+                                     Width="14" Height="14" Margin="4,0,0,0"
+                                     Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </Grid>
+            </Button>
 
             <!-- Search TextBox with magnifier prefix and clear button overlay -->
             <Grid>
@@ -53,15 +65,35 @@
         </StackPanel>
 
         <!-- Tile area: scrollable grid + empty-result state -->
-        <Grid Grid.Row="1">
+        <DockPanel Grid.Row="1" IsVisible="{Binding !IsVendorSelection}">
 
+            <!-- Under All with a query, one row per vendor library with matches (R-vl2-4c): its
+                 parts never enter the tile grid, which would otherwise hold tens of thousands. -->
+            <ItemsControl DockPanel.Dock="Top"
+                          ItemsSource="{Binding LibraryMatches}"
+                          IsVisible="{Binding HasLibraryMatches}"
+                          Margin="4,2,4,4">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="dockVm:VendorLibraryMatchVm">
+                        <Button Content="{Binding Text}"
+                                Command="{Binding SelectCommand}"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                FontSize="11"
+                                Padding="6,2"
+                                Margin="0,1"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Grid>
             <!-- Empty-result placeholder -->
             <TextBlock Text="No matching components."
                        Foreground="{DynamicResource SystemBaseMediumColor}"
                        FontSize="11"
                        Margin="8,6"
                        VerticalAlignment="Top"
-                       IsVisible="{Binding HasNoItems}"/>
+                       IsVisible="{Binding ShowNoItems}"/>
 
             <!-- Width-driven reflow grid:
                  columns = max(1, floor(availableWidth / tileWidth)) arises naturally from WrapPanel
@@ -83,7 +115,7 @@
                           Focusable="True" IsTabStop="False"
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto"
-                          IsVisible="{Binding !HasNoItems}">
+                          IsVisible="{Binding ShowTiles}">
                 <ItemsControl ItemsSource="{Binding DisplayedItems}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -97,8 +129,81 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
+            </Grid>
 
-        </Grid>
+        </DockPanel>
+
+        <!-- A vendor library's part list (R-vl2-2a). A ListBox, NOT an ItemsControl in a
+             ScrollViewer: the ListBox's own VirtualizingStackPanel realizes the rows on screen and
+             no others, where a ScrollViewer around a panel gives it an infinite height and every
+             one of tens of thousands of rows is built. Nothing else may wrap it in a ScrollViewer
+             for the same reason (VendorPaletteTests holds the shape). -->
+        <DockPanel Grid.Row="1" IsVisible="{Binding IsVendorSelection}">
+
+            <!-- Column headers: click to sort by that field, again to reverse it. -->
+            <WrapPanel DockPanel.Dock="Top" Margin="4,0,4,2">
+                <WrapPanel.Styles>
+                    <Style Selector="Button.sort">
+                        <Setter Property="FontSize" Value="10"/>
+                        <Setter Property="Padding" Value="4,1"/>
+                        <Setter Property="Margin" Value="0,0,2,2"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                    </Style>
+                </WrapPanel.Styles>
+                <Button Classes="sort" Content="{Binding PartHeader}" Command="{Binding SortVendorPartsCommand}"        CommandParameter="Part"/>
+                <Button Classes="sort" Content="{Binding ValueHeader}" Command="{Binding SortVendorPartsCommand}"       CommandParameter="Value"/>
+                <Button Classes="sort" Content="{Binding DescriptionHeader}" Command="{Binding SortVendorPartsCommand}" CommandParameter="Description"/>
+                <Button Classes="sort" Content="{Binding RangeHeader}" Command="{Binding SortVendorPartsCommand}"       CommandParameter="Range"/>
+            </WrapPanel>
+
+            <!-- Indexing <name>…, a library that cannot be shown, or no match. The palette is
+                 never blocked on an index (R-vl2-2c). -->
+            <TextBlock DockPanel.Dock="Top"
+                       Text="{Binding VendorStatus}"
+                       IsVisible="{Binding HasVendorStatus}"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       FontSize="11"
+                       Margin="8,6"/>
+
+            <ListBox x:Name="VendorList"
+                     Classes="rows"
+                     ItemsSource="{Binding VendorRows}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListBox.Styles>
+                    <!-- The row shows the ARMED state; the ListBox's own selection is a second,
+                         unrelated state, so its chrome is flattened away. -->
+                    <Style Selector="ListBox.rows">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="Padding" Value="0"/>
+                    </Style>
+                    <Style Selector="ListBox.rows ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="MinHeight" Value="0"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    </Style>
+                    <Style Selector="ListBox.rows ListBoxItem /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Padding" Value="0"/>
+                    </Style>
+                    <Style Selector="ListBox.rows ListBoxItem:selected /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent"/>
+                    </Style>
+                    <Style Selector="ListBox.rows ListBoxItem:pointerover /template/ ContentPresenter">
+                        <Setter Property="Background" Value="Transparent"/>
+                    </Style>
+                </ListBox.Styles>
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="dockVm:VendorPartRowVm">
+                        <ctrl:VendorPartRow/>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+        </DockPanel>
 
     </Grid>
 

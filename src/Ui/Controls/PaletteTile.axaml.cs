@@ -67,7 +67,7 @@ public partial class PaletteTile : UserControl
         _dragOccurred = true;
 
         var payload = new PaletteDragPayload(
-            vm.Item.Kind, vm.Item.PortCount, vm.Item.Pdk?.CellDir, vm.Item.PCellGeneratorId);
+            vm.Item.Kind, vm.Item.PortCount, vm.Item.Pdk?.CellDir, vm.Item.PCellGeneratorId, vm.Item.Vendor);
         var transferItem = new DataTransferItem();
         transferItem.Set(DataFormat.Text, payload.Serialize());
         var transfer = new DataTransfer();

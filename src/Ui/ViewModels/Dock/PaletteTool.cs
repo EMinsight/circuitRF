@@ -31,7 +31,13 @@ public sealed partial class PaletteTileVm : ObservableObject
     /// one the user is actually asking when they hover. Its <see cref="ComponentCategory"/> is the
     /// catch-all bucket every kit part shares and says nothing.
     /// </summary>
-    public string CategoryLabel => Item.Pdk?.KitName ?? Item.Category.ToString();
+    public string CategoryLabel => Item.Vendor?.Library ?? Item.Pdk?.KitName ?? Item.Category.ToString();
+
+    /// <summary>
+    /// The kind whose glyph the tile draws: a vendor part's own glyph (C or L) rather than the SPICE
+    /// box every vendor part's kind would draw, so a Recently Used capacitor looks like one.
+    /// </summary>
+    public SymbolKind GlyphKind => Item.Vendor is { } v && VendorPartPlacement.GlyphKind(v.Glyph) is { } k ? k : Item.Kind;
 
     internal PaletteTileVm(PaletteItem item, Action<PaletteItem> arm)
     {
@@ -59,8 +65,24 @@ public sealed class PaletteCategoryEntry
         Real        = real;
     }
 
+    /// <summary>
+    /// What the Type button shows while this entry is selected — its place in the menu, e.g.
+    /// <c>Library ▸ Capacitors ▸ Series</c> (R-vl2-1a). The display name for a top-level entry.
+    /// </summary>
+    public string Breadcrumb => _breadcrumb ?? DisplayName.Trim();
+    private string? _breadcrumb;
+
     /// <summary>Kit name this entry filters to; null for every non-kit entry.</summary>
     internal string? KitName { get; private init; }
+
+    /// <summary>The vendor library this entry shows; null for every other entry.</summary>
+    internal string? VendorLibrary { get; private init; }
+
+    /// <summary>
+    /// The folder or file inside <see cref="VendorLibrary"/> this entry narrows to, relative to the
+    /// library root with <c>/</c> separators; empty for the whole library.
+    /// </summary>
+    internal string VendorPath { get; private init; } = "";
 
     /// <summary>
     /// The kit's own sub-category this entry narrows to, or null for the kit's own entry — which
@@ -87,7 +109,20 @@ public sealed class PaletteCategoryEntry
     /// </summary>
     internal static PaletteCategoryEntry ForKitCategory(string kitName, string category) =>
         new(SubEntryIndent + category, PaletteCategoryKind.Kit)
-        { KitName = kitName, KitCategory = category };
+        { KitName = kitName, KitCategory = category, _breadcrumb = kitName + VendorMenuTree.Step + category };
+
+    /// <summary>A vendor library, or a folder or file inside it (brief vendorlib-2 R-vl2-1).</summary>
+    internal static PaletteCategoryEntry ForVendor(string library, string path, string breadcrumb) =>
+        new(breadcrumb, PaletteCategoryKind.Vendor)
+        { VendorLibrary = library, VendorPath = path, _breadcrumb = breadcrumb };
+
+    /// <summary>True when <paramref name="other"/> selects the same thing — what survives a rebuild.</summary>
+    internal bool SameSelection(PaletteCategoryEntry? other)
+        => other is not null && other.Kind == Kind && other.Real == Real
+        && string.Equals(other.KitName, KitName, StringComparison.Ordinal)
+        && string.Equals(other.KitCategory, KitCategory, StringComparison.Ordinal)
+        && string.Equals(other.VendorLibrary, VendorLibrary, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(other.VendorPath, VendorPath, StringComparison.Ordinal);
 
     /// <summary>Leading spaces that make a sub-entry read as nested under the kit above it.</summary>
     private const string SubEntryIndent = "    ";
@@ -101,7 +136,7 @@ public sealed class PaletteCategoryEntry
     };
 }
 
-internal enum PaletteCategoryKind { All, AllAlphabetical, Common, RecentlyUsed, Real, Kit }
+internal enum PaletteCategoryKind { All, AllAlphabetical, Common, RecentlyUsed, Real, Kit, Vendor }
 
 // ── PaletteTool ───────────────────────────────────────────────────────────────
 
@@ -219,6 +254,7 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
         var p = _svc?.Pending;
         foreach (var vm in _currentItems)
             vm.IsArmed = ArmedFor(p, vm.Item);
+        UpdateArmedVendorRow(p);
     }
 
     /// <summary>
@@ -229,6 +265,11 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
     private static bool ArmedFor(PendingPlacement? p, PaletteItem item)
     {
         if (p is null) return false;
+
+        // A vendor part by library + part: every one of them is a SpiceModel, and neither it nor the
+        // built-in SPICE tile may light up for another's placement.
+        if (item.Vendor is { } part) return part.IsSamePart(p.Vendor);
+        if (p.Vendor is not null) return false;
 
         if (item.Pdk is { } want)
             return p.Pdk is { } have &&
@@ -244,13 +285,33 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
 
     // ── MRU — in-memory empty list for step 3; persistence wired in step 4 ───
 
-    private IReadOnlyList<SymbolKind> _mruList = Array.Empty<SymbolKind>();
+    private IReadOnlyList<RecentPlacement> _mruList = [];
 
     /// <summary>Replace the MRU list (called by WorkspaceViewModel on each placement commit).</summary>
-    public void SetMru(IReadOnlyList<SymbolKind> mru)
+    public void SetMru(IReadOnlyList<RecentPlacement> mru)
     {
         _mruList = mru;
         RebuildDisplayedItems();
+    }
+
+    /// <summary>
+    /// Recently Used, in placement order: built-ins as their usual tiles, a vendor part as a compact
+    /// tile of its own glyph labelled with its part number (R-vl2-2d).
+    /// </summary>
+    private IReadOnlyList<PaletteItem> RecentlyUsedItems()
+    {
+        var builtIns = LibraryCatalog.RecentlyUsed([.. _mruList.Where(e => e.Vendor is null).Select(e => e.Kind)])
+                                     .ToDictionary(i => i.Kind);
+        var list = new List<PaletteItem>(_mruList.Count);
+        foreach (var e in _mruList)
+        {
+            if (e.Vendor is { } v)
+                list.Add(new PaletteItem(SymbolKind.SpiceModel, 0, v.Part, ComponentCategory.DataFiles,
+                                         [v.Library], IsCommon: false, Vendor: v));
+            else if (builtIns.TryGetValue(e.Kind, out var item))
+                list.Add(item);
+        }
+        return list;
     }
 
     // ── Category list (virtual + real, stable order) ─────────────────────────
@@ -260,9 +321,10 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
     /// categories, then one entry per imported kit. Rebuilt when the imported-kit set changes.
     /// </summary>
     [ObservableProperty]
-    private IReadOnlyList<PaletteCategoryEntry> _categories = BuildCategories([]);
+    private IReadOnlyList<PaletteCategoryEntry> _categories = BuildCategories([], []);
 
-    private static IReadOnlyList<PaletteCategoryEntry> BuildCategories(IReadOnlyList<PaletteItem> pdkItems)
+    private static IReadOnlyList<PaletteCategoryEntry> BuildCategories(
+        IReadOnlyList<PaletteItem> pdkItems, IReadOnlyList<string> vendorLibraries)
     {
         var list = new List<PaletteCategoryEntry>
         {
@@ -316,7 +378,104 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
                     list.Add(PaletteCategoryEntry.ForKitCategory(kit, sub));
         }
 
+        // Each vendor library's own entry. Its folders and files are reached through the Type menu,
+        // which builds them from the index (BuildTypeMenu).
+        foreach (string lib in vendorLibraries)
+            list.Add(PaletteCategoryEntry.ForVendor(lib, "", lib));
+
         return list.AsReadOnly();
+    }
+
+    /// <summary>
+    /// The Type menu (R-vl2-1a): the virtual and built-in categories flat, then one sub-menu per kit,
+    /// then one per vendor library following the library's own folder tree, then Add Vendor Library….
+    /// Rebuilt with <see cref="Categories"/>.
+    /// </summary>
+    [ObservableProperty]
+    private IReadOnlyList<PaletteMenuNode> _typeMenu = [];
+
+    /// <summary>File ▸ Add Vendor Library…, supplied by the workspace — the menu's last item.</summary>
+    public ICommand? AddVendorLibraryCommand
+    {
+        get => _addVendorLibraryCommand;
+        set { _addVendorLibraryCommand = value; TypeMenu = BuildTypeMenu(); }
+    }
+    private ICommand? _addVendorLibraryCommand;
+
+    private IReadOnlyList<PaletteMenuNode> BuildTypeMenu()
+    {
+        var menu = new List<PaletteMenuNode>();
+        var cats = Categories;
+
+        foreach (var c in cats.Where(c => c.Kind is not (PaletteCategoryKind.Kit or PaletteCategoryKind.Vendor)))
+            menu.Add(new PaletteMenuNode { Header = c.DisplayName, Entry = c });
+
+        var kits = cats.Where(c => c.Kind == PaletteCategoryKind.Kit && c.KitCategory is null).ToList();
+        if (kits.Count > 0) menu.Add(PaletteMenuNode.Separator);
+        foreach (var kit in kits)
+        {
+            var subs = cats.Where(c => c.Kind == PaletteCategoryKind.Kit && c.KitCategory is not null &&
+                                       string.Equals(c.KitName, kit.KitName, StringComparison.Ordinal)).ToList();
+            menu.Add(subs.Count == 0
+                ? new PaletteMenuNode { Header = kit.DisplayName, Entry = kit }
+                : new PaletteMenuNode
+                {
+                    Header   = kit.DisplayName,
+                    Children = [new PaletteMenuNode { Header = $"All in {kit.DisplayName}", Entry = kit },
+                                .. subs.Select(c => new PaletteMenuNode { Header = c.KitCategory!, Entry = c })],
+                });
+        }
+
+        if (_vendorLibs.Count > 0) menu.Add(PaletteMenuNode.Separator);
+        foreach (var (name, root) in _vendorLibs)
+            menu.Add(VendorLibraryMenu(name, root));
+
+        menu.Add(PaletteMenuNode.Separator);
+        menu.Add(new PaletteMenuNode
+        {
+            Header    = "Add Vendor Library…",
+            Command   = _addVendorLibraryCommand,
+            IsEnabled = _addVendorLibraryCommand is not null,
+        });
+        return menu;
+    }
+
+    /// <summary>
+    /// Restores the selection after the category set changed, exactly as a kit selection always has:
+    /// the same entry when it still exists, All when it does not (R-vl2-1c). A vendor folder or file
+    /// is not in <see cref="Categories"/> — the menu holds those — so one is restored by matching the
+    /// menu tree.
+    /// </summary>
+    private void RebuildCategoriesKeepingSelection()
+    {
+        var keep = SelectedCategory;
+
+        Categories = BuildCategories(_pdkItems, [.. _vendorLibs.Select(l => l.Name)]);
+        TypeMenu   = BuildTypeMenu();
+
+        var restored = Categories.FirstOrDefault(c => c.SameSelection(keep))
+                    ?? FindInMenu(TypeMenu, keep)
+                    ?? VendorSelectionStillOffered(keep);
+
+        // Assigning SelectedCategory rebuilds the tiles via its partial callback; when the selection
+        // is unchanged that callback does not fire, so rebuild explicitly in that case.
+        if (restored is not null && !ReferenceEquals(restored, SelectedCategory))
+            SelectedCategory = restored;
+        else if (restored is null)
+            SelectedCategory = Categories[0];
+        else
+            RebuildDisplayedItems();
+    }
+
+    private static PaletteCategoryEntry? FindInMenu(IReadOnlyList<PaletteMenuNode> nodes, PaletteCategoryEntry? want)
+    {
+        if (want is null) return null;
+        foreach (var n in nodes)
+        {
+            if (n.Entry is { } e && e.SameSelection(want)) return e;
+            if (FindInMenu(n.Children, want) is { } hit) return hit;
+        }
+        return null;
     }
 
     // ── Imported kits ─────────────────────────────────────────────────────────
@@ -333,28 +492,7 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
     public void SetPdkParts(IReadOnlyList<PaletteItem> items)
     {
         _pdkItems = items ?? [];
-
-        string? keepKit  = SelectedCategory?.KitName;
-        string? keepSub  = SelectedCategory?.KitCategory;
-        var     keepKind = SelectedCategory?.Kind;
-        var     keepReal = SelectedCategory?.Real;
-
-        Categories = BuildCategories(_pdkItems);
-
-        var restored = Categories.FirstOrDefault(c =>
-            c.Kind == keepKind &&
-            c.Real == keepReal &&
-            string.Equals(c.KitName, keepKit, StringComparison.Ordinal) &&
-            string.Equals(c.KitCategory, keepSub, StringComparison.Ordinal));
-
-        // Assigning SelectedCategory rebuilds the tiles via its partial callback; when the selection
-        // is unchanged that callback does not fire, so rebuild explicitly in that case.
-        if (restored is not null && !ReferenceEquals(restored, SelectedCategory))
-            SelectedCategory = restored;
-        else if (restored is null)
-            SelectedCategory = Categories[0];
-        else
-            RebuildDisplayedItems();
+        RebuildCategoriesKeepingSelection();
     }
 
     // ── Filter state ──────────────────────────────────────────────────────────
@@ -379,18 +517,28 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
     /// </summary>
     public IReadOnlyList<PaletteTileVm> DisplayedItems => _currentItems;
 
-    /// <summary>True when <see cref="DisplayedItems"/> is empty — drives empty-result text.</summary>
+    /// <summary>True when <see cref="DisplayedItems"/> is empty.</summary>
     public bool HasNoItems => _currentItems.Count == 0;
+
+    /// <summary>The tile grid shows — every selection but a vendor library's, which is a part list.</summary>
+    public bool ShowTiles => !IsVendorSelection && !HasNoItems;
+
+    /// <summary>"No matching components." — not under a vendor library, and not when the only matches
+    /// are library parts, which their own rows above already announce.</summary>
+    public bool ShowNoItems => !IsVendorSelection && HasNoItems && LibraryMatches.Count == 0;
 
     private void RebuildDisplayedItems()
     {
-        var raw = ComputeRawItems();
+        RebuildVendorView();
+        var raw = IsVendorSelection ? [] : ComputeRawItems();
         var p   = _svc?.Pending;
         _currentItems = raw
             .Select(item => new PaletteTileVm(item, ArmItem) { IsArmed = ArmedFor(p, item) })
             .ToList();
         OnPropertyChanged(nameof(DisplayedItems));
         OnPropertyChanged(nameof(HasNoItems));
+        OnPropertyChanged(nameof(ShowNoItems));
+        OnPropertyChanged(nameof(ShowTiles));
     }
 
     private IReadOnlyList<PaletteItem> ComputeRawItems()
@@ -421,7 +569,7 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
                 // Common and Recently Used stay built-in-only; both are curated over the built-in
                 // library, and neither has a defined meaning for a kit part yet.
                 PaletteCategoryKind.Common          => LibraryCatalog.Common,
-                PaletteCategoryKind.RecentlyUsed    => LibraryCatalog.RecentlyUsed(_mruList),
+                PaletteCategoryKind.RecentlyUsed    => RecentlyUsedItems(),
                 PaletteCategoryKind.AllAlphabetical => WithPdkAlphabeticalByKit(LibraryCatalog.AllItemsAlphabetical()),
                 _                                   => WithPdk(LibraryCatalog.AllItemsPinnedOrder()),
             };
@@ -463,7 +611,11 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
 
     // ── Partial callbacks — recompute derived properties on state change ───────
 
-    partial void OnSelectedCategoryChanged(PaletteCategoryEntry value) => RebuildDisplayedItems();
+    partial void OnSelectedCategoryChanged(PaletteCategoryEntry value)
+    {
+        RebuildDisplayedItems();
+        OnPropertyChanged(nameof(IsVendorSelection));
+    }
 
     partial void OnSearchQueryChanged(string value)
     {
@@ -482,6 +634,7 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
     {
         Id    = "Palette";
         Title = "Library";
+        TypeMenu = BuildTypeMenu();
         SelectedCategory = Categories[0];   // triggers RebuildDisplayedItems via partial callback
         _activationFocus.Follow(this);
     }

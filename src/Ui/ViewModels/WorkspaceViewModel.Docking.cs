@@ -1335,6 +1335,7 @@ public partial class WorkspaceViewModel
         // container/tool identity are refreshed, exactly as Reset Layout already does.
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        PublishVendorLibraries();
         SubscribeToFilterState();
         SubscribeToTreeSelection();
 

@@ -357,7 +357,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ---- Recently-Placed MRU (persisted in AppPreferences) ------------------
 
-    private readonly List<SymbolKind> _recentlyPlaced;
+    private readonly List<RecentPlacement> _recentlyPlaced;
     private const int MruPlacedCap = 12;
 
     // Observable collection of menu items for the in-window "Open Recent" submenu.
@@ -480,6 +480,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         _recentWorkspaces.AddRange(prefs.RecentWorkspaces ?? []);
         _recentlyPlaced   = ParseMruPlaced(prefs.RecentlyPlaced);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        PublishVendorLibraries();
         RestoreInstalledPdks();
         RebuildRecentMenuItems();
 
@@ -1590,6 +1591,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             FocusPaneFor(windowLayoutPreset);
             _factory.PaletteTool?.SetPlacementService(PlacementService);
             _factory.PaletteTool?.SetMru(_recentlyPlaced);
+            PublishVendorLibraries();
             RestoreInstalledPdks();
 
             // CreateDefaultLayout replaced all tool instances and the DocumentDock — re-wire them.
@@ -2551,6 +2553,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        PublishVendorLibraries();
         RestoreInstalledPdks();
 
         // CreateDefaultLayout replaced all tool instances and the DocumentDock — re-wire them.
@@ -3297,6 +3300,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        PublishVendorLibraries();
         RestoreInstalledPdks();
 
         _factory.ProjectTreeTool?.SetActions(this);
@@ -3348,23 +3352,24 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ── Recently-Placed MRU ──────────────────────────────────────────────────
 
-    private static List<SymbolKind> ParseMruPlaced(List<string>? stored)
+    private static List<RecentPlacement> ParseMruPlaced(List<string>? stored)
     {
         if (stored is null) return [];
-        var result = new List<SymbolKind>(stored.Count);
+        var result = new List<RecentPlacement>(stored.Count);
         foreach (var s in stored)
-            if (Enum.TryParse<SymbolKind>(s, ignoreCase: true, out var k)) result.Add(k);
+            if (RecentPlacement.Parse(s) is { } entry) result.Add(entry);
         return result;
     }
 
-    private void OnComponentPlaced(SymbolKind kind) => PushMruPlaced(kind);
+    private void OnComponentPlaced(SymbolKind kind) => PushMruPlaced(new RecentPlacement(kind));
 
-    private void PushMruPlaced(SymbolKind kind)
+    /// <summary>A vendor part placed: Recently Used records the PART, not the SpiceModel kind every
+    /// vendor part shares (brief vendorlib-2 R-vl2-2d).</summary>
+    private void OnVendorPartPlaced(VendorPartRef part) => PushMruPlaced(RecentPlacement.Of(part));
+
+    private void PushMruPlaced(RecentPlacement entry)
     {
-        _recentlyPlaced.Remove(kind);
-        _recentlyPlaced.Insert(0, kind);
-        while (_recentlyPlaced.Count > MruPlacedCap)
-            _recentlyPlaced.RemoveAt(_recentlyPlaced.Count - 1);
+        RecentPlacement.Push(_recentlyPlaced, entry, MruPlacedCap);
 
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
         // The palette is REPUBLISHED, not reloaded. This used to call RestoreInstalledPdks, which
@@ -3374,7 +3379,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // kit holds; only what is shown alongside it.
         PublishKitPaletteItems();
 
-        var list = _recentlyPlaced.Count > 0 ? _recentlyPlaced.Select(k => k.ToString()).ToList() : null;
+        var list = _recentlyPlaced.Count > 0 ? _recentlyPlaced.Select(k => k.Serialize()).ToList() : null;
         AppPreferencesIo.Update(p => p.RecentlyPlaced = list);
     }
 
@@ -3723,6 +3728,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         SubscribeToDocumentPanes();
         _factory.PaletteTool?.SetPlacementService(PlacementService);
         _factory.PaletteTool?.SetMru(_recentlyPlaced);
+        PublishVendorLibraries();
         // Same reason as the MRU push: CreateLayoutPreservingContent hands back a NEW PaletteTool, so
         // the kit tiles have to be published into it again — but moving panels around cannot change
         // what a kit holds, and re-reading every one of them from disk to rearrange a dock is the
@@ -4492,6 +4498,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var vm    = new SchematicViewModel(model, Messages);
         vm.SetPlacementService(PlacementService);
         vm.ComponentPlaced         += OnComponentPlaced;
+        vm.VendorPartPlaced        += OnVendorPartPlaced;
         vm.CellSymbolAutoGenerated += OnCellSymbolAutoGenerated;
         vm.WorkspaceRootProvider    = () => CurrentWorkspaceRoot;
         vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
@@ -12118,6 +12125,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var vm = new SchematicViewModel(editModel, Messages);
         vm.SetPlacementService(PlacementService);
         vm.ComponentPlaced         += OnComponentPlaced;
+        vm.VendorPartPlaced        += OnVendorPartPlaced;
         vm.CellSymbolAutoGenerated += OnCellSymbolAutoGenerated;
         vm.WorkspaceRootProvider    = () => CurrentWorkspaceRoot;
         vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
@@ -18271,6 +18279,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 var vm  = new SchematicViewModel(model, Messages);
                 vm.SetPlacementService(PlacementService);
                 vm.ComponentPlaced      += OnComponentPlaced;
+                vm.VendorPartPlaced     += OnVendorPartPlaced;
                 vm.WorkspaceRootProvider = () => CurrentWorkspaceRoot;
                 vm.CellResolverProvider  = () => this;
                 vm.Tuning                = TuningSurface;

@@ -1201,6 +1201,10 @@ Nothing is copied: edit the file and the schematic follows it.
   picks the highest-level one, the one nothing else in the file calls.
 - `PinConfig` and `Pitch` — the pin arrangement and spacing, for a `.subckt` only. A `.model` card
   draws as the device itself, whose terminals are where that device's terminals are.
+- `Glyph` — set on a part placed from a [vendor part library](pdk-integration.html#vendor): `C` or `L`
+  for a two-terminal capacitor or inductor, which then draws as the ordinary capacitor or inductor
+  symbol. It is stored on the instance, so the part still draws as what it is when its library is
+  missing, marked **Not Found**.
 
 Any parameter the chosen `.subckt` declares appears as an ordinary editable row below the panel,
 seeded at the definition's own default.

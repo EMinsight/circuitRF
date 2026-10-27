@@ -263,6 +263,11 @@ Each part is listed from the comment header above its subcircuit (description, v
 temperature and bias). The circuit itself is read only when a run needs it. Indexing happens in the
 background each time the workspace opens, so opening never waits for it.
 
+**In the palette**, each library is a sub-menu of the [Type menu](schematic-editor.html#palette)
+following its own folders, and choosing it lists its parts with value-aware search; see
+[A vendor library's parts](schematic-editor.html#palette-vendor). **Add Vendor Library…** is at the
+bottom of that menu too.
+
 **Use in new workspaces.** Every library you add is remembered for you, and **File ▸ New Workspace**
 references the ones ticked *New workspaces* in Manage Libraries. They are ticked by default. If a
 workspace opens and one of its libraries is missing, the Messages pane says so once per library. When you

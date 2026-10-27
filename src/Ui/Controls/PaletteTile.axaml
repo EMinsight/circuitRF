@@ -48,8 +48,9 @@
                 Cursor="Hand"
                 Classes.armed="{Binding #TileRoot.IsArmed}">
             <!-- IconPath is null for every built-in entry, so those render exactly as before;
-                 a kit part renders the icon its own kit shipped. -->
-            <ctrl:PaletteGlyphControl Kind="{Binding Item.Kind}"
+                 a kit part renders the icon its own kit shipped. GlyphKind is the item's kind,
+                 except a vendor part's, which is its own C or L glyph. -->
+            <ctrl:PaletteGlyphControl Kind="{Binding GlyphKind}"
                                       PortCount="{Binding Item.PortCount}"
                                       IconPath="{Binding Item.Pdk.IconPath}"
                                       SymbolCellDir="{Binding Item.Pdk.CellDir}"

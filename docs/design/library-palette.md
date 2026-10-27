@@ -351,7 +351,27 @@ via **`CrfToolControlCachedContentTemplate`** (inline `<Setter.Value>` in the `<
 A workspace may reference manufacturers' part libraries (`.cws` `VendorLibraries`). Their parts are not
 `PaletteItem`s and never enter the tile grid: each library is an in-memory header index
 (`VendorLibraryIndex`, built in the background at workspace open), searched by `VendorLibrarySearch`.
-Brief vendorlib-2 puts them in the palette as a virtualized list; brief vendorlib-1 provides the index,
-the search, **File ▸ Add Vendor Library…**, the vendor rows in **Manage Libraries…**, and the headless
-`import library` / `find --parts`.
+Brief vendorlib-1 provides the index, the search, **File ▸ Add Vendor Library…**, the vendor rows in
+**Manage Libraries…**, and the headless `import library` / `find --parts`. Brief vendorlib-2 puts them
+in the palette:
+
+- **The category combo became the Type menu** — a button showing `PaletteCategoryEntry.Breadcrumb`
+  and a `MenuFlyout` built from `PaletteTool.TypeMenu` (`PaletteMenuNode`s) each time it opens. Kits
+  move into sub-menus; each library's sub-menu is `VendorMenuTree.Build` over its index (folders,
+  file leaves with counts, an "All in" item first, single-child folders collapsed, a single top folder
+  skipped). `Categories` stays the flat list of top-level entries; a library's folders and files live
+  only in the menu, and `RebuildCategoriesKeepingSelection` restores a selection from either.
+- **A library selection shows `VendorRows`, not tiles** — a `ListBox` of `VendorPartRow`s (its own
+  `VirtualizingStackPanel`, never inside a `ScrollViewer`). Row view models are built once per index
+  and kept per library; a sort is computed once per order; a keystroke only filters the sorted array
+  through `VendorLibrarySearch`, on the UI thread (measured in `src/Ui/RESOLVED.md`).
+- **Under All with a query, `LibraryMatches`** — one row per library with matches. Library parts never
+  enter the All grid.
+- **Arming is by part identity.** `PendingPlacement.Vendor` / `PaletteItem.Vendor` carry a
+  `VendorPartRef` (library + part, plus file, glyph and case pair), `PlacementService.Toggle(VendorPartRef)`
+  arms one, `ArmedFor` compares it and the armed row is a dictionary look-up, never a sweep. A drag
+  carries it in `PaletteDragPayload`'s `@vendor:` tail; the click and the drop both commit through
+  `SchematicViewModel.CommitVendorPlacement`.
+- **Recently Used holds `RecentPlacement`s** — a `SymbolKind` or a `VendorPartRef`, one list, persisted
+  as strings in `AppPreferences.RecentlyPlaced` (a kind's name exactly as before).
 
