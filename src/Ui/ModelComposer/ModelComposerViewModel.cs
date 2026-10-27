@@ -67,8 +67,12 @@ public sealed partial class ModelComposerViewModel : ObservableObject, IDisposab
 
     // ── the seams the window fills ───────────────────────────────────────────
 
-    /// <summary>Asks where to save; given the suggested file name, returns a path or null for a cancelled picker.</summary>
-    public Func<string, Task<string?>>? PickSavePath { get; set; }
+    /// <summary>Asks where to save; given the suggested name, folder and title, returns a path or null for a cancelled picker.</summary>
+    public Func<SavePrompt, Task<string?>>? PickSavePath { get; set; }
+
+    /// <summary>What the Save picker opens on: a suggested file name, the folder to start in (null: the document's), and the
+    /// dialog's title (null: the plain save title).</summary>
+    public sealed record SavePrompt(string Name, string? Folder = null, string? Title = null);
 
     /// <summary>Asks whether to save unsaved work before closing — railRF's and wBond's dialog.</summary>
     public Func<string, Task<SaveChangesResult>>? AskSaveChanges { get; set; }
@@ -475,7 +479,7 @@ public sealed partial class ModelComposerViewModel : ObservableObject, IDisposab
     /// Writes the document — to its file, or to a path the user picks (a new document always saves as). A refusal is the
     /// status line and leaves the document dirty. Returns false for a cancelled picker or a refusal.
     /// </summary>
-    public async Task<bool> SaveAsync(bool saveAs)
+    public async Task<bool> SaveAsync(bool saveAs, SavePrompt? prompt = null)
     {
         if (IsChoosingKind) return false;
         if (IsFileRunning)
@@ -487,7 +491,7 @@ public sealed partial class ModelComposerViewModel : ObservableObject, IDisposab
         if (path is null)
         {
             if (PickSavePath is null) return false;
-            path = await PickSavePath(Path.GetFileNameWithoutExtension(FileName));
+            path = await PickSavePath(prompt ?? new SavePrompt(Path.GetFileNameWithoutExtension(FileName)));
             if (path is null) return false;
             if (!path.EndsWith(CmcFile.Extension, StringComparison.OrdinalIgnoreCase)) path += CmcFile.Extension;
         }

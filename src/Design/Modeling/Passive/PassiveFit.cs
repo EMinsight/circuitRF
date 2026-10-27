@@ -186,6 +186,14 @@ public static class PassiveFit
     }
 
     /// <summary>
+    /// Why Propose found nothing for a block whose port count the library has no topology for and none is drawn (designer
+    /// round 28: a board's six-port EM result) — the library is one- and two-port, and the SnP component takes the file as
+    /// it is.
+    /// </summary>
+    public static string NoTopologyNote(int ports) =>
+        $"No built-in topology has {ports} ports: draw one (pins 1…{ports} are the ports) or place the file itself as an S-parameter component.";
+
+    /// <summary>
     /// Ranked proposals for <paramref name="block"/> (R-mc12-4): every library topology with its port count, each with
     /// analytic starting values and a short seeded fit, plus each of <paramref name="drawn"/> (user topologies, from their
     /// own values and <paramref name="drawnVariables"/>' bounds, locks and ties), ranked by <see cref="Aic"/>. A candidate
@@ -198,6 +206,12 @@ public static class PassiveFit
                                                          IReadOnlyDictionary<string, NetworkVariableSettings>? drawnVariables = null)
     {
         settings ??= PassiveFitSettings.Default;
+        var drawnList = drawn?.ToList() ?? [];
+        if (drawnList.Count == 0 && !PassiveTopologies.All.Any(t => t.Ports == block.Ports))
+        {
+            notes?.Add(NoTopologyNote(block.Ports));
+            return [];
+        }
         var fits = new List<(string Title, PassiveFitResult Fit)>();
         foreach (var t in PassiveTopologies.All.Where(t => t.Ports == block.Ports))
         {
@@ -210,7 +224,7 @@ public static class PassiveFit
             }
             catch (ModelingException ex) { notes?.Add($"{t.Title}: {ex.Message}"); }
         }
-        foreach (var d in drawn ?? [])
+        foreach (var d in drawnList)
         {
             rc?.ThrowIfCancellationRequested();
             string name = Path.GetFileName(d.SchematicPath);

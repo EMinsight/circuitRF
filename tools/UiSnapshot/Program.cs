@@ -32,6 +32,7 @@ using CircuitRF.Design.Layout;
 // UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]
 //            [--rclick x,y] [--menu <header>] [--type <text>] [--button <label>]
 // UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]
+// UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--marker]... [--size WxH] [steps]
 //
 // Opens the display through DisplayWindowViewModel.LoadAllAsync — the GUI's own Open — and photographs one
 // real view: the plot canvas of the active tab, plot n's Plot Inspector (its trace cards), or the whole Data
@@ -54,11 +55,19 @@ using CircuitRF.Design.Layout;
 //
 // --cem opens the EM Setup editor on a .cem, as the workspace opens one: the file's setup, its own view model, the real
 // EmSetupEditorView. Every named CheckBox's state and tooltip is printed, so a setting is read as well as seen.
+//
+// --cmc opens the Model Composer window on a .cmc (OpenFile + BeginLoad, as File ▸ Open does) or on a new document of
+// the named kind, chosen. --step selects a step and --run runs one of its tasks (propose, analyse, fit, ...) to the end;
+// the status line and any proposal note print. Each --marker adds a marker on the S plot's first trace, its info box
+// placed as a new marker's is. --import opens the Import Data dialog on the document instead — for an
+// unsaved one the importer works against its provisional .cmc beside the data — after choosing <data> as its source.
 
 // --c3d is the 3D editor's picture: no Avalonia window, so it branches off before the headless platform starts (Snapshot3D.cs).
 if (args.Contains("--c3d")) return Snapshot3D.Run(args);
 
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
+string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
+int cmcMarkers = 0;
 var layerToggles = new List<(string Name, bool Hide)>();
 bool standalone = false;
 var signal = new List<string>();
@@ -81,6 +90,11 @@ for (int i = 0; i < args.Length; i++)
         case "--tuning" when i + 1 < args.Length: tuning = Path.GetFullPath(args[++i]); break;
         case "--clay" when i + 1 < args.Length: clay = Path.GetFullPath(args[++i]); break;
         case "--cem" when i + 1 < args.Length: cem = Path.GetFullPath(args[++i]); break;
+        case "--cmc" when i + 1 < args.Length: cmc = args[++i]; break;
+        case "--import" when i + 1 < args.Length: cmcImport = Path.GetFullPath(args[++i]); break;
+        case "--step" when i + 1 < args.Length: cmcStep = args[++i]; break;
+        case "--run" when i + 1 < args.Length: cmcRun = args[++i]; break;
+        case "--marker": cmcMarkers++; break;
         case "--hide" when i + 1 < args.Length: layerToggles.Add((args[++i], true)); break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
@@ -96,7 +110,7 @@ for (int i = 0; i < args.Length; i++)
         default: cdd = args[i]; break;
     }
 }
-if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null && cem is null) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null && cem is null && cmc is null) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -104,7 +118,8 @@ if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay i
                           + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]\n"
                           + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]\n"
-                          + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]");
+                          + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]\n"
+                          + "       UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--size WxH] [steps]");
     return 2;
 }
 
@@ -163,6 +178,68 @@ else if (cem is not null)
     {
         var at = box.TranslatePoint(default, host);
         Console.WriteLine($"{box.Name}: {(box.IsChecked == true ? "on" : "off")} at {at?.X:0},{at?.Y:0} — {ToolTip.GetTip(box)}");
+    }
+}
+else if (cmc is not null)
+{
+    CircuitRF.Ui.ModelComposer.ModelComposerViewModel composer;
+    if (cmc.StartsWith("new:", StringComparison.Ordinal))
+    {
+        composer = new CircuitRF.Ui.ModelComposer.ModelComposerViewModel();
+        composer.ChooseKindCommand.Execute(cmc[4..]);
+    }
+    else
+    {
+        composer = CircuitRF.Ui.ModelComposer.ModelComposerViewModel.OpenFile(Path.GetFullPath(cmc));
+        composer.BeginLoad();
+        WaitIdle(composer);
+    }
+    if (cmcImport is not null)
+    {
+        // The importer as Import a data set opens it: the document's path, or null for an unsaved document.
+        var importer = new CircuitRF.Ui.ModelComposer.ModelImportViewModel(composer.DocumentPath, composer.Document);
+        importer.SetSources([cmcImport]);
+        Console.WriteLine($"importer: .cmc {importer.CmcPath} (provisional {importer.IsProvisional}); sources {string.Join(", ", importer.Sources)}");
+        Console.WriteLine($"importer: pattern '{importer.Pattern}', refused {importer.Refused}: {importer.Line}");
+        host = new CircuitRF.Ui.Views.ModelComposer.ModelImportDialog(importer);
+        if (sizeGiven) { host.Width = width; host.Height = height; }
+    }
+    else
+    {
+        host = new CircuitRF.Ui.Views.ModelComposer.ModelComposerWindow { DataContext = composer };
+        if (sizeGiven) { host.Width = width; host.Height = height; }
+    }
+    host.Show();
+    Pump();
+    if (cmcImport is null)
+    {
+        if (cmcStep is not null)
+            composer.SelectedStep = composer.Steps.FirstOrDefault(st => st.Name == cmcStep)
+                ?? throw new InvalidOperationException($"--step '{cmcStep}': the steps are {string.Join(", ", composer.Steps.Select(st => st.Name))}");
+        Pump();
+        if (cmcRun is not null)
+        {
+            Console.WriteLine($"--run {cmcRun}: {(Await2(composer.RunKey(cmcRun)) ? "ok" : "false")}");
+            WaitIdle(composer);
+        }
+        // A marker per --marker on the rectangular plot's first data trace, its box placed as a new marker's is.
+        var markedTrace = composer.RectPlot.Traces.FirstOrDefault(t => !t.IsAnnotation && t.Points.Count > 8);
+        for (int k = 0; k < cmcMarkers && markedTrace is not null; k++)
+        {
+            var marker = new CircuitRF.Render.DataDisplay.Marker(markedTrace, 0, false, false, k + 1)
+                { PositionStatic = markedTrace.Points[markedTrace.Points.Count * (k + 1) / (cmcMarkers + 1)] };
+            markedTrace.Markers.Add(marker);
+            composer.RectContainer.OnPlotChanged(null, EventArgs.Empty);     // the plot's change builds the info box first
+            composer.RectContainer.OnMarkerAdded(marker, markedTrace);
+            composer.PlaceNewInfoBox(composer.RectContainer, marker);
+            Pump();
+        }
+        if (cmcMarkers > 0)
+            Console.WriteLine($"markers: trace {markedTrace?.CubeName ?? "none"}; {string.Join(", ", composer.RectPlot.Traces.SelectMany(t => t.Markers).Select(m => $"box at {m.InfoBoxPos}"))}"
+                            + $"; {composer.PlotHost.MarkerInfoBoxes.Count} info box view model(s)");
+        Console.WriteLine($"status: {composer.StatusText}");
+        if (composer.ProposalNote.Length > 0) Console.WriteLine($"proposal note: {composer.ProposalNote}");
+        Console.WriteLine($"proposals: {string.Join(" | ", composer.Proposals.Select(r => r.Title))}");
     }
 }
 else if (tuning is not null)
@@ -394,6 +471,19 @@ static Point ParsePoint(string xy)
     var parts = xy.Split(',');
     return new Point(double.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture),
                      double.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture));
+}
+
+// A Model Composer task posts its result back through the dispatcher: pump until nothing is running.
+static void WaitIdle(CircuitRF.Ui.ModelComposer.ModelComposerViewModel vm)
+{
+    var until = DateTime.UtcNow.AddSeconds(120);
+    do { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); } while (vm.IsRunning && DateTime.UtcNow < until);
+}
+
+static bool Await2(Task<bool> task)
+{
+    Await(task);
+    return task.Result;
 }
 
 static void Await(Task task)

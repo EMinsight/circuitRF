@@ -815,8 +815,10 @@ side by side: <a href="#veriloga">Verilog-A export</a>.</p>
 <p>Its README lists every setting it uses, and the value a real job would use where it differs.</p>
 <h2 id="open">Opening a document</h2>
 <p><strong>Tools ▸ Model Composer…</strong> opens a window on a new document and asks one question: <strong>Active</strong> (a three-terminal FET)
-or <strong>Passive</strong> (an N-port). Nothing is written until the first save, which asks where the <code>.cmc</code> goes; importing data
-or choosing a network saves first, because the document's data and network files are found relative to it.</p>
+or <strong>Passive</strong> (an N-port). Nothing is written until the first save, which asks where the <code>.cmc</code> goes; choosing a
+network saves first, because the document's data and network files are found relative to it. Importing data into a new
+document asks for the data first, then opens the Save dialog in the data's folder with the first file's name filled in,
+since the data is kept beside the <code>.cmc</code>. Cancelling that Save imports nothing.</p>
 <p>A <code>.cmc</code> in a workspace opens on double-click in the project tree, and the window's <strong>Open</strong> button opens one from
 anywhere. Each document has one window; opening a document that is already open brings its window forward.</p>
 <p>Closing a window with unsaved work asks whether to save it. A document is reopened where it was left: the same panels,
@@ -3161,7 +3163,10 @@ step's plot data, or on the Data, Pads and Network steps the curves the tab show
 <p>The Data step lists the block, or the family's blocks with their geometry values, and the analysis lines. The S and
 Smith tabs show the block's S-parameters.</p>
 <p>On the Topology step, <strong>Propose</strong> ranks the library's topologies against the block and lists the top three, each drawn
-small with its |ΔS|; double-click one to choose it. A topology of your own is pasted into the network panel.</p>
+small with its |ΔS|; double-click one to choose it. A topology of your own is pasted into the network panel.
+The built-in topologies are one- and two-ports. For a block with more ports, such as a board's six-port EM result,
+Propose offers nothing unless you draw a topology whose pins 1…N are the ports; the file can also be placed as it is
+as an S-parameter component.</p>
 <h2 id="undo">Undo</h2>
 <p>Every edit — a value, a lock, a bound, a tie, an exclusion, a step setting, a network choice — is one undo step
 (⌘Z / ⇧⌘Z). A run is not: it is repeated by running again, and its result stays until the next run replaces it.</p>

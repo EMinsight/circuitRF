@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using CircuitRF.Design.Modeling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Material.Icons;
@@ -41,6 +42,12 @@ public sealed record DataSetRow(string Name, string Kind, string Ambient, string
                                 string Capacitances = "")
 {
     public bool HasCapacitances => Capacitances.Length > 0;
+
+    /// <summary>The row's second line. A passive block has no quiescent point, so its row stops at the plane, and leaves
+    /// out a condition the set does not state.</summary>
+    public string Summary => Kind == nameof(DataSetKind.PassiveSParams)
+        ? string.Join(" · ", new[] { Kind, Ambient, Plane }.Where(x => x != "—"))
+        : $"{Kind} · {Ambient} · {Plane} · Q {Quiescent} {PrePulse}";
 
     public static DataSetRow From(CmcDataSet set, NormalisedData? data)
     {

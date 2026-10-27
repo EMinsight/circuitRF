@@ -36,6 +36,7 @@ public sealed class PassiveImportDialogTests
             Assert.True(set is not null, why);
             Assert.Null(set.Import.Pattern);
             Assert.False(vm.Refused, vm.Line);
+            Assert.DoesNotContain("NaN", string.Join(" ", vm.PreviewPoints));    // no transistor bias columns
         }
         finally { Directory.Delete(root, true); }
     }

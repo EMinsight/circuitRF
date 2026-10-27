@@ -50,6 +50,10 @@ public sealed partial class ModelComposerViewModel
         // The band the info boxes sit in is reserved whether or not a marker exists (owner, review 4): sized to the boxes,
         // it moved the axes down when the first marker was made and back up when the last one went.
         RectPlot.TopBandPx = BandHeight();
+        // The title is the band's first row rather than a centred line in a margin of its own above the band, which with
+        // the band reserved under it left a strip of empty space between the title and the axes.
+        RectPlot.TitleInTopBand = true;
+        RectPlot.SetAxesViewport();
         BiasPlaneLasso = new BiasPlaneLasso(() => _biasPlanePoints, OnLasso, OnPickBiasPoint, () => _biasPlanePickable);
         RebuildPlotTabs();
     }
@@ -210,7 +214,7 @@ public sealed partial class ModelComposerViewModel
         if (plot.PlotType == PlotType.Rect)
         {
             var v = plot.Axes.Viewport;
-            top = container.Top + v.Y * container.Height + BandGap;
+            top = container.Top + v.Y * container.Height + AxesRenderer.TitleRowPx(plot, (container.Width, container.Height)) + BandGap;
             double x0 = container.Left + v.X * container.Width, x1 = container.Left + (v.X + v.Width) * container.Width;
             var inBand = others.Where(b => Math.Abs(b.Marker.InfoBoxPos.Y - top) < 1).ToList();
             left = inBand.Count == 0 ? x0 : inBand.Max(b => b.Marker.InfoBoxPos.X + b.BoxWidth) + BandGap;

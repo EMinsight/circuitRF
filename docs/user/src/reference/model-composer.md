@@ -475,8 +475,10 @@ Its README lists every setting it uses, and the value a real job would use where
 ## Opening a document {#open}
 
 **Tools ▸ Model Composer…** opens a window on a new document and asks one question: **Active** (a three-terminal FET)
-or **Passive** (an N-port). Nothing is written until the first save, which asks where the `.cmc` goes; importing data
-or choosing a network saves first, because the document's data and network files are found relative to it.
+or **Passive** (an N-port). Nothing is written until the first save, which asks where the `.cmc` goes; choosing a
+network saves first, because the document's data and network files are found relative to it. Importing data into a new
+document asks for the data first, then opens the Save dialog in the data's folder with the first file's name filled in,
+since the data is kept beside the `.cmc`. Cancelling that Save imports nothing.
 
 A `.cmc` in a workspace opens on double-click in the project tree, and the window's **Open** button opens one from
 anywhere. Each document has one window; opening a document that is already open brings its window forward.
@@ -1002,6 +1004,9 @@ Smith tabs show the block's S-parameters.
 
 On the Topology step, **Propose** ranks the library's topologies against the block and lists the top three, each drawn
 small with its |ΔS|; double-click one to choose it. A topology of your own is pasted into the network panel.
+The built-in topologies are one- and two-ports. For a block with more ports, such as a board's six-port EM result,
+Propose offers nothing unless you draw a topology whose pins 1…N are the ports; the file can also be placed as it is
+as an S-parameter component.
 
 ## Undo {#undo}
 

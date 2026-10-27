@@ -1116,6 +1116,14 @@ namespace CircuitRF.Render.DataDisplay
         private static float TitleMargin(Plot plot, float vpTop) =>
             plot.PlotType == PlotType.Rect ? Math.Max(0f, vpTop - (float)plot.TopBandPx) : vpTop;
 
+        /// <summary>True when <paramref name="plot"/>'s title is the first row of its top band (Plot.TitleInTopBand).</summary>
+        private static bool TitleInBand(Plot plot) => plot.TitleInTopBand && plot.PlotType == PlotType.Rect && plot.TopBandPx > 0;
+
+        /// <summary>The canvas pixels a title in the top band takes (Plot.TitleInTopBand), its padding included; zero
+        /// otherwise. The band's owner places its own content below this row.</summary>
+        public static float TitleRowPx(Plot plot, (double W, double H) canvasSize) =>
+            TitleInBand(plot) ? (float)(plot.Axes.FontSizeLabel * 1.4 * LineWidth(canvasSize) * 1.6) : 0f;
+
         public static LabelHitRects DrawTitleAndAxisLabels(
             SKCanvas             canvas,
             (double W, double H) canvasSize,
@@ -1174,6 +1182,14 @@ namespace CircuitRF.Render.DataDisplay
                 float tw = RendererText.MeasureTextWithFallback(title, font, titleFallback);
                 float tx = vpCenterX - tw / 2f;
                 float ty = TitleMargin(plot, vpTop) / 2f + font.Size * 0.35f;
+                if (TitleInBand(plot))
+                {
+                    // The band's first row, over the axes' left edge (the band is above the axes by its own height).
+                    float row = TitleRowPx(plot, canvasSize);
+                    float bandTop = vpTop - (float)plot.TopBandPx - row;
+                    tx = vpLeft;
+                    ty = Math.Max(0f, bandTop) + row / 2f + font.Size * 0.35f;
+                }
                 RendererText.DrawLeftTextWithFallback(canvas, title, tx, ty, font, titleFallback, paint);
                 rects.Title = new SKRect(tx, ty - font.Size, tx + tw, ty + font.Size * 0.5f);
             }

@@ -98,6 +98,11 @@
                     <DataTemplate x:DataType="mc:ModelStepItem">
                         <Grid ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding IsEnabled}"
                               Background="Transparent" ToolTip.Tip="{Binding Tip}" ToolTip.ShowOnDisabled="True">
+                            <!-- A Grid and a TextBlock draw no disabled state of their own: without this a step that cannot
+                                 be chosen yet looked exactly like one that can. -->
+                            <Grid.Styles>
+                                <Style Selector="Grid:disabled"><Setter Property="Opacity" Value="0.4"/></Style>
+                            </Grid.Styles>
                             <mi:MaterialIcon Kind="{Binding Icon}" Width="16" Height="16" Margin="0,0,6,0"/>
                             <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"/>
                             <Ellipse Grid.Column="2" Width="7" Height="7" IsVisible="{Binding IsStale}"
@@ -131,17 +136,7 @@
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock Grid.Column="1" Classes="lbl" Text="{Binding Points}"/>
                                         </Grid>
-                                        <TextBlock Classes="lbl" FontSize="11" TextTrimming="CharacterEllipsis">
-                                            <TextBlock.Text>
-                                                <MultiBinding StringFormat="{}{0} · {1} · {2} · Q {3} {4}">
-                                                    <Binding Path="Kind"/>
-                                                    <Binding Path="Ambient"/>
-                                                    <Binding Path="Plane"/>
-                                                    <Binding Path="Quiescent"/>
-                                                    <Binding Path="PrePulse"/>
-                                                </MultiBinding>
-                                            </TextBlock.Text>
-                                        </TextBlock>
+                                        <TextBlock Classes="lbl" FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding Summary}"/>
                                         <TextBlock Classes="lbl" FontSize="11" Text="{Binding Capacitances}" IsVisible="{Binding HasCapacitances}"/>
                                     </StackPanel>
                                 </DataTemplate>
@@ -588,6 +583,8 @@
                                 <mi:MaterialIcon Kind="Lightbulb" Width="16" Height="16"/>
                             </Button>
                         </Grid>
+                        <TextBlock Classes="lbl" TextWrapping="Wrap" Text="{Binding ProposalNote}"
+                                   IsVisible="{Binding ProposalNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         <ListBox Name="ProposalList" Classes="rows" ItemsSource="{Binding Proposals}">
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="mc:ProposalRow">

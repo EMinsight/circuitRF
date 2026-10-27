@@ -1032,6 +1032,13 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public double TopBandPx { get; set; }
 
+        /// <summary>
+        /// On a rectangular plot with a <see cref="TopBandPx"/> band: the title is drawn as the band's first row, left-aligned
+        /// over the axes, instead of centred in a margin of its own above the band — so the band and the title share one
+        /// strip and the axes get the rest. The row it takes is <c>AxesRenderer.TitleRowPx</c>. Never persisted.
+        /// </summary>
+        public bool TitleInTopBand { get; set; }
+
         public void SetAxesViewport()
         {
             switch (PlotType)
@@ -1065,7 +1072,8 @@ namespace CircuitRF.Render.DataDisplay
                         double s = 0.70 / (left + right);
                         left *= s; right *= s;
                     }
-                    double top = 0.10;
+                    // A title drawn in the top band (TitleInTopBand) needs no margin of its own above it.
+                    double top = TitleInTopBand && TopBandPx > 0 ? 0.0 : 0.10;
                     double bot = 0.15;
                     Axes.Viewport = new PlotRect(left, top, 1.0 - left - right, 1.0 - top - bot);
                     break;

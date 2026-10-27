@@ -162,19 +162,8 @@ public partial class ModelComposerWindow : Window, ICrfDocumentWindow
                 ? $"{Path.GetFileName(path)} is open in another Model Composer window; save under another name or close that window."
                 : null;
 
-        vm.PickSavePath = async name =>
-        {
-            IStorageFolder? start = vm.DocumentFolder is { } folder ? await StorageProvider.TryGetFolderFromPathAsync(folder) : null;
-            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-            {
-                Title = "Save the Model Composer document",
-                SuggestedStartLocation = start,
-                SuggestedFileName = name,
-                DefaultExtension = CmcFile.Extension.TrimStart('.'),
-                FileTypeChoices = [new FilePickerFileType("Model Composer document") { Patterns = ["*" + CmcFile.Extension] }],
-            });
-            return file?.Path.LocalPath;
-        };
+        vm.PickSavePath = prompt => PickSave(vm, prompt.Title ?? "Save the Model Composer document", prompt.Name,
+                                             "Model Composer document", "*" + CmcFile.Extension, prompt.Folder);
         vm.PickFile = async (title, patterns) =>
         {
             IStorageFolder? start = vm.DocumentFolder is { } folder ? await StorageProvider.TryGetFolderFromPathAsync(folder) : null;

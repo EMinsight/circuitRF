@@ -54,6 +54,22 @@ dotnet run --project tools/UiSnapshot --no-build -- --tuning <file.csch> -o out.
 After every step it prints which control holds the keyboard and each row's value, so what a key did is read
 rather than guessed from pixels. Default size 420x500.
 
+**The Model Composer** opens on a `.cmc` as File ▸ Open does, or on a new document of a chosen kind:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --cmc <file.cmc|new:Passive|new:Active> -o out.png \
+    [--step <name>] [--run <key>] [--marker]... [--import <data>] [--size WxH] [steps]
+```
+
+| Option | Means |
+|---|---|
+| `--step <name>` | Selects a step (`Topology`, `Fit`, ...). A step that is not enabled yet stays unselected. |
+| `--run <key>` | Runs one of the step's tasks (`propose`, `analyse`, `fit`, ...) to the end, then prints the status line, any proposal note and the proposals. |
+| `--marker` | Adds a marker on the S plot's first trace, its info box placed as a new marker's is. Repeat for several. |
+| `--import <data>` | Photographs the Import Data dialog instead, with `<data>` chosen as its source. On a `new:` document the importer works against its provisional `.cmc` beside the data, and prints it. |
+
+Without `--size` it takes the window's own size; `--size 1400x866` shows the whole window.
+
 **The EM Setup editor** opens on a `.cem`, as the workspace opens one, and prints every visible named check box's state,
 position and tooltip, so a setting is read as well as seen:
 

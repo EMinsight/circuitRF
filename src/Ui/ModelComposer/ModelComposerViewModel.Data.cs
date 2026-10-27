@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using CircuitRF.Core.Devices.Composed;
@@ -53,7 +54,15 @@ public sealed partial class ModelComposerViewModel
 
     public bool HasDataSets => DataSetRows.Count > 0;
 
-    /// <summary>The importer, then the import as a run through <see cref="ModelCommands.Import"/>.</summary>
+    /// <summary>The Save dialog's title when an import is what asks for the document's name.</summary>
+    public const string SaveBeforeImportTitle = "Save the model before importing — its data is kept beside it";
+
+    /// <summary>
+    /// The importer, then the import as a run through <see cref="ModelCommands.Import"/>. An unsaved document chooses its data
+    /// first (designer round 28): the importer works against a provisional <c>.cmc</c> beside the first source, and only then
+    /// does the Save dialog ask for a name — in that folder, with that stem — because sources are stored relative to the
+    /// <c>.cmc</c> and the import's cache is written beside it. A cancelled Save imports nothing.
+    /// </summary>
     public async Task<bool> ImportAsync()
     {
         if (IsRunning && !_isRefresh)
@@ -61,11 +70,30 @@ public sealed partial class ModelComposerViewModel
             Warn($"{TaskStage} is running; cancel it or wait for it to finish.");
             return false;
         }
-        if (DocumentPath is null && !await SaveAsync(saveAs: false)) return false;
         if (ShowImporter is null) return false;
-        var set = await ShowImporter(new ModelImportViewModel(DocumentPath!, Document));
+        var importer = new ModelImportViewModel(DocumentPath, Document);
+        var set = await ShowImporter(importer);
         if (set is null) return false;
+        if (importer.IsProvisional)
+        {
+            string provisional = importer.CmcPath!;
+            var prompt = new SavePrompt(Path.GetFileNameWithoutExtension(provisional), Path.GetDirectoryName(provisional), SaveBeforeImportTitle);
+            if (!await SaveAsync(saveAs: false, prompt)) return false;
+            set = Rebased(set, provisional, DocumentPath!);
+        }
         return await ImportAsync(set);
+    }
+
+    /// <summary><paramref name="set"/> with its sources made relative to <paramref name="to"/> rather than <paramref name="from"/>
+    /// — the document was saved somewhere other than the provisional folder.</summary>
+    private static CmcDataSet Rebased(CmcDataSet set, string from, string to)
+    {
+        string fromDir = Path.GetDirectoryName(Path.GetFullPath(from))!, toDir = Path.GetDirectoryName(Path.GetFullPath(to))!;
+        if (string.Equals(fromDir, toDir, StringComparison.Ordinal)) return set;
+        return set with
+        {
+            Sources = [.. set.Sources.Select(s => Path.GetRelativePath(toDir, Path.GetFullPath(Path.Combine(fromDir, s))).Replace('\\', '/'))],
+        };
     }
 
     /// <summary>Imports <paramref name="set"/> — the dialog's answer, or a test's.</summary>

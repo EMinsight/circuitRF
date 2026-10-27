@@ -91,6 +91,33 @@ public sealed class ModelCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.True(File.Exists(model));
     }
 
+    /// <summary>Designer round 28: a passive block has no bias, so its Touchstone imports with no --pattern — the dialog's
+    /// empty pattern. An active document still needs one.</summary>
+    [Fact]
+    public void APassiveDocument_ImportsATouchstoneWithNoPattern_AndAnActiveOneIsStillAsked()
+    {
+        string s6p = Path.Combine(_root, "board.s6p");
+        var f = new StringWriter();
+        f.WriteLine("# Hz S RI R 50");
+        foreach (double hz in new[] { 1e9, 2e9, 3e9, 4e9 })
+        {
+            f.Write(hz.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            for (int i = 0; i < 6; i++)
+            {
+                for (int j = 0; j < 6; j++) f.Write(i == j ? " 0.1 0" : (i ^ 1) == j ? " 0.9 0" : " 0 0");
+                f.WriteLine();
+            }
+        }
+        File.WriteAllText(s6p, f.ToString());
+        string passive = Path.Combine(_root, "board.cmc"), active = Path.Combine(_root, "fet.cmc");
+        ModelCommands.New(passive, CmcKind.Passive);
+        ModelCommands.New(active, CmcKind.Active);
+
+        Assert.Equal(0, InProcess("model", "import", passive, s6p, "--as", "PassiveSParams"));
+        Assert.Null(Assert.Single(CmcFile.Read(passive).DataSets).Import.Pattern);
+        Assert.NotEqual(0, InProcess("model", "import", active, s6p, "--as", "SParams"));
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private (int ExitCode, string StdOut, string StdErr) Cli(string cwd, int expected, params string[] args)

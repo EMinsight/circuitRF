@@ -254,7 +254,7 @@ namespace CircuitRF.Render.DataDisplay
             // stays in the margin above it. Capped so the band can never take the plot box.
             if (plot.PlotType == PlotType.Rect && plot.TopBandPx > 0 && canvasSize.H > 0)
             {
-                double band = Math.Min(plot.TopBandPx / canvasSize.H, v.Height * 0.4);
+                double band = Math.Min((plot.TopBandPx + AxesRenderer.TitleRowPx(plot, canvasSize)) / canvasSize.H, v.Height * 0.4);
                 return new PlotRect(v.X, v.Y + band, v.Width, v.Height - band);
             }
             return v;

@@ -40719,3 +40719,39 @@ or disarms and the arrow comes back once the box is released or Escape is presse
   the working area.
 - **Digitise by hand: Copy curve.** A row button adds a curve on the same points, next colour, selected. One undo
   step (`ManualDigitiseDialogTests.CopyingACurve_…`).
+
+## Model Composer: a new passive document chooses its data before it is named (brief DFR28-2, 2026-10-27)
+
+- **Import on an unsaved document opens the importer first.** `ModelImportViewModel` takes a null `.cmc` path and, on
+  `SetSources`, makes a provisional one in the first source's folder named after its stem (a folder input expands to
+  its first readable file), so `ModelCommands.Sources`, the preview and the refusals all work as before. On OK,
+  `ImportAsync` saves with a `SavePrompt` (that folder, that stem, a title that says the data is kept beside the
+  model). Cancel imports nothing, and nothing is written under a name the user did not confirm.
+- **The trap:** sources are stored relative to the `.cmc`, so a document saved anywhere but the provisional folder
+  would point at files that are not there. `Rebased` re-relativises the set against the path actually chosen before the
+  import runs (`PassiveStartTests` saves into a subfolder and expects `../board_asbuilt.s2p`).
+- **`PickSavePath` takes a `SavePrompt`** (name, start folder, title) rather than a bare name. The window's seam now
+  goes through the shared `PickSave` helper.
+- **Propose on a block with more ports than any built-in topology**, and nothing drawn, returns no proposals and
+  `PassiveFit.NoTopologyNote(n)`. The Topology step shows it under its header (`ProposalNote`). The library stays one-
+  and two-port. The honest answer for a board's six-port EM result is a drawn topology or the SnP component.
+
+## Model Composer, passive document: what a headless look found (2026-10-27)
+
+`tools/UiSnapshot --cmc` (new) photographs the Model Composer window or its Import Data dialog. On a six-port and a
+two-port passive block it found:
+
+- **`model import` demanded a bias `--pattern` for a passive Touchstone**, the defect round 28 fixed only in the dialog.
+  A passive document's pattern is optional now on both paths (`ModelCliVerbTests.APassiveDocument_…`).
+- **The importer's "As read" row printed `Vgs NaN Vds NaN Id NaN Ig NaN`** for a passive point. It shows the point and,
+  when a family pattern read one, its geometry.
+- **A passive data set's row read `PassiveSParams · — · — · Q —`.** `DataSetRow.Summary` stops at the plane for a
+  passive set and leaves out a condition the set does not state.
+- **A step that cannot be chosen yet (Export before a fit) looked like one that can.** The row's `Grid` was disabled,
+  but a `Grid` and a `TextBlock` draw no disabled state; a `Grid:disabled` style dims it.
+- **The six-port note showed twice**, under the Topology header and again, in warning colour, in the status bar. The
+  status bar now says only "No topology offered."
+- **The plot's title sat centred in a margin of its own, with the reserved marker band empty below it.** It is the
+  band's first row now, left-aligned over the axes (`Plot.TitleInTopBand`, `AxesRenderer.TitleRowPx`), and new info
+  boxes are placed below that row. The band is still reserved with no marker, so the axes still do not move. The separate
+  title margin (10 % of the plot's height) went back to the axes.

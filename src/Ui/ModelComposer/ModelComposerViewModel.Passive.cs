@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using CircuitRF.Design.Modeling;
 using CircuitRF.Design.Modeling.Passive;
 using CircuitRF.Design.Schematic;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.ModelComposer;
@@ -20,6 +21,9 @@ public sealed partial class ModelComposerViewModel
 {
     public ObservableCollection<string> AnalysisLines { get; } = [];
     public ObservableCollection<ProposalRow> Proposals { get; } = [];
+
+    /// <summary>Why Propose offered nothing — a block with more ports than any built-in topology; empty otherwise.</summary>
+    [ObservableProperty] private string _proposalNote = "";
 
     /// <summary>The blocks of the passive data, with their geometry values — the family list.</summary>
     public ObservableCollection<string> PassiveBlocks { get; } = [];
@@ -74,7 +78,9 @@ public sealed partial class ModelComposerViewModel
             foreach (var p in ranked.Where(p => p.Offered).Take(3))
                 Proposals.Add(new ProposalRow(p.Rank, p.Fit.Topology, p.Title,
                                               $"|ΔS| {p.Fit.RmsDeltaS.ToString("G3", CultureInfo.InvariantCulture)}", TopologyDrawing(p.Fit.Topology)));
-            if (notes.Count > 0) Warn(notes[0]);
+            ProposalNote = Proposals.Count == 0 && notes.Count > 0 ? notes[0] : "";
+            if (ProposalNote.Length > 0) Info("No topology offered.");     // the step says why; the status need not repeat it
+            else if (notes.Count > 0) Warn(notes[0]);
             else Info($"{Proposals.Count} topologies offered.");
         });
     }

@@ -17,13 +17,19 @@ namespace CircuitRF.Ui.ModelComposer;
 
 public sealed partial class ModelImportViewModel : ObservableObject
 {
-    private readonly string _cmcPath;
+    private string? _cmcPath;
     private readonly CmcDocument _doc;
     private bool _loading;
 
-    public ModelImportViewModel(string cmcPath, CmcDocument doc)
+    /// <summary>
+    /// <paramref name="cmcPath"/> is the document's file, or null for a document not yet saved: the sources then resolve
+    /// against a provisional <c>.cmc</c> in the first source's folder, named after its stem (designer round 28 — the data is
+    /// chosen before the document is named), which <see cref="CmcPath"/> reports for the Save dialog to start from.
+    /// </summary>
+    public ModelImportViewModel(string? cmcPath, CmcDocument doc)
     {
         _cmcPath = cmcPath;
+        IsProvisional = cmcPath is null;
         _doc = doc;
         Kinds = doc.Kind == CmcKind.Passive
             ? [DataSetKind.PassiveSParams]
@@ -33,6 +39,13 @@ public sealed partial class ModelImportViewModel : ObservableObject
         // field starts empty — a transistor's Vgs/Vds default refused every passive file whose name did not carry a bias.
         if (IsPassive) _pattern = "";
     }
+
+    /// <summary>True when the document is not saved yet and <see cref="CmcPath"/> follows the first source.</summary>
+    public bool IsProvisional { get; }
+
+    /// <summary>The <c>.cmc</c> the sources are relative to: the document's, or the provisional one; null until a source is
+    /// chosen for an unsaved document.</summary>
+    public string? CmcPath => _cmcPath;
 
     /// <summary>The document models a passive block: no bias pattern by default and no quiescent point.</summary>
     public bool IsPassive => _doc.Kind == CmcKind.Passive;
@@ -83,7 +96,8 @@ public sealed partial class ModelImportViewModel : ObservableObject
         Sources.Clear();
         try
         {
-            foreach (string s in ModelCommands.Sources(_cmcPath, inputs)) Sources.Add(s);
+            if (IsProvisional) _cmcPath = ProvisionalPath(inputs);
+            foreach (string s in ModelCommands.Sources(_cmcPath!, inputs)) Sources.Add(s);
             _loading = true;
             Format = ModelCommands.FormatOf(Sources[0]) ?? "";
             if (Name.Length == 0) Name = ModelCommands.DefaultName(_doc, inputs);
@@ -101,10 +115,19 @@ public sealed partial class ModelImportViewModel : ObservableObject
         UpdatePreview();
     }
 
+    /// <summary>The first source's folder and stem as a <c>.cmc</c> — a folder input expands to its first readable file.</summary>
+    private static string ProvisionalPath(IReadOnlyList<string> inputs)
+    {
+        string first = inputs.Count > 0 ? Path.GetFullPath(inputs[0]) : throw new ModelingException("Sources", "no source is named.");
+        string probe = Path.Combine(Directory.Exists(first) ? first : Path.GetDirectoryName(first)!, "probe" + CmcFile.Extension);
+        string file = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(probe)!, ModelCommands.Sources(probe, inputs)[0]));
+        return Path.Combine(Path.GetDirectoryName(file)!, Path.GetFileNameWithoutExtension(file) + CmcFile.Extension);
+    }
+
     /// <summary>A CSV whose header names the usual quantities is mapped to them; the user edits what is not.</summary>
     private string GuessMap()
     {
-        string first = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(_cmcPath))!, Sources[0]);
+        string first = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(_cmcPath!))!, Sources[0]);
         string? header = File.Exists(first) ? File.ReadLines(first).FirstOrDefault() : null;
         if (header is null) return "";
         var map = new List<string>();
@@ -131,10 +154,13 @@ public sealed partial class ModelImportViewModel : ObservableObject
         if (Sources.Count == 0) { Line = ""; Refused = true; return; }
         var set = Build(out string? why);
         if (set is null) { Line = why ?? ""; Refused = true; return; }
-        var p = ModelCommands.Preview(_cmcPath, set);
+        var p = ModelCommands.Preview(_cmcPath!, set);
         foreach (string l in p.RawLines) PreviewRaw.Add(l);
+        // A passive point has no bias, only a family's geometry when the pattern read one: its Vgs…Ig columns were NaN.
         foreach (var b in p.Points)
-            PreviewPoints.Add(string.Join("   ", new[] { b.PointId, $"Vgs {G(b.Vgs)}", $"Vds {G(b.Vds)}", $"Id {G(b.Id)}", $"Ig {G(b.Ig)}" }));
+            PreviewPoints.Add(IsPassive
+                ? double.IsNaN(b.Geometry) ? b.PointId : $"{b.PointId}   geometry {G(b.Geometry)}"
+                : string.Join("   ", new[] { b.PointId, $"Vgs {G(b.Vgs)}", $"Vds {G(b.Vds)}", $"Id {G(b.Id)}", $"Ig {G(b.Ig)}" }));
         Line = p.Line;
         Refused = p.Refused;
     }

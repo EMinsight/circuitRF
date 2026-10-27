@@ -200,11 +200,16 @@ internal static class Model
         var import = new JsonObject { ["Format"] = format };
         if (format == ImportSettings.Touchstone)
         {
-            if (a["--pattern"] is not { } pattern)
+            // A passive block has no bias (designer round 28): its pattern only ever names a family's {geometry}, and a
+            // single block's file imports as it is — the dialog's empty pattern.
+            if (a["--pattern"] is { } pattern)
+            {
+                import["Pattern"] = pattern;
+                import["PatternSource"] = a["--pattern-source"] ?? "name";
+            }
+            else if (doc.Kind != CmcKind.Passive)
                 return Missing("import", "--pattern",
                     "a Touchstone set's bias is read from each file's name (or comments) by a pattern, e.g. --pattern \"Vgs{vgs}_Vds{vds}\"");
-            import["Pattern"] = pattern;
-            import["PatternSource"] = a["--pattern-source"] ?? "name";
         }
         else if (a["--pattern"] is { } pattern) import["Pattern"] = pattern;
         if (format is ImportSettings.Csv or ImportSettings.Npy or ImportSettings.Mat && a.All("--map").Count == 0)
