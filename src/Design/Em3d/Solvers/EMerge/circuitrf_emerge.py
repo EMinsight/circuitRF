@@ -151,6 +151,9 @@ def main(argv):
         sys.exit(2)
     except Exception as e:
         fail(named(e))
+    if heard.on_gpu and heard.unusable:
+        warnings.append(f"EMerge's GPU solver found {heard.unusable} of its single-precision factorisations unusable and solved "
+                        "with them anyway, so these S-parameters may be noise. Solve on the CPU: set EMerge's Device to CPU.")
     # The device the solves USED, read back from the solver EMerge's log says it called, never assumed from what was asked.
     device = None if heard.solver is None else ("gpu" if heard.solver == GPU_SOLVER_NAME else "cpu")
     run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, device=device, gpuFrom=gpu_from,
@@ -235,6 +238,11 @@ def use_gpu(problem, counts, gpu_from, sim, em, warnings):
 # its best error 3.0e-3 at sample 16, no better by sample 80, where the CPU converged in 9; src/Design/RESOLVED.md, EMW-3).
 GPU_STALL_SAMPLES = 8
 
+# brief-dfr28-1 follow-up — what EMerge 3.0.0b2 logs when the GPU solver's own check finds its factorisation unusable
+# (factor.quality.usable is false). EMerge solves with it anyway. On the TP149 board (67,712 tets, order 2) it said so at the
+# first frequency and every one after, and the sweep chased noise round 350 MHz: the sweep goes to the CPU at once.
+GPU_UNUSABLE = "Matrix is so singular that it is broken on single precision"
+
 
 class GpuStalled(Exception):
     """Raised from the log sink to stop a stalled GPU sweep; the driver solves it again on the CPU."""
@@ -252,7 +260,7 @@ def adaptive_sweep(sim, settings, heard, freqs):
     try:
         return run(), None
     except GpuStalled:
-        stalled = {"samples": heard.samples, "bestError": heard.best, "bestAt": heard.best_at}
+        stalled = {"samples": heard.samples, "bestError": heard.best, "bestAt": heard.best_at, "unusable": heard.unusable > 0}
     finally:
         heard.watch = False
     report(stage="gpu-stalled", **stalled)
@@ -279,10 +287,15 @@ class Heard:
         self.samples = 0
         self.best = None
         self.best_at = 0
+        self.unusable = 0
 
     def sink(self, message):
         import re
         text = message.record["message"]
+        if self.on_gpu and text.startswith(GPU_UNUSABLE):
+            self.unusable += 1
+            if self.watch:
+                raise GpuStalled()
         m = re.search(r"Calling (\S+(?: \S+)?) Solver", text)
         if m:
             self.solver = m.group(1)

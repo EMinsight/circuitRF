@@ -40,9 +40,6 @@
   <Folder Name="/tools/DeviceWorkerExample/">
     <Project Path="tools/DeviceWorkerExample/DeviceWorkerExample.csproj" />
   </Folder>
-  <Folder Name="/tools/SchematicSynth/">
-    <Project Path="tools/SchematicSynth/SchematicSynth.csproj" />
-  </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/Core.Tests/">
     <Project Path="tests/Core.Tests/CircuitRF.Core.Tests.csproj" />

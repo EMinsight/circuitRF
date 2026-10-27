@@ -242,7 +242,11 @@ public static partial class Em3dRunService
 
         string? notConverged = null;
         // brief-emw-3 — a GPU sweep that stopped improving was solved again on the CPU in the same run, without waiting for its cap
-        if (facts.GpuStalled is { } stall)
+        if (facts.GpuStalled is { Unusable: true })
+            log.Notes.Add("EMerge's GPU solver found its single-precision factorisation of this problem unusable, so circuitRF solved " +
+                          "the sweep on the CPU, on the same mesh. This result is the CPU's. Set EMerge's Device to CPU in Settings ▸ " +
+                          "Solvers to start there.");
+        else if (facts.GpuStalled is { } stall)
             log.Notes.Add($"EMerge's adaptive sweep on the GPU stopped improving: its estimated error was no lower after {Count(stall.Samples)} " +
                           $"frequencies than its best ({(stall.BestError is { } be ? PalaceStageTracker.Sci(be) : "unreported")}, at {Count(stall.BestAt)}), " +
                           "so circuitRF solved it again on the CPU, on the same mesh. This result is the CPU's. The GPU's single precision " +

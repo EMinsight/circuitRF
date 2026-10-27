@@ -246,12 +246,6 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>CircuitRF.Ui.Tests</_Parameter1>
     </AssemblyAttribute>
-    <!-- The schematic picture generator (brief-iml-2 R-iml2-2) wires its hand-placed drawings with
-         SchematicAutoRouter, the router the netlist drawing and the SPICE import already use, rather than a
-         second router of its own that would draw connections the editor's rules do not make. -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
-      <_Parameter1>CircuitRF.SchematicSynth</_Parameter1>
-    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

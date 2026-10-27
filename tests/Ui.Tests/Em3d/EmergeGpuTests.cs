@@ -75,6 +75,22 @@ public sealed class EmergeGpuTests(ITestOutputHelper output) : IDisposable
         Assert.Null(Em3dRunService.WithCpuFallback(EmergeDevice.Auto, 40_000, _ => ("cpu", (EmergeRunFacts?)facts)).Note);
     }
 
+    /// <summary>
+    /// brief-dfr28-1 follow-up — a GPU sweep the driver stopped at EMerge's "broken on single precision" warning, not for a stall:
+    /// the progress still turns to the CPU, and run.json's account keeps the reason.
+    /// </summary>
+    [Fact]
+    public void AGpuSweepStoppedForAnUnusableFactorisation_IsReadBackWithItsReason()
+    {
+        var control = new CircuitRF.Engine.RunControl();
+        var tracker = new EmergeStageTracker(control, eigenmode: false);
+        tracker.Line("""{"bestAt": 0, "bestError": null, "driver": 7, "samples": 0, "stage": "gpu-stalled", "unusable": true}""");
+        Assert.Equal(EmergeStageTracker.CpuAgainLabel, control.Stage);
+
+        var facts = Facts("unusable", """{"device": "cpu", "adaptive": true, "converged": true, "samples": 8, "error": 8.5e-04, "gpuStalled": {"samples": 0, "bestError": null, "bestAt": 0, "unusable": true}}""");
+        Assert.Equal(new EmergeGpuStall(0, null, 0, Unusable: true), facts.GpuStalled);
+    }
+
     /// <summary>Test 4 — the preference: absent is Automatic, and what is stored reads back.</summary>
     [Fact]
     public void ThePreference_AbsentIsAutomatic_AndRoundTrips()

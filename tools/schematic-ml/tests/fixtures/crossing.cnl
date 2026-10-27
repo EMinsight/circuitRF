@@ -1,3 +1,0 @@
-; netlist truth from crossing (crfml.label_to_cnl)
-Vdc:V1 n1 0 Vdc=1
-Diode:D1 n2 0

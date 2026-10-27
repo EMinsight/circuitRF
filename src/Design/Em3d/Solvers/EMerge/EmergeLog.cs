@@ -29,7 +29,7 @@ public sealed record EmergeMeshDone(long Tetrahedra, long Triangles) : EmergeLog
 
 /// <summary>brief-emw-3 — the driver's <c>{"stage": "gpu-stalled", …}</c> line: the adaptive sweep on the GPU stopped improving
 /// and is being solved again on the CPU.</summary>
-public sealed record EmergeGpuStalled(int Samples) : EmergeLogEvent;
+public sealed record EmergeGpuStalled(int Samples, bool Unusable = false) : EmergeLogEvent;
 
 /// <summary>The driver's <c>{"stage": "meshed", …}</c> line: the mesh's exact counts, before any solve.</summary>
 public sealed record EmergeMeshCounts(long Tetrahedra, long Edges, long Triangles) : EmergeLogEvent;
@@ -113,7 +113,8 @@ public static class EmergeLog
             using var doc = JsonDocument.Parse(json);
             var r = doc.RootElement;
             if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stage", out var st) && st.GetString() == "gpu-stalled")
-                return new EmergeGpuStalled(r.TryGetProperty("samples", out var n) && n.ValueKind == JsonValueKind.Number ? n.GetInt32() : 0);
+                return new EmergeGpuStalled(r.TryGetProperty("samples", out var n) && n.ValueKind == JsonValueKind.Number ? n.GetInt32() : 0,
+                                            r.TryGetProperty("unusable", out var u) && u.ValueKind == JsonValueKind.True);
             return r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stage", out var stage) && stage.GetString() == "meshed"
                    && r.TryGetProperty("tets", out var tets) && r.TryGetProperty("edges", out var edges)
                    && r.TryGetProperty("triangles", out var tris)
@@ -222,7 +223,9 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
                 Samples = null;
                 SweepError = null;
                 control?.BeginStage(CpuAgainLabel);
-                control?.SetStageDetail($"the GPU's sweep stopped improving after {g.Samples} frequencies");
+                control?.SetStageDetail(g.Unusable
+                    ? "the GPU's single-precision factorisation was unusable"
+                    : $"the GPU's sweep stopped improving after {g.Samples} frequencies");
                 break;
             case EmergeRefinementPass p:
                 control?.BeginStage($"Refining the mesh (EMerge), pass {p.Pass}");

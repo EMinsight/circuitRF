@@ -1,5 +1,0 @@
-; netlist truth from divider (crfml.label_to_cnl)
-Port:P1 n1 0 Num=1 Z=50 Ohm
-Port:OUT out 0 Num=2 Z=50 Ohm
-R:R1 n1 out R=1000
-R:R2 out 0 R=2200

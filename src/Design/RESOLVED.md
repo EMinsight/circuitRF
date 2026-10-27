@@ -23457,3 +23457,27 @@ The Oct-24 script had no `via/9`. This is the open half of R-dfr26-8-4, written 
 - **Crop to Rectangle counts what it leaves for this rule (R-dfr28-1-2).** It keeps its anchor rule. `EdgeCutVias`
   counts each kept via whose drill circle crosses the rectangle. The confirmation and the result both say so, so the
   user hears it at crop time.
+
+## Designer round 28 — EMerge on the TP149 board (2026-10-26)
+
+The driven TP149 setup on EMerge at Standard, compared with Palace. The open work is in
+`docs/sonnet-briefs/brief-dfr28-3-emerge-on-the-tp149-board.md`.
+
+- **The GPU said its factorisation was unusable and solved with it anyway.** EMerge 3.0.0b2 logs "Matrix is so singular
+  that it is broken on single precision" when SPARTA's own `factor.quality.usable` is false, then solves with that factor.
+  On TP149 (67,712 tets, 515,532 unknowns, order 2) it said so at every frequency. The adaptive sweep chased noise round
+  350 MHz until the EMW-3 stall watch switched it to the CPU at sample 17, about 5 minutes later. The CPU converged in 8
+  samples. **The driver now switches at the first such line** (`GPU_UNUSABLE`, `Heard.unusable`). The stall report
+  carries `"unusable": true`, and the note and progress row say why. A non-adaptive GPU run that hears the line gets a
+  warning.
+- **One degenerate tetrahedron turns the whole solve to NaN, and the result reads as S = −I.** With the YMax face padded
+  300 µm, the assembled matrix held 400 non-finite entries in 20 columns, one second-order tet's unknowns. The fast sparse
+  solver returned NaN and reported `converged: True, residual: 0`, and EMerge discards that report anyway. The result was
+  −I, which round 28's check refuses, though its sentence blames memory. The designer's −I run had the same box shape
+  (pushed past the board edge by the unclipped via), so it was very likely this, not memory. Open: brief DFR28-3 R-1/R-2.
+- **A lumped port in an absorbing air-box face loses about half its power.** Making the box follow the clipped edge via
+  put the zero-padded YMax face exactly on port 6 at the board edge. S65 became a flat −2.15 dB on Palace and −2.9 dB on
+  EMerge, where it had been ≈ 0 dB. That change was reverted. The edge via's whole drill circle still bounds the content,
+  which keeps the face 150 µm out. Open: brief DFR28-3 R-3.
+- **On this board Standard and Draft mesh alike** (67,712 vs 64,673 tets): the geometry sets the element size, not the
+  wavelength. EMerge Standard on the CPU takes 1 min 57 s and 6.1 GB.
