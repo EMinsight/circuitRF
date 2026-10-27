@@ -84,7 +84,17 @@ public sealed partial class MessageEntry : ObservableObject
     public bool HasProgressText => !string.IsNullOrEmpty(_progressText);
 
     public string?  FilePath  { get; }
-    public DateTime Timestamp { get; }
+    /// <summary>When the row last said something. A live progress row moves it on each rewrite and when it settles, so a
+    /// three-hour run's row does not keep reading its start time beside "solve finished" (designer round 28).</summary>
+    public DateTime Timestamp { get; private set; }
+
+    /// <summary>Moves <see cref="Timestamp"/> to <paramref name="now"/>; the row re-renders only when the shown second changes.</summary>
+    internal void Touch(DateTime now)
+    {
+        bool shown = now.ToString("yyyy-MM-dd HH:mm:ss") != Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
+        Timestamp = now;
+        if (shown) OnPropertyChanged(nameof(TimeText));
+    }
 
     /// <summary>
     /// The caption of this row's ACTION button — "Relaunch circuitRF" — or null on the overwhelming

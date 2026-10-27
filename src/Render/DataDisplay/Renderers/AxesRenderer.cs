@@ -71,6 +71,12 @@ namespace CircuitRF.Render.DataDisplay
                 EngineeringFormat.AxisMagnitude(axes.Window.Top, axes.Window.Bottom));
             int y2Group = EngineeringFormat.GroupFor(
                 EngineeringFormat.AxisMagnitude(axes.WindowSecondary.Top, axes.WindowSecondary.Bottom));
+            int xDigits  = axes.XScale == AxisScale.Log ? axes.NumDigitsXAxis : EngineeringFormat.DigitsToResolve(
+                axes.Window.Left, axes.Window.Right, axes.XTick, xGroup, axes.NumDigitsXAxis);
+            int yDigits  = axes.YScale == AxisScale.Log ? axes.NumDigitsLeftY : EngineeringFormat.DigitsToResolve(
+                axes.Window.Top, axes.Window.Bottom, axes.YTick, yGroup, axes.NumDigitsLeftY);
+            int y2Digits = EngineeringFormat.DigitsToResolve(
+                axes.WindowSecondary.Top, axes.WindowSecondary.Bottom, axes.Y2Tick, y2Group, axes.NumDigitsRightY);
 
             foreach (var tx in ticks.MajorX)
             {
@@ -92,7 +98,7 @@ namespace CircuitRF.Render.DataDisplay
                     // decade ticks and prints them as "0".
                     double v     = axes.XScale == AxisScale.Log
                         ? tx : EngineeringFormat.SnapNearZero(tx, axes.XTick);
-                    string label = EngineeringFormat.Tick(v, xGroup, axes.NumDigitsXAxis);
+                    string label = EngineeringFormat.Tick(v, xGroup, xDigits);
                     float  tw    = textFont.MeasureText(label);
                     canvas.DrawText(label,
                         tickBase.X - tw / 2f,
@@ -134,7 +140,7 @@ namespace CircuitRF.Render.DataDisplay
                 {
                     double v     = axes.YScale == AxisScale.Log
                         ? yPrimary : EngineeringFormat.SnapNearZero(yPrimary, axes.YTick);
-                    string label = EngineeringFormat.Tick(v, yGroup, axes.NumDigitsLeftY);
+                    string label = EngineeringFormat.Tick(v, yGroup, yDigits);
                     float  tw    = textFont.MeasureText(label);
                     canvas.DrawText(label,
                         tl0.X - tw - lw * 4f,
@@ -164,7 +170,7 @@ namespace CircuitRF.Render.DataDisplay
                     if (labels && double.IsFinite(ySecondary))
                     {
                         double v2     = EngineeringFormat.SnapNearZero(ySecondary, axes.Y2Tick);
-                        string label2 = EngineeringFormat.Tick(v2, y2Group, axes.NumDigitsRightY);
+                        string label2 = EngineeringFormat.Tick(v2, y2Group, y2Digits);
                         var    rPt    = tf.SecondaryToCanvas(axes.WindowSecondary.Right, ySecondary);
                         canvas.DrawText(label2,
                             rPt.X + lw * 4f,
@@ -1608,6 +1614,8 @@ namespace CircuitRF.Render.DataDisplay
             double tickStep = secondary ? axes.Y2Tick : axes.YTick;
             int    group    = EngineeringFormat.GroupFor(
                 EngineeringFormat.AxisMagnitude(window.Top, window.Bottom));
+            if (secondary || axes.YScale != AxisScale.Log)
+                digits = EngineeringFormat.DigitsToResolve(window.Top, window.Bottom, tickStep, group, digits);
 
             float max = 0f;
             foreach (var (primary, secondaryValue) in ticks.MajorY)

@@ -35,8 +35,13 @@ public static class EmergeRun
             RedirectStandardError  = true,
             UseShellExecute        = false,
             CreateNoWindow         = true,
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding  = System.Text.Encoding.UTF8,
         };
-        foreach (string a in new[] { "-I", EmergeScriptWriter.DriverFile, EmergeScriptWriter.ProblemFile, SolveMode }) psi.ArgumentList.Add(a);
+        // -X utf8: on Windows Python writes its streams in the ANSI code page, where EMerge's own log lines (a mesh count
+        // carries ◮ and ▲) cannot be encoded and each costs a logging-error traceback in emerge.log. -I ignores PYTHONUTF8,
+        // so the mode is an argument.
+        foreach (string a in new[] { "-I", "-X", "utf8", EmergeScriptWriter.DriverFile, EmergeScriptWriter.ProblemFile, SolveMode }) psi.ArgumentList.Add(a);
         if (gpuFromUnknowns is { } from) psi.ArgumentList.Add(GpuFromArgument + from.ToString(System.Globalization.CultureInfo.InvariantCulture));
         foreach (string key in psi.Environment.Keys.ToList())
             if (key.StartsWith("PYTHON", StringComparison.OrdinalIgnoreCase) || key.Equals("VIRTUAL_ENV", StringComparison.OrdinalIgnoreCase))

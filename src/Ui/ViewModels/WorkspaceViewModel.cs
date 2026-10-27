@@ -8947,7 +8947,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // resolves to the CROSS-SECTION kernel counted as adaptive here, which drove the sweep row
         // indeterminate for a run that solves every point against a perfectly good denominator.
         var kernel     = vm.SelectedKernel;
-        bool adaptive  = kernel == Engine.Mom.EmAnalysisKind.Planar && setup.AdaptiveSampling;
+        // Designer round 28 — and never a 3D run's: AdaptiveSampling is the planar sweep's checkbox, and a Palace run carrying
+        // it read "0 point(s) solved" for 49 minutes and then "every point solved (adaptive sampling did not apply)" beside
+        // the solver's own "adaptive sweep built from 4 full solves". A 3D solver states its own sweep in its own notes.
+        bool adaptive  = !setup.Is3D && kernel == Engine.Mom.EmAnalysisKind.Planar && setup.AdaptiveSampling;
 
         // Owner request, 2026-08-11: say what is starting BEFORE anything long begins. A full-wave
         // point costs tens of seconds, so the first thing a user sees after pressing Simulate must

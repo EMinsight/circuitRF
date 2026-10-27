@@ -106,7 +106,7 @@ public static class WslMemory
                        (backup is null ? "." : $"; the previous file is kept as {Path.GetFileName(backup)}.");
         if (!restart)
             return new(WslMemoryStatus.Saved, saved + " It applies the next time the Linux subsystem starts: after " +
-                                              "'wsl --shutdown', or a restart of Windows.", backup, null);
+                                              "'wsl --shutdown' from Windows PowerShell, or a restart of Windows.", backup, null);
 
         var shutdown = wsl.Run(["--shutdown"], ShutdownTimeout);
         if (!shutdown.Ok)

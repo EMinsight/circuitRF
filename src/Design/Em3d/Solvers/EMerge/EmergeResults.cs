@@ -77,6 +77,28 @@ public static class EmergeResults
     /// <summary>The diagnostics group an EMerge <c>.npy</c> carries beside S.</summary>
     public const string Group = "emerge";
 
+    /// <summary>
+    /// The frequencies at which EMerge's S is exactly −I: every port a short and nothing passing between ports. A zero field
+    /// solution reads that way, and it is what a solve that failed without raising leaves behind — a Windows run whose sparse
+    /// solver ran out of memory wrote S = −I at all ten frequencies and was reported solved (designer round 28). No structure
+    /// with ports reads −I to 1e-12 at every entry, so the run is refused rather than written.
+    /// </summary>
+    public static int[] NoFieldFrequencies(EmergeSweep sweep, double tolerance = 1e-12)
+    {
+        var none = new List<int>();
+        for (int k = 0; k < sweep.S.Length; k++)
+        {
+            var m = sweep.S[k];
+            int n = m.GetLength(0);
+            bool minusI = true;
+            for (int i = 0; i < n && minusI; i++)
+                for (int j = 0; j < n && minusI; j++)
+                    minusI = (m[i, j] - (i == j ? -1.0 : 0.0)).Magnitude <= tolerance;
+            if (minusI) none.Add(k);
+        }
+        return [.. none];
+    }
+
     public const string FrequencyFile = "freq.npy", SFile = "S.npy", Z0File = "Z0.npy", GammaFile = "gamma.npy", ModesFile = "modes.npy",
                         QFile = "Q.npy";
     public const string RunFile = "run.json";

@@ -84,6 +84,20 @@ namespace CircuitRF.Render.DataDisplay
         /// One tick label, written in <paramref name="group"/>. A group of 0 is the plain
         /// <c>G{digits}</c> this replaced, so the caller never needs to branch.
         /// </summary>
+        /// <summary>
+        /// The significant digits a linear axis's labels need so that neighbouring ticks never read the same: at least
+        /// <paramref name="digits"/>, and as many as it takes for the step to show. A flat trace at −250 dB is framed
+        /// −250.3…−249.7 with a 0.1 step, and three digits labelled every tick "-250" (designer round 28).
+        /// </summary>
+        public static int DigitsToResolve(double lo, double hi, double step, int group, int digits)
+        {
+            double scale = Math.Pow(10.0, group);
+            double m = Math.Max(Math.Abs(lo), Math.Abs(hi)) / scale, st = Math.Abs(step) / scale;
+            if (!(m > 0) || !(st > 0) || !double.IsFinite(m) || !double.IsFinite(st)) return digits;
+            int needed = (int)Math.Floor(Math.Log10(m)) - (int)Math.Floor(Math.Log10(st) + 1e-9) + 1;
+            return Math.Max(digits, Math.Min(needed, 15));
+        }
+
         public static string Tick(double value, int group, int digits)
         {
             if (group == 0) return value.ToString($"G{digits}");

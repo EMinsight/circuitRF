@@ -449,6 +449,8 @@ With **Read: Manual** the right column is six steps, each enabled once the one b
    picture is never read: the scale you type is the scale.
 3. **Curves.** **Add curve** for each curve to take. Each row has a name (the CSV's trace column), a colour, **Axis**
    (with two scales) and **Is**: **Data** &mdash; plain x and y &mdash; or an entry and quantity such as S21 dB.
+   The row's copy button adds a curve on the same points, for two curves that run together (S12 on S21): move its
+   points where the two part.
 4. **Points.** With a curve selected, **double-click** on the picture to add a point, **drag** a point to move it, and
    **right-click** it, or click it and press **Delete**, to remove it. **Escape** stops placing;
    **Place points** starts again. While you place or drag

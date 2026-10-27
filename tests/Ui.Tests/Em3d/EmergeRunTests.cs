@@ -107,6 +107,20 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(File.ReadAllText(golden), written);
     }
 
+    /// <summary>Designer round 28 — a run whose sparse solver failed without raising wrote S = −I at every frequency and was
+    /// reported solved. A zero field reads exactly that; a real sweep has no such frequency.</summary>
+    [Fact]
+    public void ASweepWithNoField_IsFound_AndARealSweepIsNot()
+    {
+        var real = EmergeResults.ReadDriven(Fixture, 2, out string? error);
+        Assert.True(real is not null, error);
+        Assert.Empty(EmergeResults.NoFieldFrequencies(real));
+
+        Complex[,] MinusI(int n) { var m = new Complex[n, n]; for (int i = 0; i < n; i++) m[i, i] = -1; return m; }
+        var empty = real with { S = [MinusI(2), real.S[1], MinusI(2)] };
+        Assert.Equal([0, 2], EmergeResults.NoFieldFrequencies(empty));
+    }
+
     // ── 3. The eigenmode filter ────────────────────────────────────────────────────────────────
 
     [Fact]

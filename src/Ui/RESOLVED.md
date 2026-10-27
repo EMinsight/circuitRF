@@ -40699,3 +40699,23 @@ the same gap. `LayoutEditorViewModel.IsCanvasPickArmed` is the one question now,
 and `IsCanvasPickProperty` names the notifications that change it, so the canvas re-asks the moment a pick arms
 or disarms and the arrow comes back once the box is released or Escape is pressed. A pick added to
 `OnPointerPressed` needs a term in both.
+
+## Designer round 28 — a 3D run's progress row, the Messages timestamp, and small dialog fixes (2026-10-26)
+
+- **A 3D run's sweep row read "0 point(s) solved" for 49 minutes**, then "every point solved (adaptive sampling did
+  not apply)", directly beside Palace's own "adaptive sweep built from 4 full solves". `adaptive` in `RunEmAsync` is
+  the PLANAR sweep's checkbox and was never excluded for a 3D setup. It is now (`!setup.Is3D && …`), which also drops
+  the planar-only "Adaptive frequency sampling was on…" line from a cancelled Palace run.
+- **A live progress row kept the time it was posted.** "17:14:40 … solve finished" sat above lines stamped 18:04.
+  `MessageEntry.Timestamp` is settable through `Touch`, and `LiveProgressMessage` moves it on every rewrite and when
+  the row settles. `TimeText` is re-raised only when the shown second changes. Ordering is by insertion, not by
+  time, so rows do not move.
+- **Model Composer, passive import:** the dialog's default pattern was the transistor one, and a passive document's
+  file had to match it. A passive document starts with an empty pattern and hides Quiescent
+  (`PassiveImportDialogTests`). The picker's Data filter now lists `.s1p`–`.s12p` and `.snp`. Save-before-import
+  and the many-port Topology step are `brief-dfr28-2-model-composer-passive-start.md`.
+- **The picture dialog fits the screen.** It opens 1320×880 with MinHeight 640, and on a laptop its Create button
+  was under the Windows taskbar. It is now fitted with `WorkspaceWindowPlacement.Fit`, and the minimum gives way to
+  the working area.
+- **Digitise by hand: Copy curve.** A row button adds a curve on the same points, next colour, selected. One undo
+  step (`ManualDigitiseDialogTests.CopyingACurve_…`).

@@ -192,4 +192,14 @@ public class EngineeringFormatTests
         Assert.Equal(3, (int)PrecisionFormat.S);
         Assert.Equal("Engineering", PrecisionFormat.S.Description());
     }
+    // ── designer round 28: a flat trace at −250 dB labelled all seven ticks "-250" ─────────────
+
+    [Fact]
+    public void TickLabels_CarryTheDigitsTheirStepNeeds_AndNoMoreWhereThreeAlreadyDo()
+    {
+        int d = EngineeringFormat.DigitsToResolve(-250.3, -249.7, 0.1, 0, 3);
+        Assert.Equal(["-250.3", "-250.2", "-250.1"], new[] { -250.3, -250.2, -250.1 }.Select(v => EngineeringFormat.Tick(v, 0, d)));
+        Assert.Equal(3, EngineeringFormat.DigitsToResolve(-24, 0, 4, 0, 3));
+        Assert.Equal(3, EngineeringFormat.DigitsToResolve(0, 3600, 400, 0, 3));
+    }
 }

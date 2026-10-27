@@ -178,6 +178,13 @@ public static partial class Em3dRunService
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         var sweep = EmergeResults.ReadDriven(dir, ports.Count, out string? readError);
         if (sweep is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(readError!));
+        if (EmergeResults.NoFieldFrequencies(sweep) is { Length: > 0 } empty)
+            return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(
+                $"EMerge returned no field at {(empty.Length == sweep.S.Length ? "any" : $"{empty.Length} of {sweep.S.Length}")} " +
+                "of its frequencies: every port reads a short and nothing passes between ports (S = −1 on the diagonal, 0 elsewhere), " +
+                "which is what a solve that failed without saying so leaves behind — most often its sparse solver running out of " +
+                $"memory. No .sNp was written. EMerge's log is {Path.Combine(dir, EmergeResults.LogFile)}; a smaller mesh " +
+                "(EMerge.ElementOrder: 1, or a smaller crop) is the usual remedy."));
         var requested = FrequenciesHz(problem.Frequency);
         if (sweep.FrequenciesHz.Length != requested.Length ||
             sweep.FrequenciesHz.Where((f, k) => Math.Abs(f - requested[k]) > 1e-9 * Math.Abs(requested[k])).Any())

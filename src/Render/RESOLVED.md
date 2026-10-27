@@ -5532,3 +5532,15 @@ Gates: `MetalPrecedenceTests.TheRealisticView_ShowsNoHiddenCopperTop_AlongTheBoa
 yaws, where it allowed 10; 21 came through at −40° with the carve off) and `…_DrawsTheCoppersSide_AllAlongItsBandOnTheWall`;
 `BoardSideWallTests` (the strips and copper sides tile the wall with no copper vertex mid-edge; a tangent cylinder leaves the
 wall biased; a carved slab's two batches, their ties, picks on each, the edge-line count, and the patch).
+
+## Designer round 28 — tick labels that all read "-250", and a field plot blaming the wrong setting (2026-10-26)
+
+- **A flat trace at the dB floor labelled every y tick "-250".** `EnsureMinExtent` opens a zero-height extent to 0.5
+  around −250, so the ticks fall 0.1 apart, and the axis's three significant digits print each one as "-250".
+  `EngineeringFormat.DigitsToResolve` raises a LINEAR axis's digits to what its step needs: ⌊log₁₀ max|v|⌋ −
+  ⌊log₁₀ step⌋ + 1, capped at 15, never fewer than the axis's own. The draw loop and `MaxYTickLabelWidth` use the
+  same count. Every axis three digits already resolved is unchanged; the 1,127 plot tests run unchanged.
+- **A field plot of a setup whose last run FAILED said "saved no fields — set Save fields at".** A failed run leaves
+  its directory (Gmsh's files), and `Discover` counted any directory as a run. A directory whose `status.json`
+  reads failed or cancelled no longer counts, and the sentence is "No finished run of setup … yet". The tree row's
+  detail text carries the warning's tooltip too, not only the 12-px glyph, which the designer had not noticed.

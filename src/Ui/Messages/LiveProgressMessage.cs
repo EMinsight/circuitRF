@@ -21,6 +21,7 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
     public void Update(string text, string? counter = null, double? percentComplete = null, bool indeterminate = false)
         => marshal(() =>
         {
+            Entry.Touch(DateTime.Now);
             Entry.Text = text;
             Entry.ProgressText = counter;
             Entry.ProgressIndeterminate = indeterminate;
@@ -31,6 +32,7 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
     public void Finish(MessageLevel level, string outcome, bool keepBar = true)
         => marshal(() =>
         {
+            Entry.Touch(DateTime.Now);
             Entry.Level = level;
             Entry.IsLiveProgress = false;
 
@@ -69,6 +71,7 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
     public void Complete(MessageLevel level, string text)
         => marshal(() =>
         {
+            Entry.Touch(DateTime.Now);
             Entry.Level = level;
             Entry.IsLiveProgress = false;
             Entry.Text  = text;
@@ -85,6 +88,7 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
     public void CompleteWithAction(MessageLevel level, string text, string actionLabel, System.Func<System.Threading.Tasks.Task> action)
         => marshal(() =>
         {
+            Entry.Touch(DateTime.Now);
             Entry.Level = level;
             Entry.IsLiveProgress = false;
             Entry.Text  = text;

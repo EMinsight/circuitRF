@@ -208,7 +208,7 @@ public static class FieldPlotResolver
         var mine = saved.Where(i => p.Solver is null || string.Equals(i.Run.Solver, p.Solver, StringComparison.OrdinalIgnoreCase)).ToList();
         if (mine.Count == 0)
             return ran ? $"The run of setup {p.SetupName} saved no fields — set Save fields at in its setup and Simulate again."
-                       : $"No run of setup {p.SetupName} yet — Simulate to draw this plot.";
+                       : $"No finished run of setup {p.SetupName} yet — Simulate to draw this plot.";
         if (PickSolution(p.Solution, p.Solver, mine, problem, p.Quantity) is not null) return null;
         // brief-sar-6 — a SAR or B1 plot of a run that computed none
         if (FieldNames.IsMagnitude(p.Quantity) && !mine.Any(i => i.Solution.Offers?.Contains(p.Quantity) == true))
@@ -294,7 +294,11 @@ public static class FieldPlotResolver
                 items.Add(new FieldSolutionItem(x, (x.Kind == FieldProblemKind.Thermal
                     ? table is { } tt && x.Index < tt.Points ? tt.PointLabel(x.Index) : $"Point {x.Index + 1}"
                     : SolutionLabel(x, modes, problem, r.Solver)) + (runs.Length > 1 ? $" ({r.Solver})" : ""), r));
-        bool ran = dir is not null && Directory.Exists(dir) || openEmsDir is not null && Directory.Exists(openEmsDir);
+        // A run that failed or was cancelled leaves its directory behind (a Gmsh refusal keeps the mesher's files): that is no
+        // run to have saved fields in, and "set Save fields at" sent the reader to a setting that was never the cause.
+        bool Finished(string? d) => d is not null && Directory.Exists(d)
+                                    && C3dRunStatus.Read(d) is not { State: C3dRunState.Failed or C3dRunState.Cancelled };
+        bool ran = Finished(dir) || Finished(openEmsDir);
         return new FieldDiscovery(runs, items, table, groups, why, ran, dir, openEmsDir);
     }
 

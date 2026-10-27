@@ -42,6 +42,31 @@ public sealed class ManualDigitiseDialogTests(PlotPictureSet pictures) : IClassF
         m.YHighText = "0 dB";
     }
 
+    /// <summary>Designer round 28 — S12 on S21's points: Copy makes a second curve beside the first, selected, its own colour,
+    /// and Undo takes it away again.</summary>
+    [Fact]
+    public async Task CopyingACurve_MakesASecondCurveOnItsPoints_AndUndoRemovesIt()
+    {
+        var (_, m) = await Blank();
+        m.DrawBox(100, 50, 500, 350);
+        Scales(m);
+        m.AddCurveCommand.Execute(null);
+        var first = m.Curves.Single();
+        m.AddPoint(100, 200);
+        m.AddPoint(500, 125);
+
+        first.CopyCommand.Execute(null);
+        Assert.Equal(2, m.Curves.Count);
+        var copy = m.Curves[1];
+        Assert.Same(copy, m.SelectedCurve);
+        Assert.Equal(first.Fixpoints, copy.Fixpoints);
+        Assert.Equal($"{first.Name} copy", copy.Name);
+        Assert.NotEqual(first.Rgb, copy.Rgb);
+
+        m.Undo();
+        Assert.Same(first, m.Curves.Single());
+    }
+
     [Fact]
     public async Task EachStep_IsEnabled_WhenTheOneBeforeItIsDone()
     {

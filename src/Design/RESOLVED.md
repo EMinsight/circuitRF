@@ -23400,3 +23400,33 @@ seen / not seen / duplicate refused, the face walk, impedance tool = model) and 
   elaborates it. Moving the run's base without the technology statement's would have read a loose
   schematic's technology path against the wrong folder.
 
+
+## Designer round 28 — an EMerge run that wrote S = −I and called it solved (2026-10-26)
+
+- **The run reported every point solved and wrote an `.s6p` whose S is exactly −I** at all ten frequencies: −1 on the
+  diagonal and 0 elsewhere, so every transmission plotted at the dB floor. That is a zero field solution, every port
+  a short. It came from a Windows laptop with 7.9 GB, after the memory question was answered Simulate Anyway. The
+  run before it stopped properly (its sparse solver: `Terminated with error code -2 … Not enough memory`, driver exit 2). This
+  one exited 0 with peak 4.5 GB and an adaptive sweep reporting `estimated error 0`: six identical samples fit
+  perfectly.
+- **EMerge's direct sparse solver wrapper can fail silently.** Its `solve` checks the error code of the LAST
+  right-hand side only, and never the numeric factorisation's. A failure that leaves `x` at its `np.zeros_like(b)` start reads
+  as a solution. That is upstream; circuitRF cannot see inside it.
+- **So the run checks its own result.** `EmergeResults.NoFieldFrequencies` finds every frequency whose S is −I to
+  1e-12, and `FinishEmergeDriven` refuses the run (EngineError, no `.sNp` written) if there is even one. A real
+  structure with ports never reads −I that exactly, and a partial set is a failure too, since the geometry does not
+  change with frequency. Gate: `EmergeRunTests.ASweepWithNoField_IsFound_AndARealSweepIsNot`.
+- **Python's streams are UTF-8 now** (`-X utf8`, and UTF-8 on both redirected streams). On Windows, EMerge's
+  mesh-count line (it carries ◮ ▲) could not be encoded in the ANSI code page, and each one cost a logging
+  traceback in `emerge.log`. `-I` ignores `PYTHONUTF8`, so the mode has to be an argument.
+- **The WSL memory sentences say where `wsl --shutdown` runs.** The designer typed it inside the Linux shell, where
+  `wsl` is an unrelated program, and got its usage text.
+
+## Designer round 28 — the Capacitance setup's Gmsh PLC error is a via the crop cut in half (2026-10-26)
+
+`TP149_em_asbuilt`'s 3D view, electrostatic setup: `PLC Error: A segment and a facet intersect` at
+(125622, 119297, 360.951) µm, on Windows and on macOS alike. A GND through via at (125.7, 119.2) mm has its centre
+exactly on the cropped board's edge, so half its barrel and fill stand in the air-box padding. The failure point
+lies on the fill cylinder. With that one via deleted, the setup meshes and solves in 1 min 34 s (C(TP) 4.644 pF).
+The Oct-24 script had no `via/9`. This is the open half of R-dfr26-8-4, written up as
+`docs/sonnet-briefs/brief-dfr28-1-via-on-the-board-edge.md`.

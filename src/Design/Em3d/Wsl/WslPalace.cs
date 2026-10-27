@@ -102,13 +102,14 @@ public static class WslPalace
         string file = WslConfigPath(userProfile);
         if (SuggestedMemoryGb(hostBytes) is not { } gb)
             return new($"To give the Linux subsystem more memory: set 'memory=' under '[wsl2]' in .wslconfig, then run " +
-                       "'wsl --shutdown'.", file);
+                       "'wsl --shutdown' from Windows PowerShell, not from inside Linux.", file);
         long suggested = gb * GiB;
         if (suggested <= subsystemBytes)
             return new($"The Linux subsystem already has most of this computer's {MachineMemory.Format(hostBytes)}.", null);
         if (estimate <= suggested)
             return new($"The Linux subsystem gets only part of this computer's {MachineMemory.Format(hostBytes)}; to give " +
-                       $"it more, set 'memory={gb}GB' under '[wsl2]' in .wslconfig, then run 'wsl --shutdown'.", file);
+                       $"it more, set 'memory={gb}GB' under '[wsl2]' in .wslconfig, then run 'wsl --shutdown' from Windows " +
+                       "PowerShell, not from inside Linux.", file);
         return new($"Giving the Linux subsystem more memory would not be enough: this computer has " +
                    $"{MachineMemory.Format(hostBytes)} in all.", null);
     }

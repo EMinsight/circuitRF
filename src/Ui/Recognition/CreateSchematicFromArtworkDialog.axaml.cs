@@ -54,7 +54,30 @@ public partial class CreateSchematicFromArtworkDialog : Window
                 AddHandler(KeyDownEvent, OnFitKey, RoutingStrategies.Tunnel);
                 break;
         }
+        FitToScreen();
         Closed += (_, _) => vm.Close();
+    }
+
+    /// <summary>
+    /// Designer round 28 — the picture dialog opens 880 tall, and on a laptop's working area its Create button sat under
+    /// the Windows taskbar. Shrunk to the screen as the workspace window is (<see cref="Views.WorkspaceWindowPlacement.Fit"/>);
+    /// the minimum gives way too, since a minimum taller than the screen is the same cut-off button.
+    /// </summary>
+    private void FitToScreen()
+    {
+        try
+        {
+            if ((Screens?.ScreenFromWindow(this) ?? Screens?.Primary) is not { } screen) return;
+            double scaling = screen.Scaling > 0 ? screen.Scaling : 1.0, margin = Views.WorkspaceWindowPlacement.EdgeMargin;
+            MinWidth  = Math.Min(MinWidth,  screen.WorkingArea.Width  / scaling - margin);
+            MinHeight = Math.Min(MinHeight, screen.WorkingArea.Height / scaling - margin);
+            (Width, Height) = Views.WorkspaceWindowPlacement.Fit(Width, Height, screen.WorkingArea.Width, screen.WorkingArea.Height,
+                                                                screen.Scaling, MinWidth, MinHeight);
+        }
+        catch
+        {
+            // No usable display information (a headless host): the declared size stands.
+        }
     }
 
     private async Task<string?> PickOpen(string title, FilePickerFileType? type)

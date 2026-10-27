@@ -29,7 +29,12 @@ public partial class ModelImportDialog : Window
                 AllowMultiple = true,
                 FileTypeFilter =
                 [
-                    new FilePickerFileType("Data") { Patterns = ["*.s2p", "*.s1p", "*.s3p", "*.s4p", "*.csv", "*.tsv", "*.txt", "*.npy", "*.mat", "*.spl", "*.lpcwave"] },
+                    // Every port count a passive block can have (designer round 28: a board's .s6p was hidden behind All Files).
+                    new FilePickerFileType("Data")
+                    {
+                        Patterns = [.. Enumerable.Range(1, 12).Select(n => $"*.s{n}p"), "*.snp",
+                                    "*.csv", "*.tsv", "*.txt", "*.npy", "*.mat", "*.spl", "*.lpcwave"],
+                    },
                     new FilePickerFileType("All Files") { Patterns = ["*.*"] },
                 ],
             });

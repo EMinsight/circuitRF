@@ -67,7 +67,8 @@
                 </Grid>
                 <Grid ColumnDefinitions="90,*" IsVisible="{Binding IsTouchstone}">
                     <TextBlock Classes="lbl" Text="Pattern"/>
-                    <TextBox Grid.Column="1" Text="{Binding Pattern}" ToolTip.Tip="Fields {vgs} {vds} {T} {id} {ig} {geometry}; a unit as {id:mA}"/>
+                    <TextBox Grid.Column="1" Text="{Binding Pattern}" ToolTip.Tip="{Binding PatternTip}"
+                             PlaceholderText="none"/>
                 </Grid>
                 <Grid ColumnDefinitions="90,*" IsVisible="{Binding IsTouchstone}">
                     <TextBlock Classes="lbl" Text="Read from"/>
@@ -90,7 +91,7 @@
                             <TextBlock Classes="lbl" Text="Plane"/>
                             <ComboBox Grid.Column="1" ItemsSource="{Binding Planes}" SelectedItem="{Binding Plane}" HorizontalAlignment="Stretch"/>
                         </Grid>
-                        <Grid ColumnDefinitions="90,*,6,*">
+                        <Grid ColumnDefinitions="90,*,6,*" IsVisible="{Binding !IsPassive}">
                             <TextBlock Classes="lbl" Text="Quiescent"/>
                             <TextBox Grid.Column="1" Text="{Binding QuiescentVgs}" PlaceholderText="Vgs"/>
                             <TextBox Grid.Column="3" Text="{Binding QuiescentVds}" PlaceholderText="Vds"/>

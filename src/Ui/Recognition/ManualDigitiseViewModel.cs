@@ -70,13 +70,16 @@ public sealed partial class ManualCurveViewModel : ObservableObject
 {
     private readonly Action<ManualCurveViewModel> _changed;
     private readonly Action<ManualCurveViewModel> _remove;
+    private readonly Action<ManualCurveViewModel>? _copy;
 
-    public ManualCurveViewModel(string name, int rgb, Action<ManualCurveViewModel> changed, Action<ManualCurveViewModel> remove)
+    public ManualCurveViewModel(string name, int rgb, Action<ManualCurveViewModel> changed, Action<ManualCurveViewModel> remove,
+                                Action<ManualCurveViewModel>? copy = null)
     {
         _name = name;
         _rgb = rgb;
         _changed = changed;
         _remove = remove;
+        _copy = copy;
     }
 
     [ObservableProperty] private string _name;
@@ -128,6 +131,9 @@ public sealed partial class ManualCurveViewModel : ObservableObject
     public void Touch() => OnPropertyChanged(nameof(PointCount));
 
     [RelayCommand] private void Remove() => _remove(this);
+
+    /// <summary>Designer round 28 — a second curve with these points: S12 drawn on S21, S22 on S11, then moved where they part.</summary>
+    [RelayCommand] private void Copy() => _copy?.Invoke(this);
 }
 
 /// <summary>One picture's plot read by hand: the box, its scales, its curves and how they are sampled.</summary>
@@ -331,11 +337,34 @@ public sealed partial class ManualPlotViewModel : ObservableObject
         // The first colour of the palette no curve here is drawn in already — a curve found takes the picture's own.
         int rgb = Palette.FirstOrDefault(p => Curves.All(c => PlotInk.Distance(c.Rgb, p) >= 72), Palette[Curves.Count % Palette.Length]);
         Remember();
-        var curve = new ManualCurveViewModel(name, rgb, _ => Edited(), RemoveCurve);
+        var curve = new ManualCurveViewModel(name, rgb, _ => Edited(), RemoveCurve, CopyCurve);
         Curves.Add(curve);
         SelectedCurve = curve;
         OnPropertyChanged(nameof(CurveCount));
         Refresh();
+    }
+
+    /// <summary>A copy of <paramref name="source"/> below it — its points, scale and quantity, the next free colour, the Is left
+    /// as Data so the copy is named for what it is — selected, so its points are the ones a drag moves. One undo step.</summary>
+    private void CopyCurve(ManualCurveViewModel source)
+    {
+        int i = Curves.IndexOf(source);
+        if (i < 0) return;
+        string name = $"{source.Name.Trim()} copy";
+        for (int n = 2; Curves.Any(c => c.Name == name); n++) name = $"{source.Name.Trim()} copy {n.ToString(CultureInfo.InvariantCulture)}";
+        int rgb = Palette.FirstOrDefault(p => Curves.All(c => PlotInk.Distance(c.Rgb, p) >= 72), Palette[Curves.Count % Palette.Length]);
+        Remember();
+        var copy = new ManualCurveViewModel(name, rgb, _ => Edited(), RemoveCurve, CopyCurve)
+        {
+            QuantityIndex = source.QuantityIndex,
+            AxisIndex = source.AxisIndex,
+        };
+        copy.Fixpoints.AddRange(source.Fixpoints);
+        Curves.Insert(i + 1, copy);
+        SelectedCurve = copy;
+        SelectedPoint = null;
+        OnPropertyChanged(nameof(CurveCount));
+        Edited();
     }
 
     private void RemoveCurve(ManualCurveViewModel curve)

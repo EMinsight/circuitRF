@@ -29,7 +29,16 @@ public sealed partial class ModelImportViewModel : ObservableObject
             ? [DataSetKind.PassiveSParams]
             : [.. Enum.GetValues<DataSetKind>().Where(k => k != DataSetKind.PassiveSParams)];
         _kind = Kinds[0];
+        // A passive block has no bias (MC-12): its pattern is optional and only ever names a family's {geometry}, so the
+        // field starts empty — a transistor's Vgs/Vds default refused every passive file whose name did not carry a bias.
+        if (IsPassive) _pattern = "";
     }
+
+    /// <summary>The document models a passive block: no bias pattern by default and no quiescent point.</summary>
+    public bool IsPassive => _doc.Kind == CmcKind.Passive;
+    public string PatternTip => IsPassive
+        ? "Optional: a family's {geometry} from each file name, e.g. L{geometry}nH. Leave empty for a single block."
+        : "Fields {vgs} {vds} {T} {id} {ig}; a unit as {id:mA}";
 
     public IReadOnlyList<DataSetKind> Kinds { get; }
     public IReadOnlyList<string> Planes { get; } = ["instrument", "probe", "device", "intrinsic"];
@@ -138,7 +147,7 @@ public sealed partial class ModelImportViewModel : ObservableObject
         why = null;
         if (Sources.Count == 0) { why = "Choose a file or a folder."; return null; }
         var import = new JsonObject { ["Format"] = Format };
-        if (IsTouchstone)
+        if (IsTouchstone && !(IsPassive && Pattern.Trim().Length == 0))
         {
             import["Pattern"] = Pattern;
             import["PatternSource"] = PatternSource;
