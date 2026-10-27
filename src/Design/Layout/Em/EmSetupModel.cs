@@ -72,11 +72,14 @@ public sealed record EmTerminal3D(string Name, string Net, string? Source = null
 /// <param name="HeightFactor">A wave port's height in multiples of the line's height above its return;
 /// null takes the rule's.</param>
 /// <param name="OffsetUm">A wave port's de-embedding distance, µm; null is 0.</param>
+/// <param name="Return">brief-dfr28-4 R-dfr28-4-5 — a lumped port's return, a conductor layer's stackup name.
+/// Null or empty is Automatic: the generator walks the artwork from the port to the plane it returns through.</param>
 public sealed record EmPort3D(int Port, Em3dPortKind Kind = Em3dPortKind.Lumped, double? WidthFactor = null,
-                              double? HeightFactor = null, double? OffsetUm = null)
+                              double? HeightFactor = null, double? OffsetUm = null, string? Return = null)
 {
     /// <summary>States nothing a lumped port with no overrides would not: written as nothing.</summary>
-    public bool IsDefault => Kind == Em3dPortKind.Lumped && WidthFactor is null && HeightFactor is null && OffsetUm is null;
+    public bool IsDefault => Kind == Em3dPortKind.Lumped && WidthFactor is null && HeightFactor is null && OffsetUm is null
+                             && string.IsNullOrEmpty(Return);
 }
 
 /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode solve's settings; a null field takes its default.</summary>
@@ -575,6 +578,11 @@ public sealed class EmSetup
     /// <summary>The kind the setup states for port <paramref name="number"/>.</summary>
     public Em3dPortKind PortKind3D(int number)
         => Ports3D.LastOrDefault(p => p.Port == number)?.Kind ?? Em3dPortKind.Lumped;
+
+    /// <summary>brief-dfr28-4 R-dfr28-4-5 — the return layer the setup states for port <paramref name="number"/>,
+    /// or null for Automatic.</summary>
+    public string? PortReturn3D(int number)
+        => Ports3D.LastOrDefault(p => p.Port == number)?.Return is { Length: > 0 } r ? r : null;
 
     /// <summary>True when any port is stated as a wave port.</summary>
     public bool HasWavePorts3D => Ports3D.Any(p => p.Kind == Em3dPortKind.Wave);

@@ -1,6 +1,8 @@
 refusal (none)
 note Port 1 ('1') at (0, 0 mm) was taken to be on the conductor's low-x (left) end (the port's own direction), driving current in the +x direction, at 50 Ω.
 note Port 2 ('2') at (5, 0 mm) was taken to be on the conductor's high-x (right) end (the port's own direction), driving current in the −x direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 800 µm (0.8 mm) wide and 500 µm (0.5 mm) tall from 'Strip' down to 'Ground' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 2 at its line's end is a vertical lumped sheet 800 µm (0.8 mm) wide and 500 µm (0.5 mm) tall from 'Strip' down to 'Ground' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note 1 conductor piece(s) are thinner than 3 skin depths at 4 GHz and than 0.1 of their own width, so they are sheets carrying their conductivity and thickness rather than meshed volumes. Both thresholds are provisional.
 note 'Strip' names no material, so its σ is a number of unknown temperature and is used as given at 20 °C. Name a material with an α₂₀ to have it evaluated at the operating temperature.
 note The air box's floor is 'Ground' as a PEC plane at 35 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.

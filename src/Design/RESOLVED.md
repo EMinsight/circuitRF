@@ -23568,3 +23568,51 @@ The driven TP149 setup on EMerge at Standard, compared with Palace. The open wor
 - **The 300 µm run that made the flat tet now solves.** With Robust meshing on, YMax padded 300 µm, EMerge Standard
   on the CPU: 42 of 3,277 points removed (0.44 µm at most), 67,912 tets, converged in 8 samples, 3 min 28 s. It is
   within 0.028 of the 109 µm-padded run.
+
+## brief-dfr28-4 — a 3D port's return is walked from the artwork; the Return plane box goes for every 3D setup (2026-10-27)
+
+- **One walk for both port kinds (`Em3dGenerator.ReturnWalk`).** A line-end port used to take its return LAYER from
+  `PlanarExtractor.InferredReturnPlane` (nearest flagged layer below, else above, from the stackup alone) and only then
+  look for metal there. It now walks down and up from the line's end, as the pad-to-plane port walked from its pad: each
+  side's first ground-reference layer with metal under the end, the nearer side winning (below on a tie, as before; the
+  pad walk keeps its own tie, above). The two kinds differ only in how one layer's metal is read across the sheet —
+  `Across` over the pad's chord, `PieceContaining`/`ReturnGap` at the line's end — which is the callback the walk takes.
+  `InferredReturnPlane` is unchanged; the planar kernel still reads it.
+- **Other metal across the sheet is now a refusal for a line-end port too.** Before, a line-end sheet ran down to its
+  inferred plane straight through whatever metal lay between. A lumped sheet crossing a conductor is not a valid port:
+  the conductor shorts part of the sheet and the solver's V = ∫E·dl across it no longer measures + to −. One existing
+  test built exactly that (`MultilayerPortRound26Tests.AnEdgePortOverInnerPours…`: a Top trace over pours on two
+  unflagged inner layers, returning to the floor through both). Its 3D half now flags Inner 1, the plane it was drawn
+  over; its claim (the port resolves to its own level) is unchanged.
+- **A ground-reference plane that stops short of the end STOPS the walk.** Within a tenth of the line's width the sheet
+  moves in (unchanged). Beyond that, passing through to the next plane, as an opening is passed, would silently
+  turn a 200 µm sheet into a 1.5 mm one for a plane the designer meant to reach the end. So the walk stops and refuses,
+  saying how far short the plane is, as the named-plane refusal did.
+- **The cropped board edge needs the inside probe.** A plane cut on the line's end has its boundary exactly at
+  `edgeAt`, where polygon containment is undefined. Metal under the end is tested just inside it
+  (`PieceContaining`'s ε, and a probe line 1e-6 of the width in for the blocking test). Measured on the round-26
+  TP149 workspace with the HEAD build and with this one through `explain --json`: all 12 ports of both driven setups
+  keep their negative object and their sheet's corners, ports 1 and 6 (the cropped-edge ones) included.
+- **D1 (owner default taken): a technology that flags no ground reference returns through the nearest metal**, with a
+  note saying so. `testdata/em3d/f0/B-via/planar/ws-meshed-plane` was refused before and now builds (Top → Ground Plane
+  below, Bottom → Ground Plane above); it is the one generator dump whose problem changed.
+- **D2 (owner default taken): a `.cem`'s `GroundStackupLayerName` is still honoured in 3D**, with "as this setup names"
+  in each port's note. A port's own `Ports3D` `Return` wins over it. The panel no longer shows or writes the field for a
+  3D setup; persistence still round-trips what a file carries, so re-saving cannot move a result.
+- **Every line-end port gains a note** naming the plane, the side and who decided — the other 28 dump changes are that
+  note and nothing else. `Em3dGenerationResult.PortReturns` carries the same per port; `explain` prints it on each port
+  row (`Return`, `ReturnDecidedBy`: walked / port / setup) and no longer reports the planar "return plane" step for a
+  3D setup, whose run does not use it.
+- **A wave port was being padded off its own face (DFR28-3).** `ClearOfPortSheets` ran while a wave port was still its
+  lumped placeholder, so the xmin face moved 1.1 mm out and the wave port was placed 1.1 mm beyond the line's end on
+  the moved face. The `fixture_wave-microstrip` dump was already failing at HEAD for this. Wave ports are now left out
+  of that pass.
+- **Pre-existing, not changed here:** `TestPadRound26Tests.ALumpedPortOnAnAirBoxFace_IsClaimedBeforeTheFace` fails at
+  HEAD too (checked on a HEAD worktree): DFR28-3 pads the port off the face, so the face no longer claims it.
+- **The 3D port table listed no layout port on TP149, and recreating the `.cem` did not help.** Its rows came from
+  the planar/cross-section extraction, which refuses an eight-level board, so only `Ports3D` entries showed — each with
+  the leftover ✕, as if the layout had lost the port. The rows now also come from the port labels as the 3D generator
+  numbers them (`EmPortExtraction.NumberPorts` over `EmComponentPorts.Collect`), read at each refresh whatever the
+  extraction says: a fresh setup on TP149 lists ports 1-6, all in the layout.
+- **`tools/UiSnapshot --cem` now resolves the setup's layout** (the CLI's `EmSetupResolver` walk), so the panel shows
+  the layout's ports and stackup; before, it rendered every `.cem` as if its layout were missing.

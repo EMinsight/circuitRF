@@ -144,6 +144,10 @@ internal static class ExplainEm3d
         {
             // brief-em3d-23 R-em3d23-2c — a wave port says where its reference plane is.
             Kind = q.Kind == Em3dPortKind.Wave ? "wave" : null,
+            // brief-dfr28-4 R-dfr28-4-5 — the layer it returns through, and whether that was walked or stated.
+            Return = g.PortReturns.TryGetValue(q.Number, out var ret)
+                ? $"{ret.Layer}{(ret.Floor ? " (the air box's floor)" : "")}, {(ret.Above ? "above" : "below")}" : null,
+            ReturnDecidedBy = ret?.DecidedBy,
             ReferencePlane = q.Kind != Em3dPortKind.Wave ? null
                 : $"on the air box's {p.FaceOf(q.Min, q.Max)} face" + (q.ReferencePlane.ShiftM > 0
                     ? $", moved {(q.ReferencePlane.ShiftM * 1e6).ToString("G6", CultureInfo.InvariantCulture)} µm into the structure by the port's Offset (both solvers measure there)"
@@ -676,7 +680,15 @@ internal static class ExplainEm3d
                               $"reference plane at ({L(q.ReferenceOrigin[0])}, {L(q.ReferenceOrigin[1])}, {L(q.ReferenceOrigin[2])}), " +
                               $"normal ({G(q.ReferenceNormal[0])}, {G(q.ReferenceNormal[1])}, {G(q.ReferenceNormal[2])}), " +
                               $"shift {L(q.ReferenceShiftM)}" +
-                              (q.Kind is { } kind ? $"; {kind} port, reference plane {q.ReferencePlane}" : ""));
+                              (q.Kind is { } kind ? $"; {kind} port, reference plane {q.ReferencePlane}" : "") +
+                              (q.Return is { } ret
+                                  ? $"; returns through {ret}, " + q.ReturnDecidedBy switch
+                                  {
+                                      "port"  => "as the port's Return states",
+                                      "setup" => "as this setup's return plane names",
+                                      _       => "walked from the artwork",
+                                  }
+                                  : ""));
         if (r.OpenEmsWavePorts is { Count: > 0 } waveLines)
         {
             Console.WriteLine("  openEMS wave ports");

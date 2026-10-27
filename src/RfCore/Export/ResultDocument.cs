@@ -2760,6 +2760,16 @@ namespace RfCore.Export
         /// lumped port, whose plane is its sheet.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? ReferencePlane { get; init; }
+
+        /// <summary>brief-dfr28-4 R-dfr28-4-5 — the conductor layer a layout port returns through; null (omitted) for
+        /// a port that names its own two conductors (a <c>.c3d</c>'s drawn ports).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Return { get; init; }
+
+        /// <summary>…and who decided it: <c>walked</c> (found from the artwork), <c>port</c> (the port's own Return
+        /// states it) or <c>setup</c> (the setup's legacy return plane names it).</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ReturnDecidedBy { get; init; }
     }
 
     /// <param name="Enlargements">What a backend asks to add outside a face, as sentences — openEMS's

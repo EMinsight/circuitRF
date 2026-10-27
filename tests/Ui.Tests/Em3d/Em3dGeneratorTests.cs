@@ -440,7 +440,8 @@ public sealed class Em3dGeneratorTests
         var tech = ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz");
         var setup = new EmSetup
         {
-            Name = "thru", LayoutRef = "thru/layout/thru.clay", GroundStackupLayerName = "Inner 1 (Ground Plane)",
+            // brief-dfr28-4 — no named plane: the walk finds Inner 1 under the line, and stops at it when it stops short.
+            Name = "thru", LayoutRef = "thru/layout/thru.clay",
             Frequency = new FrequencySpec("1", "10", 4, SweepKind.Linear, "GHz", "GHz"),
             Solver3D = Em3dSolverId.Palace,
         };

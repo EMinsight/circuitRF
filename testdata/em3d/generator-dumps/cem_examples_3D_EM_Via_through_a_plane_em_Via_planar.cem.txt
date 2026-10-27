@@ -2,6 +2,8 @@ refusal (none)
 note 4 overlapping conductor shape(s) were merged into 2 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
 note Port 1 ('1') at (-5000, 0 µm) was taken to be on the conductor's low-x (left) end (the port's own direction) of level 1 ('Top Copper'), driving current in the +x direction, at 50 Ω.
 note Port 2 ('2') at (5000, 0 µm) was taken to be on the conductor's high-x (right) end (the port's own direction) of level 0 ('Bottom Copper'), driving current in the −x direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 400 µm wide and 200 µm tall from 'Top Copper' down to 'Ground Plane': as this setup names.
+note Port 2 at its line's end is a vertical lumped sheet 400 µm wide and 200 µm tall from 'Bottom Copper' up to 'Ground Plane': as this setup names.
 note The air box's floor is below the geometry: 'Ground Plane' is drawn or has metal below it, so it is geometry rather than a floor.
 solid Dielectric 2 Laminate Dielectric 1 box (-0.3797405725,-0.3772405725,3.5000000000000004E-05) (0.3797405725,0.3772405725,0.00023500000000000002)
 solid Dielectric 1 Laminate Dielectric 2 box (-0.3797405725,-0.3772405725,0.00023500000000000002) (0.3797405725,0.3772405725,0.00047000000000000004)

@@ -746,7 +746,9 @@ internal static class Explain
                 "only geometry inside the region reaches the extractors; shapes crossing its edge " +
                 "are cut there and a via is kept or left out by its centre"));
 
-        ExplainReturnPlane(setup, resolution, walks);
+        // brief-dfr28-4 — a 3D setup's ports each find their own return by walking the artwork, and its problem's
+        // port rows below say where and who decided; the planar medium's one plane is not what a 3D run uses.
+        if (!setup.Is3D) ExplainReturnPlane(setup, resolution, walks);
 
         // brief-em3d-5 R-em3d5-3: a 3D setup reports its problem IN ADDITION to the walks above,
         // generated through the one path `render` draws it through.

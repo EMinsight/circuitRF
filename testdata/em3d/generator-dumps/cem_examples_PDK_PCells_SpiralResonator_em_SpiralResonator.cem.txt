@@ -3,6 +3,8 @@ note 12 shape(s) came from 2 placed instance(s), flattened into world coordinate
 note 2 overlapping conductor shape(s) were merged into 1 — copper that overlaps on one level is one conductor, in 3D as in the planar model.
 note Port 1 ('1') at (-110, -125 µm) was taken to be on the conductor's low-y (bottom) end (inferred from the nearest conductor boundary) of level 0 ('Metal1'), driving current in the +y direction, at 50 Ω.
 note Port 2 ('2') at (-255, -46 µm) was taken to be on the conductor's low-x (left) end (inferred from the nearest conductor boundary) of level 0 ('Metal1'), driving current in the +x direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 10 µm wide and 100 µm tall from 'Metal1' down to 'Backside Metal' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 2 at its line's end is a vertical lumped sheet 68 µm wide and 103 µm tall from 'Metal1' down to 'Backside Metal' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note 2 conductor piece(s) are thinner than 3 skin depths at 3 GHz and than 0.1 of their own width, so they are sheets carrying their conductivity and thickness rather than meshed volumes. Both thresholds are provisional.
 note The air box's floor is 'Backside Metal' as a PEC plane at 3 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
 solid GaAs GaAs Dielectric 1 box (-0.015869190520833333,-0.01573919052083333,3E-06) (0.015729190520833332,0.01573919052083333,0.000106)

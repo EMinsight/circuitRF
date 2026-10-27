@@ -52,6 +52,19 @@ public sealed partial class Em3dPortRow : ObservableObject
 
     public bool IsWave => Kind == Em3dPortKind.Wave;
 
+    /// <summary>brief-dfr28-4 R-dfr28-4-5 — the Return column's rows: Automatic, then the technology's conductor layers.
+    /// The view model's one list, shared by every row.</summary>
+    public IReadOnlyList<EmReturnPlaneChoice> ReturnChoices { get; init; } = [];
+
+    /// <summary>The port's return: Automatic (the empty name) walks the artwork; a layer states it. A wave port has none —
+    /// its two conductors come from the air box's face — so its cell is empty.</summary>
+    [ObservableProperty] private EmReturnPlaneChoice? _returnChoice;
+
+    /// <summary>The stated return layer, or null for Automatic.</summary>
+    public string? ReturnName => ReturnChoice?.Name is { Length: > 0 } n ? n : null;
+
+    partial void OnReturnChoiceChanged(EmReturnPlaneChoice? value) => KindChanged?.Invoke();
+
     partial void OnKindChanged(Em3dPortKind value)
     {
         OnPropertyChanged(nameof(IsWave));
@@ -64,11 +77,29 @@ public sealed record Em3dModeRow(string Mode, string FrequencyGHz, string Q, str
 
 public sealed partial class EmSetupEditorViewModel
 {
+    /// <summary>brief-dfr28-4 R-dfr28-4-5 — the label of the Return column's first row: the port walks the artwork.</summary>
+    public const string AutomaticPortReturn = "Automatic";
+
+    public const string Port3DReturnTip =
+        "Which plane the port's sheet returns through. Automatic walks down and up from the port through the layout " +
+        "and takes the nearer plane with metal under it, a ground-reference one first. State a layer for a port whose " +
+        "return is another — a stripline that references the plane above. A wave port has none: its return is the air " +
+        "box's face.";
+
+    /// <summary>The Return column's rows, one list for every row: Automatic, the technology's conductor layers (a
+    /// ground reference marked), and any layer a port states that the technology does not have.</summary>
+    public ObservableCollection<EmReturnPlaneChoice> Port3DReturnChoices { get; } = [new("", AutomaticPortReturn)];
+
     /// <summary>The kinds a 3D port can be.</summary>
     public static IReadOnlyList<Em3dPortKind> Port3DKindChoices { get; } = [Em3dPortKind.Lumped, Em3dPortKind.Wave];
 
     /// <summary>The port-kind table's rows.</summary>
     public ObservableCollection<Em3dPortRow> Port3DRows { get; } = [];
+
+    /// <summary>The layout's port numbers as the 3D generator numbers its labels (<c>EmPortExtraction.NumberPorts</c> over
+    /// <c>EmComponentPorts.Collect</c>), read off the artwork at each refresh — independent of whether the planar or
+    /// cross-section extraction accepts the board.</summary>
+    private HashSet<int> _labelledPortNumbers = [];
 
     [ObservableProperty] private string _eigenCountText = "";
     [ObservableProperty] private string _eigenTargetText = "";
@@ -118,13 +149,20 @@ public sealed partial class EmSetupEditorViewModel
     {
         foreach (var r in Port3DRows) r.KindChanged = null;
         Port3DRows.Clear();
+        // A stated layer the list lacks keeps a row, or the combo would read Automatic and the next commit would clear the
+        // setting: "not in this technology" once a technology has been read, the bare name before.
+        foreach (var stated in Working.Ports3D.Select(p => p.Return).OfType<string>().Where(r => r.Length > 0).Distinct())
+            if (!Port3DReturnChoices.Any(c => c.Name == stated))
+                Port3DReturnChoices.Add(new EmReturnPlaneChoice(
+                    stated, Port3DReturnChoices.Any(c => c.Name.Length > 0) ? $"{stated}  — not in this technology" : stated));
         var numbers = new SortedSet<int>(PortRows.Select(r => r.PortNumber).Where(n => n > 0));
+        numbers.UnionWith(_labelledPortNumbers);
         numbers.UnionWith(Working.Ports3D.Select(p => p.Port));
         foreach (int n in numbers)
         {
             var layout = PortRows.FirstOrDefault(r => r.PortNumber == n);
             var saved  = Working.Ports3D.LastOrDefault(p => p.Port == n) ?? new EmPort3D(n);
-            Port3DRows.Add(Row(saved, layout is not null, layout?.Problem));
+            Port3DRows.Add(Row(saved, layout is not null || _labelledPortNumbers.Contains(n), layout?.Problem));
         }
     }
 
@@ -138,8 +176,24 @@ public sealed partial class EmSetupEditorViewModel
         Width = p.WidthFactor?.ToString("R", CultureInfo.InvariantCulture) ?? "",
         Height = p.HeightFactor?.ToString("R", CultureInfo.InvariantCulture) ?? "",
         OffsetUm = p.OffsetUm?.ToString("R", CultureInfo.InvariantCulture) ?? "",
+        ReturnChoices = Port3DReturnChoices,
+        ReturnChoice = Port3DReturnChoices.FirstOrDefault(c => c.Name == (p.Return ?? "")) ?? Port3DReturnChoices[0],
         KindChanged = () => CommitPorts3D(),
     };
+
+    /// <summary>brief-dfr28-4 R-dfr28-4-5 — the Return column's rows from <paramref name="tech"/>, in place, then every
+    /// row's selection again: a combo whose items were replaced has dropped it.</summary>
+    private void BuildPort3DReturnChoices(Technology tech)
+    {
+        var rows = new List<EmReturnPlaneChoice> { new("", AutomaticPortReturn) };
+        foreach (var l in tech.Stackup.Layers)
+            if (l.Kind == StackupKind.Conductor)
+                rows.Add(new EmReturnPlaneChoice(l.Name, l.IsGroundReference ? $"{l.Name}  — ground reference" : l.Name));
+        if (rows.Select(r => r.Display).SequenceEqual(Port3DReturnChoices.Select(r => r.Display))) return;
+        Port3DReturnChoices.Clear();
+        foreach (var r in rows) Port3DReturnChoices.Add(r);
+        RebuildPort3DRows();
+    }
 
     /// <summary>Writes the table as it now reads: one undoable edit, or none when nothing changed. A row
     /// whose port is not a whole number, or whose number is not a positive number, is left in the table
@@ -162,7 +216,7 @@ public sealed partial class EmSetupEditorViewModel
                 EigenFieldError = $"Port {n}'s width, height and offset must be numbers, or blank for the default.";
                 return;
             }
-            var entry = new EmPort3D(n, r.Kind, width, height, offset);
+            var entry = new EmPort3D(n, r.Kind, width, height, offset, r.IsWave ? null : r.ReturnName);
             if (!entry.IsDefault) list.Add(entry);
         }
         EigenFieldError = null;

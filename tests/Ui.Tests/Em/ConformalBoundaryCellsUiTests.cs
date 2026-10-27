@@ -211,20 +211,21 @@ public class ConformalBoundaryCellsUiTests
     }
 
     /// <summary>
-    /// Choosing a 3D solver hides what a 3D run does not read (surface mesh, the planar solver
-    /// options, the radiation pattern, the planar port type) and keeps what it does (the return
-    /// plane, which the 3D generator's ports return through).
-    /// </summary>
-    /// <summary>
-    /// brief-dfr28-3 follow-up — the return plane is where a .cem's port labels build their sheets to. A .c3d's drawn ports
-    /// name their own two conductors and it has no stackup, and an electrostatic setup has no ports, so neither shows it —
-    /// and the Conductors group, with nothing left in it for a 3D setup, goes with it.
+    /// brief-dfr28-4 R-dfr28-4-4 — the return plane is the planar kernel's alone. A 3D port walks the artwork to its own
+    /// return (and a port that needs another states it in the 3D port table), so no 3D setup shows the box — driven,
+    /// eigenmode, magnetostatic, electrostatic or a .c3d's — and the Conductors group, with nothing left in it, goes too.
     /// </summary>
     [Fact]
     public void TheReturnPlane_IsHiddenWhereNothingReadsIt_AndTheEmptyGroupWithIt()
     {
+        foreach (var problem in new[] { CircuitRF.Engine.Em3d.Em3dProblemType.Driven, CircuitRF.Engine.Em3d.Em3dProblemType.Eigenmode,
+                                        CircuitRF.Engine.Em3d.Em3dProblemType.Magnetostatic })
+        {
+            var vm3d = new EmSetupEditorViewModel("x.cem", new EmSetup { Solver3D = Em3dSolverId.Palace, Problem3D = problem });
+            Assert.False(vm3d.ShowReturnPlane);
+            Assert.False(vm3d.ShowConductorsGroup);
+        }
         var driven = new EmSetup { Solver3D = Em3dSolverId.Palace };
-        Assert.True(new EmSetupEditorViewModel("x.cem", driven).ShowReturnPlane);
         var embedded = new EmSetupEditorViewModel("x.c3d", driven, embedded: true);
         Assert.False(embedded.ShowReturnPlane);
         Assert.False(embedded.ShowConductorsGroup);
@@ -240,8 +241,13 @@ public class ConformalBoundaryCellsUiTests
         Assert.Contains("ViewModel.ShowConductorsGroup", axaml[axaml.LastIndexOf("<Border", header, StringComparison.Ordinal)..header]);
     }
 
+    /// <summary>
+    /// Choosing a 3D solver hides what a 3D run does not read (surface mesh, the planar solver
+    /// options, the radiation pattern, the planar port type, and — brief-dfr28-4 — the return plane,
+    /// which each 3D port now finds in the artwork).
+    /// </summary>
     [Fact]
-    public void A3DSolver_HidesThePlanarOnlyControls_AndKeepsTheReturnPlane()
+    public void A3DSolver_HidesThePlanarOnlyControls_AndTheReturnPlane()
     {
         string dir = TempDir();
         var vm = Editor(dir, ChamferedLayout());
@@ -254,7 +260,7 @@ public class ConformalBoundaryCellsUiTests
         Assert.False(vm.ShowPlanarControls);
         Assert.False(vm.ShowCrossSectionControls);
         Assert.False(vm.ShowCircuitRfSolverControls);
-        Assert.True(vm.ShowReturnPlane);
+        Assert.False(vm.ShowReturnPlane);
         Assert.All(vm.PortRows, r => Assert.False(r.ShowKind));
 
         // The flags alone proved nothing once: the Analysis group was never BOUND to one, so it

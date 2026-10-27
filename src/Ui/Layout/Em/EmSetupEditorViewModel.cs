@@ -1948,6 +1948,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         DispersionDisabledReason = "The cross-section has not resolved yet.";
 
         ResolvedLayoutPath = null;
+        _labelledPortNumbers = [];
 
         if (IsEmbedded)
         {
@@ -1981,7 +1982,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // the planar refresh does not run then. It needs no problem and no mesh: whether a port is an
         // internal one is a question about the label and the metal under it.
         // brief-dfr26-7 R-dfr26-7-3: a placed component's EM port counts, as it does in the run.
-        _layoutHasNonEdgePort = EmPortExtraction.AnyNonEdgePort(EmComponentPorts.Collect(source).Shapes);
+        var labelled = EmComponentPorts.Collect(source).Shapes;
+        _layoutHasNonEdgePort = EmPortExtraction.AnyNonEdgePort(labelled);
+        // brief-dfr28-4 — the 3D port table's rows are the port labels as the 3D generator numbers them, read here off
+        // the artwork: the planar rows below come from an extraction that refuses a board of many levels, and with
+        // them alone such a board's table was empty.
+        _labelledPortNumbers = [.. EmPortExtraction.NumberPorts(labelled).Select(p => p.Number)];
+        RebuildPort3DRows();
 
         if (source.Technology is null)
         {
@@ -2744,6 +2751,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                 wanted.Add(l.Name);
         SyncInPlace(ConductorLayerChoices, wanted);
         BuildReturnPlaneChoices(tech);
+        BuildPort3DReturnChoices(tech);
         BuildAnalysisLevelRows(tech);
     }
 

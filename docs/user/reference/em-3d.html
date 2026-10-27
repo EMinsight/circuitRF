@@ -209,7 +209,10 @@ capacitance matrix, <em>Magnetostatic</em> for an inductance matrix, <em>Eigenmo
 </ol>
 </li>
 <li><p><strong>Ports.</strong> A layout's port labels become ports. In 3D a port is <strong>lumped</strong> by default: a sheet from the
-line down to its return, with the port's Z₀ across it. A <strong>wave port</strong> (<code>Ports3D</code>) is fed and measured
+line's end to its return, with the port's Z₀ across it. The return is found in the layout: the nearer of
+the first plane with metal under the end below the line and the first above it, a ground-reference layer
+preferred, and a port can state another in the port table's <strong>Return</strong> column
+(<a href="em-setup.html#port-return">Return</a>). A <strong>wave port</strong> (<code>Ports3D</code>) is fed and measured
 in the line's own field at the air box's face instead, and has no sheet parasitic. Both solvers build
 one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
 terminals. <a href="em-setup.html#wave-ports">Wave ports</a>.</p>
@@ -220,7 +223,7 @@ under a test pad moves the port's return to the next plane down, which is what t
 the real pad. The sheet is centred on the label and is as wide as the pad is across it. When a via
 stands at the label (a test point's through via), the sheet stands beside the barrel instead, on the
 side away from the trace that feeds the pad, and moves out to where the plane's clearance round the
-via ends. The setup's named return plane, if it names one, is the only plane it lands on. Metal of
+via ends. A port whose <strong>Return</strong> states a layer lands on that layer only. Metal of
 another layer across the sheet's path is refused, naming that layer. A delta-gap port (a cut across a
 line) is planar only.</p>
 <p><a id="component-ports"></a><strong>Ports a component carries.</strong> A port label inside a placed part is that

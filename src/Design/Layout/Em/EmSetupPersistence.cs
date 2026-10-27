@@ -188,6 +188,10 @@ public sealed class CemPort3D
     /// <summary>A wave port's de-embedding distance into the structure, micrometres. Omitted is 0: the
     /// reference plane is the port's face.</summary>
     public double? OffsetUm { get; set; }
+
+    /// <summary>brief-dfr28-4 R-dfr28-4-5 — a lumped port's return: a conductor layer's stackup name.
+    /// <b>Omitted means Automatic</b> — the plane the generator finds by walking the artwork from the port.</summary>
+    public string? Return { get; set; }
 }
 
 /// <summary>brief-em3d-23 R-em3d23-4a — what an eigenmode solve finds.</summary>
@@ -1601,6 +1605,7 @@ public static class EmSetupPersistence
                   Port = p.Port,
                   Kind = p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Lumped ? null : p.Kind,
                   Width = p.WidthFactor, Height = p.HeightFactor, OffsetUm = p.OffsetUm,
+                  Return = p.Return is { Length: > 0 } r ? r : null,
               })]
             : null,
         Eigenmode      = s.Eigenmode is { } e && (e.Count is not null || e.TargetGHz is not null)
@@ -1676,7 +1681,8 @@ public static class EmSetupPersistence
         Terminals3D           = f.Terminals3D is { } ts ? [.. ts.Select(t => new EmTerminal3D(t.Name ?? "", t.Net ?? "", t.Source, t.Objects is { Count: > 0 } o ? [.. o] : null))] : [],
         Ground3D              = f.Ground3D ?? "",
         Ports3D               = f.Ports3D is { } ps
-            ? [.. ps.Select(p => new EmPort3D(p.Port, p.Kind ?? CircuitRF.Engine.Em3d.Em3dPortKind.Lumped, p.Width, p.Height, p.OffsetUm))]
+            ? [.. ps.Select(p => new EmPort3D(p.Port, p.Kind ?? CircuitRF.Engine.Em3d.Em3dPortKind.Lumped, p.Width, p.Height, p.OffsetUm,
+                                     p.Return is { Length: > 0 } r ? r : null))]
             : [],
         Eigenmode             = f.Eigenmode is { } em ? new EmEigenmode3D(em.Count, em.TargetGHz) : null,
         Thermal               = f.Thermal,

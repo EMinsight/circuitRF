@@ -70,9 +70,10 @@ public sealed partial class EmSetupEditorViewModel
     public bool Is3DSetup => !Solver3DChoice.Value.IsNone || IsThermalSetup;
 
     // What a 3D run does NOT read is hidden while one is chosen, rather than shown and ignored. What
-    // it DOES read stays: the frequency sweep, each port's Z0 (EmSetup.ResolvePortZ0), the return
-    // plane (GroundStackupLayerName), the solve region and the core cap. The hidden fields stay in the
-    // .cem untouched, so switching back to Planar finds them as they were.
+    // it DOES read stays: the frequency sweep, each port's Z0 (EmSetup.ResolvePortZ0), the solve region
+    // and the core cap. The hidden fields stay in the .cem untouched, so switching back to Planar finds
+    // them as they were. brief-dfr28-4: the return plane is not among them — each 3D port walks the
+    // artwork to its own return, and the 3D port table's Return column states one where it must.
 
     /// <summary>The planar kernel's own controls — surface mesh, analysis levels, adaptive sampling,
     /// the port-type combo — shown only when the planar kernel is what runs.</summary>
@@ -81,15 +82,13 @@ public sealed partial class EmSetupEditorViewModel
     /// <summary>The cross-section kernel's mesh group, likewise.</summary>
     public bool ShowCrossSectionControls => !IsPlanarAnalysis && !Is3DSetup;
 
-    /// <summary>The return plane: read by the planar kernel and by the 3D generator's ports, which build each label's sheet
-    /// down (or up) to it. Not in a .c3d, whose drawn ports name their own two conductors and which has no stackup, and not
-    /// for an electrostatic setup, which has no ports.</summary>
-    public bool ShowReturnPlane => Is3DSetup
-        ? !IsThermalSetup && !IsEmbedded && Working.Problem3D != Em3dProblemType.Electrostatic
-        : IsPlanarAnalysis;
+    /// <summary>The return plane: the planar kernel's alone. brief-dfr28-4 R-dfr28-4-4 — no 3D setup shows it: a 3D port
+    /// finds its return in the artwork, and a port whose return is not the walk's choice states its own in the 3D port
+    /// table. A <c>.cem</c> that already names one keeps honouring it (D2), unseen.</summary>
+    public bool ShowReturnPlane => IsPlanarAnalysis && !Is3DSetup;
 
     /// <summary>The Conductors group: shown while anything in it is (the signal conductor and analysis levels for the planar
-    /// kernels, the return plane).</summary>
+    /// kernels, the planar return plane) — so never for a 3D setup.</summary>
     public bool ShowConductorsGroup => ShowCircuitRfSolverControls || ShowReturnPlane;
 
     /// <summary>Controls every circuitRF-kernel run reads and no 3D run does (the analysis kind and

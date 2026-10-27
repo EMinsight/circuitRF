@@ -85,8 +85,11 @@ public sealed class MultilayerPortRound26Tests : IDisposable
         Assert.True(planar.Ok, planar.Refusal);
         Assert.All(planar.Ports, p => Assert.Equal(top, p.LayerIndex));
 
-        var (setup, source) = Source(tech, shapes);
-        var g = Em3dGenerator.Generate(setup, source, tech);
+        // brief-dfr28-4 — in 3D, Inner 1 is the ground reference: with none above the floor, each port's sheet would run
+        // down through both pours' metal, which a lumped sheet cannot, and the walk refuses it.
+        var tech3d = Tech(in1: true, in2: false, bottom: true);
+        var (setup, source) = Source(tech3d, shapes);
+        var g = Em3dGenerator.Generate(setup, source, tech3d);
         Assert.True(g.Ok, g.Refusal);
         Assert.All(g.Problem!.Ports, p => Assert.StartsWith("Top Copper (1 oz)/", p.PositiveObject, StringComparison.Ordinal));
     }

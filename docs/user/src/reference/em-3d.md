@@ -132,7 +132,10 @@ full description.
   capacitance matrix, *Magnetostatic* for an inductance matrix, *Eigenmode* for resonant frequencies and
   Q. [Package RLC](em-setup.html#package-rlc), [Eigenmodes](em-setup.html#eigenmodes).
 - **Ports.** A layout's port labels become ports. In 3D a port is **lumped** by default: a sheet from the
-  line down to its return, with the port's Z₀ across it. A **wave port** (`Ports3D`) is fed and measured
+  line's end to its return, with the port's Z₀ across it. The return is found in the layout: the nearer of
+  the first plane with metal under the end below the line and the first above it, a ground-reference layer
+  preferred, and a port can state another in the port table's **Return** column
+  ([Return](em-setup.html#port-return)). A **wave port** (`Ports3D`) is fed and measured
   in the line's own field at the air box's face instead, and has no sheet parasitic. Both solvers build
   one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
   terminals. [Wave ports](em-setup.html#wave-ports).
@@ -144,7 +147,7 @@ full description.
   the real pad. The sheet is centred on the label and is as wide as the pad is across it. When a via
   stands at the label (a test point's through via), the sheet stands beside the barrel instead, on the
   side away from the trace that feeds the pad, and moves out to where the plane's clearance round the
-  via ends. The setup's named return plane, if it names one, is the only plane it lands on. Metal of
+  via ends. A port whose **Return** states a layer lands on that layer only. Metal of
   another layer across the sheet's path is refused, naming that layer. A delta-gap port (a cut across a
   line) is planar only.
 

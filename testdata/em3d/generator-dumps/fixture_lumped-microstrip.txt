@@ -1,6 +1,8 @@
 refusal (none)
 note Port 1 ('1') at (0, 0 mm) was taken to be on the conductor's low-x (left) end (the port's own direction), driving current in the +x direction, at 50 Ω.
 note Port 2 ('2') at (10, 0 mm) was taken to be on the conductor's high-x (right) end (the port's own direction), driving current in the −x direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 1100 µm (1.1 mm) wide and 508 µm (0.508 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 2 at its line's end is a vertical lumped sheet 1100 µm (1.1 mm) wide and 508 µm (0.508 mm) tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note The air box's floor is 'Bottom Copper (1 oz)' as a PEC plane at 35 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
 solid RO4350 RO4350B Dielectric 1 box (-0.006,-0.00655,3.5000000000000004E-05) (0.016,0.00655,0.0005430000000000001)
 solid air Air Air 2 box (-0.006,-0.00655,0.0005430000000000001) (0.016,0.00655,0.0045780000000000005)

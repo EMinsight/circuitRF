@@ -481,10 +481,9 @@ cross-section kernels (the default), **FEM 3D (Palace)**, **FDTD 3D (openEMS)**,
 cannot solve this setup, is greyed out; its tooltip says which. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
 settings a 3D run does not read — the surface mesh, adaptive sampling, the port type and the planar
 solver options — are hidden while a 3D solver is chosen; they stay in the
-`.cem` and come back when you switch to Planar. What a 3D run does read stays: the frequency sweep,
-each port's Z₀ (set in the Solver group's port table), the return plane — which each port label's sheet is built down
-(or up) to; a 3D view's drawn ports name their own two conductors, so its setups do not show it, and neither does an
-electrostatic setup, which has no ports — the solve region, the core count
+`.cem` and come back when you switch to Planar. So is the **Conductors** group: a 3D port finds the plane it
+returns through in the layout itself (see [Return](#port-return)). What a 3D run does read stays: the frequency sweep,
+each port's Z₀ and kind (set in the Solver group's port table), the solve region, the core count
 and the **radiation pattern**, which a driven 3D run produces too — see
 [Antennas ▸ From a 3D solver](antennas.html#3d). Palace, openEMS and EMerge each have their own section below, and a
 setup keeps them all, so switching solver never loses another's settings. A comparison shows the section of every solver
@@ -1018,9 +1017,31 @@ voltage path; a geometry the ray gets wrong states `VoltagePath` in the `.c3d`, 
 
 The port table in the **Solver** group lists every port the layout labels, and it is the one place a
 3D setup's ports are configured — the planar **Ports** group is hidden while a 3D solver is chosen. Each
-row sets the port's reference impedance **Z₀** and its kind (`Ports3D`). Lumped and wave ports may be
-**mixed** in one setup. A row whose port the layout no longer labels is leftover settings, and only
-that kind of row can be removed.
+row sets the port's reference impedance **Z₀**, its kind (`Ports3D`) and, for a lumped port, its **Return**.
+Lumped and wave ports may be **mixed** in one setup. A row whose port the layout no longer labels is leftover
+settings, and only that kind of row can be removed.
+
+<a id="port-return"></a>**Return** is the plane a lumped port's sheet runs to. **Automatic**, the default, walks the
+layout from the port down and up, layer by layer, and takes the nearer side's first plane with metal under the port's
+end (a pad-to-plane port: across its sheet). A layer the technology marks as a ground reference is preferred. A
+technology that marks none returns through the nearest metal. A plane with an opening at the port is passed through.
+Other metal across the sheet's path is refused, naming the layer, because a lumped sheet runs through dielectric. A
+plane that stops short of the line's end by up to a tenth of the line's width still counts: the sheet moves in to where
+the plane begins, and a note says how far. Each port's note names the plane, the side and why it was chosen, and
+`circuitrf explain` lists each port's return and whether it was walked or stated.
+
+State a layer for a port whose return is another plane. For example, a stripline port that must reference the plane
+above, or a board with several reference planes where ports need different ones. The port then goes to that layer on
+whichever side it is. Metal of another layer in between, or no metal of that layer under the port, is refused, naming
+the layer and the port. A wave port has no Return: its two conductors meet at the air box's face. In the file it is one
+key on the port's entry, written only when stated:
+
+```
+"Ports3D": [ { "Port": 3, "Return": "Inner 1" }, { "Port": 5, "Kind": "Wave" } ]
+```
+
+A `.cem` that states `GroundStackupLayerName` sends every lumped port of a 3D setup to that plane, unless the port's
+own Return states another. The panel shows that field for a planar setup only.
 
 ```
 "Ports3D": [ { "Port": 1, "Kind": "Wave" }, { "Port": 2, "Kind": "Wave", "OffsetUm": 500 } ]

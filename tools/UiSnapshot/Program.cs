@@ -147,7 +147,14 @@ if (clay is not null)
 }
 else if (cem is not null)
 {
-    var setupVm = new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(cem, CircuitRF.Design.Layout.Em.EmSetupPersistence.LoadFromFile(cem));
+    var setupVm = new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(cem, CircuitRF.Design.Layout.Em.EmSetupPersistence.LoadFromFile(cem))
+    {
+        // The layout and its technology, resolved as `circuitrf em` resolves them (the workspace adds only the live
+        // model of an open .clay), so the panel shows the layout's ports and the stackup's layers.
+        ResolveLayout = r => CircuitRF.Design.Layout.Em.EmSetupResolver.Resolve(
+            cem, r, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cem)), new CircuitRF.Design.Layout.TechnologyCache()).Source,
+    };
+    setupVm.Refresh();
     host = new Window { Width = sizeGiven ? width : 900, Height = sizeGiven ? height : 1200,
                         Content = new EmSetupEditorView { DataContext = new CircuitRF.Ui.Layout.Em.EmSetupDocument(Path.GetFileName(cem), setupVm, cem) } };
     host.Show();

@@ -3,6 +3,10 @@ note Port 1 ('1') at (0, 127 µm) was taken to be on the conductor's low-x (left
 note Port 2 ('2') at (3830, 127 µm) was taken to be on the conductor's high-x (right) end (the port's own direction), driving current in the −x direction, at 50 Ω.
 note Port 3 ('3') at (600, 627 µm) was taken to be on the conductor's low-x (left) end (the port's own direction), driving current in the +x direction, at 50 Ω.
 note Port 4 ('4') at (3230, 627 µm) was taken to be on the conductor's high-x (right) end (the port's own direction), driving current in the −x direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 254 µm wide and 900 µm tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 2 at its line's end is a vertical lumped sheet 254 µm wide and 900 µm tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 3 at its line's end is a vertical lumped sheet 254 µm wide and 900 µm tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 4 at its line's end is a vertical lumped sheet 254 µm wide and 900 µm tall from 'Top Copper (1 oz)' down to 'Bottom Copper (1 oz)' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note 'Top Copper (1 oz)' names no material, so its σ is a number of unknown temperature and is used as given at 20 °C. Name a material with an α₂₀ to have it evaluated at the operating temperature.
 note The air box's floor is 'Bottom Copper (1 oz)' as a PEC plane at 35 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
 solid FR-4 FR-4 Dielectric 1 box (-0.03747405725,-0.03747405725,3.5000000000000004E-05) (0.04130405725,0.038228057249999996,0.0009350000000000001)
