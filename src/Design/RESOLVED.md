@@ -23430,3 +23430,30 @@ exactly on the cropped board's edge, so half its barrel and fill stand in the ai
 lies on the fill cylinder. With that one via deleted, the setup meshes and solves in 1 min 34 s (C(TP) 4.644 pF).
 The Oct-24 script had no `via/9`. This is the open half of R-dfr26-8-4, written up as
 `docs/sonnet-briefs/brief-dfr28-1-via-on-the-board-edge.md`.
+
+**Fixed (brief-dfr28-1, R-dfr28-1-1 shipped, not the 1b fallback):**
+
+- **A drill the board edge cuts is built as the part of its disc on the board.** `Em3dLayoutSolids` tests each round
+  drill against the board outline (`OnBoard`). One wholly inside is the `Em3dCylinder` it always was, so every
+  existing script is byte-identical (the dump and Palace goldens pass unchanged). One the edge cuts is a 64-gon
+  intersected with the board (`ClipDisc`) and extruded. The tube and the air fill are clipped alike, and so is a
+  non-plated hole. One wholly off the board is left out and named. One Note per run gives the count and the first
+  via's position in mm.
+- **The clip runs on a picometre grid, not the DBU grid.** A cut along a straight board edge then lands on that
+  edge's own coordinate. In the TP149 script the cut face's points read y = 119200 µm exactly, which is the board's
+  side, so Gmsh fragments it with no sliver. With the via present, TP149's Capacitance setup meshes and solves:
+  C(TP) 4.645 pF against 4.644 pF with the via deleted (RFin 0.796, RFout 0.255). The mesh has the same few
+  ill-shaped-tet warnings as the Oct-24 run.
+- **The failure needs inner planes.** A two-layer board with a plane on each layer and the via centred on its edge
+  MESHES with the old cylinder. So do a ten-layer board with all ten layers planed and one with the via off-centre.
+  The designer's PLC error comes back, at a fill-cylinder point outside the board, on a ten-layer board with GND planes
+  on the inner layers only. That is the gate's fixture (`ViaOnTheBoardEdgeTests`), checked to fail on the old build.
+  The failing segment belongs to no geometric entity: Gmsh's boundary recovery breaks on the fill's surface in the
+  padding, which is why it depends on what lies around it.
+- **The regression was the layout changing, not 932c2a50.** The edge via is on the same `Via 1-10` layer as the four
+  vias that WERE in the Oct-24 script, so a span change cannot be what kept it out. It is the last shape in both em
+  cells (after their labels), and both `.clay` files were rewritten at the same second, six minutes after the Oct-24
+  run. The cropped cells gained the via after that run.
+- **Crop to Rectangle counts what it leaves for this rule (R-dfr28-1-2).** It keeps its anchor rule. `EdgeCutVias`
+  counts each kept via whose drill circle crosses the rectangle. The confirmation and the result both say so, so the
+  user hears it at crop time.

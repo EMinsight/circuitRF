@@ -172,6 +172,8 @@ public sealed partial class LayoutEditorViewModel
             sb.Append(newCellName is null
                 ? $"\n{Plural(plan.BitmapsUntouched, "bitmap", "bitmaps")} left as they are"
                 : $"\n{Plural(plan.BitmapsUntouched, "bitmap", "bitmaps")} not copied");
+        if (plan.EdgeCutVias > 0)
+            sb.Append($"\n{EdgeCutViasSentence(plan.EdgeCutVias)}");
         return sb.ToString();
     }
 
@@ -205,9 +207,16 @@ public sealed partial class LayoutEditorViewModel
         _messageSink?.Success(
             $"Crop to Rectangle: {Plural(plan.Layers.Count, "layer", "layers")} — {kept} shapes kept, {cut} cut at the " +
             $"edge, {gone} removed{instances}{outline}.");
+        if (plan.EdgeCutVias > 0)
+            _messageSink?.Info($"Crop to Rectangle: {EdgeCutViasSentence(plan.EdgeCutVias)}");
         if (plan.BitmapsUntouched > 0)
             _messageSink?.Info($"Crop to Rectangle: {Plural(plan.BitmapsUntouched, "bitmap", "bitmaps")} left untouched — a picture is not cropped.");
     }
+
+    /// <summary>R-dfr28-1-2 — the vias the new edge cuts through, said at crop time rather than by the mesher.</summary>
+    private static string EdgeCutViasSentence(int n) =>
+        $"{Plural(n, "via is", "vias are")} kept with the new edge through {(n == 1 ? "its" : "their")} drill — " +
+        "the 3D view builds only the part of each barrel on the board";
 
     private bool CropPlanIsCurrent(LayoutCropResult plan)
     {

@@ -122,6 +122,26 @@ public sealed class CropBoardRound26Tests : IDisposable
         Assert.Contains(sink.Posted, p => p.Text.Contains("instances 1 kept, 1 removed"));
     }
 
+    /// <summary>brief-dfr28-1 R-dfr28-1-2 — a via kept on the new edge is counted, in the confirmation and the result.</summary>
+    [Fact]
+    public void Crop_SaysWhenTheNewEdgeCutsThroughAKeptViasDrill()
+    {
+        var (vm, model, sink) = Editor(m =>
+        {
+            m.Shapes.Add(new ViaShape { Layer = Shown, X = 500, Y = 1000, DrillSize = 100 });   // centre on the edge
+            m.Shapes.Add(new ViaShape { Layer = Shown, X = 500, Y = 500, DrillSize = 100 });    // wholly inside
+        });
+
+        var plan = vm.PlanCropToRectangle(0, 0, 1000, 1000);
+        Assert.Equal(1, plan.EdgeCutVias);
+        Assert.Contains("1 via is kept with the new edge through its drill", vm.CropSummary(plan));
+
+        vm.ApplyCrop(plan);
+
+        Assert.Equal(2, model.Shapes.Count);
+        Assert.Contains(sink.Posted, p => p.Text.Contains("1 via is kept with the new edge through its drill"));
+    }
+
     [Fact]
     public void Crop_RedrawsTheOutlineAsItsIntersectionWithTheRectangle()
     {

@@ -21,6 +21,8 @@ public readonly record struct LayoutCropLayerCount(
 /// <param name="Originals">The shapes at <see cref="ReplacedIndices"/> when the crop was computed, so a caller can
 /// tell the layout has not changed since.</param>
 /// <param name="RemovedInstances">Instance indices whose origin is outside the rectangle, ascending.</param>
+/// <param name="EdgeCutVias">Vias kept (their anchor is inside) whose drill circle crosses the new edge: half a barrel
+/// outside the board, which the 3D view builds only the board's part of (R-dfr28-1-2).</param>
 public sealed record LayoutCropResult(
     Bbox Rect,
     IReadOnlyList<int> ReplacedIndices,
@@ -30,7 +32,8 @@ public sealed record LayoutCropResult(
     IReadOnlyList<int> RemovedInstances,
     int KeptInstances,
     int BitmapsUntouched,
-    bool AnyCurvedOperand);
+    bool AnyCurvedOperand,
+    int EdgeCutVias = 0);
 
 public static class LayoutCrop
 {
@@ -62,7 +65,7 @@ public static class LayoutCrop
         var counts = new Dictionary<LayerKey, (int Shapes, int Inside, int Cut, int Removed)>();
         var order = new List<LayerKey>();
         bool outlinePlaced = false, anyCurved = false;
-        int bitmaps = 0;
+        int bitmaps = 0, edgeCutVias = 0;
 
         for (int i = 0; i < shapes.Count; i++)
         {
@@ -88,6 +91,7 @@ public static class LayoutCrop
                 continue;
             }
 
+            if (s is ViaShape v && CrossesEdge(v, rect)) edgeCutVias++;
             var clip = LayoutBooleans.Clip([s], stencil, tech);
             result.AddRange(clip.Shapes);
             anyCurved |= clip.AnyCurvedOperand;
@@ -109,7 +113,15 @@ public static class LayoutCrop
             if (!rect.Contains(instances[i].X, instances[i].Y)) removedInstances.Add(i);
 
         return new LayoutCropResult(rect, replaced, originals, result, layers, removedInstances,
-                                    instances.Count - removedInstances.Count, bitmaps, anyCurved);
+                                    instances.Count - removedInstances.Count, bitmaps, anyCurved, edgeCutVias);
+    }
+
+    /// <summary>A via the crop keeps (anchor inside, boundary included) whose drill circle reaches past the rectangle.</summary>
+    private static bool CrossesEdge(ViaShape v, Bbox rect)
+    {
+        if (!rect.Contains(v.X, v.Y)) return false;
+        double r = (v.DrillSize > 0 ? v.DrillSize : v.PadSize) / 2.0;
+        return Math.Min(Math.Min(v.X - rect.MinX, rect.MaxX - v.X), Math.Min(v.Y - rect.MinY, rect.MaxY - v.Y)) < r;
     }
 
     /// <summary>

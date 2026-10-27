@@ -26,6 +26,7 @@
 // saying which bound each slab took. A planar setup previewed in 3D (DisplaySlabs) draws its slabs the same way.
 
 using System.Globalization;
+using Clipper2Lib;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Engine.Mom;
@@ -703,6 +704,8 @@ public static class Em3dLayoutSolids
             // Vias: R-em3d3-5d. A plated barrel with a wall is a TUBE — the plating cylinder, and inside
             // it a higher-order cylinder of air, which is §1d's order rule doing the subtraction.
             int viaN = 0;
+            var edgeCut = new List<(string Name, double X, double Y)>();
+            var offBoard = new List<string>();
             foreach (var (shape, entry, top, bottom) in _viaSpans)
             {
                 viaN++;
@@ -712,7 +715,7 @@ public static class Em3dLayoutSolids
                 string name = $"via/{viaN}";
                 // A via is on its own net when it names one, else on the nets of the metal it lands on.
                 var viaNets = shape.Net is { Length: > 0 } vn ? [vn] : ViaLandingNets(shape, top, bottom);
-                if (Drill(shape) is var (x, y, r))
+                if (Drill(shape) is var (x, y, r) && OnBoard(x, y, r))
                 {
                     var a = new Point3(x, y, z0);
                     var e = new Point3(x, y, z1);
@@ -724,6 +727,31 @@ public static class Em3dLayoutSolids
                         solids.Add(Origin(new Em3dSolid(name + "/fill", AirMaterialName(), Em3dRole.Air,
                                                         new Em3dCylinder(a, e, r - wall), ++order),
                                           Em3dObjectKind.Air, entry.Name));
+                }
+                else if (Drill(shape) is var (cx, cy, cr))
+                {
+                    // R-dfr28-1-1 — the board edge cuts this barrel: only the part on the board is built, tube and fill
+                    // alike, as the disc's intersection with the board extruded. The cut face lies in the board's side.
+                    var cut = ClipDisc(cx, cy, cr);
+                    if (cut.Count == 0) { offBoard.Add(name); continue; }
+                    edgeCut.Add((name, cx, cy));
+                    order++;
+                    for (int k = 0; k < cut.Count; k++)
+                    {
+                        string piece = cut.Count == 1 ? name : $"{name}/{k + 1}";
+                        solids.Add(Origin(new Em3dSolid(piece, material, Em3dRole.Conductor, Extrude(cut[k], z0, z1), order),
+                                          Em3dObjectKind.Via, entry.Name, shape.Layer));
+                        foreach (string n in viaNets) Net(piece, n);
+                    }
+                    double wall = (entry.WallThicknessDbu ?? 0) * StackPerDbu;
+                    if (entry.Fill == ViaFillKind.Plated && wall > 0 && wall < cr && ClipDisc(cx, cy, cr - wall) is { Count: > 0 } fill)
+                    {
+                        order++;
+                        for (int k = 0; k < fill.Count; k++)
+                            solids.Add(Origin(new Em3dSolid(fill.Count == 1 ? name + "/fill" : $"{name}/fill/{k + 1}",
+                                                            AirMaterialName(), Em3dRole.Air, Extrude(fill[k], z0, z1), order),
+                                              Em3dObjectKind.Air, entry.Name));
+                    }
                 }
                 else
                 {
@@ -746,11 +774,22 @@ public static class Em3dLayoutSolids
             {
                 string name = $"hole/{++holeN}";
                 double z0 = bottom.BottomM, z1 = top.TopM;
-                if (Drill(shape) is var (x, y, r))
+                if (Drill(shape) is var (x, y, r) && OnBoard(x, y, r))
                 {
                     solids.Add(Origin(new Em3dSolid(name, AirMaterialName(), Em3dRole.Air,
                                                     new Em3dCylinder(new Point3(x, y, z0), new Point3(x, y, z1), r), ++order),
                                       Em3dObjectKind.Air, entry.Name, shape.Layer));
+                }
+                else if (Drill(shape) is var (cx, cy, cr))
+                {
+                    var cut = ClipDisc(cx, cy, cr);
+                    if (cut.Count == 0) { offBoard.Add(name); continue; }
+                    edgeCut.Add((name, cx, cy));
+                    order++;
+                    for (int k = 0; k < cut.Count; k++)
+                        solids.Add(Origin(new Em3dSolid(cut.Count == 1 ? name : $"{name}/{k + 1}", AirMaterialName(), Em3dRole.Air,
+                                                        Extrude(cut[k], z0, z1), order),
+                                          Em3dObjectKind.Air, entry.Name, shape.Layer));
                 }
                 else
                 {
@@ -762,6 +801,14 @@ public static class Em3dLayoutSolids
                                           Em3dObjectKind.Air, entry.Name, shape.Layer));
                 }
             }
+            if (edgeCut.Count > 0)
+                Notes.Add($"{edgeCut.Count} via(s) cross the board edge, the first ('{edgeCut[0].Name}') at " +
+                          $"({Fmt(edgeCut[0].X * 1e3)}, {Fmt(edgeCut[0].Y * 1e3)}) mm: each is built as the part of its " +
+                          "barrel on the board. The rest would stand in the air beside the board, where the mesher " +
+                          "cannot close it against the board's side.");
+            if (offBoard.Count > 0)
+                Notes.Add($"{string.Join(", ", offBoard.Select(n => $"'{n}'"))} {(offBoard.Count == 1 ? "lies" : "lie")} " +
+                          "wholly off the board and " + (offBoard.Count == 1 ? "is" : "are") + " not in the 3D problem.");
             if (holeN > 0 && sheetCount > 0)
                 Notes.Add($"{holeN} non-plated hole(s) are drilled as air through meshed conductors only: a conductor " +
                           "piece that is a sheet is a surface and keeps its metal over a hole.");
@@ -1127,6 +1174,83 @@ public static class Em3dLayoutSolids
                 return CharacteristicWidth(p) < OutlineLineFraction * Math.Min(x1 - x0, y1 - y0);
             }
         }
+
+        /// <summary>
+        /// Whether a drill of radius <paramref name="r"/> at (<paramref name="x"/>, <paramref name="y"/>), metres, lies wholly
+        /// on the board — always, with no outline. A drill that is not is built by <see cref="ClipDisc"/> (R-dfr28-1-1).
+        /// </summary>
+        private bool OnBoard(double x, double y, double r)
+        {
+            if (_outline.Count == 0) return true;
+            double reach = r * (1 - 1e-9);
+            foreach (var region in _outline)
+                if (region.Contains(x, y) &&
+                    new[] { region.Outer }.Concat(region.HoleRings).All(ring => RingDistance(ring, x, y) >= reach))
+                    return true;
+            return false;
+        }
+
+        /// <summary>
+        /// R-dfr28-1-1 — a drill's disc, as a <see cref="DiscSides"/>-gon, intersected with the board: empty when the drill
+        /// is wholly off it. Clipped on a picometre grid, so a cut along a straight board edge lands on that edge's own
+        /// coordinate and the cut face is the board's side face, not a sliver beside it.
+        /// </summary>
+        private List<PlanarPolygon> ClipDisc(double x, double y, double r)
+        {
+            static Point64 P(double px, double py) => new((long)Math.Round(px * ClipScale), (long)Math.Round(py * ClipScale));
+            var disc = new Path64(DiscSides);
+            for (int k = 0; k < DiscSides; k++)
+            {
+                double t = 2 * Math.PI * k / DiscSides;
+                disc.Add(P(x + r * Math.Cos(t), y + r * Math.Sin(t)));
+            }
+            var board = new Paths64();
+            foreach (var region in _outline)
+                foreach (var ring in new[] { region.Outer }.Concat(region.HoleRings))
+                    board.Add(new Path64(ring.Select(q => P(q.X, q.Y))));
+            var tree = new PolyTree64();
+            Clipper.BooleanOp(ClipType.Intersection, [disc], board, tree, FillRule.EvenOdd);
+
+            var result = new List<PlanarPolygon>();
+            static List<EmPoint> RingOf(Path64 path) => [.. path.Select(q => new EmPoint(q.X / ClipScale, q.Y / ClipScale))];
+            void Walk(PolyPath64 node)
+            {
+                for (int i = 0; i < node.Count; i++)
+                {
+                    var outer = node[i];
+                    var holes = new List<IReadOnlyList<EmPoint>>();
+                    for (int j = 0; j < outer.Count; j++)
+                    {
+                        holes.Add(RingOf(outer[j].Polygon!));
+                        Walk(outer[j]);
+                    }
+                    if (outer.Polygon is { Count: >= 3 } ring)
+                        result.Add(new PlanarPolygon(RingOf(ring), holes.Count > 0 ? holes : null));
+                }
+            }
+            Walk(tree);
+            return result;
+        }
+
+        private static double RingDistance(IReadOnlyList<EmPoint> ring, double x, double y)
+        {
+            double best = double.PositiveInfinity;
+            for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+            {
+                double ax = ring[j].X, ay = ring[j].Y, dx = ring[i].X - ax, dy = ring[i].Y - ay;
+                double len2 = dx * dx + dy * dy;
+                double t = len2 > 0 ? Math.Clamp(((x - ax) * dx + (y - ay) * dy) / len2, 0, 1) : 0;
+                double ex = ax + t * dx - x, ey = ay + t * dy - y;
+                best = Math.Min(best, ex * ex + ey * ey);
+            }
+            return Math.Sqrt(best);
+        }
+
+        /// <summary>The sides of an edge-cut drill's disc (<see cref="ClipDisc"/>).</summary>
+        internal const int DiscSides = 64;
+
+        /// <summary>Clipper grid steps per metre for <see cref="ClipDisc"/>: a picometre.</summary>
+        private const double ClipScale = 1e12;
 
         /// <summary>
         /// Whether <paramref name="region"/> lies within drill <paramref name="d"/> (metres), to a thousandth of its radius: an outline

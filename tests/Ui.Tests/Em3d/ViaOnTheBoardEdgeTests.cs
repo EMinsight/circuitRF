@@ -1,0 +1,98 @@
+using CircuitRF.Core.Design;
+using CircuitRF.Design.Em3d;
+using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.Em3d;
+using CircuitRF.Engine.Em3d;
+using Xunit;
+
+namespace CircuitRF.Ui.Tests.Em3d;
+
+// brief-dfr28-1 — a through via whose centre is on the board edge: the 3D build keeps only the part of its barrel on the
+// board, so the mesher never meets half a tube standing in the air beside the board's side face. Synthetic geometry on
+// the shipped ten-layer technology: on the two-layer one the cylinder happened to mesh, and the gate has to be a board
+// that failed. In the Gmsh-counting collection: one test here starts Gmsh.
+[Collection(Em3dProcessCountersCollection.Name)]
+public sealed class ViaOnTheBoardEdgeTests : IDisposable
+{
+    private const int Dbu = 1000;
+    private readonly string _root = Directory.CreateTempSubdirectory("dfr28-1-").FullName;
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
+    }
+
+    private static long Mm(double v) => (long)Math.Round(v * 1000 * Dbu);
+
+    /// <summary>A 4 × 3 mm ten-layer board: a GND plane on each inner layer, a SIG pad on the top (the electrostatic
+    /// terminal), one GND through via at (<paramref name="xMm"/>, <paramref name="yMm"/>) mm, and a millimetre of air all
+    /// round. Built as a cylinder at (2, 3), the via stopped Gmsh with the designer's own PLC error.</summary>
+    private static (EmSetup Setup, EmLayoutSource Source, Technology Tech) Board(double xMm, double yMm)
+    {
+        var tech = ShippedTechnologies.Load("pcb-10layer_FR-4_1.7mm_1oz");
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).Select(l => l.DrawingLayers[0]).ToList();
+        var view = new LayoutView { DbuPerMicron = Dbu };
+        view.Shapes.Add(new RectShape { Layer = new LayerKey(8, 0), X1 = 0, Y1 = 0, X2 = Mm(4), Y2 = Mm(3) });   // Outline
+        view.Shapes.Add(new RectShape { Layer = conductors[0], X1 = Mm(1), Y1 = Mm(0.3), X2 = Mm(3), Y2 = Mm(1.2), Net = "SIG" });
+        foreach (var inner in conductors.Skip(1).SkipLast(1))
+            view.Shapes.Add(new RectShape { Layer = inner, X1 = 0, Y1 = 0, X2 = Mm(4), Y2 = Mm(3), Net = "GND" });
+        view.Shapes.Add(new ViaShape
+        {
+            Layer = new LayerKey(7, 0), X = Mm(xMm), Y = Mm(yMm), DrillSize = Mm(0.3), PadSize = Mm(0.6), Net = "GND",   // Via 1-10
+        });
+        var face = new EmAirBoxFace(1000, null);
+        var setup = new EmSetup
+        {
+            Name = "edge", LayoutRef = "edge/layout/edge.clay",
+            Frequency = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz"),
+            Solver3D = Em3dSolverId.Palace,
+            Problem3D = Em3dProblemType.Electrostatic,
+            Terminals3D = [new("SIG", "SIG")],
+            Ground3D = "GND",
+            AirBox = new EmAirBox(face, face, face, face, face, face),
+        };
+        return (setup, new EmLayoutSource("/nowhere/edge.clay", view, tech, Dbu), tech);
+    }
+
+    /// <summary>
+    /// R-dfr28-1-3 — the via centred on the board's top edge meshes. Built as a cylinder, its tube and air fill stood half in
+    /// the air padding and Gmsh stopped on "a segment and a facet intersect"; now the barrel is the disc's part on the board
+    /// and the run's note names the via.
+    /// </summary>
+    [GmshFact]
+    public void AThroughViaCentredOnTheBoardEdge_Meshes_AndTheNoteNamesIt()
+    {
+        var (setup, source, tech) = Board(2, 3);
+        var g = Em3dGenerator.Generate(setup, source, tech);
+        Assert.True(g.Ok, g.Refusal);
+        Assert.Contains(g.Notes, n => n.Contains("1 via(s) cross the board edge, the first ('via/1') at (2, 3) mm",
+                                                 StringComparison.Ordinal));
+        Assert.DoesNotContain(g.Problem!.Solids, s => s.Name.StartsWith("via/1", StringComparison.Ordinal) && s.Primitive is Em3dCylinder);
+        var low = GmshGeoWriter.Write(g.Problem!, PalaceSettings.Resolve(setup.Palace));
+        Assert.True(low.Ok, low.Refusal);
+
+        var step = PalaceRun.Mesh(Path.Combine(_root, "mesh"), low, Gmsh(), null, default);
+
+        Assert.True(step.Ok, step.Message);
+    }
+
+    /// <summary>A via wholly on the board is the cylinder it always was; one wholly off it is left out and named.</summary>
+    [Fact]
+    public void AViaOnTheBoardIsACylinder_AndOneOffItIsLeftOut()
+    {
+        var (setup, source, tech) = Board(2, 2.2);
+        var on = Em3dGenerator.Generate(setup, source, tech);
+        Assert.True(on.Ok, on.Refusal);
+        Assert.IsType<Em3dCylinder>(on.Problem!.Solids.Single(s => s.Name == "via/1").Primitive);
+        Assert.DoesNotContain(on.Notes, n => n.Contains("board edge", StringComparison.Ordinal));
+
+        (setup, source, tech) = Board(2, 3.5);
+        var off = Em3dGenerator.Generate(setup, source, tech);
+        Assert.True(off.Ok, off.Refusal);
+        Assert.DoesNotContain(off.Problem!.Solids, s => s.Name.StartsWith("via/", StringComparison.Ordinal));
+        Assert.Contains(off.Notes, n => n.Contains("'via/1' lies wholly off the board", StringComparison.Ordinal));
+    }
+
+    private static string Gmsh() => SolverDiscovery.Gmsh.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Gmsh)).Installation!.Path;
+}
