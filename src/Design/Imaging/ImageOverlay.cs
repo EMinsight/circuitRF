@@ -117,6 +117,8 @@ public sealed partial class ImageOverlay
             if (!item.Bounds.Inflate(tolerancePx).Contains(x, y)) continue;
             // A trace's fitted curve is drawn over the trace, which is what a click there means (brief-pdg-2 R-pdg2-4).
             if (item.Id.StartsWith(FitPrefix, StringComparison.Ordinal)) continue;
+            // A correction is drawn over what it corrects, which is what a click there means (brief-dfr29-1 R-dfr29-1-2).
+            if (item.Id.StartsWith(CorrectionPrefix, StringComparison.Ordinal)) continue;
             int rank = item.Class switch
             {
                 ImageOverlayClass.Crossing => 0,
@@ -202,6 +204,46 @@ public sealed partial class ImageOverlay
                                            new PixelBounds(c.Cx - c.R, c.Cy - c.R, c.Cx + c.R, c.Cy + c.R), (c.Cx, c.Cy, c.R)));
         }
 
+        // Round holes kept as openings or made non-plated — what the hole picker answers (brief-dfr29-1 R-dfr29-1-2).
+        for (int h = 0; h < trace.Holes.Count; h++)
+        {
+            var (hole, kind) = (trace.Holes[h].Circle, trace.Holes[h].Kind);
+            if (kind == ImageHoleKind.Via) continue;   // drawn as a drill above
+            items.Add(new ImageOverlayItem($"{HolePrefix}{h}", ImageOverlayClass.Drill, [], true,
+                                           kind == ImageHoleKind.NonPlated ? "not plated" : "opening", Colours.Ignored, false, null,
+                                           new PixelBounds(hole.Cx - hole.R, hole.Cy - hole.R, hole.Cx + hole.R, hole.Cy + hole.R),
+                                           (hole.Cx, hole.Cy, hole.R)));
+        }
+
+        // The corrections, each drawn as what it makes and dashed over the reading; a refused one amber, its sentence
+        // its label (R-dfr29-1-3).
+        for (int i = 0; i < trace.Corrections.Count; i++)
+        {
+            var o = trace.Corrections[i];
+            var fix = o.Correction;
+            string id = $"{CorrectionPrefix}{i}";
+            if (fix.IsPoint)
+            {
+                var (x, y) = (fix.At.X, fix.At.Y);
+                double r = trace.Holes.Where(h => (h.Circle.Cx - x) * (h.Circle.Cx - x) + (h.Circle.Cy - y) * (h.Circle.Cy - y) <= (h.Circle.R + 1) * (h.Circle.R + 1))
+                                      .Select(h => h.Circle.R).DefaultIfEmpty(4).First() + 2;
+                items.Add(new ImageOverlayItem(id, ImageOverlayClass.Drill, [], true, o.Refusal, null, !o.Applied, null,
+                                               new PixelBounds(x - r, y - r, x + r, y + r), (x, y, r)));
+                continue;
+            }
+            IReadOnlyList<(double X, double Y)> ring = [.. fix.Points.Select(p => (p.X, p.Y))];
+            int? rgb = fix.Kind == ImageCorrectionKind.Copper
+                       && technology?.Layers.FirstOrDefault(l => string.Equals(l.Name, fix.Layer, StringComparison.Ordinal)) is { } def
+                ? (def.Color.R << 16) | (def.Color.G << 8) | def.Color.B
+                : fix.Kind == ImageCorrectionKind.Copper ? null : fix.Kind == ImageCorrectionKind.Clear ? Colours.Ignored : Colours.Line;
+            // An outline is a line round the board, never a fill over it.
+            var cls = fix.Kind switch
+            {
+                ImageCorrectionKind.Clear => ImageOverlayClass.Ignored, ImageCorrectionKind.Outline => ImageOverlayClass.Line, _ => ImageOverlayClass.Copper,
+            };
+            items.Add(new ImageOverlayItem(id, cls, [ring], true, o.Refusal, rgb, !o.Applied, null, PixelBounds.Of(ring)));
+        }
+
         // What the recognition found, carried back onto the picture through the trace's frame.
         if (recognition is not null && trace.Frame is { } frame)
         {
@@ -257,6 +299,10 @@ public sealed partial class ImageOverlay
     private static IReadOnlyList<(double X, double Y)> Points(Clipper2Lib.PathD path) => [.. path.Select(p => (p.x, p.y))];
 
     // ── a schematic picture (brief-img-10 R-im10-9) ─────────────────────────────────────────────────
+
+    /// <summary>A layout picture's round hole that is no via (an opening, or not plated), and a correction made by hand
+    /// (brief-dfr29-1).</summary>
+    public const string HolePrefix = "hole:", CorrectionPrefix = "fix:";
 
     /// <summary>The id prefixes of the items a user corrects (R-im10-8): a crossing is clicked, a dangling end dragged.</summary>
     public const string CrossingPrefix = "crossing:", EndPrefix = "end:";

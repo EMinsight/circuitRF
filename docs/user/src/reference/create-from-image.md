@@ -16,6 +16,7 @@ keywords: image, picture, screenshot, plot, digitise, digitize, Touchstone from 
 <li><a href="#kind">What kind of picture it is</a></li>
 <li><a href="#make">What to make of it</a></li>
 <li><a href="#canvas">The picture, and what was read</a></li>
+<li><a href="#by-hand">Correcting a layout picture by hand</a></li>
 <li><a href="#schematic">Schematic pictures</a></li>
 <li><a href="#scale">Scale</a></li>
 <li><a href="#plots">Plots</a></li>
@@ -142,6 +143,39 @@ highlight its part on the picture.
 | Double-click, **F** or the Zoom to Fit button | Fit the picture. It opens fitted and stays fitted as the dialog is resized, until it is zoomed or panned. |
 | Escape | Put down a measuring tool. |
 
+## Correcting a layout picture by hand {#by-hand}
+
+The colours say where the copper is, not what every piece of it is. Once a layout picture has a scale, its pieces can
+be settled by hand before **Create**. Each choice is drawn dashed over the picture, is kept through every re-read, and
+is undone with **Cmd/Ctrl+Z** on the picture; **Clear corrections** forgets them all.
+
+**Click a hole** to say what it is:
+
+| Choice | Written as |
+|---|---|
+| **Via** | A plated via, the copper whole under it. |
+| **Hole, not plated** | A hole on the technology's non-plated hole layer &mdash; a mounting hole &mdash; the copper opening kept. |
+| **Opening** | An opening in the copper, nothing drilled. |
+
+**And every one like it** (on) answers every hole of the same diameter, within 10 %, the same way: seventy vias are
+one click. A technology with no non-plated hole layer is never changed: the new cell gets a copy of it with one added,
+**Non-plated hole**, spanning the board, written beside the cell as `<cell>.ctech`, and the report says so.
+
+**Click a copper region**: **Copper on** a conductor chosen beside it, or **Not copper** &mdash; a part's body the colours
+read as copper; nothing is written inside it, on any layer.
+
+**Draw** with the tools beside the legend, each armed until Escape:
+
+| Tool | Does |
+|---|---|
+| **Via** | Click to place a via; a click on a hole places it at the hole's centre. |
+| **Copper** | Drag a rectangle, or click corners and double-click to close, to fill copper on the conductor chosen beside the tool. |
+| **Outline** | The same gestures: the board's outline, on the technology's outline layer. Drawing another replaces it. |
+
+A choice that lands on nothing &mdash; a via off the copper, a hole where there is none &mdash; is named in the report
+and not applied. The report counts the rest: *4 corrections: 2 vias added, 1 hole not plated, 1 copper fill on Top
+Copper.*
+
 ## Schematic pictures {#schematic}
 
 A picture of a schematic is read as its wires, its symbols and its words, and drawn as a schematic of native
@@ -265,7 +299,8 @@ A phone photo of a board is taken at an angle, in uneven light, with most of the
 clockwise from its top-left &mdash; or onto any rectangle whose size you know, such as a part or a connector's outline
 &mdash; type its size in the box between the handles (`50 mm × 30 mm`, each side with its unit), and press **Set**. The
 first handle to the second is the width. **Board corners…** works on a drawing as well as a photo: on a datasheet's
-board drawing, the board's outline and its stated size set the scale in one step.
+board drawing, the board's outline and its stated size set the scale in one step. **Use as the board outline**, under
+the size and on by default, writes the rectangle as the board's outline.
 
 {{ui: image-dialog-board-corners}}
 
@@ -499,6 +534,10 @@ you, not to a workspace.
 A picture says nothing about the stackup. The traced layout and the recognised schematic use the technology chosen
 here &mdash; the workspace's default to begin with &mdash; and the report says once that the stackup was not read from
 the picture. Changing it reads the picture again.
+
+Any technology can be chosen, for its layers: the workspace's own, then circuitRF's, marked *(circuitRF)*. One of
+circuitRF's is installed into the workspace's `tech` folder when **Create** writes a cell with it, as a new workspace's
+technology is; a file already there is never overwritten.
 
 ## Advanced {#advanced}
 

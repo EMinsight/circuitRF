@@ -101,6 +101,11 @@ public sealed partial class ImageScaleViewModel : ObservableObject
     [ObservableProperty] private string _sizeText = "";
     [ObservableProperty] private string _sizeError = "";
 
+    /// <summary>Board corners… writes the rectangle as the board outline (brief-dfr29-1 R-dfr29-1-3): on by default.</summary>
+    [ObservableProperty] private bool _cornersAsOutline = true;
+
+    partial void OnCornersAsOutlineChanged(bool value) { if (AppliedCorners is not null) Changed?.Invoke(); }
+
     /// <summary>The corners the photo is read square on, or null — the photo is read as taken.</summary>
     public BoardPhotoCorners? AppliedCorners { get; private set; }
 

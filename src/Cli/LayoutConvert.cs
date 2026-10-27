@@ -706,7 +706,7 @@ public static class LayoutConvert
         {
             var kind = ImageKind.Classify(source.Raster);
             JsonRun.ConvertImage = new ConvertImageJson(PictureFlags.ImageJson(source, kind), PictureFlags.ScaleJson(trace),
-                                                        PictureFlags.LayersJson(trace));
+                                                        PictureFlags.LayersJson(trace), PictureFlags.CorrectionsJson(trace));
             if (o.Picture.LayerMap is null && trace.LayerMap is { } map)
                 Console.Error.WriteLine($"[circuitRF] layer map: --layer-map \"{PictureFlags.Spell(map)}\"");
             o.Picture.WriteOverlay(verb, ImageOverlay.Build(trace, null, tech), traced);
@@ -1433,6 +1433,8 @@ public static class LayoutConvert
         Console.Error.WriteLine("              --layer-map \"#rrggbb=<layer>|drill|outline|silk|ignore,...\"  --preset <name>");
         Console.Error.WriteLine("              --region x0,y0,x1,y1 (each with px)  --min-feature px2  --simplify px  --edge-stroke px  --snap-deg d");
         Console.Error.WriteLine("              --snap45 on|off  --underlay on|off  --overlay out.png");
+        Console.Error.WriteLine("              corrections (repeatable, every number with px):  --via x,y  --hole x,y (not plated)  --not-via x,y");
+        Console.Error.WriteLine("              --copper \"x,y;x,y;x,y=<conductor>\"  --clear \"x,y;...\"  --outline \"x,y;...\"|corners");
         JsonRun.Note(CliDiagnostics.ConvertUsage());
         return 1;
     }

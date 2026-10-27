@@ -4,8 +4,12 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using CircuitRF.Design.Imaging;
+using CircuitRF.Design.Layout.Recognition.Image;
+using CircuitRF.Ui.Tests.Imaging;
+using SkiaSharp;
 using CircuitRF.Ui.Recognition;
 using Xunit;
 
@@ -117,5 +121,68 @@ public sealed class ImageSourceViewModelTests : IDisposable
         vm.IsAutoKind = true;   // Auto still reads it
         await vm.Recognition;
         Assert.Equal(1, runner.Classifications);
+    }
+
+    /// <summary>brief-dfr29-1 gate 2 — And every one like it: twelve 0.5 mm holes and two 2.6 mm ones; one choice on a 0.5 mm
+    /// hole answers the twelve and none of the two, as one undo step.</summary>
+    [Fact]
+    public async Task OneChoiceOnAHole_AnswersEveryHoleOfItsDiameter_AsOneUndoStep()
+    {
+        // 25 µm a pixel: the board 17 mm square.
+        var picture = Pictures.Draw(680, 680, c =>
+        {
+            using var copper = Pictures.Fill(new SKColor(0xc8, 0x75, 0x33));
+            using var white = Pictures.Fill(SKColors.White);
+            c.DrawRect(SKRect.Create(20, 20, 640, 640), copper);
+            for (int i = 0; i < 6; i++)
+                for (int j = 0; j < 2; j++) c.DrawCircle(140 + 80 * i, 300 + 80 * j, 10, white);
+            foreach (int x in new[] { 110, 570 }) c.DrawCircle(x, 110, 52, white);
+        });
+        var vm = ImageDialog.Open(_ws, new RecordingImageRunner(DrawingKind.Layout), TracePictures.Source(picture), makeSchematic: false);
+        await vm.Recognition;
+        vm.Scale.StartTwoPointsCommand.Execute(null);
+        vm.Scale.Click(new PixelPoint(0, 0));
+        vm.Scale.Click(new PixelPoint(680, 0));
+        vm.Scale.DistanceText = "17 mm";
+        vm.Scale.ApplyDistanceCommand.Execute(null);
+        await vm.Recognition;
+
+        vm.SelectedItem = vm.Overlay.HitTest(140, 300, 2, vm.Shows);
+        Assert.True(vm.HolePickerShown);
+        Assert.True(vm.EveryOneLikeIt);   // on by default for holes
+        vm.HoleIsNotPlatedCommand.Execute(null);
+        await vm.Recognition;
+
+        Assert.Equal(12, vm.Corrections.Count);
+        Assert.All(vm.Corrections, c => Assert.Equal(ImageCorrectionKind.Hole, c.Kind));
+        Assert.DoesNotContain(vm.Corrections, c => c.At.Y < 200);   // neither mounting hole
+        Assert.True(vm.UndoCorrection());
+        Assert.Empty(vm.Corrections);
+    }
+
+    /// <summary>Any existing technology can be chosen, for its layers (owner, 2026-10-27): one of circuitRF's that the
+    /// workspace has no copy of is read from the catalogue, and Create installs it into the workspace and traces onto it.</summary>
+    [Fact]
+    public async Task ACircuitRFTechnology_IsInstalledIntoTheWorkspace_WhenCreateWritesWithIt()
+    {
+        var entry = CircuitRF.Design.Layout.TechnologyCatalog.Find(TracePictures.TechId)!;
+        var runner = new RecordingImageRunner(DrawingKind.Layout);
+        var vm = new ImageSourceViewModel(_ws, [ImageTechnologyChoice.Catalog(entry)], 0, ImageDialog.Board(), makeSchematic: false,
+                                          runner, debounce: TimeSpan.Zero, presetDirectory: Path.Combine(_ws, "presets"));
+        await vm.Recognition;
+        Assert.Null(runner.Traces[^1].TechnologyPath);   // read from the catalogue: nothing is installed by looking
+        string installed = Path.Combine(_ws, "tech", entry.Id + ".ctech");
+        Assert.False(File.Exists(installed));
+
+        vm.Scale.StartTwoPointsCommand.Execute(null);
+        vm.Scale.Click(new PixelPoint(0, 0));
+        vm.Scale.Click(new PixelPoint(400, 0));
+        vm.Scale.DistanceText = "4 mm";
+        vm.Scale.ApplyDistanceCommand.Execute(null);
+        await vm.Recognition;
+        await vm.CreateCommand.ExecuteAsync(null);
+
+        Assert.Equal(installed, runner.TraceRuns[^1].Input.TechnologyPath);
+        Assert.True(File.Exists(installed));
     }
 }

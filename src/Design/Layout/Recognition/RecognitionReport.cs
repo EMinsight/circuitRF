@@ -266,6 +266,9 @@ public enum RecognitionFindingClass
     /// <summary>Where the traced layout went.</summary>
     ImageLayoutWritten,
 
+    /// <summary>The corrections made by hand, and any refused (brief-dfr29-1 R-dfr29-1-1).</summary>
+    ImageCorrections,
+
     // ── IM-13: a photograph of a board (R-im13-5) ─────────────────────────────────────────────────
 
     /// <summary>The photo was put square on four corners: the rectangle, and the residual at each corner in µm.</summary>

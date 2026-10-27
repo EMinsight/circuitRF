@@ -20,6 +20,10 @@
 // are placed or dragged. A left-drag on empty picture with the box tool draws the box; a double-click places a point on the
 // selected curve, a drag moves one, a right-click (without a drag) or Delete removes one; with Find curve armed a click
 // follows the curve under it.
+//
+// On a layout picture with a scale (brief-dfr29-1 R-dfr29-1-3), the Via tool takes a click, and the Copper and Outline
+// tools take a dragged rectangle or clicked corners that a double-click closes. A click on a hole or a copper region
+// selects it for its picker. Cmd/Ctrl+Z undoes the last correction. Corrections are drawn dashed.
 
 using System;
 using System.Collections.Generic;
@@ -257,7 +261,9 @@ public sealed class ImageOverlayCanvas : Control
             if (!vm.Shows(item.Class) && !unknownShown) continue;
             bool selected = ReferenceEquals(item, vm.SelectedItem);
             var colour = item.Unknown ? Amber : ColourOf(item);
-            var pen = new Pen(new ImmutableSolidColorBrush(selected ? Accent : colour), (selected ? 3 : item.Class == ImageOverlayClass.Copper ? 1.25 : 1.75) * px);
+            var pen = new Pen(new ImmutableSolidColorBrush(selected ? Accent : colour), (selected ? 3 : item.Class == ImageOverlayClass.Copper ? 1.25 : 1.75) * px,
+                              // A correction drawn over the reading in a dash of its own (brief-dfr29-1 R-dfr29-1-3).
+                              item.Id.StartsWith(ImageOverlay.CorrectionPrefix, StringComparison.Ordinal) ? new ImmutableDashStyle([4, 2], 0) : null);
 
             switch (item.Class)
             {
@@ -449,6 +455,16 @@ public sealed class ImageOverlayCanvas : Control
                                   new Rect(from, _lastPointer).Normalize());
         if (_dragEnd is { Circle: { } c } && _pressAt is not null)
             context.DrawLine(new Pen(pen.Brush, 1.5, new ImmutableDashStyle([5, 3], 0)), ToView(c.X, c.Y), _lastPointer);
+
+        // A polygon being drawn (R-dfr29-1-3): its corners so far, and the edge to the pointer.
+        if (_vm.DrawPoints.Count > 0)
+        {
+            var dash = new Pen(pen.Brush, 1.5, new ImmutableDashStyle([4, 2], 0));
+            for (int k = 1; k < _vm.DrawPoints.Count; k++)
+                context.DrawLine(dash, ToView(_vm.DrawPoints[k - 1].X, _vm.DrawPoints[k - 1].Y), ToView(_vm.DrawPoints[k].X, _vm.DrawPoints[k].Y));
+            context.DrawLine(dash, ToView(_vm.DrawPoints[^1].X, _vm.DrawPoints[^1].Y), _lastPointer);
+            foreach (var corner in _vm.DrawPoints) Mark(corner);
+        }
 
         if (_vm.IsManualPlotPicture) DrawManual(context);
         else if (_vm.IsPlotPicture && !_vm.HasFailure) DrawProbes(context);
@@ -737,6 +753,13 @@ public sealed class ImageOverlayCanvas : Control
             InvalidateVisual();
             e.Handled = true;
         }
+        else if (e.Key == Key.Z && (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0 && _vm is { IsLayoutPicture: true } corrected)
+        {
+            // A correction made by hand undone, one choice at a time (R-dfr29-1-2).
+            corrected.UndoCorrection();
+            InvalidateVisual();
+            e.Handled = true;
+        }
         else if (e.Key is Key.Delete or Key.Back && _vm is { IsPlotPicture: true } && _vm.Plots.SelectedProbePoint is { } point)
         {
             _vm.Plots.RemoveProbePoint(point);
@@ -787,6 +810,14 @@ public sealed class ImageOverlayCanvas : Control
             var placed = ToPicture(point.Position);
             if (placing.PointAt(placed.X, placed.Y, 6 / _zoom) is null) placing.AddPoint(placed.X, placed.Y);
             _manualPoint = null;
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
+        // A polygon being drawn with the Copper or Outline tool (R-dfr29-1-3): a double-click closes it.
+        if (e.ClickCount == 2 && point.Properties.IsLeftButtonPressed && _vm is { DrawTool: PictureDrawTool.Copper or PictureDrawTool.Outline } drawing)
+        {
+            drawing.ClosePolygon();
             InvalidateVisual();
             e.Handled = true;
             return;
@@ -916,6 +947,15 @@ public sealed class ImageOverlayCanvas : Control
             _scoping = false;
             var a = ToPicture(from);
             var b = ToPicture(p);
+            // The Copper and Outline tools take a dragged rectangle; the Via tool a click only (R-dfr29-1-3).
+            if (vm.DrawTool is PictureDrawTool.Copper or PictureDrawTool.Outline)
+            {
+                vm.DrawPoints.Clear();
+                vm.DrawRectangle(a, b);
+                InvalidateVisual();
+                return;
+            }
+            if (vm.DrawTool == PictureDrawTool.Via) { InvalidateVisual(); return; }
             if (vm.BoxTool != PlotBoxTool.None)
             {
                 // Read only here crops and Ignore here excludes (R-ptu6-2, R-ptu6-3); either way the tool is done.
@@ -955,6 +995,8 @@ public sealed class ImageOverlayCanvas : Control
             if (vm.Plots.SelectedIgnoreBox is not null) { vm.SelectedItem = null; return; }
         }
         if (vm.Scale.Click(at)) { ViewChanged?.Invoke(); InvalidateVisual(); return; }
+        if (vm.DrawTool == PictureDrawTool.Via) { vm.PlaceVia(at); InvalidateVisual(); return; }
+        if (vm.DrawTool is PictureDrawTool.Copper or PictureDrawTool.Outline) { vm.AddDrawPoint(at); InvalidateVisual(); return; }
         var picked = vm.Overlay.HitTest(at.X, at.Y, 4 / _zoom, vm.Shows);
         if (picked is { Class: ImageOverlayClass.Crossing }) { vm.ToggleCrossing(picked); return; }
         vm.SelectedItem = picked;

@@ -4069,6 +4069,15 @@ draws one 2 px wide), `--snap-deg` (0 snaps nothing), `--snap45 on|off`, `--unde
 reduced reading as the file's own dpi is. `--json` carries `result.convert`: `image`, `scale` and `layers`, the
 objects `recognize` reports.
 
+**Corrections by hand** (brief-dfr29-1 R-dfr29-1-6), each the `ImageCorrection` record the dialog's hand tools build,
+repeatable, `px` on every number: `--via x,y`, `--hole x,y` (a non-plated hole; a technology with none gains a
+`Non-plated hole` via layer in a copy written beside the cell as `<cell>.ctech`, D2), `--not-via x,y` (the hole stays an
+opening), `--copper "x,y;x,y;x,y=<conductor>"`, `--clear "x,y;…"`, `--outline "x,y;…"` or `--outline corners` (the
+rectangle `--corners` names). In the FILE's pixels — the rectified picture's with `--corners`, the pixels `--overlay`
+draws. They are applied after the colour trace; one that lands on nothing is reported, not dropped. `result.convert`
+gains `corrections`: each one's kind, its flag spelling, and whether it was applied (else its one sentence). There is
+no stackup flag: a picture is read with the chosen technology as it is (owner decision, 2026-10-27).
+
 ### 27.2 The scale is never a guess (D6)
 
 The dialog may open on an inferred scale because the user sees it and changes it with one click; a build machine sees

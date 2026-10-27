@@ -126,6 +126,10 @@ public sealed record ImageTraceInput
     /// rectified <see cref="Source"/>: its classes replace the colour separation, its scale is offered as stated, and its
     /// default map is R-im13-4's.</summary>
     public BoardPhotoReading? Photo { get; internal init; }
+
+    /// <summary>What the user corrected by hand, in the traced picture's pixels — applied after the colour trace, so a
+    /// correction never changes what is read, only what is written (brief-dfr29-1 R-dfr29-1-1).</summary>
+    public IReadOnlyList<ImageCorrection> Corrections { get; init; } = [];
 }
 
 /// <summary>One layer as traced.</summary>
@@ -185,6 +189,19 @@ public sealed record ImageTraceResult
     public string? ResolutionLine { get; init; }
 
     public ImageKindResult? Kind { get; init; }
+
+    /// <summary>The technology traced with: the input's, or its copy (<see cref="TechnologyCopy"/>).</summary>
+    public Technology? Technology { get; init; }
+
+    /// <summary>The copy of the input's technology a non-plated hole needed, written beside the new cell as its own
+    /// <c>.ctech</c> (D2); null when the technology was traced with as it is.</summary>
+    public Technology? TechnologyCopy { get; init; }
+
+    /// <summary>What became of each correction, in the input's order; empty without a scale.</summary>
+    public IReadOnlyList<ImageCorrectionOutcome> Corrections { get; init; } = [];
+
+    /// <summary>Every round hole read, pixels, and what it became — what the dialog's hole picker offers.</summary>
+    public IReadOnlyList<ImageTracedHole> Holes { get; init; } = [];
 }
 
 public static partial class ImageTrace
@@ -228,7 +245,10 @@ public static partial class ImageTrace
         ArgumentNullException.ThrowIfNull(input);
         var report = new RecognitionReport();
         var token = control?.Token ?? CancellationToken.None;
-        if (input.Technology is not { } tech) return new ImageTraceResult { Report = report, Refusal = NoTechnologyRefusal };
+        if (input.Technology is not { } given) return new ImageTraceResult { Report = report, Refusal = NoTechnologyRefusal };
+        var copy = CopyFor(input, given);
+        var tech = copy ?? given;
+        if (copy is not null) input = input with { Technology = copy };
 
         control?.BeginStage("Separating colours");
         var prep = Prepare(input);
@@ -247,7 +267,7 @@ public static partial class ImageTrace
         {
             Report = report, Clusters = prep.Clusters, LayerMap = prep.Map, ScaleCandidates = candidates, Scale = chosen,
             Drills = prep.Drills,
-            Kind = input.Kind, SilkscreenStrokeWidthPx = silk?.StrokeWidth ?? 0, SilkscreenLayer = silk?.Key,
+            Kind = input.Kind, Technology = tech, SilkscreenStrokeWidthPx = silk?.StrokeWidth ?? 0, SilkscreenLayer = silk?.Key,
             Traced = input.Scope ?? new PixelRect(0, 0, input.Source.Raster.Width, input.Source.Raster.Height),
             Layers = [.. prep.Layers.Select(l => new ImageTracedLayer(l.Name, l.Key, l.Role, l.Regions, []))],
         };
@@ -276,7 +296,9 @@ public static partial class ImageTrace
         {
             Frame = built.Frame, DbuPerMicron = built.DbuPerMicron, Layers = built.Layers, Shapes = built.Shapes,
             Underlay = built.Underlay, SilkscreenStrokes = built.Strokes, ResolutionLine = built.Resolution,
-            Drills = built.HoleDrills.Count == 0 ? prep.Drills : [.. prep.Drills, .. built.HoleDrills],
+            Drills = built.Drills, Holes = built.Holes, Corrections = built.Outcomes,
+            TechnologyCopy = copy is not null && built.NonPlatedAdded ? copy : null,
+            Technology = copy is not null && built.NonPlatedAdded ? copy : given,
         };
     }
 
@@ -661,9 +683,11 @@ public static partial class ImageTrace
 
     // ── stage 2: DBU ────────────────────────────────────────────────────────────────────────────────
 
-    /// <param name="HoleDrills">The round holes in the copper that became vias, pixels — drawn on the overlay as drills.</param>
+    /// <param name="Drills">Every via written, pixels — drawn on the overlay as drills.</param>
+    /// <param name="NonPlatedAdded">The technology's copy gained a non-plated hole layer (D2).</param>
     private sealed record Built(PixelFrame Frame, int DbuPerMicron, List<ImageTracedLayer> Layers, List<LayoutShape> Shapes,
-                                BitmapShape? Underlay, List<long[]> Strokes, string Resolution, List<CircleFit> HoleDrills);
+                                BitmapShape? Underlay, List<long[]> Strokes, string Resolution, List<CircleFit> Drills,
+                                List<ImageTracedHole> Holes, List<ImageCorrectionOutcome> Outcomes, bool NonPlatedAdded);
 
     private static Built Build(ImageTraceInput input, Prepared prep, ImageScaleCandidate scale, RecognitionReport report)
     {
@@ -700,16 +724,47 @@ public static partial class ImageTrace
         var traced = new List<ImageTracedLayer>();
         var consumed = new HashSet<ContourRegion>();
 
+        // ── the copper corrections (R-dfr29-1-1): applied to what was read, never to the reading ─────────
+        var fixes = input.Corrections;
+        var outcomes = new ImageCorrectionOutcome?[fixes.Count];
+        var layers = EditCopper(prep.Layers, fixes, tech, outcomes);
+        var copperLayers = layers.Where(l => l.Role == ImageLayerRole.Layer && l.Key is { } k && copperOrder.Contains(k))
+                                 .OrderBy(l => copperOrder.IndexOf(l.Key!.Value)).ToList();
+        long Px(double px) => (long)Math.Round(px * scaleDbu);
+        long fallbackPad = (long)Math.Round(tech.DefaultViaPadDbu * techToLayout);
+        var holes = new List<ImageTracedHole>();
+        var nonPlated = new List<CircleFit>();
+        var seenHoles = new List<CircleFit>();
+        bool Seen(CircleFit c) => seenHoles.Any(p => Math.Abs(p.Cx - c.Cx) <= p.R && Math.Abs(p.Cy - c.Cy) <= p.R);
+        void Open(CircleFit c, bool plated)
+        {
+            if (Seen(c)) return;
+            seenHoles.Add(c);
+            if (plated) holes.Add(new ImageTracedHole(c, ImageHoleKind.Opening));
+            else nonPlated.Add(c);
+        }
+
         // ── drills → vias ──────────────────────────────────────────────────────────────────────────
         var barrel = ImageLayerMap.ViaBarrelLayer(tech);
         var vias = new List<LayoutShape>();
+        var viaDrills = new List<CircleFit>();
         foreach (var d in prep.Drills)
         {
+            // A drill circle a correction says is an opening, or not plated, is no via: its hole in the copper stays.
+            int fix = LastOn(fixes, outcomes, d.Cx, d.Cy, d.R);
+            var said = fix >= 0 ? fixes[fix].Kind : (ImageCorrectionKind?)null;
+            if (said is ImageCorrectionKind.NotVia or ImageCorrectionKind.Hole)
+            {
+                outcomes[fix] = new(fixes[fix], null);
+                Open(d, plated: said == ImageCorrectionKind.NotVia);
+                continue;
+            }
+            if (fix >= 0) outcomes[fix] = new(fixes[fix], barrel is null ? $"{tech.Name} has no via layer to place it on." : null);
+            viaDrills.Add(d);
             if (barrel is null) continue;
             LayerKey? landing = null;
             long pad = 0;
-            foreach (var l in prep.Layers.Where(l => l.Role == ImageLayerRole.Layer && l.Key is { } k && copperOrder.Contains(k))
-                                         .OrderBy(l => copperOrder.IndexOf(l.Key!.Value)))
+            foreach (var l in copperLayers)
             {
                 var holder = l.Regions.FirstOrDefault(r => Clipper.PointInPolygon(new PointD(d.Cx, d.Cy), r.Outer) != PointInPolygonResult.IsOutside);
                 if (holder is null) continue;
@@ -721,13 +776,10 @@ public static partial class ImageTrace
                     consumed.Add(holder);
                 }
             }
-            long drill = Tidy((long)Math.Round(2 * d.R * scaleDbu), tech.DefaultDisplayUnit, dbuPerMicron);
+            long drill = Tidy(fix >= 0 && fixes[fix].DrillPx is { } stated ? Px(stated) : (long)Math.Round(2 * d.R * scaleDbu),
+                              tech.DefaultDisplayUnit, dbuPerMicron);
             if (pad > drill) pad = Tidy(pad, tech.DefaultDisplayUnit, dbuPerMicron);
-            if (pad <= drill)
-            {
-                long fallback = (long)Math.Round(tech.DefaultViaPadDbu * techToLayout);
-                pad = fallback > drill ? fallback : 2 * drill;
-            }
+            if (pad <= drill) pad = fallbackPad > drill ? fallbackPad : 2 * drill;
             var (cx, cy) = frame.ToTarget(d.Cx, d.Cy);
             vias.Add(new ViaShape
             {
@@ -739,45 +791,60 @@ public static partial class ImageTrace
         // A datasheet's test board draws its holes in the background's own colour, so no drill row exists and every via
         // was a hole cut in the pour (designer round 29). A small round hole inside a copper region is a via: the
         // copper is written whole under it and the via opens it. A larger one (a mounting hole's clearance) stays an
-        // opening — whether it is plated is not in the picture.
+        // opening — whether it is plated is not in the picture. A correction on a hole says what it is, drill colour or
+        // not (R-dfr29-1-1).
         var holeVias = new HashSet<PathD>(ReferenceEqualityComparer.Instance);
         var holeDrills = new List<CircleFit>();
-        int openings = 0;
-        if (prep.Drills.Count == 0)
+        int openings = 0, autoPlaced = 0;
+        bool auto = prep.Drills.Count == 0;
         {
             long maxDrill = (long)Math.Round(MaxHoleViaMetres * 1e6 * dbuPerMicron), minDrill = (long)Math.Round(MinHoleViaMetres * 1e6 * dbuPerMicron);
             var placed = new List<(double X, double Y, double R)>();
-            foreach (var l in prep.Layers.Where(l => l.Role == ImageLayerRole.Layer && l.Key is { } k && copperOrder.Contains(k))
-                                         .OrderBy(l => copperOrder.IndexOf(l.Key!.Value)))
+            foreach (var l in copperLayers)
                 foreach (var region in l.Regions)
                     foreach (var hole in region.Holes)
                     {
                         if (RoundHole(hole) is not { } c) continue;
+                        if (prep.Drills.Any(d => Within(hole, d))) continue;   // a drill circle's own hole, settled above
+                        int fix = LastOn(fixes, outcomes, c.Cx, c.Cy, c.R);
+                        var said = fix >= 0 ? fixes[fix].Kind : (ImageCorrectionKind?)null;
+                        if (said is ImageCorrectionKind.NotVia or ImageCorrectionKind.Hole)
+                        {
+                            outcomes[fix] = new(fixes[fix], null);
+                            Open(c, plated: said == ImageCorrectionKind.NotVia);
+                            continue;
+                        }
                         long drill = (long)Math.Round(2 * c.R * scaleDbu);
-                        if (drill > maxDrill) { openings++; continue; }
-                        if (drill < minDrill) continue;
+                        if (said == ImageCorrectionKind.Via)
+                        {
+                            outcomes[fix] = new(fixes[fix], barrel is null ? $"{tech.Name} has no via layer to place it on." : null);
+                            if (fixes[fix].DrillPx is { } stated) drill = Px(stated);
+                        }
+                        else if (!auto) { Open(c, plated: true); continue; }
+                        else if (drill > maxDrill) { openings++; Open(c, plated: true); continue; }
+                        else if (drill < minDrill) continue;
                         holeVias.Add(hole);
                         if (barrel is null || placed.Any(p => Math.Abs(p.X - c.Cx) <= p.R && Math.Abs(p.Y - c.Cy) <= p.R)) continue;
                         drill = Tidy(drill, tech.DefaultDisplayUnit, dbuPerMicron);
                         placed.Add((c.Cx, c.Cy, c.R));
                         holeDrills.Add(c);
-                        long fallback = (long)Math.Round(tech.DefaultViaPadDbu * techToLayout);
+                        if (said is null) autoPlaced++;
                         var (cx, cy) = frame.ToTarget(c.Cx, c.Cy);
                         vias.Add(new ViaShape
                         {
                             X = (long)Math.Round(cx), Y = (long)Math.Round(cy), DrillSize = drill,
-                            PadSize = fallback > drill ? fallback : 2 * drill, Layer = barrel.Value, LandingLayer = l.Key,
+                            PadSize = fallbackPad > drill ? fallbackPad : 2 * drill, Layer = barrel.Value, LandingLayer = l.Key,
                         });
                     }
             if (barrel is null) holeVias.Clear();
-            var said = new List<string>();
-            if (placed.Count > 0)
-                said.Add($"{Plural(placed.Count, "round hole in the copper became a via", "round holes in the copper became vias")} on " +
-                         $"{ImageLayerMap.NameOf(tech, barrel!.Value)}, the copper whole under each — the picture draws no drill colour.");
-            if (openings > 0)
-                said.Add($"{Plural(openings, "round hole", "round holes")} wider than {MaxHoleViaMetres * 1e3:0.#} mm " +
-                         $"{(openings == 1 ? "was kept as an opening" : "were kept as openings")} in the copper: whether a mounting hole is plated is not in the picture.");
-            if (said.Count > 0) report.Add(RecognitionFindingClass.ImageViasPlaced, placed.Count, string.Join(" ", said));
+            var said2 = new List<string>();
+            if (auto && autoPlaced > 0)
+                said2.Add($"{Plural(autoPlaced, "round hole in the copper became a via", "round holes in the copper became vias")} on " +
+                          $"{ImageLayerMap.NameOf(tech, barrel!.Value)}, the copper whole under each — the picture draws no drill colour.");
+            if (auto && openings > 0)
+                said2.Add($"{Plural(openings, "round hole", "round holes")} wider than {MaxHoleViaMetres * 1e3:0.#} mm " +
+                          $"{(openings == 1 ? "was kept as an opening" : "were kept as openings")} in the copper: whether a mounting hole is plated is not in the picture.");
+            if (said2.Count > 0) report.Add(RecognitionFindingClass.ImageViasPlaced, autoPlaced, string.Join(" ", said2));
         }
 
         if (prep.Drills.Count > 0)
@@ -787,14 +854,68 @@ public static partial class ImageTrace
                     $"{Plural(prep.Drills.Count, "drill hole was", "drill holes were")} read, but {tech.Name} has no via layer, " +
                     "so they were written on no layer.");
             else
-                report.Add(RecognitionFindingClass.ImageViasPlaced, vias.Count,
-                    $"{Plural(vias.Count, "drill circle became a via", "drill circles became vias")} on {ImageLayerMap.NameOf(tech, barrel.Value)}.");
+                report.Add(RecognitionFindingClass.ImageViasPlaced, viaDrills.Count,
+                    $"{Plural(viaDrills.Count, "drill circle became a via", "drill circles became vias")} on {ImageLayerMap.NameOf(tech, barrel.Value)}.");
         }
+
+        // ── a via placed by hand where there is no hole: on the copper under the point ─────────────────
+        for (int i = 0; i < fixes.Count; i++)
+        {
+            if (outcomes[i] is not null || !fixes[i].IsPoint) continue;
+            var p = fixes[i].At;
+            string at = $"{p.X.ToString("0.#", CultureInfo.InvariantCulture)}px,{p.Y.ToString("0.#", CultureInfo.InvariantCulture)}px";
+            if (fixes[i].Kind != ImageCorrectionKind.Via) { outcomes[i] = new(fixes[i], $"There is no round hole at {at}."); continue; }
+            if (barrel is null) { outcomes[i] = new(fixes[i], $"{tech.Name} has no via layer to place it on."); continue; }
+            if (viaDrills.Concat(holeDrills).Any(d => (d.Cx - p.X) * (d.Cx - p.X) + (d.Cy - p.Y) * (d.Cy - p.Y) <= (d.R + HoleReachPx) * (d.R + HoleReachPx)))
+            {
+                outcomes[i] = new(fixes[i], null);   // a via already
+                continue;
+            }
+            var pt = new PointD(p.X, p.Y);
+            var landing = copperLayers.FirstOrDefault(l => l.Regions.Any(r => Clipper.PointInPolygon(pt, r.Outer) != PointInPolygonResult.IsOutside
+                                                                               && r.Holes.All(hp => Clipper.PointInPolygon(pt, hp) != PointInPolygonResult.IsInside)));
+            if (landing is null) { outcomes[i] = new(fixes[i], $"There is no copper at {at} for a via to land on."); continue; }
+            long drill = fixes[i].DrillPx is { } stated ? Tidy(Px(stated), tech.DefaultDisplayUnit, dbuPerMicron)
+                       : tech.DefaultViaDrillDbu > 0 ? (long)Math.Round(tech.DefaultViaDrillDbu * techToLayout)
+                       : Tidy((long)Math.Round(3 * MinHoleViaMetres * 1e6 * dbuPerMicron), tech.DefaultDisplayUnit, dbuPerMicron);
+            var (cx, cy) = frame.ToTarget(p.X, p.Y);
+            vias.Add(new ViaShape
+            {
+                X = (long)Math.Round(cx), Y = (long)Math.Round(cy), DrillSize = drill,
+                PadSize = fallbackPad > drill ? fallbackPad : 2 * drill, Layer = barrel.Value, LandingLayer = landing.Key,
+            });
+            holeDrills.Add(new CircleFit(p.X, p.Y, drill / scaleDbu / 2, 0));
+            outcomes[i] = new(fixes[i], null);
+        }
+
+        // ── holes that are not plated (R-dfr29-1-5) ──────────────────────────────────────────────────
+        var holeShapes = new List<LayoutShape>();
+        bool nonPlatedAdded = false;
+        if (nonPlated.Count > 0)
+        {
+            // Trace made a copy for a technology with no non-plated layer (CopyFor): the layer is added to that copy (D2).
+            if (NonPlatedLayer(tech) is not { } npth)
+            {
+                npth = AddNonPlatedLayer(tech);
+                nonPlatedAdded = true;
+                report.Add(RecognitionFindingClass.ImageCorrections, 1,
+                    $"{tech.Name} has no non-plated hole layer, so the copy of it written beside the cell gains one, " +
+                    $"'{NonPlatedHoleLayerName}', spanning the board.");
+            }
+            foreach (var c in nonPlated)
+            {
+                long drill = Tidy(Px(2 * c.R), tech.DefaultDisplayUnit, dbuPerMicron);
+                var (cx, cy) = frame.ToTarget(c.Cx, c.Cy);
+                holeShapes.Add(new CircleShape { Layer = npth, Cx = (long)Math.Round(cx), Cy = (long)Math.Round(cy), R = drill / 2 });
+                holes.Add(new ImageTracedHole(c, ImageHoleKind.NonPlated));
+            }
+        }
+        holes.InsertRange(0, viaDrills.Concat(holeDrills).Select(c => new ImageTracedHole(c, ImageHoleKind.Via)));
 
         // ── each layer ─────────────────────────────────────────────────────────────────────────────
         int circles = 0;
         var strokes = new List<long[]>();
-        foreach (var l in prep.Layers)
+        foreach (var l in layers)
         {
             var these = new List<LayoutShape>();
             if (l.Key is { } key)
@@ -802,15 +923,15 @@ public static partial class ImageTrace
                 foreach (var region in l.Regions)
                 {
                     if (consumed.Contains(region)) continue;
-                    var holes = region.Holes.Where(hp => !holeVias.Contains(hp) && !prep.Drills.Any(d => Within(hp, d))).ToList();
-                    if (holes.Count == 0 && CircleOf(region) is { } c)
+                    var kept = region.Holes.Where(hp => !holeVias.Contains(hp) && !viaDrills.Any(d => Within(hp, d))).ToList();
+                    if (kept.Count == 0 && CircleOf(region) is { } c)
                     {
                         var (cx, cy) = frame.ToTarget(c.Cx, c.Cy);
                         these.Add(new CircleShape { Layer = key, Cx = (long)Math.Round(cx), Cy = (long)Math.Round(cy), R = (long)Math.Round(c.R * scaleDbu) });
                         circles++;
                         continue;
                     }
-                    these.Add(ShapeOf(region.Outer, holes, frame, key));
+                    these.Add(ShapeOf(region.Outer, kept, frame, key));
                 }
                 if (l.Role == ImageLayerRole.BoardOutline || l.Role == ImageLayerRole.Silkscreen)
                 {
@@ -829,7 +950,36 @@ public static partial class ImageTrace
             traced.Add(new ImageTracedLayer(l.Name, l.Key, l.Role, l.Regions, these));
             shapes.AddRange(these);
         }
+
+        // ── the board outline drawn by hand: one, the last drawn (R-dfr29-1-3) ─────────────────────────
+        int outlineFix = -1;
+        for (int i = 0; i < fixes.Count; i++)
+        {
+            if (fixes[i].Kind != ImageCorrectionKind.Outline) continue;
+            if (outlineFix >= 0) outcomes[outlineFix] = new(fixes[outlineFix], "A later outline replaces it.");
+            outlineFix = i;
+        }
+        if (outlineFix >= 0)
+        {
+            var f = fixes[outlineFix];
+            if (f.Points.Count < 3 || Math.Abs(Clipper.Area(f.Path())) < 1)
+                outcomes[outlineFix] = new(f, "An outline needs at least three corners around the board.");
+            else if (ImageLayerMap.OutlineLayer(tech) is not { } outlineKey)
+                outcomes[outlineFix] = new(f, $"{tech.Name} has no board outline layer to write it on.");
+            else
+            {
+                // A closed line along the outline, as a board outline is drawn: read along its centre line (Em3d, Crop).
+                var xy = Quantise(frame.ToTarget(f.Path()), closed: true);
+                var edge = new PathShape { Layer = outlineKey, Xy = [.. xy, xy[0], xy[1]], Width = Math.Max(1, (long)Math.Round(scaleDbu)) };
+                int t = traced.FindIndex(t => t.Role == ImageLayerRole.BoardOutline);
+                if (t >= 0) traced[t] = traced[t] with { Shapes = [.. traced[t].Shapes, edge] };
+                else traced.Add(new ImageTracedLayer(ImageLayerMap.NameOf(tech, outlineKey), outlineKey, ImageLayerRole.BoardOutline, [], [edge]));
+                shapes.Add(edge);
+                outcomes[outlineFix] = new(f, null);
+            }
+        }
         shapes.AddRange(vias);
+        shapes.AddRange(holeShapes);
 
         // ── the underlay (D5) ──────────────────────────────────────────────────────────────────────
         BitmapShape? underlay = null;
@@ -862,14 +1012,19 @@ public static partial class ImageTrace
         var perLayer = traced.Where(t => t.Shapes.Count > 0).Select(t => $"{t.Name}: {t.Shapes.Count}").ToList();
         if (shapes.Count > 0)
             report.Add(RecognitionFindingClass.ImageShapesTraced, shapes.Count,
-                $"{Plural(shapes.Count, "shape", "shapes")} traced — {string.Join("; ", perLayer)}" + (vias.Count > 0 ? $"; vias: {vias.Count}" : "") + ".");
+                $"{Plural(shapes.Count, "shape", "shapes")} traced — {string.Join("; ", perLayer)}" + (vias.Count > 0 ? $"; vias: {vias.Count}" : "")
+                + (holeShapes.Count > 0 ? $"; non-plated holes: {holeShapes.Count}" : "") + ".");
         report.Add(RecognitionFindingClass.ImageCirclesFitted, circles, $"{Plural(circles, "region was fitted as a circle", "regions were fitted as circles")}.");
         ReportPixels(prep, report);
         if (strokes.Count > 0)
             report.Add(RecognitionFindingClass.ImageSilkscreenStrokes, strokes.Count,
                 $"{Plural(strokes.Count, "silkscreen stroke was", "silkscreen strokes were")} kept as centre lines for reading text.");
 
-        return new Built(frame, dbuPerMicron, traced, shapes, underlay, strokes, resolution, holeDrills);
+        var outcomeList = outcomes.Select((o, i) => o ?? new ImageCorrectionOutcome(fixes[i], "It was not applied.")).ToList();
+        ReportCorrections(outcomeList, report);
+
+        return new Built(frame, dbuPerMicron, traced, shapes, underlay, strokes, resolution, [.. viaDrills, .. holeDrills], holes,
+                         outcomeList, nonPlatedAdded);
     }
 
     private static bool Within(PathD hole, CircleFit d)

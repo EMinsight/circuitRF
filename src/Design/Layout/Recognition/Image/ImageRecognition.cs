@@ -184,6 +184,7 @@ public static class ImageRecognition
                 new ImageTraceRunOptions { Checkpoint = (_, _) => null, Now = now });
             if (!layout.Ok) return Refused(layout.Refusal ?? "The layout could not be written.");
             layoutPath = layout.LayoutPath!;
+            if (layout.TechnologyCopyPath is { } own) model.TechRef = SchematicTechnology.StoredRef(own, schematicDir);
 
             string pictureRef = ImageKeep.Into(cellDir, cellName, input.Trace.Source).RefFrom(schematicDir);
             var raster = input.Trace.Source.Raster;
@@ -216,7 +217,8 @@ public static class ImageRecognition
     private static ImageRecognitionCircuit Read(ImageRecognitionInput input, string? clayPath, RecognitionEmitOptions emit, RunControl? control)
     {
         var trace = ImageTrace.Trace(input.Trace with { TargetIsPlacedLayout = false }, control);
-        var technology = input.Trace.Technology;
+        // A non-plated hole's layer is in the copy the trace made (D2): the recognition reads the technology written.
+        var technology = trace.Technology ?? input.Trace.Technology;
         var recognition = RecognitionInput.FromTrace(trace, technology, input.Options) with
         {
             ClayPath = clayPath, TechnologyPath = input.Trace.TechnologyPath, Placement = input.Placement, Bom = input.Bom,

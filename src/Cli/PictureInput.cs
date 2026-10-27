@@ -42,6 +42,14 @@ internal sealed class PictureFlags
     public double? MinFeature, Simplify, SnapDeg, EdgeStroke;
     public bool? Snap45, Underlay;
 
+    /// <summary>brief-dfr29-1 R-dfr29-1-6: the corrections the dialog makes by hand, the same records, in FILE pixels (the
+    /// rectified picture's with --corners).</summary>
+    public readonly List<ImageCorrection> Corrections = [];
+
+    /// <summary><c>--outline corners</c>: the rectangle --corners names is the board outline (the dialog's <i>Use as the
+    /// board outline</i>).</summary>
+    public bool OutlineCorners;
+
     // A schematic picture's (recognize only).
     public DrawingKind? Kind;
     public CrossingRule? Crossings;
@@ -138,6 +146,37 @@ internal sealed class PictureFlags
                 if (OnOff(v) is not { } s45) return Bad("on or off");
                 Snap45 = s45;
                 { LayoutFlags.Add(a); i++; return 0; }
+            case "--via" or "--hole" or "--not-via":
+            {
+                if (PointPx(verb, a, v) is not { } p) return _pxRefusal;
+                Corrections.Add(a switch
+                {
+                    "--via" => ImageCorrection.Via(p.X, p.Y), "--hole" => ImageCorrection.Hole(p.X, p.Y), _ => ImageCorrection.NotVia(p.X, p.Y),
+                });
+                { LayoutFlags.Add(a); i++; return 0; }
+            }
+            case "--copper":
+            {
+                int eq = v.LastIndexOf('=');
+                if (eq < 0 || v[(eq + 1)..].Trim().Length == 0)
+                    return Bad("\"x,y;x,y;x,y=<layer>\": three or more corners in pixels with px, then the conductor");
+                if (PolygonPx(verb, a, v[..eq]) is not { } poly) return _pxRefusal;
+                Corrections.Add(ImageCorrection.Copper(poly, v[(eq + 1)..].Trim()));
+                { LayoutFlags.Add(a); i++; return 0; }
+            }
+            case "--clear":
+            {
+                if (PolygonPx(verb, a, v) is not { } poly) return _pxRefusal;
+                Corrections.Add(ImageCorrection.Clear(poly));
+                { LayoutFlags.Add(a); i++; return 0; }
+            }
+            case "--outline":
+            {
+                if (v.Trim().Equals("corners", StringComparison.OrdinalIgnoreCase)) { OutlineCorners = true; LayoutFlags.Add(a); i++; return 0; }
+                if (PolygonPx(verb, a, v) is not { } poly) return _pxRefusal;
+                Corrections.Add(ImageCorrection.Outline(poly));
+                { LayoutFlags.Add(a); i++; return 0; }
+            }
             case "--underlay":
                 // Both kinds take it (D5): a layout picture's trace and a schematic picture's drawing lay the picture under.
                 if (OnOff(v) is not { } under) return Bad("on or off");
@@ -190,6 +229,52 @@ internal sealed class PictureFlags
                 { SchematicFlags.Add(a); i++; return 0; }
         }
         return null;
+    }
+
+    /// <summary>The refusal a pixel coordinate's parse made.</summary>
+    private int? _pxRefusal;
+
+    /// <summary><c>x,y</c>, each with <c>px</c>, or null with <see cref="_pxRefusal"/> set — <c>--region</c>'s rule.</summary>
+    private PixelPoint? PointPx(string verb, string option, string text)
+    {
+        var parts = text.Split(',');
+        if (parts.Length != 2)
+        {
+            _pxRefusal = JsonRun.Fail(CliDiagnostics.PictureBadValue(verb, option, text, "x,y, each in pixels with px (120px,80px)"));
+            return null;
+        }
+        var v = new double[2];
+        for (int k = 0; k < 2; k++)
+        {
+            string p = parts[k].Trim();
+            if (p.Length > 0 && !char.IsLetter(p[^1])) { _pxRefusal = JsonRun.Fail(CliDiagnostics.PictureCoordinateNeedsPx(verb, option, p)); return null; }
+            if (!p.EndsWith("px", StringComparison.OrdinalIgnoreCase) || Number(p[..^2]) is not { } d)
+            {
+                _pxRefusal = JsonRun.Fail(CliDiagnostics.PictureBadValue(verb, option, text, "x,y, each in pixels with px (120px,80px)"));
+                return null;
+            }
+            v[k] = d;
+        }
+        return new PixelPoint(v[0], v[1]);
+    }
+
+    /// <summary><c>x,y;x,y;x,y…</c>, three or more corners, each number with <c>px</c>.</summary>
+    private IReadOnlyList<PixelPoint>? PolygonPx(string verb, string option, string text)
+    {
+        var corners = text.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (corners.Length < 3)
+        {
+            _pxRefusal = JsonRun.Fail(CliDiagnostics.PictureBadValue(verb, option, text,
+                "three or more corners x,y;x,y;x,y, each number in pixels with px (10px,10px;200px,10px;200px,90px;10px,90px)"));
+            return null;
+        }
+        var points = new List<PixelPoint>(corners.Length);
+        foreach (string c in corners)
+        {
+            if (PointPx(verb, option, c) is not { } p) return null;
+            points.Add(p);
+        }
+        return points;
     }
 
     private static double? Number(string s) =>
@@ -281,11 +366,26 @@ internal sealed class PictureFlags
             Kind = kind is null ? null : kind.AsLayout(),
             Scope = region is { } r ? new PixelRect(r.Left * f, r.Top * f, r.Right * f, r.Bottom * f) : null,
         };
+        // The corrections in the picture TRACED: the file's pixels carried onto a reduced reading, or the rectified picture's
+        // own with --corners (whose pixels --overlay draws), as the dialog holds them.
+        var conductors = ImageTrace.ConductorLayerNames(tech);
+        foreach (var c in Corrections.Where(c => c.Kind == ImageCorrectionKind.Copper))
+            if (!conductors.Contains(c.Layer ?? "", StringComparer.Ordinal))
+                return (null, JsonRun.Fail(CliDiagnostics.PictureBadValue(verb, "--copper", c.Layer ?? "",
+                    $"one of {tech.Name}'s conductors: {string.Join(", ", conductors)}")));
+        if (OutlineCorners && _corners is null)
+            return (null, JsonRun.Fail(CliDiagnostics.PictureBadValue(verb, "--outline", "corners", "a polygon in pixels, or corners beside --corners")));
+        double g = _corners is null ? f : 1;
+        input = input with
+        {
+            Corrections = [.. Corrections.Select(c => c with { Points = [.. c.Points.Select(p => new PixelPoint(p.X * g, p.Y * g))] })],
+        };
         if (_corners is { } corners)
         {
             var photo = BoardPhoto.Read(source, corners.Scaled(f));
             if (!photo.Ok) return (null, JsonRun.Fail(CliDiagnostics.PictureRefused(verb, photo.Refusal!)));
             input = BoardPhoto.Apply(input, photo);
+            if (OutlineCorners) input = ImageTrace.WithPhotoOutline(input);
         }
         return (input, null);
     }
@@ -436,6 +536,12 @@ internal sealed class PictureFlags
     public static ImageScaleJson ScaleJson(ImageTraceResult trace) => new(
         trace.Scale?.Display, trace.Scale?.MetresPerPixel, trace.Scale?.Evidence,
         [.. trace.ScaleCandidates.Select(c => new ImageScaleCandidateJson(KindName(c), c.Display, c.MetresPerPixel, c.Support, c.Evidence, c.OfferedOnly))]);
+
+    /// <summary>The corrections as applied (R-dfr29-1-6), or null when none was made.</summary>
+    public static IReadOnlyList<ImageCorrectionJson>? CorrectionsJson(ImageTraceResult trace) =>
+        trace.Corrections.Count == 0 ? null
+        : [.. trace.Corrections.Select(o => new ImageCorrectionJson(o.Correction.Kind.ToString().ToLowerInvariant(), o.Correction.Spelling,
+                                                                    o.Applied, o.Refusal))];
 
     public static IReadOnlyList<ImageLayerJson> LayersJson(ImageTraceResult trace) =>
         trace.LayerMap is not { } map ? [] :

@@ -590,3 +590,31 @@ picture: 71 vias, 2 openings. The hole-vias join `ImageTraceResult.Drills`, so t
 drills. Drill and pad are rounded in the technology's unit (`Tidy`): 1 mil (½ mil below 4 mil), 0.05 mm (0.01 mm below
 0.2 mm), 1 µm otherwise. The measured hole includes the drawing's black outline ring, so the drill reads a little
 large.
+
+## Corrections by hand before Create (brief DFR29-1, 2026-10-27)
+
+`ImageTraceInput.Corrections` holds `ImageCorrection` records in the traced picture's pixels: `Via`, `Hole` (not
+plated), `NotVia`, `Copper`, `Clear`, `Outline`. The dialog's hand tools and `convert`'s `--via`/`--hole`/`--not-via`/
+`--copper`/`--clear`/`--outline` build the same records, and a process-run test compares the two `.clay` files byte
+for byte. `Build` applies them after the colour trace. Clear runs before Copper. Only the regions whose bounds meet a
+correction go through Clipper (EvenOdd, so a region's holes and its islands survive). A layer no correction touches
+is the list as read, so a trace with no corrections writes the same bytes as before. The last point correction on a
+hole wins; an earlier one on the same hole is reported as answered by it. One that lands on nothing gets a one-sentence
+refusal in `ImageTraceResult.Corrections`, and the report names it.
+
+- **A non-plated hole keeps its copper opening**, as R-dfr29-1-1's table says. A pour with one hole left open and one
+  made non-plated therefore has two holes, not the one gate 1's wording counts.
+- **D2: a technology with no non-plated via layer is copied, never changed.** The copy gains `Non-plated hole`
+  (`Plated = false`, spanning the first to the last conductor), and Write saves it as `<cell>/<cell>.ctech`, referenced
+  by the layout. The copy is made only when a `Hole` correction exists, and it is written only when a hole was actually
+  placed on it. Into an open layout, which cannot carry its own technology, this is a refusal.
+- **A copied technology's material-library references must be rebased.** They are relative to the original `.ctech`.
+  Saved into the cell folder, the copy named `generic-materials.cmat` beside itself, where there is none, and failed
+  to load (`MaterialLibraryException`). Write rewrites each reference that resolves to a file into one relative to the
+  copy (`MaterialLibraries.RelativeReference`).
+- **The outline is a closed `PathShape`, one picture pixel wide.** That is the shape Em3d and Crop to Rectangle read
+  along its centre line. Board corners… / `--outline corners` use `BoardPhotoReading.Rectangle()`, the rectangle in
+  rectified pixels, through `ImageTrace.WithPhotoOutline`, which adds it only when no outline is drawn.
+- **R-dfr29-1-4's stackup form was built and then withdrawn** at the owner's decision: the picture is read with the
+  chosen technology as it is, and no flag states a stackup. The owner wants the picker to offer every existing
+  technology instead, for its layers (see `src/Ui/RESOLVED.md`).

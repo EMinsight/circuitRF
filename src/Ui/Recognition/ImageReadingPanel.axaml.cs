@@ -35,13 +35,23 @@ public partial class ImageReadingPanel : UserControl
         {
             _vm.Scale.PropertyChanged -= OnScaleChanged;
             _vm.Plots.PropertyChanged -= OnPlotsChanged;
+            _vm.PropertyChanged -= OnVmChanged;
         }
         _vm = DataContext as ImageSourceViewModel;
         if (_vm is not null)
         {
             _vm.Scale.PropertyChanged += OnScaleChanged;
             _vm.Plots.PropertyChanged += OnPlotsChanged;
+            _vm.PropertyChanged += OnVmChanged;
         }
+    }
+
+    /// <summary>A hole or a copper region selected: its picker beside it (brief-dfr29-1 R-dfr29-1-2).</summary>
+    private void OnVmChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ImageSourceViewModel.HolePickerShown) or nameof(ImageSourceViewModel.CopperPickerShown)
+            or nameof(ImageSourceViewModel.SelectedItem))
+            PlaceInline();
     }
 
     private void OnPlotsChanged(object? sender, PropertyChangedEventArgs e)
@@ -83,6 +93,13 @@ public partial class ImageReadingPanel : UserControl
             Point[] keep = scale.PointA is { } a && scale.PointB is { } b
                 ? [Canvas.ToView(a.X, a.Y), Canvas.ToView(b.X, b.Y)] : [Canvas.ToView(at.X, at.Y)];
             foreach (var box in new Control[] { DistanceBox, Z0Box }) Place(box, Canvas.ToView(at.X, at.Y), keep);
+        }
+        // A hole's or a copper region's picker beside it, off the piece itself.
+        if (_vm?.SelectedItem is { } item && (_vm.HolePickerShown || _vm.CopperPickerShown))
+        {
+            var b = item.Bounds;
+            Point[] keep = [Canvas.ToView(b.Left, b.Top), Canvas.ToView(b.Right, b.Bottom), Canvas.ToView(b.CentreX, b.CentreY)];
+            Place(_vm.HolePickerShown ? HoleBox : CopperBox, Canvas.ToView(b.Right, b.Bottom), keep);
         }
         // The label editor beside the label's own box (PTU-4).
         if (_vm?.Plots.Label is { } label) { var p = Canvas.ToView(label.X, label.Y); Place(LabelBox, p, [p]); }

@@ -97,6 +97,9 @@ public sealed record ImageTraceRun(ImageTraceResult Result, string? LayoutPath, 
     public bool Ok => Refusal is null && (LayoutPath is not null || Edit is not null);
     public RecognitionReport Report => Result.Report;
     public bool CheckpointTaken { get; init; }
+
+    /// <summary>The technology copy written beside the cell (D2), or null: the layout references the input's.</summary>
+    public string? TechnologyCopyPath { get; init; }
 }
 
 public static partial class ImageTrace
@@ -111,6 +114,12 @@ public static partial class ImageTrace
     }
 
     private const string IntoLayoutRefusal = "Only a picture placed in a layout can be traced into it; choose a new cell.";
+
+    /// <summary>A non-plated hole on a technology with no layer for one needs a technology of the picture's own, which only
+    /// a new cell can carry (D2).</summary>
+    public const string IntoLayoutCopyRefusal =
+        "A non-plated hole needs a non-plated hole layer, and the layout's technology has none: add one in the Technology " +
+        "editor, or choose a new cell, which carries a technology of its own.";
 
     /// <summary>R-im3-1/R-im3-7 — trace, then write (or, into the open layout, return the edit). A refusal at any step
     /// writes nothing.</summary>
@@ -140,6 +149,8 @@ public static partial class ImageTrace
         if (!result.Ok) return Refused(result.Refusal!);
         if (result.Scale is null) return Refused(NoScaleRefusal(result.ScaleCandidates));
 
+        if (into && result.TechnologyCopy is not null)
+            return Refused(IntoLayoutCopyRefusal);
         if (into)
         {
             result.Report.Add(RecognitionFindingClass.ImageLayoutWritten, 1,
@@ -171,6 +182,7 @@ public static partial class ImageTrace
 
         // ── the write: folder, the kept picture, the layout ─────────────────────────────────────────
         string path;
+        string? copyPath = null;
         bool checkpoint = false;
         try
         {
@@ -186,7 +198,21 @@ public static partial class ImageTrace
 
             string layoutDir = existing is not null ? Path.GetDirectoryName(existing)! : CellFolder.SubFolderPath(cellDir, ViewType.Layout);
             var kept = ImageKeep.Into(cellDir, cellName, input.Source);
-            var view = ViewOf(input, result, kept.RefFrom(layoutDir), layoutDir, options.Now ?? DateTime.UtcNow);
+            // D2: the copy with its non-plated hole layer is written beside the cell, and the layout references it — the
+            // workspace's technology is never changed.
+            if (result.TechnologyCopy is { } copy)
+            {
+                var own = TechPersistence.Clone(copy);
+                own.Name = $"{cellName} (from {input.Technology?.Name ?? copy.Name})";
+                copyPath = Path.Combine(cellDir, cellName + ".ctech");
+                // Its material libraries are the original's files, named from where the copy is: a reference relative to
+                // the original would land on nothing beside the cell, and the copy would refuse to load.
+                if (input.TechnologyPath is { } from && own.MaterialLibraries is { Count: > 0 } libraries)
+                    own.MaterialLibraries = [.. libraries.Select(r => MaterialLibraries.ResolvePath(from, r) is var file && File.Exists(file)
+                                                                     ? MaterialLibraries.RelativeReference(copyPath, file) : r)];
+                TechPersistence.SaveToFile(copyPath, own);
+            }
+            var view = ViewOf(input, result, kept.RefFrom(layoutDir), layoutDir, options.Now ?? DateTime.UtcNow, copyPath);
             if (existing is not null)
             {
                 path = existing;
@@ -201,17 +227,19 @@ public static partial class ImageTrace
 
         result.Report.Add(RecognitionFindingClass.ImageLayoutWritten, 1,
             (checkpoint ? $"A history checkpoint (\"{ImageTraceTarget.ReplaceIntent}\") was taken, then " : "") +
-            $"{cellName}'s layout was {(checkpoint ? "replaced" : "written")}: {path}.");
-        return new ImageTraceRun(result, path, cellDir, null, null) { CheckpointTaken = checkpoint };
+            $"{cellName}'s layout was {(checkpoint ? "replaced" : "written")}: {path}." +
+            (copyPath is null ? "" : $" Its technology, the picture's own, was written beside it: {copyPath}."));
+        return new ImageTraceRun(result, path, cellDir, null, null) { CheckpointTaken = checkpoint, TechnologyCopyPath = copyPath };
     }
 
     /// <summary>The layout view a run writes: the shapes, the underlay pointing at the kept copy, the technology
     /// reference and the provenance.</summary>
-    private static LayoutView ViewOf(ImageTraceInput input, ImageTraceResult result, string pictureRef, string layoutDir, DateTime now)
+    private static LayoutView ViewOf(ImageTraceInput input, ImageTraceResult result, string pictureRef, string layoutDir, DateTime now,
+                                     string? copyPath)
     {
-        var view = CellCreate.NewLayoutView(input.Technology);
+        var view = CellCreate.NewLayoutView(result.TechnologyCopy ?? input.Technology);
         view.DbuPerMicron = result.DbuPerMicron;
-        if (input.TechnologyPath is { } tech) view.TechRef = SchematicTechnology.StoredRef(Path.GetFullPath(tech), layoutDir);
+        if ((copyPath ?? input.TechnologyPath) is { } tech) view.TechRef = SchematicTechnology.StoredRef(Path.GetFullPath(tech), layoutDir);
         view.Shapes.AddRange(result.Shapes);
         if (result.Underlay is { } u)
         {

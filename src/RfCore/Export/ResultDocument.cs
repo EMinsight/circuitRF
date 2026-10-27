@@ -222,7 +222,16 @@ namespace RfCore.Export
         ImageReadJson                 Image,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ImageScaleJson?               Scale,
-        IReadOnlyList<ImageLayerJson> Layers);
+        IReadOnlyList<ImageLayerJson> Layers,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ImageCorrectionJson>? Corrections = null);
+
+    /// <summary>One correction made by hand (brief-dfr29-1 R-dfr29-1-6): its kind, the flag that states it, and whether it
+    /// was applied — when not, the one sentence why.</summary>
+    public sealed record ImageCorrectionJson(
+        string Kind, string Spelling, bool Applied,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal);
 
     /// <summary>A picture as read (brief-img-11 R-im11-4): its kind (IM-2), how sure and why, its size in pixels as
     /// read, and the reduction a very large picture was read at (1 = none).</summary>

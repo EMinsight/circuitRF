@@ -29,7 +29,8 @@ public sealed partial class ImageOverlay
     public static int ColourOf(ImageOverlayItem item) => item.Unknown ? Colours.Amber : item.Class switch
     {
         ImageOverlayClass.Copper => item.Rgb ?? Colours.Copper,
-        ImageOverlayClass.Drill => Colours.Drill,
+        ImageOverlayClass.Drill => item.Rgb ?? Colours.Drill,
+        ImageOverlayClass.Ignored => item.Rgb ?? Colours.Ignored,
         ImageOverlayClass.Part => Colours.Part,
         ImageOverlayClass.Line => Colours.Line,
         ImageOverlayClass.Port => Colours.Port,
@@ -90,7 +91,11 @@ public sealed partial class ImageOverlay
             switch (item.Class)
             {
                 case ImageOverlayClass.Drill when item.Circle is { } c:
+                    // A correction dashed over what it corrects (brief-dfr29-1 R-dfr29-1-3).
+                    stroke.PathEffect = item.Id.StartsWith(CorrectionPrefix, StringComparison.Ordinal)
+                        ? SKPathEffect.CreateDash([(float)(3 * u), (float)(2 * u)], 0) : null;
                     Circle(c.X, c.Y, c.R, null, colour, pen);
+                    stroke.PathEffect = null;
                     break;
                 case ImageOverlayClass.Port when item.Circle is { } c:
                 {
@@ -147,6 +152,7 @@ public sealed partial class ImageOverlay
                     stroke.StrokeWidth = fitted ? (float)u : pen;
                     // A bridged gap, a fitted curve and an annotation stroke dashed: not read as line work.
                     stroke.PathEffect = item.Id.StartsWith(GapPrefix, StringComparison.Ordinal) || fitted || item.Class == ImageOverlayClass.Annotation
+                                        || item.Id.StartsWith(CorrectionPrefix, StringComparison.Ordinal)
                         ? SKPathEffect.CreateDash([(float)(4 * u), (float)(3 * u)], 0) : null;
                     canvas.DrawPath(path, stroke);
                     stroke.PathEffect = null;

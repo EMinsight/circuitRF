@@ -501,8 +501,10 @@ public partial class WorkspaceViewModel : IImageDialogHost
     }
 
     /// <summary>
-    /// R-im5-6: the workspace's technologies, and the one chosen first — the technology of the layout a placed picture
-    /// sits in, else the workspace default, else the first.
+    /// R-im5-6: the workspace's technologies, then every circuitRF technology the workspace has no copy of (owner,
+    /// 2026-10-27: any existing technology can be chosen, for its layers) — and the one chosen first: the technology of the
+    /// layout a placed picture sits in, else the workspace default, else the first of the workspace's, else the catalogue's
+    /// default.
     /// </summary>
     internal (IReadOnlyList<ImageTechnologyChoice> Choices, int Preferred) ImageTechnologies(string root, ImageSource? source)
     {
@@ -531,6 +533,11 @@ public partial class WorkspaceViewModel : IImageDialogHost
             paths.Insert(0, preferred);
         var choices = paths.Select(p => new ImageTechnologyChoice(Path.GetFileNameWithoutExtension(p), p)).ToList();
         int index = preferred is null ? 0 : Math.Max(0, paths.FindIndex(p => string.Equals(p, preferred, StringComparison.OrdinalIgnoreCase)));
+        // A catalogue technology is offered only when the workspace has no file of its id: the workspace's copy is its own.
+        var have = paths.Select(Path.GetFileNameWithoutExtension).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        choices.AddRange(TechnologyCatalog.All.Where(e => !have.Contains(e.Id)).Select(ImageTechnologyChoice.Catalog));
+        if (paths.Count == 0)
+            index = Math.Max(0, choices.FindIndex(c => string.Equals(c.CatalogId, TechnologyCatalog.DefaultId, StringComparison.OrdinalIgnoreCase)));
         return (choices, index);
     }
 

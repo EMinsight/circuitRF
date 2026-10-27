@@ -69,7 +69,10 @@ public sealed class ImageRecognitionRunner : IImageRecognitionRunner
 
     public ImageKindResult Classify(RasterImage raster) => ImageKind.Classify(raster);
 
-    public Technology? LoadTechnology(string path) => TechnologyResolver.LoadForPath(path);
+    public Technology? LoadTechnology(string path) =>
+        path.StartsWith(ImageTechnologyChoice.CatalogPrefix, StringComparison.Ordinal)
+            ? TechnologyCatalog.Find(path[ImageTechnologyChoice.CatalogPrefix.Length..]) is { } entry ? TechnologyCatalog.Load(entry) : null
+            : TechnologyResolver.LoadForPath(path);
 
     public ImageTraceResult Trace(ImageTraceInput input, RunControl? control) => ImageTrace.Trace(input, control);
 

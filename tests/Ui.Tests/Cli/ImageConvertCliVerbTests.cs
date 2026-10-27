@@ -60,6 +60,62 @@ public sealed class ImageConvertCliVerbTests(ITestOutputHelper output) : IDispos
         Assert.NotEqual(NoTime(cli), cli);   // the exclusion is the provenance time, and it was there to exclude
     }
 
+    /// <summary>brief-dfr29-1 gate 6 — the corrections the dialog makes are the records the CLI's flags spell: the same
+    /// picture with the same corrections writes the same .clay, and the same .ctech copy beside it, both ways.</summary>
+    [Fact]
+    public async Task TheDialogsCorrections_AndTheCliFlags_WriteTheSameBytes()
+    {
+        var (a, b, tech) = TwoCopies(Pictures.Draw(400, 300, c =>
+        {
+            using var copper = Pictures.Fill(new SkiaSharp.SKColor(0xc8, 0x75, 0x33));
+            using var hole = Pictures.Fill(SkiaSharp.SKColors.White);
+            c.DrawRect(SkiaSharp.SKRect.Create(20, 20, 360, 260), copper);
+            foreach (int x in new[] { 100, 200, 300 }) c.DrawCircle(x, 150, 15, hole);
+        }));
+
+        // The dialog, on copy b: the scale by two points, a hole made non-plated, copper and an outline drawn.
+        var vm = new CircuitRF.Ui.Recognition.ImageSourceViewModel(Path.Combine(_root, "b"),
+            [new CircuitRF.Ui.Recognition.ImageTechnologyChoice("tech", tech)], 0, ImageSource.FromFile(b).Source!, makeSchematic: false,
+            new CircuitRF.Ui.Tests.Recognition.RecordingImageRunner(DrawingKind.Layout), debounce: TimeSpan.Zero,
+            presetDirectory: Path.Combine(_root, "presets"));
+        await vm.Recognition;
+        vm.Scale.StartTwoPointsCommand.Execute(null);
+        vm.Scale.Click(new PixelPoint(20, 20));
+        vm.Scale.Click(new PixelPoint(380, 20));
+        vm.Scale.DistanceText = "3.6 mm";
+        vm.Scale.ApplyDistanceCommand.Execute(null);
+        await vm.Recognition;
+        vm.EveryOneLikeIt = false;
+        vm.SelectedItem = vm.Overlay.HitTest(200, 150, 2, vm.Shows);
+        vm.HoleIsNotPlatedCommand.Execute(null);
+        vm.DrawTool = CircuitRF.Ui.Recognition.PictureDrawTool.Copper;
+        vm.DrawLayer = "Bottom Copper";
+        vm.DrawRectangle(new PixelPoint(40.5, 60), new PixelPoint(140, 110.5));
+        vm.DrawTool = CircuitRF.Ui.Recognition.PictureDrawTool.Outline;
+        vm.DrawRectangle(new PixelPoint(5, 5), new PixelPoint(395, 295));
+        await vm.Recognition;
+        var input = vm.BuildTraceInput(TechPersistence.LoadFromFile(tech), null);
+        Assert.Equal(3, input.Corrections.Count);
+        var run = ImageTrace.Run(input, ImageTraceTarget.NewCell(Path.Combine(_root, "b", "out"), "board"));
+        Assert.True(run.Ok, run.Refusal);
+
+        // The CLI, on copy a, with each correction's own spelling.
+        var args = new List<string> { "convert", a, "-o", Path.Combine(_root, "a", "out"), "--to", "clay", "--scale-points", "20,20,380,20=3.6 mm",
+                                      "--tech", tech };
+        foreach (var fix in input.Corrections)
+        {
+            string spelled = fix.Spelling;
+            int gap = spelled.IndexOf(' ');
+            args.Add(spelled[..gap]);
+            args.Add(spelled[(gap + 1)..].Trim('"'));
+        }
+        var (exit, _, stderr) = Cli([.. args]);
+        Assert.True(exit == 0, stderr);
+
+        Assert.Equal(NoTime(File.ReadAllText(run.LayoutPath!)), NoTime(File.ReadAllText(Path.Combine(_root, "a", "out", "board", "layout", "board.clay"))));
+        Assert.Equal(File.ReadAllBytes(run.TechnologyCopyPath!), File.ReadAllBytes(Path.Combine(_root, "a", "out", "board", "board.ctech")));
+    }
+
     [Fact]
     public void APictureToGdsii_WritesWhatTheTracedCellExportsTo()
     {

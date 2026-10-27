@@ -53,9 +53,18 @@ namespace CircuitRF.Ui.Recognition;
 /// <summary>The canvas's box tools on a plot picture (PTU-6): Read only here crops, Ignore here excludes.</summary>
 public enum PlotBoxTool { None, ReadOnlyHere, IgnoreHere, Point }
 
-/// <summary>A technology the picture dialog offers.</summary>
-public sealed record ImageTechnologyChoice(string Name, string Path)
+/// <summary>A technology the picture dialog offers: a workspace's <c>.ctech</c>, or one of circuitRF's technologies
+/// (<paramref name="CatalogId"/>), read from the catalogue and installed into the workspace only when Create writes a cell
+/// with it — never an existing file edited.</summary>
+/// <param name="Path">The file; for a catalogue technology <see cref="CatalogPrefix"/> and its id, a key and not a file.</param>
+public sealed record ImageTechnologyChoice(string Name, string Path, string? CatalogId = null)
 {
+    public const string CatalogPrefix = "catalog:";
+
+    /// <summary>A catalogue technology not yet in the workspace.</summary>
+    public static ImageTechnologyChoice Catalog(TechnologyCatalogEntry entry) =>
+        new($"{entry.Id} (circuitRF)", CatalogPrefix + entry.Id, entry.Id);
+
     public override string ToString() => Name;
 }
 
@@ -139,6 +148,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             // Every pixel coordinate held so far is the other picture's.
             _photo = null;
             ScopeRect = null;
+            ForgetCorrections();
             OnPropertyChanged(nameof(Raster));
             ScheduleRecognition();
         };
@@ -159,7 +169,8 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             Status = "Click the ground copper on the picture. Escape cancels.";
         };
         Presets = new ObservableCollection<string>(LoadPresets().Select(p => p.Name));
-        Overrides.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOverrides));
+        Overrides.CollectionChanged += (_, _) => { OnPropertyChanged(nameof(HasOverrides)); OnPropertyChanged(nameof(HasCorrections)); };
+        Corrections.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasCorrections));
         Plots.Changed += ScheduleRecognition;
         Plots.Changed += RaiseCanvasPrompt;
         Plots.StatusRaised += why => Status = why;
@@ -362,6 +373,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         _schematic = null;
         _ownTargetDefaulted = false;
         Overrides.Clear();
+        ForgetCorrections();
         Scale.Reset();
         BoxTool = PlotBoxTool.None;
         Plots.SetPrimary(source);
@@ -663,6 +675,14 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
 
     private ImageTechnologyChoice? Technology => TechnologyIndex >= 0 && TechnologyIndex < TechnologyChoices.Count
         ? TechnologyChoices[TechnologyIndex] : null;
+
+    /// <summary>The chosen technology's file — none yet for a catalogue technology, which Create installs.</summary>
+    private string? ChosenTechnologyPath => Technology is { CatalogId: null } c ? c.Path : null;
+
+    /// <summary>In a create job: a catalogue technology installed into the workspace — <c>tech/&lt;id&gt;.ctech</c>, the copy
+    /// New Workspace makes, never overwriting one there — and its path; else the chosen file's.</summary>
+    private static Func<string?> Installs(ImageTechnologyChoice? choice, string workspaceDir) =>
+        () => choice?.CatalogId is { } id ? CircuitRF.Design.Workspace.WorkspaceCreate.InstallTechnology(workspaceDir, id) : choice?.Path;
 
     partial void OnTechnologyIndexChanged(int value)
     {
@@ -1001,6 +1021,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         Scale.CancelToolCommand.Execute(null);
         CancelPick();
         BoxTool = PlotBoxTool.None;
+        DrawTool = PictureDrawTool.None;
         Plots.ManualTool = ManualTool.None;   // Escape stops placing (R-pdg4-5)
     }
 
@@ -1074,7 +1095,8 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
 
     /// <summary>The canvas's one prompt: a tool's instruction, else the scale it is waiting for.</summary>
     public string CanvasPrompt =>
-        BoxTool == PlotBoxTool.ReadOnlyHere ? "Drag a box around the plot to read: the picture is cropped to it. Escape cancels."
+        DrawPrompt is { } drawing ? drawing
+        : BoxTool == PlotBoxTool.ReadOnlyHere ? "Drag a box around the plot to read: the picture is cropped to it. Escape cancels."
         : BoxTool == PlotBoxTool.IgnoreHere ? "Drag a box over what is not a trace — a legend, a note — inside a plot. Escape cancels."
         : BoxTool == PlotBoxTool.Point ? "Click on a traced curve to pin a point there. Escape cancels."
         : IsManualPlotPicture && (Plots.ManualTool == ManualTool.Box || Plots.ShownManual is { HasBox: false })
@@ -1102,6 +1124,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
 
     partial void OnSelectedItemChanged(ImageOverlayItem? value)
     {
+        OnSelectionForPickers();
         if (_syncingSelection) return;
         // A bridged gap belongs to its trace: the whole trace is what is selected (R-ptu3-1).
         if (PlotTraceLink.TraceName(value) is { } name && PlotTraceLink.ItemFor(Overlay, name) is { } whole && !ReferenceEquals(whole, value))
@@ -1234,16 +1257,20 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         {
             Source = Source!,
             Technology = technology,
-            TechnologyPath = Technology?.Path,
+            TechnologyPath = ChosenTechnologyPath,
             Scale = Scale.Statement,
             LayerMap = _editedMap,
             Scope = ScopeRect,
             Options = BuildTraceOptions(),
             Kind = kind is null ? null : kind.AsLayout(),
             TargetIsPlacedLayout = IntoPlacedLayout,
+            Corrections = [.. Corrections],
         };
-        return _photo is { Ok: true } p && ReferenceEquals(p.Corners, Scale.AppliedCorners) ? BoardPhoto.Apply(input, p) : input;
+        return _photo is { Ok: true } p && ReferenceEquals(p.Corners, Scale.AppliedCorners) ? WithCornersOutline(BoardPhoto.Apply(input, p)) : input;
     }
+
+    /// <summary>Board corners…'s <i>Use as the board outline</i> (R-dfr29-1-3): the CLI's <c>--outline corners</c>.</summary>
+    private ImageTraceInput WithCornersOutline(ImageTraceInput input) => Scale.CornersAsOutline ? ImageTrace.WithPhotoOutline(input) : input;
 
     /// <summary>The recognition's input over the trace's — the CLI's, field for field.</summary>
     public ImageRecognitionInput BuildRecognitionInput(ImageTraceInput trace) => new()
@@ -1292,6 +1319,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         _seed = null;
         // A board photo is read square once per set of corners, in the background with the rest of the reading.
         var corners = Scale.AppliedCorners;
+        bool cornersOutline = Scale.CornersAsOutline;
         var photoRead = _photo is { } readBefore && ReferenceEquals(readBefore.Corners, corners) ? readBefore : null;
         // A plot session: every picture, and the options the plot rows say (IM-14).
         var plotInputs = Plots.Inputs();
@@ -1333,7 +1361,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             if (photo is { Ok: false })
                 return new RecognitionPreview(null, empty, photo.Refusal,
                     new ImagePreviewDetail(read, tech, techChoice?.Path, null, null, ImageOverlay.Empty, [], Photo: photo));
-            if (photo is not null && input.Photo is null) input = BoardPhoto.Apply(input, photo);
+            if (photo is not null && input.Photo is null) input = cornersOutline ? ImageTrace.WithPhotoOutline(BoardPhoto.Apply(input, photo)) : BoardPhoto.Apply(input, photo);
             ImageTraceResult trace;
             RecognitionResult? recognition = null;
             RecognitionPreview preview;
@@ -1442,6 +1470,8 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
 
         Overlay = d.Overlay;
         SelectedItem = SelectedRow is { } sel ? Overlay.ItemForPart(sel.BoardRefdes) : null;
+        OnPropertyChanged(nameof(DrawToolsShown));
+        OnPropertyChanged(nameof(ConductorChoices));
 
         // A preset is offered, never applied (R-im5-5).
         OfferedPreset = _editedMap is null
@@ -1479,8 +1509,9 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         var input = BuildTraceInput(cachedTech, CurrentKind());
         string name = NewCellName.Trim();
         Technology? Tech() => cachedTech ?? (techChoice is null ? null : _runner.LoadTechnology(techChoice.Path));
+        var installed = Installs(techChoice, _workspaceDir);
 
-        if (IsSchematicPicture) return BeginSchematicCreate(Tech, name);
+        if (IsSchematicPicture) return BeginSchematicCreate(Tech, name, installed);
 
 
         if (MakeLayout)
@@ -1490,7 +1521,8 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
                 : ImageTraceTarget.NewCell(_workspaceDir, name);
             return new CreateJob(IntoPlacedLayout ? "Tracing into the layout…" : $"Writing {name}…", control =>
             {
-                var run = _runner.TraceRun(input with { Technology = Tech() }, target, new ImageTraceRunOptions(), control);
+                var run = _runner.TraceRun(input with { Technology = Tech(), TechnologyPath = IntoPlacedLayout ? input.TechnologyPath : installed() },
+                                           target, new ImageTraceRunOptions(), control);
                 return new CreateOutcome(run.Refusal, run.Report, () => LayoutCreated?.Invoke(run));
             }, "The layout could not be created");
         }
@@ -1500,7 +1532,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         var options = new ImageRecognitionRunOptions { Emit = BuildEmit() };
         return new CreateJob($"Writing {name}…", control =>
         {
-            var run = _runner.RecognitionRun(recognition with { Trace = recognition.Trace with { Technology = Tech() } },
+            var run = _runner.RecognitionRun(recognition with { Trace = recognition.Trace with { Technology = Tech(), TechnologyPath = installed() } },
                                              schematicTarget, options, control);
             return new CreateOutcome(run.Refusal, run.Report, () => SchematicCreated?.Invoke(run));
         }, "The schematic could not be created");
@@ -1622,10 +1654,12 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         ScheduleRecognition();
     }
 
-    /// <summary>Forgets every correction.</summary>
+    /// <summary>Forgets every correction — a schematic picture's crossings, a layout picture's pieces (the latter one undo
+    /// step).</summary>
     [RelayCommand]
     private void ClearOverrides()
     {
+        if (Corrections.Count > 0) Correct(list => { list.Clear(); return null; });
         if (Overrides.Count == 0) return;
         Overrides.Clear();
         ScheduleRecognition();
@@ -1653,7 +1687,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
                 Overrides = [.. Overrides],
             },
             Technology = technology,
-            TechnologyPath = Technology?.Path,
+            TechnologyPath = ChosenTechnologyPath,
             PartsCsvText = PartsCsvText,
             Arrange = ArrangeIndex == 1 ? SchematicArrange.Tidy : SchematicArrange.AsDrawn,
             KeepUnderlay = KeepUnderlay,
@@ -1702,7 +1736,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
                     candidates.Select((c, i) => (c, i)).FirstOrDefault(x => x.c.Name == reading?.ReadingName).i);
     }
 
-    private CreateJob BeginSchematicCreate(Func<Technology?> tech, string name)
+    private CreateJob BeginSchematicCreate(Func<Technology?> tech, string name, Func<string?> installed)
     {
         var emit = BuildEmit();
         var kind = CurrentKind();
@@ -1721,7 +1755,8 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         var target = IsReplace ? SchematicImageTarget.Replace(NewCellDir(name)) : SchematicImageTarget.NewCell(_workspaceDir, name);
         return new CreateJob($"Writing {name}…", control =>
         {
-            var run = _runner.SchematicRun(input with { Technology = tech() }, target, new SchematicImageRunOptions { Emit = emit }, control);
+            var run = _runner.SchematicRun(input with { Technology = tech(), TechnologyPath = installed() }, target,
+                                           new SchematicImageRunOptions { Emit = emit }, control);
             return new CreateOutcome(run.Refusal, run.Report, () => SchematicPictureCreated?.Invoke(run));
         }, "The schematic could not be created");
     }

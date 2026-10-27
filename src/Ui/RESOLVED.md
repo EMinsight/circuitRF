@@ -40782,3 +40782,22 @@ two-port passive block it found:
 - `tools/UiSnapshot --image` renders the dialog. A `.ctech` copied out of a workspace needs its `.cmat` beside it or it
   does not load, and the dialog reports no technology. `--button` matched hidden inline-box buttons by `IsVisible`
   (local); it uses `IsEffectivelyVisible` now.
+
+## Create Layout from Image: correcting by hand (brief DFR29-1, 2026-10-27)
+
+- `ImageSourceViewModel.Corrections.cs` holds the corrections. A hole or copper picker opens on a clicked hole or
+  copper region (the overlay's `hole:`/`drill:`/`copper:` items). The canvas's Via / Copper / Outline tools sit beside
+  the legend. Each choice is one undo step, a snapshot of the list, undone by Cmd/Ctrl+Z on the canvas. *And every
+  one like it* matches every traced hole whose radius is within 10 %. A choice that would change nothing (every like
+  hole is already that) adds nothing.
+- Corrections are drawn as overlay items with the `fix:` prefix, dashed on the canvas and in `--overlay` pictures,
+  and are not hit-tested. An outline is drawn as a `Line` item: drawn as `Copper`, its 18 % fill tinted the whole
+  board (seen in a UiSnapshot render).
+- **The Technology picker offers every existing technology.** It lists the workspace's `.ctech` files, then each
+  catalogue technology the workspace has no file of, as `ImageTechnologyChoice.Catalog` (`catalog:<id>`, labelled
+  "(circuitRF)"). A catalogue choice is read through `TechnologyCatalog` and installed with
+  `WorkspaceCreate.InstallTechnology` only inside a create job that writes a cell, so looking writes nothing. The
+  Stackup… form from R-dfr29-1-4 was removed at the owner's decision: the dialog never edits a stackup.
+- UiSnapshot: `--button` finds ToggleButtons too, by string content. Two visible buttons named "Via" (the tool and
+  the hole picker's) resolve to the first, the tool. The canvas re-fits after the scale is set, because the report
+  grows, so take click coordinates from a render made after **Set**.

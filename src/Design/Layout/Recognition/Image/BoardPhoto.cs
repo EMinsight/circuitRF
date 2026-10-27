@@ -147,6 +147,12 @@ public sealed record BoardPhotoReading
     /// <summary>A point on the rectangle (metres from its first corner, along its width and height) in rectified pixels.</summary>
     public PixelPoint RectangleToPixel(double xm, double ym) => new(Origin.X + xm / MetresPerPixel, Origin.Y + ym / MetresPerPixel);
 
+    /// <summary>The rectangle the corners name, in rectified pixels, or null — what Board corners…'s <i>Use as the board
+    /// outline</i> and <c>--outline corners</c> write as the outline (brief-dfr29-1 R-dfr29-1-3).</summary>
+    public IReadOnlyList<PixelPoint>? Rectangle() => Corners?.SizeMetres(out _) is { } size
+        ? [RectangleToPixel(0, 0), RectangleToPixel(size.W, 0), RectangleToPixel(size.W, size.H), RectangleToPixel(0, size.H)]
+        : null;
+
     /// <summary>The cluster index of a class, or −1 when no pixel is of it.</summary>
     public int ClusterOf(BoardPhotoClass c)
     {
