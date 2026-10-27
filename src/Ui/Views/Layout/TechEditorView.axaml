@@ -328,10 +328,10 @@
                          explanation lives in the tooltip, now on the combo as well as the label. -->
                     <TextBlock Text="Unit for new layouts:" FontSize="11" VerticalAlignment="Center"
                                Foreground="{DynamicResource SystemBaseMediumColor}"
-                               ToolTip.Tip="Seeds a newly-created layout's own display-unit choice. Never changes any open or already-saved layout — each layout keeps its own unit once created."/>
+                               ToolTip.Tip="Seeds a newly-created layout's own display-unit choice. An open layout still showing the old unit follows the change; a layout whose unit was chosen in its own toolbar keeps it, and a closed layout keeps the unit it was saved with."/>
                     <ComboBox Classes="cell" ItemsSource="{Binding ViewModel.DisplayUnitOptions}"
                               SelectedItem="{Binding ViewModel.DefaultDisplayUnit}"
-                              ToolTip.Tip="Seeds a newly-created layout's own display-unit choice. Never changes any open or already-saved layout — each layout keeps its own unit once created.">
+                              ToolTip.Tip="Seeds a newly-created layout's own display-unit choice. An open layout still showing the old unit follows the change; a layout whose unit was chosen in its own toolbar keeps it, and a closed layout keeps the unit it was saved with.">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding Converter={StaticResource ToLower}}"/>

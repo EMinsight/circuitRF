@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Recognition.Image;
+using SkiaSharp;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Imaging;
@@ -98,5 +99,38 @@ public sealed class ImageTraceGeometryTests
         Assert.InRange(via.PadSize, 2 * TracePictures.Via.R * Dbu - 2 * Half, 2 * TracePictures.Via.R * Dbu + 2 * Half);
         // The pad became the via's: it is not also a copper disc.
         Assert.Single(On("Top Copper").OfType<CircleShape>());
+    }
+
+    /// <summary>Designer round 29: a board drawn with its holes in the background's colour has no drill row. A small round
+    /// hole in the pour is a via with the copper whole under it; a hole wider than a millimetre (a mounting hole's
+    /// clearance) stays an opening.</summary>
+    [Fact]
+    public void ARoundHoleInThePour_BecomesAVia_AndAMountingHoleStaysAnOpening()
+    {
+        var picture = Pictures.Draw(400, 300, c =>
+        {
+            using var copper = Pictures.Fill(new SKColor(0xc8, 0x75, 0x33));
+            using var hole = Pictures.Fill(SKColors.White);
+            c.DrawRect(SKRect.Create(20, 20, 360, 260), copper);
+            c.DrawCircle(100, 150, 15, hole);   // 0.3 mm across at 10 µm/px
+            c.DrawCircle(260, 150, 60, hole);   // 1.2 mm across
+        });
+        var r = ImageTrace.Trace(new ImageTraceInput
+        {
+            Source = TracePictures.Source(picture), Technology = TracePictures.Tech(), Scale = ImageScaleStatement.Stated(10e-6),
+        });
+        Assert.True(r.Ok, r.Refusal);
+
+        var via = Assert.Single(r.Shapes.OfType<ViaShape>());
+        var (x, y) = At(100, 150);
+        Assert.InRange(via.X, x - Half, x + Half);
+        Assert.InRange(via.Y, y - Half, y + Half);
+        Assert.InRange(via.DrillSize, 30 * Dbu - 2 * Half, 30 * Dbu + 2 * Half);
+        // Stated as a designer would: a whole mil on this inch-unit technology (0.3 mm reads 12 mil, not 11.811).
+        Assert.Equal(12 * 25_400, via.DrillSize);
+
+        var pour = Assert.Single(r.Layers.Single(l => l.Name == "Top Copper").Shapes.OfType<PolygonShape>());
+        var opening = Assert.Single(pour.Holes!);
+        Assert.InRange(opening.Where((_, i) => i % 2 == 0).Max() - opening.Where((_, i) => i % 2 == 0).Min(), 120 * Dbu - 2 * Half, 120 * Dbu + 2 * Half);
     }
 }

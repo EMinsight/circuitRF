@@ -52,7 +52,7 @@ public sealed class BitmapContextRowsTests : IDisposable
         LayoutPersistence.SaveToFile(clay, new LayoutView { TechRef = "../board.ctech", Shapes = { bitmap } });
 
         var rows = ImageEntryPoints.LayoutBitmapRows(clay, bitmap);
-        Assert.Equal([ImageEntryPoints.TraceIntoLayoutHeader, ImageEntryPoints.CreateSchematicHeader], rows.Select(r => r.Header));
+        Assert.Equal([ImageEntryPoints.TraceIntoLayoutHeader, ImageEntryPoints.CreateLayoutHeader], rows.Select(r => r.Header));   // a board picture makes a layout only
         var trace = rows[0];
         Assert.True(trace.IntoPlaced);
         Assert.False(trace.MakeSchematic);

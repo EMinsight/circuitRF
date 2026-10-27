@@ -132,13 +132,27 @@ Messages print as they are posted. Besides the steps below:
 | `@x,y` | Any step's point in the layout's micrometres instead of window DIPs, through the canvas's viewport. |
 | `--rclick x,y` | Right press and release: the canvas's context menu opens. It is drawn in the window's own frame. |
 | `--menu <header>` | Clicks the open context menu's item whose header starts with this (submenus searched), then closes it. A miss lists the headers. |
-| `--type <text>` | Types into the open dialog's first text box, replacing what is there. |
-| `--button <label>` | A real click on the open dialog's button with this label. A miss lists the buttons. |
+| `--type <text>` | Types into the open dialog's first text box, replacing what is there. `--type Name=text` sets the text box of that `x:Name` instead (an inline box such as `SizeInput`). |
+| `--button <label>` | A real click on the open dialog's visible button with this label. A miss lists the buttons. |
 
 A capture while a dialog is open also writes `<out>.dialog.png`, the dialog's own window. A commanded "open" of
 another document (Crop to New Cell's new cell) prints `opens <path>`; there is no workspace to open it in.
 
 A drag that STARTS on a shape moves it, as in the editor: begin a marquee off the board.
+
+## The picture dialog
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --image <picture> -o out.png [--tech <file.ctech>] [--digitise] \
+    [--make-schematic] [--size WxH] [steps]
+```
+
+The real `CreateSchematicFromArtworkDialog` on an `ImageSourceViewModel`, as **Create Layout from Image…** opens it
+(**Create Schematic from Image…** with `--make-schematic`; **Tools ▸ Digitise Image…** with `--digitise`, which opens
+empty and is handed the picture as a drop is). The workspace is the picture's folder and `--tech` its one technology —
+copy the technology's material library (`.cmat`) beside it, or the technology does not load and the dialog says there
+is none. Each step waits for the reading to settle, then prints one line: the title, the kind read, what Make makes,
+the scale, the armed tool and the canvas prompt. `--type`, `--button`, `--click` and `--drag` act on the dialog itself.
 
 ## How it is faithful
 

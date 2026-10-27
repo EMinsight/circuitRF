@@ -69,7 +69,9 @@ rather than of one cell:
 - the mapping from a drawing layer to a stackup conductor;
 - interchange mappings — GDSII layer/datatype ↔ DXF layer name ↔ Gerber file suffix;
 - the **default display unit and snap grid** for layouts created against it (a preferred length unit in
-  [Settings ▸ General ▸ Units](settings.html#general) is used instead, and is written into a new workspace's copy);
+  [Settings ▸ General ▸ Units](settings.html#general) is used instead, and is written into a new workspace's copy).
+  Changing the unit in the technology editor also moves an open layout that is still showing the old unit; a layout
+  whose **Unit** you chose in its own toolbar keeps it;
 - the **DRC rules**.
 
 Technologies live in a `tech/` folder at the workspace root, and the workspace records which is the

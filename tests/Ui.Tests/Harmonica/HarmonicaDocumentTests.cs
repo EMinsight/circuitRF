@@ -80,11 +80,11 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
         // Smith Chart tool has neither of the reasons the other three have (smith-chart.md §5.1).
         // It is ungated for harmonicaRF's reason too: it needs no workspace.
         //
-        // "Digitise Plot…" joined with IM-14 (2026-10-11). "Examples" LEFT on 2026-10-15 for
+        // "Digitise Plot…" joined with IM-14 (2026-10-11), renamed "Digitise Image…" in designer round 29. "Examples" LEFT on 2026-10-15 for
         // File ▸ New ▸ Examples (field feedback round 1), where FileMenuRestructureTests holds it.
         // "Model Composer…" joined with MC-14 (2026-10-19), before Digitise Plot on both surfaces.
         // "Signal Designer" joined on 2026-10-25, after Match Designer, and needs no workspace either.
-        Assert.Equal(["harmonicaRF", "Match Designer", "Signal Designer", "railRF", "Smith Chart", "Model Composer…", "Digitise Plot…"],
+        Assert.Equal(["harmonicaRF", "Match Designer", "Signal Designer", "railRF", "Smith Chart", "Model Composer…", "Digitise Image…"],
                      nativeEntries);
         Assert.Contains(native[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);
@@ -107,7 +107,7 @@ public sealed class HarmonicaDocumentTests(ITestOutputHelper output)
             .Where(e => e.Name.LocalName == "MenuItem")
             .Select(e => (string?)e.Attribute("Header"))
             .ToList();
-        Assert.Equal(["_harmonicaRF", "_Match Designer", "Si_gnal Designer", "_railRF", "_Smith Chart", "Model _Composer…", "_Digitise Plot…"],
+        Assert.Equal(["_harmonicaRF", "_Match Designer", "Si_gnal Designer", "_railRF", "_Smith Chart", "Model _Composer…", "_Digitise Image…"],
                      inWindowEntries);
         Assert.Contains(inWindow[0].Descendants(),
             e => ((string?)e.Attribute("Command"))?.Contains("NewHarmonicaCommand") == true);

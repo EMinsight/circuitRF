@@ -148,7 +148,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             if (e.PropertyName is nameof(ImageScaleViewModel.NeedsScale) or nameof(ImageScaleViewModel.Tool)
                 or nameof(ImageScaleViewModel.ToolPrompt))
             {
-                OnPropertyChanged(nameof(CanvasPrompt));
+                RaiseCanvasPrompt();
                 RefreshCreate();
             }
         };
@@ -161,7 +161,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         Presets = new ObservableCollection<string>(LoadPresets().Select(p => p.Name));
         Overrides.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOverrides));
         Plots.Changed += ScheduleRecognition;
-        Plots.Changed += () => OnPropertyChanged(nameof(CanvasPrompt));
+        Plots.Changed += RaiseCanvasPrompt;
         Plots.StatusRaised += why => Status = why;
         // A typed tick label reads as typed at once — one value alone blocks the reading until the second (PTU-7).
         Plots.AxisTextChanged += () =>
@@ -189,10 +189,10 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
                 OnPropertyChanged(nameof(IsAutomaticPlotPicture));
                 OnPropertyChanged(nameof(IsManualPlotPicture));
                 OnPropertyChanged(nameof(LegendShown));
-                OnPropertyChanged(nameof(CanvasPrompt));
+                RaiseCanvasPrompt();
                 RefreshCreate();
             }
-            else if (e.PropertyName is nameof(PlotSessionViewModel.ManualTool)) OnPropertyChanged(nameof(CanvasPrompt));
+            else if (e.PropertyName is nameof(PlotSessionViewModel.ManualTool)) RaiseCanvasPrompt();
         };
         Plots.TouchstoneAsked += () => _ = WritePlot(csv: false, offer: true);
 
@@ -331,15 +331,17 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         KindIndex = 3;
     }
 
-    /// <summary>Tools ▸ Digitise Plot…: the dialog empty, in plot mode, making a CSV — read by hand unless
-    /// <paramref name="manual"/> says otherwise.</summary>
-    public void StartPlotMode(bool csv, bool? manual = null)
+    /// <summary>Tools ▸ Digitise Image…: the dialog empty, in plot mode, making a CSV — read by hand unless
+    /// <paramref name="manual"/> says otherwise. With <paramref name="classify"/> the picture given to it is read as what
+    /// it is (designer round 29): a plot makes the CSV, a picture of a board a layout.</summary>
+    public void StartPlotMode(bool csv, bool? manual = null, bool classify = false)
     {
         Plots.Manual = manual ?? csv;
         _wantedMake = csv ? 3 : 2;
         _commandKind = 3;
         KindIndex = 3;
         MakeIndex = _wantedMake;
+        if (classify) _commandKind = 0;
     }
 
     private void Accept(ImageSource source)
@@ -450,6 +452,13 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     /// <summary>Make Layout is not offered for a schematic picture (D3).</summary>
     public bool MakeLayoutEnabled => EffectiveKind != DrawingKind.Schematic;
 
+    /// <summary>Make Schematic is not offered for a board picture: it makes a layout only.</summary>
+    public bool MakeSchematicEnabled => EffectiveKind is not (DrawingKind.Layout or DrawingKind.BoardPhoto);
+
+    public string MakeSchematicTip => MakeSchematicEnabled
+        ? "Schematic — a new cell with the schematic recognised from the picture."
+        : "Schematic — not made from a picture of a board: it is traced into a layout.";
+
     public string? MakeLayoutTip => MakeLayoutEnabled ? "Trace the picture's copper into a layout." : MakeLayoutFromSchematicTip;
 
     public bool IsAutoKind { get => KindIndex == 0; set { if (value) KindIndex = 0; } }
@@ -505,6 +514,9 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         int make = EffectiveKind switch
         {
             DrawingKind.Schematic => 0,
+            // A board picture makes a layout only: the schematic recognised from one is withheld from the dialog
+            // (designer round 29) — its code stays, Make Schematic is greyed.
+            DrawingKind.Layout or DrawingKind.BoardPhoto => 1,
             DrawingKind.Plot => _wantedMake >= 2 ? _wantedMake : 2,
             _ => _wantedMake >= 2 ? 0 : _wantedMake,
         };
@@ -526,6 +538,8 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         OnPropertyChanged(nameof(Raster));
         OnPropertyChanged(nameof(MakeLayoutEnabled));
         OnPropertyChanged(nameof(MakeLayoutTip));
+        OnPropertyChanged(nameof(MakeSchematicEnabled));
+        OnPropertyChanged(nameof(MakeSchematicTip));
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(OptionsApply));
         OnPropertyChanged(nameof(ArtworkOptionsApply));
@@ -606,7 +620,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     public override bool ShowPlacementColumns => false;
 
     public override string Title =>
-        (MakeTouchstone ? "Create Touchstone from Plot" : MakeCsv ? "Digitise Plot"
+        (MakeTouchstone ? "Create Touchstone from Plot" : MakeCsv ? (HasPicture || _commandKind != 0 ? "Digitise Plot" : "Digitise Image")
          : MakeSchematic ? "Create Schematic from Image" : "Create Layout from Image") + (HasPicture ? $" — {SourceName}" : "");
 
     // ── target (D14) ─────────────────────────────────────────────────────────────────────────────────
@@ -972,7 +986,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         OnPropertyChanged(nameof(ReadOnlyHereArmed));
         OnPropertyChanged(nameof(IgnoreHereArmed));
         OnPropertyChanged(nameof(PointArmed));
-        OnPropertyChanged(nameof(CanvasPrompt));
+        RaiseCanvasPrompt();
     }
 
     /// <summary>A click with the Point tool armed, in picture pixels, <paramref name="reachPx"/> being the canvas's snap
@@ -1072,6 +1086,20 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         : IsLayoutPicture && Scale.NeedsScale && FailureText.Length == 0 ? ImageScaleViewModel.SetScalePrompt
         : "";
 
+    /// <summary>The prompt is the scale being waited for: the pill offers the scale tools as buttons, since the prompt's
+    /// own words read as one (designer round 29).</summary>
+    public bool CanvasPromptOffersScale => CanvasPrompt == ImageScaleViewModel.SetScalePrompt;
+
+    /// <summary>The pill's words: the prompt, or only its lead-in where the tools follow it as buttons.</summary>
+    public string CanvasPromptText => CanvasPromptOffersScale ? "Set the scale:" : CanvasPrompt;
+
+    private void RaiseCanvasPrompt()
+    {
+        OnPropertyChanged(nameof(CanvasPrompt));
+        OnPropertyChanged(nameof(CanvasPromptOffersScale));
+        OnPropertyChanged(nameof(CanvasPromptText));
+    }
+
     partial void OnSelectedItemChanged(ImageOverlayItem? value)
     {
         if (_syncingSelection) return;
@@ -1149,7 +1177,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     {
         OnPropertyChanged(nameof(HasFailure));
         OnPropertyChanged(nameof(LegendShown));
-        OnPropertyChanged(nameof(CanvasPrompt));
+        RaiseCanvasPrompt();
     }
 
     private void SetFailure(string text, bool offersKind = false, bool layers = false, bool technology = false)
@@ -1430,7 +1458,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             Status = "";
         }
         else if (Scale.NeedsScale || statementRefused) Status = "";
-        OnPropertyChanged(nameof(CanvasPrompt));
+        RaiseCanvasPrompt();
         RefreshCreate();
     }
 

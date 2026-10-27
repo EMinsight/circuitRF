@@ -292,10 +292,10 @@ public sealed partial class TechEditorViewModel : ObservableObject
     /// CREATED layout's own <c>DisplayUnit</c> (<c>WorkspaceViewModel.NewLayoutAsync</c>/
     /// <c>NewLayoutCommand</c> read <see cref="Technology.DefaultDisplayUnit"/> once, at creation
     /// time, exactly like <see cref="Technology.DefaultSnapDbu"/> already does). Editing this value
-    /// here NEVER touches any already-open or already-saved layout — L0c's own invariant ("never
-    /// re-seed an open layout's DisplayUnit/SnapDbu") stands unchanged; each <c>.clay</c> stores its
-    /// own unit, and this technology value is consulted only at the one moment a layout is first
-    /// created. Retargeting an EXISTING layout to this technology is a separate, already-built,
+    /// never touches a saved layout, and an open one only when it still shows the OLD unit — the
+    /// designer-round-29 exception to L0c's "never re-seed an open layout's DisplayUnit" (see
+    /// <c>LayoutEditorViewModel.ApplyTechResolution</c>); a unit chosen in the layout's toolbar is
+    /// kept, and each <c>.clay</c> still stores its own. Retargeting an EXISTING layout to this technology is a separate, already-built,
     /// explicit opt-in (<c>LayoutEditorViewModel.Retarget.cs</c>'s <c>adoptUnits</c> flag,
     /// default off) — this property does not change that.</summary>
     [ObservableProperty] private LayoutUnit _defaultDisplayUnit;

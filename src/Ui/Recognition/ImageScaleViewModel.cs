@@ -176,6 +176,16 @@ public sealed partial class ImageScaleViewModel : ObservableObject
         }
     }
 
+    /// <summary>The canvas prompt's buttons: the tool chosen as the scale combo's row would choose it.</summary>
+    [RelayCommand] private void StartTwoPoints() => Choose(ImageScaleChoiceKind.TwoPoints);
+    [RelayCommand] private void StartCorners() => Choose(ImageScaleChoiceKind.Corners);
+    [RelayCommand] private void StartImpedance() => Choose(ImageScaleChoiceKind.Impedance);
+
+    private void Choose(ImageScaleChoiceKind kind)
+    {
+        if (Choices.FirstOrDefault(c => c.Kind == kind) is { } row && !ReferenceEquals(row, SelectedChoice)) SelectedChoice = row;
+    }
+
     private bool IsBestParts(ImageScaleCandidate c) =>
         Choices.Where(x => x.Candidate is { Kind: ImageScaleKind.Parts }).Select(x => x.Candidate!).MaxBy(x => x.Support) == c;
 

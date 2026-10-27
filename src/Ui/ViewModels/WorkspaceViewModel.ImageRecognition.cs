@@ -348,9 +348,10 @@ public partial class WorkspaceViewModel : IImageDialogHost
         else Messages.Error($"Import Image as Touchstone: {read.Refusal}");
     }
 
-    /// <summary>Tools ▸ Digitise Plot… (R-im14-13): the dialog, empty, in plot mode.</summary>
+    /// <summary>Tools ▸ Digitise Image… (R-im14-13): the dialog, empty, in plot mode — a picture given to it is read as
+    /// what it is, so a board picture is traced into a layout (designer round 29).</summary>
     [RelayCommand(CanExecute = nameof(IsWorkspaceOpenForImage))]
-    private void DigitisePlot(Window? owner) => ShowPlotDialog(null, csv: true, owner);
+    private void DigitisePlot(Window? owner) => ShowPlotDialog(null, csv: true, owner, classify: true);
 
     public void CreateTouchstoneFromImageFile(ProjectTreeNodeViewModel node)
     {
@@ -361,15 +362,15 @@ public partial class WorkspaceViewModel : IImageDialogHost
 
     /// <summary>The picture dialog in plot mode — reading <paramref name="source"/> as a plot (added to the session when
     /// the dialog is already reading plots), or empty.</summary>
-    public void ShowPlotDialog(ImageSource? source, bool csv, Window? owner)
+    public void ShowPlotDialog(ImageSource? source, bool csv, Window? owner, bool classify = false)
     {
         bool wasOpen = _imageDialog is not null;
         if (!wasOpen) ShowImageDialog(null, makeSchematic: false, owner);
         if (_imageDialog?.DataContext is not ImageSourceViewModel vm) return;
-        // Digitise Plot… opens read by hand unless the user last chose Automatic there; the Touchstone entries automatically.
+        // Digitise Image… opens read by hand unless the user last chose Automatic there; the Touchstone entries automatically.
         bool manual = csv && AppPreferencesIo.Load().ImageDialogPlotReadMode != "automatic";
         if (source is not null) vm.ReadPlot(source, csv, manual);
-        else if (!wasOpen) vm.StartPlotMode(csv, manual);
+        else if (!wasOpen) vm.StartPlotMode(csv, manual, classify);
         _imageDialog.Activate();
     }
 

@@ -53,7 +53,7 @@ public partial class ImageReadingPanel : UserControl
 
     private void OnScaleChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ImageScaleViewModel.PromptAt))
+        if (e.PropertyName is nameof(ImageScaleViewModel.PromptAt) or nameof(ImageScaleViewModel.CornerPoints))
             PlaceInline();
         else if (e.PropertyName is nameof(ImageScaleViewModel.AskingDistance) or nameof(ImageScaleViewModel.AskingZ0)
                  or nameof(ImageScaleViewModel.AskingSize))
@@ -66,20 +66,61 @@ public partial class ImageReadingPanel : UserControl
         }
     }
 
-    /// <summary>The inline box beside the point it asks about.</summary>
+    /// <summary>The inline box beside the point it asks about, never over it. Board corners' size box sits in the middle
+    /// of the four handles: beside one of them it covered the corner being dragged (designer round 29).</summary>
     private void PlaceInline()
     {
-        if (_vm?.Scale.PromptAt is { } p)
-            foreach (var box in new Control[] { DistanceBox, Z0Box, SizeBox }) Place(box, p.X, p.Y);
+        var scale = _vm?.Scale;
+        if (scale is { Tool: ImageMeasureTool.Corners, CornerPoints: { Count: 4 } c })
+        {
+            var mid = Canvas.ToView(c.Average(p => p.X), c.Average(p => p.Y));
+            var size = SizeOf(SizeBox);
+            SetAt(SizeBox, mid.X - size.Width / 2, mid.Y - size.Height / 2);
+        }
+        if (scale?.PromptAt is { } at)
+        {
+            // Keep the other point of a two-point pick in view as well as the one asked about.
+            Point[] keep = scale.PointA is { } a && scale.PointB is { } b
+                ? [Canvas.ToView(a.X, a.Y), Canvas.ToView(b.X, b.Y)] : [Canvas.ToView(at.X, at.Y)];
+            foreach (var box in new Control[] { DistanceBox, Z0Box }) Place(box, Canvas.ToView(at.X, at.Y), keep);
+        }
         // The label editor beside the label's own box (PTU-4).
-        if (_vm?.Plots.Label is { } label) Place(LabelBox, label.X, label.Y);
+        if (_vm?.Plots.Label is { } label) { var p = Canvas.ToView(label.X, label.Y); Place(LabelBox, p, [p]); }
     }
 
-    private void Place(Control box, double px, double py)
+    /// <summary>Below-right of the point, else whichever other side fits on the canvas and covers none of
+    /// <paramref name="keep"/>; clamped inside the canvas when none does.</summary>
+    private void Place(Control box, Point at, Point[] keep)
     {
-        var at = Canvas.ToView(px, py);
-        Avalonia.Controls.Canvas.SetLeft(box, Math.Clamp(at.X + 12, 4, Math.Max(4, Canvas.Bounds.Width - 320)));
-        Avalonia.Controls.Canvas.SetTop(box, Math.Clamp(at.Y + 12, 4, Math.Max(4, Canvas.Bounds.Height - 80)));
+        var size = SizeOf(box);
+        const double gap = 12;
+        (double X, double Y)[] sides =
+        [
+            (at.X + gap, at.Y + gap), (at.X - gap - size.Width, at.Y + gap),
+            (at.X + gap, at.Y - gap - size.Height), (at.X - gap - size.Width, at.Y - gap - size.Height),
+        ];
+        foreach (var (x, y) in sides)
+        {
+            var r = new Rect(x, y, size.Width, size.Height);
+            bool fits = x >= 4 && y >= 4 && r.Right <= Canvas.Bounds.Width - 4 && r.Bottom <= Canvas.Bounds.Height - 4;
+            if (fits && !keep.Any(k => r.Inflate(6).Contains(k))) { SetAt(box, x, y); return; }
+        }
+        SetAt(box, sides[0].X, sides[0].Y);
+    }
+
+    private void SetAt(Control box, double x, double y)
+    {
+        var size = SizeOf(box);
+        Avalonia.Controls.Canvas.SetLeft(box, Math.Clamp(x, 4, Math.Max(4, Canvas.Bounds.Width - size.Width - 4)));
+        Avalonia.Controls.Canvas.SetTop(box, Math.Clamp(y, 4, Math.Max(4, Canvas.Bounds.Height - size.Height - 4)));
+    }
+
+    /// <summary>A box's size: measured when it has none yet (it is placed as it appears), else a generous guess.</summary>
+    private static Size SizeOf(Control box)
+    {
+        if (box.Bounds.Width > 0) return box.Bounds.Size;
+        box.Measure(Size.Infinity);
+        return box.DesiredSize.Width > 0 ? box.DesiredSize : new Size(320, 80);
     }
 
     private void OnLabelKey(object? sender, KeyEventArgs e)

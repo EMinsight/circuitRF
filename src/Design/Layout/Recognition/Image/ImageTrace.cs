@@ -276,6 +276,7 @@ public static partial class ImageTrace
         {
             Frame = built.Frame, DbuPerMicron = built.DbuPerMicron, Layers = built.Layers, Shapes = built.Shapes,
             Underlay = built.Underlay, SilkscreenStrokes = built.Strokes, ResolutionLine = built.Resolution,
+            Drills = built.HoleDrills.Count == 0 ? prep.Drills : [.. prep.Drills, .. built.HoleDrills],
         };
     }
 
@@ -575,6 +576,44 @@ public static partial class ImageTrace
         return Math.Abs(area / disc - 1) <= 0.06 ? fit : null;
     }
 
+    /// <summary>
+    /// A via's drill or pad as a designer states one (owner, designer round 29): a picture measures it to a fraction of a
+    /// pixel, and 0.4876 mm is noise in its last three digits. Rounded in the technology's own unit — to 1 mil (½ mil below
+    /// 4 mil) on an inch board, 0.05 mm (0.01 mm below 0.2 mm) on a metric one, 1 µm on a chip — and never to nothing.
+    /// </summary>
+    internal static long Tidy(long dbu, LayoutUnit unit, int dbuPerMicron)
+    {
+        double um = dbu / (double)dbuPerMicron;
+        double step = unit switch
+        {
+            LayoutUnit.Mil or LayoutUnit.Inch => um >= 4 * 25.4 ? 25.4 : 12.7,
+            LayoutUnit.Mm => um >= 200 ? 50 : 10,
+            _ => 1,
+        };
+        return (long)Math.Round(Math.Max(step, Math.Round(um / step) * step) * dbuPerMicron);
+    }
+
+    /// <summary>The widest round hole in copper read as a via when the picture has no drill colour: wider is a mounting
+    /// hole's clearance and stays an opening.</summary>
+    internal const double MaxHoleViaMetres = 1.0e-3;
+
+    /// <summary>Narrower than this a round hole is a speck, not a drill.</summary>
+    internal const double MinHoleViaMetres = 0.1e-3;
+
+    /// <summary>A hole drawn round — a circle, or a drawing's rounded square — as the circle of its area, centred on its
+    /// bounds; null for anything elongated or ragged. Looser than <see cref="CircleOf"/>: a hole is drawn small, so a
+    /// pixel of edge noise is a large share of its radius.</summary>
+    internal static CircleFit? RoundHole(PathD hole)
+    {
+        if (hole.Count < 4) return null;
+        var b = Clipper.GetBounds(hole);
+        double w = b.Width, h = b.Height;
+        if (!(w > 2 && h > 2) || Math.Max(w, h) / Math.Min(w, h) > 1.3) return null;
+        double area = Math.Abs(Clipper.Area(hole));
+        if (area / (w * h) < 0.6) return null;   // a disc fills 0.785 of its box, a rounded square more
+        return new CircleFit((b.left + b.right) / 2, (b.top + b.bottom) / 2, Math.Sqrt(area / Math.PI), 0);
+    }
+
     /// <summary>The bounds of a ring that is an axis-aligned rectangle, or null.</summary>
     internal static RectD? RectOf(PathD ring)
     {
@@ -622,8 +661,9 @@ public static partial class ImageTrace
 
     // ── stage 2: DBU ────────────────────────────────────────────────────────────────────────────────
 
+    /// <param name="HoleDrills">The round holes in the copper that became vias, pixels — drawn on the overlay as drills.</param>
     private sealed record Built(PixelFrame Frame, int DbuPerMicron, List<ImageTracedLayer> Layers, List<LayoutShape> Shapes,
-                                BitmapShape? Underlay, List<long[]> Strokes, string Resolution);
+                                BitmapShape? Underlay, List<long[]> Strokes, string Resolution, List<CircleFit> HoleDrills);
 
     private static Built Build(ImageTraceInput input, Prepared prep, ImageScaleCandidate scale, RecognitionReport report)
     {
@@ -681,7 +721,8 @@ public static partial class ImageTrace
                     consumed.Add(holder);
                 }
             }
-            long drill = (long)Math.Round(2 * d.R * scaleDbu);
+            long drill = Tidy((long)Math.Round(2 * d.R * scaleDbu), tech.DefaultDisplayUnit, dbuPerMicron);
+            if (pad > drill) pad = Tidy(pad, tech.DefaultDisplayUnit, dbuPerMicron);
             if (pad <= drill)
             {
                 long fallback = (long)Math.Round(tech.DefaultViaPadDbu * techToLayout);
@@ -694,6 +735,51 @@ public static partial class ImageTrace
                 Layer = barrel.Value, LandingLayer = landing ?? (copperOrder.Count > 0 ? copperOrder[0] : null),
             });
         }
+        // ── round holes in the copper → vias, when the picture draws no drill colour ─────────────────
+        // A datasheet's test board draws its holes in the background's own colour, so no drill row exists and every via
+        // was a hole cut in the pour (designer round 29). A small round hole inside a copper region is a via: the
+        // copper is written whole under it and the via opens it. A larger one (a mounting hole's clearance) stays an
+        // opening — whether it is plated is not in the picture.
+        var holeVias = new HashSet<PathD>(ReferenceEqualityComparer.Instance);
+        var holeDrills = new List<CircleFit>();
+        int openings = 0;
+        if (prep.Drills.Count == 0)
+        {
+            long maxDrill = (long)Math.Round(MaxHoleViaMetres * 1e6 * dbuPerMicron), minDrill = (long)Math.Round(MinHoleViaMetres * 1e6 * dbuPerMicron);
+            var placed = new List<(double X, double Y, double R)>();
+            foreach (var l in prep.Layers.Where(l => l.Role == ImageLayerRole.Layer && l.Key is { } k && copperOrder.Contains(k))
+                                         .OrderBy(l => copperOrder.IndexOf(l.Key!.Value)))
+                foreach (var region in l.Regions)
+                    foreach (var hole in region.Holes)
+                    {
+                        if (RoundHole(hole) is not { } c) continue;
+                        long drill = (long)Math.Round(2 * c.R * scaleDbu);
+                        if (drill > maxDrill) { openings++; continue; }
+                        if (drill < minDrill) continue;
+                        holeVias.Add(hole);
+                        if (barrel is null || placed.Any(p => Math.Abs(p.X - c.Cx) <= p.R && Math.Abs(p.Y - c.Cy) <= p.R)) continue;
+                        drill = Tidy(drill, tech.DefaultDisplayUnit, dbuPerMicron);
+                        placed.Add((c.Cx, c.Cy, c.R));
+                        holeDrills.Add(c);
+                        long fallback = (long)Math.Round(tech.DefaultViaPadDbu * techToLayout);
+                        var (cx, cy) = frame.ToTarget(c.Cx, c.Cy);
+                        vias.Add(new ViaShape
+                        {
+                            X = (long)Math.Round(cx), Y = (long)Math.Round(cy), DrillSize = drill,
+                            PadSize = fallback > drill ? fallback : 2 * drill, Layer = barrel.Value, LandingLayer = l.Key,
+                        });
+                    }
+            if (barrel is null) holeVias.Clear();
+            var said = new List<string>();
+            if (placed.Count > 0)
+                said.Add($"{Plural(placed.Count, "round hole in the copper became a via", "round holes in the copper became vias")} on " +
+                         $"{ImageLayerMap.NameOf(tech, barrel!.Value)}, the copper whole under each — the picture draws no drill colour.");
+            if (openings > 0)
+                said.Add($"{Plural(openings, "round hole", "round holes")} wider than {MaxHoleViaMetres * 1e3:0.#} mm " +
+                         $"{(openings == 1 ? "was kept as an opening" : "were kept as openings")} in the copper: whether a mounting hole is plated is not in the picture.");
+            if (said.Count > 0) report.Add(RecognitionFindingClass.ImageViasPlaced, placed.Count, string.Join(" ", said));
+        }
+
         if (prep.Drills.Count > 0)
         {
             if (barrel is null)
@@ -716,7 +802,7 @@ public static partial class ImageTrace
                 foreach (var region in l.Regions)
                 {
                     if (consumed.Contains(region)) continue;
-                    var holes = region.Holes.Where(hp => !prep.Drills.Any(d => Within(hp, d))).ToList();
+                    var holes = region.Holes.Where(hp => !holeVias.Contains(hp) && !prep.Drills.Any(d => Within(hp, d))).ToList();
                     if (holes.Count == 0 && CircleOf(region) is { } c)
                     {
                         var (cx, cy) = frame.ToTarget(c.Cx, c.Cy);
@@ -783,7 +869,7 @@ public static partial class ImageTrace
             report.Add(RecognitionFindingClass.ImageSilkscreenStrokes, strokes.Count,
                 $"{Plural(strokes.Count, "silkscreen stroke was", "silkscreen strokes were")} kept as centre lines for reading text.");
 
-        return new Built(frame, dbuPerMicron, traced, shapes, underlay, strokes, resolution);
+        return new Built(frame, dbuPerMicron, traced, shapes, underlay, strokes, resolution, holeDrills);
     }
 
     private static bool Within(PathD hole, CircleFit d)

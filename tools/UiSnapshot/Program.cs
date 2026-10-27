@@ -67,6 +67,8 @@ if (args.Contains("--c3d")) return Snapshot3D.Run(args);
 
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
 string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
+string? image = null, imageTech = null;
+bool digitise = false, makeSchematic = false;
 int cmcMarkers = 0;
 var layerToggles = new List<(string Name, bool Hide)>();
 bool standalone = false;
@@ -91,6 +93,10 @@ for (int i = 0; i < args.Length; i++)
         case "--clay" when i + 1 < args.Length: clay = Path.GetFullPath(args[++i]); break;
         case "--cem" when i + 1 < args.Length: cem = Path.GetFullPath(args[++i]); break;
         case "--cmc" when i + 1 < args.Length: cmc = args[++i]; break;
+        case "--image" when i + 1 < args.Length: image = Path.GetFullPath(args[++i]); break;
+        case "--tech" when i + 1 < args.Length: imageTech = Path.GetFullPath(args[++i]); break;
+        case "--digitise": digitise = true; break;
+        case "--make-schematic": makeSchematic = true; break;
         case "--import" when i + 1 < args.Length: cmcImport = Path.GetFullPath(args[++i]); break;
         case "--step" when i + 1 < args.Length: cmcStep = args[++i]; break;
         case "--run" when i + 1 < args.Length: cmcRun = args[++i]; break;
@@ -110,7 +116,7 @@ for (int i = 0; i < args.Length; i++)
         default: cdd = args[i]; break;
     }
 }
-if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null && cem is null && cmc is null) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null && cem is null && cmc is null && image is null) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -119,7 +125,8 @@ if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay i
                           + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]\n"
-                          + "       UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--size WxH] [steps]");
+                          + "       UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--size WxH] [steps]\n"
+                          + "       UiSnapshot --image <picture> -o <out.png> [--tech <file.ctech>] [--digitise] [--make-schematic] [--size WxH] [steps]");
     return 2;
 }
 
@@ -131,6 +138,7 @@ AppBuilder.Configure<SnapshotApp>()
     .SetupWithoutStarting();
 
 Window host;
+CircuitRF.Ui.Recognition.ImageSourceViewModel? imageVm = null;
 TuningTool? tuningTool = null;
 LayoutCanvas? layoutCanvas = null;
 LayoutEditorViewModel? layoutVm = null;
@@ -159,6 +167,28 @@ if (clay is not null)
     Pump();
     layoutCanvas = host.GetVisualDescendants().OfType<LayoutCanvas>().First();
     layoutCanvas.ZoomToFit();
+}
+else if (image is not null)
+{
+    // The picture dialog as the workspace opens it: Create Layout from Image… (Create Schematic… with --make-schematic),
+    // or --digitise for Tools ▸ Digitise Image…, which opens empty and is handed the picture as a drop is. The workspace
+    // is the picture's folder; --tech is its one technology (else none).
+    string ws = Path.GetDirectoryName(image)!;
+    var source = CircuitRF.Design.Imaging.ImageSource.FromFile(image).Source ?? throw new InvalidOperationException($"{image} is not a picture");
+    CircuitRF.Ui.Recognition.ImageTechnologyChoice[] techs = imageTech is null ? [] : [new(Path.GetFileNameWithoutExtension(imageTech), imageTech)];
+    imageVm = new CircuitRF.Ui.Recognition.ImageSourceViewModel(ws, techs, 0, digitise ? null : source, makeSchematic,
+                                                                post: a => Dispatcher.UIThread.Post(a), debounce: TimeSpan.Zero);
+    if (digitise)
+    {
+        imageVm.StartPlotMode(csv: true, manual: true, classify: true);
+        imageVm.LoadFile(image);
+    }
+    host = new CircuitRF.Ui.Recognition.CreateSchematicFromArtworkDialog(imageVm);
+    if (sizeGiven) { host.Width = width; host.Height = height; }
+    host.Show();
+    Pump();
+    WaitImage();
+    PrintImage();
 }
 else if (cem is not null)
 {
@@ -384,18 +414,23 @@ foreach (var (kind, arg) in steps)
         }
         case "--type":
         {
-            var dialog = TopDialog() ?? throw new InvalidOperationException("--type: no dialog is open");
-            var box = dialog.GetVisualDescendants().OfType<TextBox>().First();
+            var dialog = TopDialog() ?? (imageVm is not null ? host : throw new InvalidOperationException("--type: no dialog is open"));
+            // Name=text types into the text box of that x:Name (an inline box: SizeInput, DistanceInput); else the dialog's
+            // first text box.
+            int eq = arg.IndexOf('=');
+            var named = eq > 0 ? dialog.GetVisualDescendants().OfType<TextBox>().FirstOrDefault(t => t.Name == arg[..eq]) : null;
+            string text = named is not null ? arg[(eq + 1)..] : arg;
+            var box = named ?? dialog.GetVisualDescendants().OfType<TextBox>().First();
             box.Focus();
             box.SelectAll();
-            dialog.KeyTextInput(arg);
+            if (named is not null) named.Text = text; else dialog.KeyTextInput(text);
             break;
         }
         case "--button":
         {
             // A real press and release on the button's centre, in the dialog's own window.
-            var dialog = TopDialog() ?? throw new InvalidOperationException("--button: no dialog is open");
-            var buttons = dialog.GetVisualDescendants().OfType<Button>().Where(b => b.IsVisible).ToList();
+            var dialog = TopDialog() ?? (imageVm is not null ? host : throw new InvalidOperationException("--button: no dialog is open"));
+            var buttons = dialog.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).ToList();
             var button = buttons.FirstOrDefault(b => b.Content is string c && c == arg)
                 ?? throw new InvalidOperationException($"--button '{arg}': the dialog has {string.Join(" | ", buttons.Select(b => b.Content))}");
             var c = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), dialog)!.Value;
@@ -405,6 +440,12 @@ foreach (var (kind, arg) in steps)
         }
     }
     Pump();
+    if (imageVm is not null)
+    {
+        WaitImage();
+        Console.Write($"{kind} {arg}: ");
+        PrintImage();
+    }
     if (tuningTool is not null)
     {
         var focused = host.FocusManager?.GetFocusedElement();
@@ -416,6 +457,28 @@ foreach (var (kind, arg) in steps)
 
 Capture(output);
 return 0;
+
+// A reading is scheduled through the dispatcher, then runs off it and posts back: pump until it has settled.
+void WaitImage()
+{
+    var until = DateTime.UtcNow.AddSeconds(120);
+    int quiet = 0;
+    while (quiet < 20 && DateTime.UtcNow < until)
+    {
+        Pump();
+        Thread.Sleep(10);
+        quiet = imageVm!.IsRecognising || !imageVm.Recognition.IsCompleted ? 0 : quiet + 1;
+    }
+    Pump();
+}
+
+void PrintImage()
+{
+    var v = imageVm!;
+    Console.WriteLine($"{v.Title} | kind {v.EffectiveKind} | make {(v.MakeSchematic ? "schematic" : v.MakeLayout ? "layout" : v.MakeCsv ? "csv" : "touchstone")}"
+                    + $" (schematic offered {v.MakeSchematicEnabled}) | scale {v.Scale.ValueText} | tool {v.Scale.Tool}"
+                    + $"{(v.Scale.SizeError.Length > 0 ? $" | size error '{v.Scale.SizeError}'" : "")} | prompt '{v.CanvasPromptText}'{(v.CanvasPromptOffersScale ? " + scale buttons" : "")} | status '{v.Status}'");
+}
 
 void Pump()
 {

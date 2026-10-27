@@ -213,7 +213,7 @@
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
                                     <NativeMenuItem Header="Schematic from Artwork…" Command="{Binding CreateSchematicFromArtworkCommand}" ToolTip="Recognise the layout's copper — ground, vias, ports, parts and lines — and write it as a schematic of native components, reviewed first in a parts table. Requires an active layout document saved to a cell."/>
-                                    <NativeMenuItem Header="Schematic from Image…"   Command="{Binding CreateSchematicFromImageCommand}" ToolTip="Read a picture of a schematic or a layout — dropped, pasted or browsed to — and write it as a schematic of native components in a new cell, reviewed first in a parts table. Requires an open workspace."/>
+                                    <NativeMenuItem Header="Schematic from Image…"   Command="{Binding CreateSchematicFromImageCommand}" ToolTip="Read a picture of a schematic — dropped, pasted or browsed to — and write it as a schematic of native components in a new cell, reviewed first in a parts table. Requires an open workspace."/>
                                     <NativeMenuItem Header="Layout from Image…"      Command="{Binding CreateLayoutFromImageCommand}" ToolTip="Trace a picture of a layout — dropped, pasted or browsed to — into the copper, vias and outline of a new layout cell. Requires an open workspace."/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
@@ -550,7 +550,7 @@
                         <!-- brief-modelcomposer-14 R-mc14-1 — a window per .cmc; needs no workspace. Mirrored below. -->
                         <NativeMenuItem Header="Model Composer…" Command="{Binding NewModelComposerCommand}"/>
                         <!-- brief-img-14 R-im14-13: the picture dialog, empty, in plot mode. Mirrored below. -->
-                        <NativeMenuItem Header="Digitise Plot…" Command="{Binding DigitisePlotCommand}" ToolTip="Read the curves of a plot picture — rectangular, Smith or polar — into a CSV, or an S-parameter plot into a Touchstone file. Requires an open workspace."/>
+                        <NativeMenuItem Header="Digitise Image…" Command="{Binding DigitisePlotCommand}" ToolTip="Read a picture: the curves of a plot — rectangular, Smith or polar — into a CSV or a Touchstone file, or a picture of a board into a layout. Requires an open workspace."/>
                         <!-- wBond: WITHDRAWN FOR v1 (owner, 2026-08-17). The standalone wirebond
                              WINDOW is a v2 feature; wirebonds reach v1 through the wBond COMPONENT and
                              the wirebond CELL (WB40) — the layout editor's own wire tools, panels and
@@ -1213,7 +1213,7 @@
                     </MenuItem>
                     <MenuItem Header="Schematic from _Image…"
                               Command="{Binding CreateSchematicFromImageCommand}"
-                              ToolTip.Tip="Read a picture of a schematic or a layout — dropped, pasted or browsed to — and write it as a schematic of native components in a new cell, reviewed first in a parts table. Requires an open workspace.">
+                              ToolTip.Tip="Read a picture of a schematic — dropped, pasted or browsed to — and write it as a schematic of native components in a new cell, reviewed first in a parts table. Requires an open workspace.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="ImageSearchOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="La_yout from Image…"
@@ -1621,9 +1621,9 @@
                     <MenuItem.Icon><mi:MaterialIcon Kind="IntegratedCircuitChip" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- brief-img-14 R-im14-13 — hand-mirrored with the macOS NativeMenu above. -->
-                <MenuItem Header="_Digitise Plot…"
+                <MenuItem Header="_Digitise Image…"
                           Command="{Binding DigitisePlotCommand}"
-                          ToolTip.Tip="Read the curves of a plot picture — rectangular, Smith or polar — into a CSV, or an S-parameter plot into a Touchstone file. Requires an open workspace.">
+                          ToolTip.Tip="Read a picture: the curves of a plot — rectangular, Smith or polar — into a CSV or a Touchstone file, or a picture of a board into a layout. Requires an open workspace.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ChartBellCurve" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- wBond: WITHDRAWN FOR v1 (owner, 2026-08-17) — see the NativeMenu's own note.

@@ -577,3 +577,16 @@ doc fixture. Owner decision: keep the rule and fix the example. L1 now has a BOM
 (`L1,,smt:0402,L`), which reads as fitted with an unknown value. `ArtworkToSchematicExampleAuthoring` writes it that
 way. A side effect visible in the `recognize` table: every part's kind now comes from the BOM's description
 (`kind=bom`), not its designator.
+
+## Round holes in the copper as vias; via sizes rounded (designer feedback round 29, 2026-10-27)
+
+A datasheet's test-board drawing draws its holes in the background's colour, so the layer map has no Drill row and
+every via came out as a hole in the pour, with nothing on the drill layer. `ImageTrace.Build` now, when no drill
+colour was read, takes each hole in a copper region that is round (`RoundHole`: bounds aspect ≤ 1.3, area ≥ 0.6 of
+its box, so a drawing's rounded-square hole counts) and between 0.1 and 1 mm across as a via: the via is written on
+the barrel layer, and the hole is left out of the polygon, so the copper is whole under it. A wider round hole (a
+mounting hole's clearance, 2.6 mm on the field picture) stays an opening, and the report says so. On the field
+picture: 71 vias, 2 openings. The hole-vias join `ImageTraceResult.Drills`, so the dialog's overlay draws them as
+drills. Drill and pad are rounded in the technology's unit (`Tidy`): 1 mil (½ mil below 4 mil), 0.05 mm (0.01 mm below
+0.2 mm), 1 µm otherwise. The measured hole includes the drawing's black outline ring, so the drill reads a little
+large.

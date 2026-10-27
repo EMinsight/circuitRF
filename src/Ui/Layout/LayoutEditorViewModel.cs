@@ -199,13 +199,21 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     }
 
     /// <summary>Applies a resolution from <see cref="TechnologyResolver"/> — called by the workspace
-    /// after New Layout, after opening a .clay, and whenever the live-refresh seam fires. Does NOT
-    /// touch DisplayUnit/SnapDbu: those are the document's own state once open, and silently
-    /// re-seeding them from a changed technology would discard a user's choice.</summary>
+    /// after New Layout, after opening a .clay, and whenever the live-refresh seam fires. SnapDbu is
+    /// the document's own state once open and is never touched. DisplayUnit follows one change only:
+    /// the SAME technology's unit edited while this layout is still on its old one (designer round 29 —
+    /// the ruler stayed in mil after the technology was switched to mm). A unit the user chose here
+    /// differs from the old one and is kept; a different technology (a retarget) has its own opt-in.</summary>
     internal void ApplyTechResolution(TechResolution resolution)
     {
+        var before = Technology;
+        bool sameFile = before is not null && resolution.Tech is not null && ResolvedTechPath is not null
+                        && string.Equals(ResolvedTechPath, resolution.ResolvedPath, StringComparison.OrdinalIgnoreCase);
         ResolvedTechPath = resolution.ResolvedPath;
         Technology        = resolution.Tech;
+        if (sameFile && before!.DefaultDisplayUnit != resolution.Tech!.DefaultDisplayUnit
+            && DisplayUnit == before.DefaultDisplayUnit && !DisplayUnitIsViewLocal)
+            DisplayUnit = resolution.Tech.DefaultDisplayUnit;
 
         // R-lbl-1 (docs/sonnet-briefs/brief-layout-label-fix-and-text-flatten.md): seed the label-
         // height default from the technology exactly once — the first time a technology resolves for

@@ -41,10 +41,9 @@ use. **Create from Image** reads it:
   and draws them as a schematic of native components, laid out as the picture lays them out &mdash; see
   [Schematic pictures](#schematic).
 - **Create Layout from Image** traces a **layout** picture's copper into a layout: filled shapes on your technology's
-  layers, drill holes as vias, sitting exactly on the picture.
-- **Create Schematic from Image**, on a picture of a **layout**, traces it the same way and then reads the circuit out of
-  the traced copper with [Create Schematic from Artwork](artwork-to-schematic.html) &mdash; the same recognition, the
-  same parts table, the same report. The new cell holds both: the traced layout and the schematic recognised from it.
+  layers, drill holes as vias, sitting exactly on the picture. A picture of a board makes a layout only, whichever
+  command opened it; to get its schematic, run [Create Schematic from Artwork](artwork-to-schematic.html) on the traced
+  layout.
 - **Create Touchstone from Plot**, on pictures of S-parameter **plots** &mdash; dB and phase against frequency, a Smith
   chart &mdash; digitises their curves into a Touchstone file &mdash; see [Plots](#plots).
 
@@ -58,8 +57,8 @@ Wherever there is a picture, the command is one gesture away &mdash; and it is o
 | Where | Rows | What opens |
 |---|---|---|
 | **Design ▸ Create** | **Schematic from Image…**, **Layout from Image…** | The dialog, empty, ready for a drop, a paste or **Browse…** &mdash; every option, and the parts table to review. Enabled whenever a workspace is open; no document needs to be in front. |
-| Right-click a picture placed in a **layout** | **Trace Image into This Layout…**, **Create Schematic from Image…** | Tracing into this layout puts the copper in this layout, over the picture, at the size the picture is placed (scale **As placed**), in this layout's technology &mdash; one undo step. **Create Schematic from Image…** makes a new cell and offers **As placed** as its scale. |
-| Right-click a picture placed in a **schematic** | **Create Schematic from Image…**, **Create Layout from Image…** | A picture of a schematic is drawn into this schematic, over the picture, at the size the picture is placed &mdash; one undo step, and what was added is selected. A picture of a layout makes a new cell; a schematic has no physical size, so **As placed** is not offered, and the scale is set in the dialog. |
+| Right-click a picture placed in a **layout** | **Trace Image into This Layout…**, **Create Layout from Image…** | Tracing into this layout puts the copper in this layout, over the picture, at the size the picture is placed (scale **As placed**), in this layout's technology &mdash; one undo step. **Create Layout from Image…** makes a new cell and offers **As placed** as its scale. |
+| Right-click a picture placed in a **schematic** | **Create Schematic from Image…**, **Create Layout from Image…** | A picture of a schematic is drawn into this schematic, over the picture, at the size the picture is placed &mdash; one undo step, and what was added is selected. A picture of a layout makes a new layout cell; a schematic has no physical size, so **As placed** is not offered, and the scale is set in the dialog. |
 | Right-click a picture file in the **Project** panel | **Create Schematic from Image…**, **Create Layout from Image…** | The dialog, already reading that file. Offered on a Known File and on a file inside the workspace folder whose extension is one circuitRF reads. |
 
 A placed picture whose file cannot be found offers none of these rows &mdash; point it at its file first (on a layout,
@@ -104,16 +103,15 @@ layout, and is best set square on its corners first &mdash; see [Photographs of 
 ## What to make of it {#make}
 
 **Make** is **Schematic** or **Layout**. A schematic picture makes a schematic only: draw the schematic first, then use
-**Update Layout from Schematic**. **Layout** is disabled for it, and its tooltip says so.
+**Update Layout from Schematic**. **Layout** is disabled for it, and its tooltip says so. A picture of a board makes a
+layout only, so **Schematic** is disabled for it.
 
 The **Target** is a new cell, named after the picture (a pasted picture is `pasted_image_1`, `_2`, …). A name that is a
 cell this command made relabels **Create** as **Replace**, and a history checkpoint is taken before anything is
 replaced. A cell this command did not make is never replaced.
 
-Making a schematic also shows the recognition's options &mdash; ground, ground vias, coplanar lines, the frequency
-sweep and the digits values are written with. They are the artwork dialog's, and mean exactly what they mean there. A
-schematic picture has no copper, so in place of ground, vias and coplanar lines it shows **Arrange** and **Crossings
-connect** ([Schematic pictures](#schematic)).
+Making a schematic from a schematic picture also shows **Arrange** and **Crossings connect**
+([Schematic pictures](#schematic)), the frequency sweep and the digits values are written with.
 
 ## The picture, and what was read {#canvas}
 
@@ -122,7 +120,7 @@ What was read is drawn over the picture, each kind toggled from the legend at th
 | Legend | What it shows |
 |---|---|
 | **Copper** | Each traced region, outlined in its layer's colour. |
-| **Drills** | Each drill hole, as the circle read. |
+| **Drills** | Each drill hole, as the circle read &mdash; a drill colour's, or a small round hole in the copper. |
 | **Wires** | A schematic picture's wires, junction dots and crossings &mdash; a crossing read as connected is filled. |
 | **Parts** | Each recognised part, boxed with its designator &mdash; on a schematic picture, with its kind and which way it faces. |
 | **Lines** | Each line, as its centre line, labelled with its component and width &mdash; `MLIN W=450 µm`. |
@@ -255,7 +253,8 @@ The distance needs its unit &mdash; `1.6 mm`, `62 mil`, `500 um`. A bare number 
 be any of them. Beside the value, the resolution line says how finely the picture can be read: *1 px = 20 µm; a
 451 µm trace is read to ± 2 %*.
 
-With no usable evidence, the row is highlighted, the picture asks *Set the scale: Two points…*, and **Create** waits.
+With no usable evidence, the row is highlighted, the picture asks *Set the scale:* with **Two points…**, **Board
+corners…** and **Line impedance…** as buttons beside it, and **Create** waits.
 
 {{ui: image-dialog-needs-scale}}
 
@@ -264,8 +263,9 @@ With no usable evidence, the row is highlighted, the picture asks *Set the scale
 A phone photo of a board is taken at an angle, in uneven light, with most of the copper under the solder mask. Choose
 **Board corners…** in the Scale combo: four handles appear on the photo as taken. Drag them onto the board's corners,
 clockwise from its top-left &mdash; or onto any rectangle whose size you know, such as a part or a connector's outline
-&mdash; type its size beside the last handle (`50 mm × 30 mm`, each side with its unit), and press **Set**. The first
-handle to the second is the width.
+&mdash; type its size in the box between the handles (`50 mm × 30 mm`, each side with its unit), and press **Set**. The
+first handle to the second is the width. **Board corners…** works on a drawing as well as a photo: on a datasheet's
+board drawing, the board's outline and its stated size set the scale in one step.
 
 {{ui: image-dialog-board-corners}}
 
@@ -300,13 +300,13 @@ against frequency, a Smith chart, a polar chart &mdash; is read as **Plot**, and
 | Where | Row |
 |---|---|
 | **File** menu | **Import ▸ Image ▸ As Touchstone…** &mdash; a picture browsed to. The dialog's **Paste** reads the clipboard's. |
-| **Tools** menu | **Digitise Plot…** &mdash; the dialog, empty, in plot mode, read by hand (**Manual**). |
+| **Tools** menu | **Digitise Image…** &mdash; the dialog, empty, in plot mode, read by hand (**Manual**). A picture given to it is read as what it is: a plot makes a CSV, a picture of a board a layout. |
 | Right-click a picture file in the **Project** panel | **Create Touchstone from Plot…** |
 
 **Read** is **Automatic** or **Manual**. Automatic finds each plot, reads its tick labels and traces its curves, and
 you correct what it read; the two Touchstone rows open in it. Manual reads nothing off the picture: you draw the plot
 area, type its scale and place each curve's points, so it works on any picture &mdash; see
-[Digitise by hand](#by-hand). **Digitise Plot…** opens in Manual, or in Automatic if that is what you chose there last.
+[Digitise by hand](#by-hand). **Digitise Image…** opens in Manual, or in Automatic if that is what you chose there last.
 Switching keeps the picture.
 
 **Several pictures make one file.** A datasheet's S21 and S11 are often separate figures: **Add picture…** under
@@ -548,7 +548,9 @@ and it holds the picture alone, at the scale you set, to draw over by hand in th
   screenshot rather than scaling the picture up afterwards: scaling adds no detail. A circuitRF schematic reads well
   exported at 3× and above.
 - **One colour per layer** on a layout, distinct from the background and from each other; drill holes drawn as filled
-  circles.
+  circles. A drawing that shows its holes in the background's colour is read too: a round hole in the copper up to 1 mm
+  across becomes a via, with the copper whole under it, and a wider one &mdash; a mounting hole &mdash; stays an
+  opening. Drills and pads are rounded to a whole mil, or to 0.05 mm, in the technology's unit.
 - **Something of known size** on a layout picture &mdash; a scale bar, a dimension, a part whose size you know, a line
   of known impedance &mdash; so the scale can be set. A picture of ordinary chip parts often sets its own.
 - **If you have the original file** &mdash; the PDF, the SVG, the board's Gerber &mdash; it is the better source. A
@@ -572,7 +574,7 @@ disabled, and its tooltip is that sentence.
 
 | The report says | What to do |
 |---|---|
-| *Set the scale: Two points…* | Click two points a known distance apart and type the distance with its unit, or choose **Line impedance…** and click a trace. |
+| *Set the scale:* | Press **Two points…** and click two points a known distance apart, then type the distance with its unit; or **Board corners…** and type the board's size; or **Line impedance…** and click a trace. |
 | *1 px = 40 µm; a 450 µm trace is read to ± 9 %* | The picture is coarse for its narrowest trace. Take it again zoomed in, or accept the uncertainty. |
 | *The picture draws no solder mask or paste, so land patterns were read from the copper itself* | Parts were found from pad-shaped copper. If the picture does show the mask, map that colour to your mask layer: parts are then found from its openings. |
 | *N designators on the silkscreen name no part* | The text was read but no land pattern was found under it. Check the overlay; add the part in the schematic afterwards. |

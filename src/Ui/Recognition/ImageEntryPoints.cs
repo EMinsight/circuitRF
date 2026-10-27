@@ -35,9 +35,9 @@ public static class ImageEntryPoints
     public const string TraceIntoLayoutHeader = "Trace Image into This Layout…";
 
     public const string CreateSchematicTip =
-        "Read a picture of a schematic or a layout and write it as a schematic of native components in a new cell, reviewed first in a parts table.";
+        "Read a picture of a schematic and write it as a schematic of native components in a new cell, reviewed first in a parts table.";
     public const string DrawSchematicHereTip =
-        "Read this picture and draw it as a schematic over the picture, in this schematic, as one undo step — or, for a picture of a layout, in a new cell.";
+        "Read this picture and draw it as a schematic over the picture, in this schematic, as one undo step — or, for a picture of a board, trace it into a new layout cell.";
     public const string CreateLayoutTip =
         "Trace a picture of a layout into the copper, vias and outline of a new layout cell.";
     public const string TraceIntoLayoutTip =
@@ -49,16 +49,17 @@ public static class ImageEntryPoints
 
     /// <summary>
     /// A layout bitmap's rows: <i>Trace Image into This Layout…</i> (scale <i>As placed</i>, target this layout, its
-    /// technology) and <i>Create Schematic from Image…</i> (a new cell, <i>As placed</i> offered as scale evidence).
-    /// None when the picture does not resolve. A locked bitmap is offered too — locking stops dragging, not reading.
-    /// A layout never saved has no file to trace into, so it offers only the new cell.
+    /// technology) and <i>Create Layout from Image…</i> (a new cell, <i>As placed</i> offered as scale evidence). A board
+    /// picture makes a layout only, so no schematic row (designer round 29). None when the picture does not resolve. A
+    /// locked bitmap is offered too — locking stops dragging, not reading. A layout never saved has no file to trace into,
+    /// so it offers only the new cell.
     /// </summary>
     public static IReadOnlyList<ImageContextRow> LayoutBitmapRows(string? clayPath, BitmapShape bitmap)
     {
         if (!Resolves(clayPath, bitmap.ImagePathRef)) return [];
         return clayPath is null
-            ? [new(CreateSchematicHeader, CreateSchematicTip, true, false)]
-            : [new(TraceIntoLayoutHeader, TraceIntoLayoutTip, false, true), new(CreateSchematicHeader, CreateSchematicTip, true, false)];
+            ? [new(CreateLayoutHeader, CreateLayoutTip, false, false)]
+            : [new(TraceIntoLayoutHeader, TraceIntoLayoutTip, false, true), new(CreateLayoutHeader, CreateLayoutTip, false, false)];
     }
 
     /// <summary>

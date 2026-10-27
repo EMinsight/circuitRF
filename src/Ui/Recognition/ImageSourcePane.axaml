@@ -70,8 +70,8 @@
             <TextBlock Classes="label" Text="Make" Margin="0,0,6,0"/>
             <StackPanel Classes="Toolbar" Orientation="Horizontal" Spacing="2" IsVisible="{Binding IsDrawingPicture}">
                 <RadioButton Classes="tool" Theme="{StaticResource {x:Type ToggleButton}}"
-                             IsChecked="{Binding IsMakeSchematic}"
-                             ToolTip.Tip="Schematic — a new cell with the schematic recognised from the picture.">
+                             IsChecked="{Binding IsMakeSchematic}" IsEnabled="{Binding MakeSchematicEnabled}"
+                             ToolTip.Tip="{Binding MakeSchematicTip}" ToolTip.ShowOnDisabled="True">
                     <mi:MaterialIcon Kind="ResistorNodes" Width="16" Height="16"/>
                 </RadioButton>
                 <RadioButton Classes="tool" Theme="{StaticResource {x:Type ToggleButton}}"

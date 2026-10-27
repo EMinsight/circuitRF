@@ -197,6 +197,22 @@ public class LayoutLiveTechnologyTests
         Assert.Equal(12_345, h.LayoutVm.Model.SnapDbu);
     }
 
+    /// <summary>Designer round 29: the technology's unit changed while a layout is open on it — a layout still on the
+    /// old unit follows, one whose unit was chosen in its own toolbar keeps it.</summary>
+    [Theory]
+    [InlineData(LayoutUnit.Um, LayoutUnit.Mm)]    // on the technology's unit: follows
+    [InlineData(LayoutUnit.Mil, LayoutUnit.Mil)]  // chosen in the layout: kept
+    public void TheTechnologysUnitEdited_MovesAnOpenLayoutOnlyWhenItWasStillOnTheOldOne(LayoutUnit layoutUnit, LayoutUnit expected)
+    {
+        var layoutModel = new LayoutView { DbuPerMicron = 1000, DisplayUnit = layoutUnit, SnapDbu = 1000, AngleMode = AngleMode.AnyAngle };
+        using var h = new Harness(FreshTech(), layoutModel);   // the technology is in µm
+
+        h.EditorVm.DefaultDisplayUnit = LayoutUnit.Mm;
+
+        Assert.Equal(expected, h.LayoutVm.DisplayUnit);
+        Assert.Equal(1000, h.LayoutVm.Model.SnapDbu);
+    }
+
     // ── Close prompts (simulated — SaveChangesDialog needs the Avalonia runtime) ──────────
 
     // Mirrors WorkspaceViewModel.ConfirmCloseDockable's TechDocument branch exactly.

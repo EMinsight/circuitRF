@@ -40755,3 +40755,30 @@ two-port passive block it found:
   band's first row now, left-aligned over the axes (`Plot.TitleInTopBand`, `AxesRenderer.TitleRowPx`), and new info
   boxes are placed below that row. The band is still reserved with no marker, so the axes still do not move. The separate
   title margin (10 % of the plot's height) went back to the axes.
+
+## Designer feedback round 29 — the picture dialog on a datasheet board drawing; a technology's unit (2026-10-27)
+
+- **A board picture opened from Tools ▸ Digitise Plot… made a SCHEMATIC.** `StartPlotMode` sets the wanted Make to CSV,
+  and `RefreshMode` mapped any wanted Make ≥ 2 on a non-plot picture to 0 (Schematic). The schematic path also brought
+  the Frequency/Ground rows and the edge-port finder, which put P1–P3 on the ground fill where it touches the bottom
+  board edge. A layout or board-photo picture now always makes a layout (`RefreshMode`), and Make Schematic is greyed
+  for it (`MakeSchematicEnabled`). The layout-picture-to-schematic code (`ImageRecognition`, the dialog's recognition
+  branch) is kept, just unreachable from the dialog; the CLI `recognize` path is unchanged. A layout bitmap's
+  right-click row is Create Layout from Image… now.
+- **Tools ▸ Digitise Image…** (was Digitise Plot…): `StartPlotMode(classify: true)` keeps the empty dialog in plot mode
+  but sets `_commandKind` to Auto, so the first picture handed in is classified instead of forced to be a plot. The
+  painted test-board picture still classifies as a plot under Auto; Create Layout from Image… names the kind.
+- **"Set the scale: Two points…" looked like a button and was a text pill.** When the prompt is the scale prompt, the
+  pill shows "Set the scale:" plus real Two points… / Board corners… / Line impedance… buttons, which select the scale
+  combo's row (`ImageScaleViewModel.Start*Command`).
+- **The Size box covered the bottom-right corner handle.** It was placed beside handle 3 and clamped inside the canvas,
+  so on a picture that fills the canvas the clamp pushed it back over the corner being dragged. It now sits centred on
+  the four handles' centroid; the distance/Z0/label boxes take the first side of their point that fits and covers
+  neither picked point. The box is measured before its first placement (`SizeOf`).
+- **The ruler stayed in mil after the technology's unit was changed to mm.** By design (L0c, R-tec-4) the technology's
+  unit only seeded new layouts. `ApplyTechResolution` now moves an open layout's `DisplayUnit` when the SAME .ctech's
+  unit changed and the layout was still on the old one; a unit chosen in the layout's toolbar, a retarget and a closed
+  layout are untouched.
+- `tools/UiSnapshot --image` renders the dialog. A `.ctech` copied out of a workspace needs its `.cmat` beside it or it
+  does not load, and the dialog reports no technology. `--button` matched hidden inline-box buttons by `IsVisible`
+  (local); it uses `IsEffectivelyVisible` now.

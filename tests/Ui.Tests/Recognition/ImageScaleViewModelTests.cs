@@ -55,6 +55,13 @@ public sealed class ImageScaleViewModelTests : IDisposable
         Assert.False(vm.CreateCommand.CanExecute(null));
         Assert.Equal(ImageScaleViewModel.SetScalePrompt, vm.CreateTip);
         Assert.Equal(ImageScaleViewModel.SetScalePrompt, vm.CanvasPrompt);
+
+        // Designer round 29: the prompt read as a button and did nothing — it offers the tools as buttons now.
+        Assert.True(vm.CanvasPromptOffersScale);
+        vm.Scale.StartTwoPointsCommand.Execute(null);
+        Assert.Equal(ImageMeasureTool.TwoPoints, vm.Scale.Tool);
+        Assert.Equal(ImageScaleChoiceKind.TwoPoints, vm.Scale.SelectedChoice?.Kind);
+        Assert.False(vm.CanvasPromptOffersScale);
     }
 
     [Fact]
