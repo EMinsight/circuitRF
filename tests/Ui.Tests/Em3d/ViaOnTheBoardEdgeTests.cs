@@ -77,6 +77,17 @@ public sealed class ViaOnTheBoardEdgeTests : IDisposable
         Assert.True(step.Ok, step.Message);
     }
 
+    /// <summary>R-dfr28-3-0a — the edge-cut via bounds the content by its part on the board, so the box's YMax is the board
+    /// edge at 3 mm plus the fixture's 1 mm of padding, not the drill circle's far side plus it.</summary>
+    [Fact]
+    public void AnEdgeCutVia_BoundsTheBoxByItsPartOnTheBoard()
+    {
+        var (setup, source, tech) = Board(2, 3);
+        var g = Em3dGenerator.Generate(setup, source, tech);
+        Assert.True(g.Ok, g.Refusal);
+        Assert.Equal(4e-3, g.Problem!.Boundary.Max.Y, 12);
+    }
+
     /// <summary>A via wholly on the board is the cylinder it always was; one wholly off it is left out and named.</summary>
     [Fact]
     public void AViaOnTheBoardIsACylinder_AndOneOffItIsLeftOut()

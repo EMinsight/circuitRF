@@ -3858,6 +3858,24 @@ identity with the junction-only stamp).
   The injection writes the technology's value into it when empty and no longer writes `Bp`.
 - **The model's stub on the board config is 1.76 pF against the solve's 1.45 (+21 %)**: the designer's pad formula
   (1.54 pF) ignores the antipad under the pad's centre, which the brief left out of scope.
+- **Refined Palace does not agree with the field solve on the real board (2026-10-27).** The round-26 crop was solved
+  electrostatically at order 2 with three adaptive refinement passes: as built, and with only the via's eight inner
+  pads deleted. Robust meshing was on; it moves no outline more than 0.5 µm.
+
+  | Pass | As built | Pads removed | Pads' worth |
+  |---|---|---|---|
+  | 1 | 4.65 pF | 2.93 pF | 1.72 pF |
+  | 2 | 4.57 pF | 2.97 pF | 1.60 pF |
+  | 3 | 4.81 pF | 3.01 pF | 1.80 pF |
+  | final | 5.02 pF | 3.03 pF | 1.99 pF |
+
+  - The share does not shrink with refinement, so "under-resolved FEM overstates" does not explain the 1.61 pF. The
+    as-built value rises with refinement, the opposite of an energy bound converging from above. Its error indicator
+    was still 0.19 at pass 3: not converged.
+  - The axisymmetric solve (0.192 pF) is the via alone: every pad round and centred in a round clearance, the test pad
+    centred on the via. On the board the 1.5 mm pad is 1.4 mm off the via, at the end of a bottom trace, beside C211 and
+    a pour. The cause of a ~10× gap is NOT found; TESTPAD's inner-pad term reads ~10× low on this board until it is.
+  - The reissued TP149 report says so on page 3.
 
 ## A side-fed TESTPAD stamped nothing (designer round 27, 2026-10-25)
 

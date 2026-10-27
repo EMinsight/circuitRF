@@ -244,6 +244,10 @@ from — <em>default: 18.74 mm, λ/8 at 2 GHz, the sweep's lowest frequency</em>
 and so pads far, is visible before it is meshed. On a guided structure (a launch, a transition) a
 stated padding of a few substrate heights is usually far cheaper.</p>
 </li>
+<li><p><strong>Robust meshing</strong> (<code>RobustMeshing</code>): removes outline points that sit within a fraction of a micrometre of
+their neighbours' line, which imported artwork often has and which can stop the mesher. On in a new setup; see
+<a href="em-setup.html#robust-meshing">EM Setup ▸ Robust meshing</a>.</p>
+</li>
 <li><p><strong>Quality</strong> (<code>Quality</code> in the <code>Palace</code> section): <em>Draft</em>, <em>Standard</em> (the default) or <em>Accurate</em>.
 These set the element order, the refinement passes and the sweep tolerance together, and any one of
 those can be overridden on its own. The measured cost of each preset is in

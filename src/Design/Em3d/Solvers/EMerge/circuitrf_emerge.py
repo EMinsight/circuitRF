@@ -89,7 +89,12 @@ def fail(message):
 
 class Refused(Exception):
     """brief-emw-3 — what the run refuses once EMerge has shown it (a terminal face's modes): its message is the sentence
-    circuitRF reports, and its line says "refused" so the run is a refusal, not a failure."""
+    circuitRF reports, and its line says "refused" so the run is a refusal, not a failure. brief-dfr28-3 — cause names any
+    other kind of refusal on that line (NON_FINITE); none is a terminal face's."""
+
+    def __init__(self, message, cause=None):
+        super().__init__(message)
+        self.cause = cause
 
 
 def main(argv):
@@ -144,10 +149,12 @@ def main(argv):
     heard = Heard(on_gpu)
     from loguru import logger
     logger.add(heard.sink, level="INFO", format="{message}", catch=False)
+    if (unguarded := guard_solves(sim, model, heard)) is not None:
+        warnings.append(unguarded)
     try:
         outcome = solve(problem, os.path.dirname(path), sim, model, heard, warnings)
     except Refused as e:
-        report(error=str(e), refused=True)
+        report(error=str(e), refused=True, **({"cause": e.cause} if e.cause else {}))
         sys.exit(2)
     except Exception as e:
         fail(named(e))
@@ -313,6 +320,88 @@ class Heard:
             self.converged = True
         elif text.startswith("Adaptive sweep stopped at max_samples"):
             self.converged = False
+
+
+# -- a non-finite solve (brief-dfr28-3 R-dfr28-3-1) ----------------------------------------------------------------------
+
+# The refusal's cause, on its JSON line: circuitRF forwards it as a solve's refusal, not a terminal face's.
+NON_FINITE = "non-finite-solve"
+
+
+def guard_solves(sim, model, heard):
+    """Every direct solve EMerge makes is checked: a matrix or right-hand side holding a non-finite entry stops the run
+    before it is solved, and a solution that is not finite stops it after. EMerge 3.0.0b2 does neither: on the TP149 board
+    one degenerate second-order tetrahedron put NaN in its 20 unknowns' columns of A, the fast sparse solver returned
+    x = NaN and reported itself converged (EMerge drops that report anyway), and every frequency's S came out exactly -I.
+    SolveRoutine.solve is the one call every solver EMerge may pick goes through, serial or threaded, so the check sits
+    there. A run whose EMerge has moved it is told so and runs, with the -I check circuitRF makes on its result."""
+    import numpy as np
+    try:
+        from emerge._emerge.solver import SolveRoutine
+        solve_ = SolveRoutine.solve
+    except (ImportError, AttributeError):
+        return "circuitRF could not install its check on EMerge's solves (this EMerge has no SolveRoutine.solve where " \
+               "circuitRF looks for it); the run goes on without it."
+
+    def solve(self, A, b, solve_ids, *a, **k):
+        finite_a, finite_b = bool(np.isfinite(A.data).all()), bool(np.isfinite(b).all())
+        if not (finite_a and finite_b):
+            c = A.tocoo()
+            bad = ~np.isfinite(c.data)
+            dofs = np.unique(np.concatenate([c.row[bad], c.col[bad],
+                                             np.flatnonzero(~np.isfinite(np.reshape(b, (b.shape[0], -1))).all(axis=1))]))
+            raise Refused(non_finite_matrix(sim, model, dofs, int(bad.sum()) + int((~np.isfinite(b)).sum())), NON_FINITE)
+        x, report_ = solve_(self, A, b, solve_ids, *a, **k)
+        if not np.isfinite(x).all():
+            raise Refused("EMerge's sparse solver (%s) returned a solution that is not a number from a matrix that is finite, "
+                          "and EMerge took it as solved; no S-parameters were written. Its system is singular or the "
+                          "solver failed without saying why. Run it again on the other device (EMerge's Device), or "
+                          "with EMerge.ElementOrder: 1." % (heard.solver or "unnamed"), NON_FINITE)
+        return x, report_
+
+    SolveRoutine.solve = solve
+    return None
+
+
+def non_finite_matrix(sim, model, dofs, entries):
+    """The refusal for a system matrix holding a non-finite entry: the tetrahedra whose unknowns those are, where they are
+    (centroid in mm, in circuitRF's layout coordinates, as the run's other notes give them) and what solids they lie in or
+    touch. One degenerate element puts a non-finite value in every one of its own unknowns, and only it has all of them."""
+    import numpy as np
+    mesh = sim.mesh
+    t2f = np.asarray(sim.mw.basis.tet_to_field)              # (unknowns per tetrahedron, tetrahedra)
+    hits = np.isin(t2f, dofs).sum(axis=0)
+    cells = np.flatnonzero(hits == t2f.shape[0])
+    if cells.size == 0 and hits.max() > 0:
+        cells = np.flatnonzero(hits == hits.max())
+    if cells.size == 0:
+        return ("EMerge's system holds %d entr%s that are not numbers, in %d unknown%s no element of its mesh owns; the "
+                "run was stopped before solving." % (entries, "y" if entries == 1 else "ies", dofs.size,
+                                                     "" if dofs.size == 1 else "s"))
+    obj, _ = cell_owners(mesh, model)
+    names = model["names"]
+    where = []
+    for t in cells[:3]:
+        corners = mesh.nodes[:, mesh.tets[:, t]]               # (3, 4), metres
+        c = corners.mean(axis=1) * 1e3
+        edges = [np.linalg.norm(corners[:, i] - corners[:, j]) for i, j in TET_EDGES]
+        volume = abs(np.linalg.det(corners[:, 1:] - corners[:, :1])) / 6
+        touching = np.flatnonzero(np.isin(mesh.tets, mesh.tets[:, t]).any(axis=0))
+        around = sorted({names[k] for k in obj[touching]} - {names[obj[t]]})
+        where.append("a tetrahedron at (%.4f, %.4f, %.4f) mm, in %s%s; its edges run %.3g to %.3g um and its volume is "
+                     "%.3g um^3" % (c[0], c[1], c[2], quoted(names[obj[t]]),
+                                    ", touching " + ", ".join(quoted(n) for n in around) if around else "",
+                                    min(edges) * 1e6, max(edges) * 1e6, volume * 1e18))
+    more = "" if cells.size <= 3 else ", and %d more" % (cells.size - 3)
+    return ("%s: %s%s. Its entries in EMerge's system are not numbers and reach every unknown, so the solve would return "
+            "no field (S = -I); the run was stopped before solving. Look at the geometry there: a sliver between two "
+            "solids' faces, or a feature far smaller than the mesh around it." % (
+                "The mesh has %d degenerate element%s" % (cells.size, "" if cells.size == 1 else "s"),
+                "; ".join(where), more))
+
+
+def quoted(name):
+    return "the air box" if name == "background" else "'%s'" % name
 
 
 # -- geometry ------------------------------------------------------------------------------------------------------------

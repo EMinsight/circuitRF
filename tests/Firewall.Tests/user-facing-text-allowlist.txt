@@ -1487,7 +1487,6 @@ src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a frequency: a n
 src/RfCore/Signals/SignalSpec.cs|empty carrier description
 src/RfCore/Signals/SignalSpec.cs|empty signal description
 src/RfCore/Signals/SignalSpec.cs|unknown carrier field '{k}'
-src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK or FILE)
 src/RfCore/Signals/SignalSpec.cs|unknown modulation '{v}' (QPSK, 16QAM, 64QAM, 256QAM, 1024QAM)
 
 # ── Pulsed-CW carrier (brief ENV-PCW, 2026-10-24) ─────────────────────────────────────
@@ -1513,5 +1512,14 @@ src/RfCore/Signals/Fsk.cs|FSK carrier: Dev must be a positive frequency deviatio
 src/RfCore/Signals/Fsk.cs|FSK carrier: Rb must be a positive bit rate (got {s.BitRate.ToString(inv)} b/s)
 src/RfCore/Signals/ModulatedSignal.cs|an FSK carrier has a constant envelope and is not clipped: remove Clip from the source
 src/RfCore/Signals/ModulatedSignal.cs|an FSK carrier must be the source's only carrier
-src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an FSK carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a bit rate: a number with bps, kbps or Mbps
+src/RfCore/Signals/Css.cs|CSS carrier: BW must be a chirp bandwidth up to 2 MHz (got {s.BandwidthHz.ToString(inv)} Hz)
+src/RfCore/Signals/Css.cs|CSS carrier: SF must be {MinSf} to {MaxSf} (got {s.Sf.ToString(inv)})
+src/RfCore/Signals/Dbpsk.cs|DBPSK carrier: Data must be PN9, PN15 or a pattern of 0s and 1s (got '{c.Data}')
+src/RfCore/Signals/Dbpsk.cs|DBPSK carrier: Rb must be a positive bit rate (got {s.BitRate.ToString(inv)} b/s)
+src/RfCore/Signals/ModulatedSignal.cs|{what} is not clipped ({whyNoClip}): remove Clip from the source
+src/RfCore/Signals/ModulatedSignal.cs|{what} must be the source's only carrier
+src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to a CSS carrier
+src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an FSK{(alsoDbpsk ? 
+src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a spreading factor: a whole number, 7 to 12
+src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS or FILE)

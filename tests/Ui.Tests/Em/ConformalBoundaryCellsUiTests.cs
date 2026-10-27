@@ -215,6 +215,31 @@ public class ConformalBoundaryCellsUiTests
     /// options, the radiation pattern, the planar port type) and keeps what it does (the return
     /// plane, which the 3D generator's ports return through).
     /// </summary>
+    /// <summary>
+    /// brief-dfr28-3 follow-up — the return plane is where a .cem's port labels build their sheets to. A .c3d's drawn ports
+    /// name their own two conductors and it has no stackup, and an electrostatic setup has no ports, so neither shows it —
+    /// and the Conductors group, with nothing left in it for a 3D setup, goes with it.
+    /// </summary>
+    [Fact]
+    public void TheReturnPlane_IsHiddenWhereNothingReadsIt_AndTheEmptyGroupWithIt()
+    {
+        var driven = new EmSetup { Solver3D = Em3dSolverId.Palace };
+        Assert.True(new EmSetupEditorViewModel("x.cem", driven).ShowReturnPlane);
+        var embedded = new EmSetupEditorViewModel("x.c3d", driven, embedded: true);
+        Assert.False(embedded.ShowReturnPlane);
+        Assert.False(embedded.ShowConductorsGroup);
+        var electrostatic = new EmSetupEditorViewModel("x.cem", new EmSetup
+        {
+            Solver3D = Em3dSolverId.Palace, Problem3D = CircuitRF.Engine.Em3d.Em3dProblemType.Electrostatic,
+        });
+        Assert.False(electrostatic.ShowReturnPlane);
+        Assert.False(electrostatic.ShowConductorsGroup);
+        Assert.True(new EmSetupEditorViewModel("x.cem", new EmSetup()).ShowConductorsGroup);
+        string axaml = File.ReadAllText(RepoFile("src/Ui/Views/Layout/EmSetupEditorView.axaml"));
+        int header = axaml.IndexOf("Classes=\"grouphdr\" Text=\"Conductors\"", StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ShowConductorsGroup", axaml[axaml.LastIndexOf("<Border", header, StringComparison.Ordinal)..header]);
+    }
+
     [Fact]
     public void A3DSolver_HidesThePlanarOnlyControls_AndKeepsTheReturnPlane()
     {

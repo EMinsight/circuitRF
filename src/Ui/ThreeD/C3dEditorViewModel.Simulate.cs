@@ -407,7 +407,7 @@ public sealed partial class C3dEditorViewModel
     {
         var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         string name = Enumerable.Range(1, 10_000).Select(n => $"S{n}").First(n => !names.Contains(n));
-        var setup = new EmSetup { Name = name, Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default };
+        var setup = new EmSetup { Name = name, Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, RobustMeshing = true };
         ChangeRecords($"Add setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
         if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);

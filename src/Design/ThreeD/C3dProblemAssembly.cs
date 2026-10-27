@@ -369,6 +369,7 @@ public static class C3dProblemAssembly
         var drawn = (elaborator ?? new C3dElaborator()).Elaborate(document, path, workspaceCws, new C3dElaborationOptions(fMax, tempC)
         {
             MaterialFrequencyHz = materialHz, MaterialFrequencyBasis = sar is null ? "the sweep's centre" : "the SAR frequency",
+            RobustMeshing = setup.RobustMeshing,
         });
         var e = C3dModelled.Filter(document, drawn);
         notes.AddRange(e.Notes);

@@ -68,7 +68,8 @@ internal sealed record Em3dSetupSource(
                     new C3dElaborationOptions(null, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC)), thermal: true);
             var generated = C3dProblemAssembly.Assemble(setup, doc, full, cws, elaborator);
             var e = elaborator.Elaborate(doc, full, cws, new C3dElaborationOptions(generated.Problem?.Frequency.StopHz,
-                                                                                   setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC));
+                                                                                   setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC)
+                                                         { RobustMeshing = setup.RobustMeshing });
             return new Em3dSetupSource(full, setup, ResolutionOf(full, e), generated,
                 generated.Problem is null ? generated.Refusal ?? "the 3D problem could not be built." : null) { Elaboration = e };
         }
@@ -134,7 +135,8 @@ internal sealed record Em3dSetupSource(
         var elaborator = new C3dElaborator();
         var generated = C3dProblemAssembly.Assemble(setup, doc, c3d, DocumentKinds.AncestorCws(c3d), elaborator, fromCem: true);
         var e2 = elaborator.Elaborate(doc, c3d, DocumentKinds.AncestorCws(c3d),
-                                      new C3dElaborationOptions(generated.Problem?.Frequency.StopHz, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC));
+                                      new C3dElaborationOptions(generated.Problem?.Frequency.StopHz, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC)
+                                      { RobustMeshing = setup.RobustMeshing });
         return new Em3dSetupSource(full, setup, ResolutionOf(c3d, e2), generated,
             generated.Problem is null ? generated.Refusal ?? "the 3D problem could not be built." : null) { Elaboration = e2 };
     }

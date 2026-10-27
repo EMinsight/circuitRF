@@ -23481,3 +23481,90 @@ The driven TP149 setup on EMerge at Standard, compared with Palace. The open wor
   which keeps the face 150 µm out. Open: brief DFR28-3 R-3.
 - **On this board Standard and Draft mesh alike** (67,712 vs 64,673 tets): the geometry sets the element size, not the
   wavelength. EMerge Standard on the CPU takes 1 min 57 s and 6.1 GB.
+
+## brief-dfr28-3 — EMerge on the TP149 board: a NaN element, a port in the absorbing face (2026-10-26)
+
+- **A non-finite solve is refused at the first solve, naming its element (R-dfr28-3-1).** The driver wraps
+  `SolveRoutine.solve`, the one call every solver EMerge may pick goes through (serial or threaded). A matrix or
+  right-hand side with a non-finite entry stops the run before solving. A solution that is not finite stops it after.
+  The bad unknowns are mapped back through `basis.tet_to_field`: one degenerate element owns all 20 of its own unknowns,
+  and no other tet owns all of them. The refusal gives its centroid in layout millimetres, the solid it lies in, the
+  solids it touches, its edge range and its volume. Its JSON line carries `cause: non-finite-solve`, and circuitRF
+  forwards it as `Refused` with source `emerge-solve`. `NoFieldFrequencies` stays as the last line of defence. Its
+  sentence no longer names memory, because −I is what ANY silent solver failure leaves.
+- **The element (R-dfr28-3-2).** On the YMax-300 µm run it is a FLAT tetrahedron, volume exactly 0. All four corners lie
+  in the board's top plane (z = 1.683 mm) at (126.74, 116.78) mm, in 'Dielectric 1', touching the air. Three of them
+  are consecutive vertices of a rounded corner on the TP149 trace ('Top Copper (1 oz)/N7120220'), drawn in the `.clay`
+  as 6.89 µm segments that end in a 1.44 µm stub. It is nowhere near the board edge. It is Gmsh's 3D boundary recovery
+  on near-collinear boundary nodes, and its optimiser cannot remove it (all four nodes are on the boundary).
+  - **It is rare and depends on the box.** Meshed raw at YMax paddings of 150, 200, 400 and 600 µm, the board has no
+    zero-volume tet. Only 300 µm made one.
+  - **Gmsh options do not fix it.** `Mesh.OptimizeNetgen = 1` breaks boundary conformity, and EMerge stops on a missing
+    boundary triangle. `Mesh.RandomFactor3D = 1e-9` gives 3 flat tets instead of 1. The Frontal 3D algorithm crashes
+    (SIGBUS). HXT leaves 8 near-zero tets in the clipped edge via's fill. A Delaunay 2D mesh removes the flat tet but
+    leaves q = 5e-9 slivers in that fill.
+  - **Removed by Robust meshing, a setup option (`RobustMeshing`).** The `.clay` itself holds sub-micron edges:
+    0.1 µm in 'Bottom Copper/GND/2', 0.388 µm in 'Inner 3/5 GND/8', and 1.43 µm stubs at arc ends. The raw meshes'
+    worst element (q 2e-7) sits on the 0.2 µm one. `Em3dOutlineCleanup` drops an outline point only when every
+    original point its merged segment stands for stays within the tolerance: min(0.5 µm, thickness/50). On TP149 that
+    removes 42 of 3,379 points and makes the shortest edge 5 µm. The 300 µm mesh then has no zero-volume tet, and every
+    cleaned mesh's worst tet inside the board is q 1.4e-6.
+    - **Scope:** artwork conductor pieces only (solids and sheets). Never via barrels, edge-cut drill clips, slabs or
+      the board outline. A thickness-only tolerance would have let a 1.718 mm barrel move 34 µm; the cap keeps copper
+      at 0.5 µm, and thin-film metal (1–3 µm) moves by tens of nanometres.
+    - **Default:** on in `EmSetup.CreateNew` and the 3D view's Add, off when a file does not say, so an existing
+      result reproduces. It changes the extracted problem, so the provenance hash marks an earlier result stale.
+    - **Paths:** both the `.cem` generator and the `.c3d` elaborator (`C3dElaborationOptions.RobustMeshing`, part of
+      the child-layout cache key; the editor's picture stays as drawn). The editor shows it below the solver sections
+      for 3D EM setups only.
+    - **Not a guarantee.** The flat tet is a rare Gmsh event; R-1's refusal still names any that occurs.
+- **A lumped port in an absorbing face is padded clear (R-dfr28-3-3).** `Em3dGenerator.ClearOfPortSheets` runs after
+  `PaddedAirBox`. A lumped sheet coplanar with an absorbing face (to the wave-port line-end tolerance) and inside its
+  extent pushes that face outward by the sheet's longer side, with a Note. A PMC face is refused by name, because moving
+  a symmetry plane changes the problem. In the face, both FEM solvers lose power to the boundary (S65 −2.15 dB Palace,
+  −2.9 dB EMerge). openEMS's PML starts at the face, and its Mur update (PmlCells 0) overwrites the tangential E the
+  port drives. With R-0a back in (the edge-cut drill bounds the content by `ClipDisc`), TP149's YMax face lands on port 6
+  and is padded 109 µm. S65 then reads −0.09 dB (Palace Draft) and −0.10 dB (EMerge Standard).
+- **The comparison on one geometry (R-dfr28-3-4).** R-0a and R-3 are in, and YMax is padded 109 µm by the port rule.
+  EMerge Standard on the CPU: 2 min 10 s, 68,390 tets, 519,840 unknowns, 5.9 GB. Palace Draft: 3 min 57 s,
+  148,163 tets, 217,479 unknowns, 6.3 GB. Max |ΔS| per net: RFin (1–2) 0.020, RFout (5–6) 0.017, TP149 (3–4) 0.135.
+  | | 0.3 | 1.1 | 1.9 | 2.7 | 3.5 GHz |
+  |---|---|---|---|---|---|
+  | S21 Palace / EMerge, dB | −0.02 / −0.02 | −0.11 / −0.10 | −0.26 / −0.24 | −0.47 / −0.43 | −0.71 / −0.65 |
+  | S43 | −0.12 / −0.10 | −1.32 / −1.10 | −4.16 / −3.36 | −10.88 / −8.26 | −14.94 / −25.58 |
+  | S65 | −0.00 / −0.00 | −0.02 / −0.02 | −0.03 / −0.04 | −0.06 / −0.07 | −0.09 / −0.10 |
+  - **The TP149 net is not settled.** Its 3.5 GHz S43 is a deep notch that moves with the mesh. EMerge alone reads
+    −25.6 dB on this geometry and −19.2 dB on the pre-DFR28-1 one (Draft, 64,981 tets).
+  - **Palace at order 2 does not fit a short run here.** With 3 refinement passes, its post-mesh check put Standard at
+    19.6 GB, 114 % of this 17.2 GB machine (the pre-mesh estimate had said 41,775 elements and 5.1 GB; Gmsh made
+    152,212). At order 2 with no refinement (1,088,114 unknowns, 10 MPI processes, one per core), it reached excitation 2
+    of 6 in 25 min at 9.0 GB and was stopped. Run again with no time limit, circuitRF's own memory ceiling stopped it
+    40 min in, during excitation 2 of 6, at 17.2 GB: on this machine order 2 does not fit as an adaptive sweep at all.
+- **The designer's −I is not reproduced (R-dfr28-3-5).** The pre-DFR28-1 build (unclipped edge via, box 150 µm past the
+  edge) on EMerge Draft, CPU, here: 64,981 tets, finite S, converged in 8 samples, no degenerate element. The designer
+  ran EMerge 3.0.0b3 on Windows with Pardiso. The first run's Pardiso error −2 is a real memory failure (the log the
+  designer sent is that run's). The second run's log was not sent, and a Windows mesh is not this mesh. So the round-28
+  response was left as written: the guard now names a degenerate element if that is what it was.
+- **The Return plane box is shown only where something reads it.** It is where a `.cem`'s port labels build their
+  sheets to. A `.c3d`'s drawn ports name their own two conductors and have no stackup, and an electrostatic setup has
+  no ports, so `ShowReturnPlane` is false for both. The Conductors group now hides with its contents
+  (`ShowConductorsGroup`) instead of standing empty.
+- **Palace at order 2, at last: 5 frequencies, solved point by point.** No refinement and no adaptive sweep, on the same
+  geometry: 1 h 18 min, 1,088,114 unknowns, peak 10.3 GB. Solving point by point stayed far under the ceiling the
+  adaptive sweep hit. Against it:
+
+  | | max \|ΔS\| | S21 at 3.5 GHz | S11 at 3.5 GHz | S43 at 3.5 GHz |
+  |---|---|---|---|---|
+  | Palace order 2 | — | −0.40 dB | −11.7 dB | −17.9 dB |
+  | EMerge Standard (order 2) | 0.094 | −0.65 dB | −9.3 dB | −25.6 dB |
+  | Palace Draft (order 1) | 0.104 | −0.71 dB | −8.9 dB | −14.9 dB |
+
+  - EMerge and Palace Draft agree with each other to 0.02 on RFin and RFout. Both differ from order-2 Palace by
+    0.05–0.10 on every net, not only TP149: more loss (S21 −0.65 / −0.71 vs −0.40 dB at 3.5 GHz) and a worse match
+    (S11 about 3 dB higher).
+  - The TP149 notch at 3.5 GHz is −17.9 dB at order 2, between EMerge's −25.6 and Draft's −14.9. It moves with the mesh
+    in every solver: EMerge alone reads −22.3 dB with YMax padded 300 µm. Read it as a shallow notch near 3.5 GHz,
+    depth uncertain by several dB.
+- **The 300 µm run that made the flat tet now solves.** With Robust meshing on, YMax padded 300 µm, EMerge Standard
+  on the CPU: 42 of 3,277 points removed (0.44 µm at most), 67,912 tets, converged in 8 samples, 3 min 28 s. It is
+  within 0.028 of the 109 µm-padded run.

@@ -62,6 +62,10 @@ public sealed record C3dElaborationOptions(double? FMaxHz = null, double TempC =
     /// <summary>brief-em3d-51 — <c>explain --set</c>: names bound over the top document's scope before anything resolves.</summary>
     public IReadOnlyList<(string Name, string Expr)>? Sets { get; init; }
 
+    /// <summary>brief-dfr28-3 — the run's setup's <see cref="EmSetup.RobustMeshing"/>, for every placed layout. Off (as drawn)
+    /// for the editor's picture.</summary>
+    public bool RobustMeshing { get; init; }
+
     /// <summary>brief-sar-2 R-sar2-3 — the one frequency every dispersive material (a tissue, a phantom liquid) is evaluated at
     /// before lowering, so each solver sees plain εr and σ. Null: the record's plain numbers (an editor preview, a thermal run).</summary>
     public double? MaterialFrequencyHz { get; init; }
@@ -601,7 +605,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
     private ChildLayout ChildLayoutCached(string path, string? fallbackCws, C3dElaborationOptions options)
     {
-        string key = string.Create(CultureInfo.InvariantCulture, $"layout|{path}|{Stamp(path)}|{options.FMaxHz:R}|{options.TempC:R}");
+        string key = string.Create(CultureInfo.InvariantCulture, $"layout|{path}|{Stamp(path)}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}");
         if (_children.TryGetValue(key, out var hit) && hit is ChildLayout c && Stamp(c.Tech.ResolvedPath) == TechStampOf(key)
             && Current(c.Tech))
             return c;
@@ -623,7 +627,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         else
         {
             var solids = Em3dLayoutSolids.From(new EmLayoutSource(path, view, t, view.DbuPerMicron), t, null,
-                                               new Em3dLayoutSolidsOptions(options.FMaxHz, options.TempC, Instance: true));
+                                               new Em3dLayoutSolidsOptions(options.FMaxHz, options.TempC, Instance: true)
+                                               { RobustMeshing = options.RobustMeshing });
             made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal, view.DbuPerMicron) { Files = files };
         }
         _children[key] = made;

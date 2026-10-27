@@ -81,8 +81,16 @@ public sealed partial class EmSetupEditorViewModel
     /// <summary>The cross-section kernel's mesh group, likewise.</summary>
     public bool ShowCrossSectionControls => !IsPlanarAnalysis && !Is3DSetup;
 
-    /// <summary>The return plane: read by the planar kernel and by the 3D generator's ports.</summary>
-    public bool ShowReturnPlane => (IsPlanarAnalysis || Is3DSetup) && !IsThermalSetup;
+    /// <summary>The return plane: read by the planar kernel and by the 3D generator's ports, which build each label's sheet
+    /// down (or up) to it. Not in a .c3d, whose drawn ports name their own two conductors and which has no stackup, and not
+    /// for an electrostatic setup, which has no ports.</summary>
+    public bool ShowReturnPlane => Is3DSetup
+        ? !IsThermalSetup && !IsEmbedded && Working.Problem3D != Em3dProblemType.Electrostatic
+        : IsPlanarAnalysis;
+
+    /// <summary>The Conductors group: shown while anything in it is (the signal conductor and analysis levels for the planar
+    /// kernels, the return plane).</summary>
+    public bool ShowConductorsGroup => ShowCircuitRfSolverControls || ShowReturnPlane;
 
     /// <summary>Controls every circuitRF-kernel run reads and no 3D run does (the analysis kind and
     /// kernel beside the solver, the Notes group, the signal conductor, the planar/cross-section
@@ -109,11 +117,26 @@ public sealed partial class EmSetupEditorViewModel
     public bool ShowRadiationPattern =>
         !Is3DSetup || CircuitRF.Design.Em3d.Em3dSolvers.Any(Working.Solver3D, c => c.RadiationPattern);
 
+    /// <summary>brief-dfr28-3 — Robust meshing is every 3D EM solver's (they mesh the same outlines); a planar or thermal
+    /// setup does not read it.</summary>
+    public bool ShowRobustMeshing => Is3DSetup && !IsThermalSetup;
+
+    /// <summary>The tooltip, with the tolerance written from the constants the cleanup reads.</summary>
+    public static string RobustMeshingTip { get; } =
+        "Removes outline points that sit within a fraction of a micrometre of the line through their neighbours (at most " +
+        $"{CircuitRF.Design.Layout.Em3d.Em3dOutlineCleanup.MaxToleranceM * 1e6:0.#} µm, or 1/" +
+        $"{1 / CircuitRF.Design.Layout.Em3d.Em3dOutlineCleanup.ThicknessFraction:0} of the layer's thickness if that is less). " +
+        "Imported artwork often has them — arcs broken into short segments, tiny edges left where shapes were merged — and " +
+        "they can make the mesher build a degenerate element that stops the run. No outline moves by more than that " +
+        "tolerance, and the run's notes say how many points were removed and how far. Off meshes the artwork exactly as drawn.";
+
     private void RaiseSolverKindVisibility()
     {
+        OnPropertyChanged(nameof(ShowRobustMeshing));
         OnPropertyChanged(nameof(ShowPlanarControls));
         OnPropertyChanged(nameof(ShowCrossSectionControls));
         OnPropertyChanged(nameof(ShowReturnPlane));
+        OnPropertyChanged(nameof(ShowConductorsGroup));
         OnPropertyChanged(nameof(ShowCircuitRfSolverControls));
         OnPropertyChanged(nameof(ShowMeshButton));
         OnPropertyChanged(nameof(ShowRadiationPattern));

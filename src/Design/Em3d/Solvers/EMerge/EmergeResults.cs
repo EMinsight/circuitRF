@@ -80,9 +80,11 @@ public static class EmergeResults
 
     /// <summary>
     /// The frequencies at which EMerge's S is exactly −I: every port a short and nothing passing between ports. A zero field
-    /// solution reads that way, and it is what a solve that failed without raising leaves behind — a Windows run whose sparse
-    /// solver ran out of memory wrote S = −I at all ten frequencies and was reported solved (designer round 28). No structure
-    /// with ports reads −I to 1e-12 at every entry, so the run is refused rather than written.
+    /// solution reads that way, and it is what any solve that failed without raising leaves behind — a run on the designer's
+    /// board wrote S = −I at all ten frequencies and was reported solved (designer round 28); brief-dfr28-3 traced the same
+    /// result to one degenerate tetrahedron, which the driver now refuses at the first solve, so this is the last line of
+    /// defence and names no cause. No structure with ports reads −I to 1e-12 at every entry, so the run is refused rather
+    /// than written.
     /// </summary>
     public static int[] NoFieldFrequencies(EmergeSweep sweep, double tolerance = 1e-12)
     {

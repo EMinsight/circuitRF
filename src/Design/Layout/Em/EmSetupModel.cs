@@ -364,6 +364,7 @@ public sealed class EmSetup
         Name                         = name,
         LayoutRef                    = layoutRef,
         ConductorThicknessCorrection = true,
+        RobustMeshing                = true,
     };
 
     /// <summary>
@@ -407,6 +408,20 @@ public sealed class EmSetup
     /// existed loads and re-serialises byte-identically.</para>
     /// </summary>
     public bool RadiationPattern { get; set; }
+
+    /// <summary>
+    /// <b>brief-dfr28-3 — Robust meshing: a 3D run removes each layout outline point that lies within a fraction of a
+    /// micrometre of the line through its neighbours</b> (<see cref="CircuitRF.Design.Layout.Em3d.Em3dOutlineCleanup"/>),
+    /// so the mesher is not handed a sub-micrometre edge or a near-straight run of points. Imported artwork carries both —
+    /// arcs flattened into a few-µm segments that end in a 1.4 µm stub, 0.1 µm edges left by merging draws — and on the
+    /// TP149 board one such run made Gmsh build a flat tetrahedron whose NaN turned every frequency's S into −I. An outline
+    /// moves by at most the tolerance. 3D only: the planar solvers do not read it.
+    ///
+    /// <para>On in every setup <see cref="CreateNew"/> and the 3D view's Add make; OFF when a file does not say, so a setup
+    /// written before it existed reproduces its results. Part of the geometry, so a change to it makes an earlier
+    /// result stale.</para>
+    /// </summary>
+    public bool RobustMeshing { get; set; }
 
     /// <summary>
     /// <b>The conducted power TRP and peak EIRP are referenced to, in dBm</b> (owner request,
@@ -663,6 +678,7 @@ public sealed class EmSetup
         LegacyRawSolveRequested = LegacyRawSolveRequested,
         DeembedOutsideCalibrationValidity = DeembedOutsideCalibrationValidity,
         RadiationPattern       = RadiationPattern,
+        RobustMeshing          = RobustMeshing,
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,
         SolveRegion            = SolveRegion,    // record, immutable

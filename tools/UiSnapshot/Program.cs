@@ -31,6 +31,7 @@ using CircuitRF.Design.Layout;
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]
 //            [--rclick x,y] [--menu <header>] [--type <text>] [--button <label>]
+// UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]
 //
 // Opens the display through DisplayWindowViewModel.LoadAllAsync — the GUI's own Open — and photographs one
 // real view: the plot canvas of the active tab, plot n's Plot Inspector (its trace cards), or the whole Data
@@ -50,11 +51,14 @@ using CircuitRF.Design.Layout;
 // items by header (prefix), --type types into the open dialog's text box and --button clicks a dialog button by its
 // label. --hide and --lock untick a layer's row in the layer list. Messages print as they are posted. An open context
 // menu is drawn in the window's own frame; a dialog is its own window, so a capture also writes <out>.dialog.png.
+//
+// --cem opens the EM Setup editor on a .cem, as the workspace opens one: the file's setup, its own view model, the real
+// EmSetupEditorView. Every named CheckBox's state and tooltip is printed, so a setting is read as well as seen.
 
 // --c3d is the 3D editor's picture: no Avalonia window, so it branches off before the headless platform starts (Snapshot3D.cs).
 if (args.Contains("--c3d")) return Snapshot3D.Run(args);
 
-string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null;
+string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
 var layerToggles = new List<(string Name, bool Hide)>();
 bool standalone = false;
 var signal = new List<string>();
@@ -76,6 +80,7 @@ for (int i = 0; i < args.Length; i++)
         case "--iq" when i + 1 < args.Length: iq = Path.GetFullPath(args[++i]); break;
         case "--tuning" when i + 1 < args.Length: tuning = Path.GetFullPath(args[++i]); break;
         case "--clay" when i + 1 < args.Length: clay = Path.GetFullPath(args[++i]); break;
+        case "--cem" when i + 1 < args.Length: cem = Path.GetFullPath(args[++i]); break;
         case "--hide" when i + 1 < args.Length: layerToggles.Add((args[++i], true)); break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
@@ -91,14 +96,15 @@ for (int i = 0; i < args.Length; i++)
         default: cdd = args[i]; break;
     }
 }
-if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null && cem is null) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
                           + "       UiSnapshot --signal \"<carrier>\" ... -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]\n"
                           + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]\n"
-                          + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]");
+                          + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]\n"
+                          + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]");
     return 2;
 }
 
@@ -138,6 +144,19 @@ if (clay is not null)
     Pump();
     layoutCanvas = host.GetVisualDescendants().OfType<LayoutCanvas>().First();
     layoutCanvas.ZoomToFit();
+}
+else if (cem is not null)
+{
+    var setupVm = new CircuitRF.Ui.Layout.Em.EmSetupEditorViewModel(cem, CircuitRF.Design.Layout.Em.EmSetupPersistence.LoadFromFile(cem));
+    host = new Window { Width = sizeGiven ? width : 900, Height = sizeGiven ? height : 1200,
+                        Content = new EmSetupEditorView { DataContext = new CircuitRF.Ui.Layout.Em.EmSetupDocument(Path.GetFileName(cem), setupVm, cem) } };
+    host.Show();
+    Pump();
+    foreach (var box in host.GetVisualDescendants().OfType<CheckBox>().Where(b => b.Name is { Length: > 0 } && b.IsEffectivelyVisible))
+    {
+        var at = box.TranslatePoint(default, host);
+        Console.WriteLine($"{box.Name}: {(box.IsChecked == true ? "on" : "off")} at {at?.X:0},{at?.Y:0} — {ToolTip.GetTip(box)}");
+    }
 }
 else if (tuning is not null)
 {

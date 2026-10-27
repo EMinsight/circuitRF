@@ -947,6 +947,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private bool   _directVerticalKernel;
     [ObservableProperty] private bool   _acceleratedSolve;
     [ObservableProperty] private bool   _conductorThicknessCorrection;
+    [ObservableProperty] private bool   _robustMeshing;
     [ObservableProperty] private bool   _groundedEdgePorts = EmSetup.DefaultEdgePortReturn == PlanarEdgePortReturn.Ground;
     [ObservableProperty] private bool   _deembedOutsideCalibrationValidity;
     [ObservableProperty] private bool   _radiationPattern;
@@ -1631,6 +1632,17 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         InvalidateMesh();
     }
 
+    /// <summary>brief-dfr28-3 — Robust meshing. It changes the outlines a 3D mesher is handed, so it invalidates the mesh.</summary>
+    partial void OnRobustMeshingChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.RobustMeshing) return;
+        var before = SnapshotJson();
+        Working.RobustMeshing = value;
+        CommitEdit(before, value ? "Turn on robust meshing" : "Turn off robust meshing");
+        InvalidateMesh();
+    }
+
     partial void OnGroundedEdgePortsChanged(bool value)
     {
         if (_suppressCommit) return;
@@ -1851,6 +1863,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         DirectVerticalKernel = Working.DirectVerticalKernel;
         AcceleratedSolve     = Working.AcceleratedSolve;
         ConductorThicknessCorrection = Working.ConductorThicknessCorrection;
+        RobustMeshing        = Working.RobustMeshing;
         GroundedEdgePorts    = Working.EdgePortReturn == PlanarEdgePortReturn.Ground;
         DeembedOutsideCalibrationValidity = Working.DeembedOutsideCalibrationValidity;
         RadiationPattern     = Working.RadiationPattern;

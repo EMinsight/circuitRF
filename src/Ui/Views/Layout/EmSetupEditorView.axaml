@@ -1009,6 +1009,11 @@
                                        IsVisible="{Binding ViewModel.EmergeFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                         </Grid>
                     </StackPanel>
+                    <!-- brief-dfr28-3 — below the solvers' sections, not in one: every 3D solver meshes the same outlines. -->
+                    <CheckBox Name="RobustMeshingCheck" Content="Robust meshing" Margin="0,8,0,0"
+                              IsVisible="{Binding ViewModel.ShowRobustMeshing}"
+                              IsChecked="{Binding ViewModel.RobustMeshing}"
+                              ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.RobustMeshingTip}"/>
                   </StackPanel>
                 </Border>
 
@@ -1352,7 +1357,7 @@
                 </Border>
 
                 <!-- ── Signal layer (R-em-4b) ──────────────────────────────── -->
-                <Border Classes="group" IsVisible="{Binding ViewModel.IsNotThermalSetup}">
+                <Border Classes="group" IsVisible="{Binding ViewModel.ShowConductorsGroup}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Conductors"/>
                 <TextBlock Classes="colhdr" Text="Signal conductor"

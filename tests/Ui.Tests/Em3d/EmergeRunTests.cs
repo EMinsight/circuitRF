@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Numerics;
+using System.Text.Json;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.ThreeD;
@@ -119,6 +120,76 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
         Complex[,] MinusI(int n) { var m = new Complex[n, n]; for (int i = 0; i < n; i++) m[i, i] = -1; return m; }
         var empty = real with { S = [MinusI(2), real.S[1], MinusI(2)] };
         Assert.Equal([0, 2], EmergeResults.NoFieldFrequencies(empty));
+    }
+
+    /// <summary>brief-dfr28-3 R-dfr28-3-1 — the driver's refusal of a solve that is not finite names its cause, so the run is
+    /// forwarded as a solve's refusal; a terminal face's names none.</summary>
+    [Fact]
+    public void ADriverRefusal_ReadsItsCause()
+    {
+        Assert.Equal("one element", EmergeLog.DriverRefusal(
+            ["""{"cause": "non-finite-solve", "driver": 7, "error": "one element", "refused": true}"""], out string? cause));
+        Assert.Equal(EmergeLog.NonFiniteSolveCause, cause);
+        Assert.Equal("a face", EmergeLog.DriverRefusal(["""{"driver": 7, "error": "a face", "refused": true}"""], out cause));
+        Assert.Null(cause);
+    }
+
+    /// <summary>
+    /// brief-dfr28-3 R-dfr28-3-1 — the driver's check on EMerge's solves, with NaN injected: a matrix holding a non-finite
+    /// entry is refused before it is solved, naming the one flat tetrahedron that owns those unknowns, where it is and what
+    /// it lies in; a finite matrix whose solver returns NaN is refused after. On the TP149 board EMerge solved the first and
+    /// wrote S = −I.
+    /// </summary>
+    [EmergeFact]
+    public void ANonFiniteSolve_IsRefused_NamingItsElement()
+    {
+        Directory.CreateDirectory(_root);
+        File.WriteAllText(Path.Combine(_root, EmergeScriptWriter.DriverFile), EmergeScriptWriter.Driver);
+        File.WriteAllText(Path.Combine(_root, "inject.py"), """
+            import json, sys, types
+            import numpy as np, scipy.sparse as sp
+            sys.path.insert(0, sys.argv[1])
+            import circuitrf_emerge as d
+            from emerge._emerge.solver import SolveRoutine
+            # One tetrahedron, flat (all four corners at z = 0), its 20 unknowns the matrix's.
+            nodes = np.array([[0.1, 0.101, 0.1, 0.1005], [0.2, 0.2, 0.201, 0.2005], [0.0, 0.0, 0.0, 0.0]])
+            mesh = types.SimpleNamespace(nodes=nodes, tets=np.arange(4).reshape(4, 1), n_tets=1, vtag_to_tet={7: [0]})
+            sim = types.SimpleNamespace(mesh=mesh, mw=types.SimpleNamespace(basis=types.SimpleNamespace(tet_to_field=np.arange(20).reshape(20, 1))))
+            model = {"names": ["background", "Dielectric 1"], "volumes": {7: (1, 0)}}
+            heard = d.Heard()
+            b, ids = np.ones((20, 1), complex), np.arange(20)
+            out = []
+            def attempt(A):
+                try:
+                    SolveRoutine.solve(None, A, b, ids)
+                    out.append(None)
+                except d.Refused as e:
+                    out.append({"cause": e.cause, "error": str(e)})
+            assert d.guard_solves(sim, model, heard) is None
+            attempt(sp.csc_matrix(np.full((20, 20), np.nan, complex)))
+            SolveRoutine.solve = lambda self, A, b, ids, *a, **k: (np.full(b.shape, np.nan, complex), None)
+            d.guard_solves(sim, model, heard)
+            attempt(sp.identity(20, dtype=complex, format="csc"))
+            print(json.dumps(out))
+            """);
+        string python = SolverDiscovery.ReadinessFor(EmergeSolver.Id).Single(r => r.Tool == SolverTool.Emerge).Installation!.Path;
+        var psi = new ProcessStartInfo(python) { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = _root };
+        foreach (string a in new[] { "-I", "inject.py", _root }) psi.ArgumentList.Add(a);
+        using var p = Process.Start(psi)!;
+        var err = p.StandardError.ReadToEndAsync();
+        string stdout = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        Assert.True(p.ExitCode == 0, err.Result);
+        output.WriteLine(stdout);
+        using var doc = JsonDocument.Parse(stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Last());
+        var (before, after) = (doc.RootElement[0], doc.RootElement[1]);
+        Assert.Equal(EmergeLog.NonFiniteSolveCause, before.GetProperty("cause").GetString());
+        string where = before.GetProperty("error").GetString()!;
+        Assert.Contains("1 degenerate element: a tetrahedron at (100.3750, 200.3750, 0.0000) mm, in 'Dielectric 1'", where);
+        Assert.Contains("its volume is 0 um^3", where);
+        Assert.Contains("stopped before solving", where);
+        Assert.Equal(EmergeLog.NonFiniteSolveCause, after.GetProperty("cause").GetString());
+        Assert.Contains("returned a solution that is not a number from a matrix that is finite", after.GetProperty("error").GetString());
     }
 
     // ── 3. The eigenmode filter ────────────────────────────────────────────────────────────────

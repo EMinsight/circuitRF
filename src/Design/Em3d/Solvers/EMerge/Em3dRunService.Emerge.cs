@@ -17,6 +17,9 @@ public static partial class Em3dRunService
     /// <summary>The diagnostic source an EMerge memory refusal carries.</summary>
     public const string EmergeMemoryRefusalSource = "emerge-memory";
 
+    /// <summary>brief-dfr28-3 — the source of the driver's refusal of a solve that is not finite (a degenerate mesh element).</summary>
+    public const string EmergeSolveRefusalSource = "emerge-solve";
+
     internal sealed class EmergeLeg : SolverLeg
     {
         private EmergeSettings? _settings;
@@ -146,8 +149,10 @@ public static partial class Em3dRunService
             if (ran.Stopped is { } stopped)
                 return (StoppedLeg(Me, "EMerge", stopped, limits, stopped.Meshing ? [] : run.Memory.Last?.Remedies ?? [], logPath), null);
             // brief-emw-3 R-emw3-4 — a terminal face whose modes cannot be converted is refused by name, as before the solve
-            if (ran.ExitCode != 0 && EmergeLog.DriverRefusal(ran.Tail) is { } refusal)
-                return (Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(TerminalPortsSource, refusal)), null);
+            // brief-dfr28-3 R-dfr28-3-1 — and a solve whose matrix or solution is not finite, at the first frequency, by its element
+            if (ran.ExitCode != 0 && EmergeLog.DriverRefusal(ran.Tail, out string? cause) is { } refusal)
+                return (Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(
+                    cause == EmergeLog.NonFiniteSolveCause ? EmergeSolveRefusalSource : TerminalPortsSource, refusal)), null);
             if (ran.ExitCode != 0)
                 return (Failed(EmergeLog.DriverError(ran.Tail) is { } said
                     ? $"EMerge stopped: {said} Its log is {logPath}."
@@ -182,9 +187,8 @@ public static partial class Em3dRunService
             return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(
                 $"EMerge returned no field at {(empty.Length == sweep.S.Length ? "any" : $"{empty.Length} of {sweep.S.Length}")} " +
                 "of its frequencies: every port reads a short and nothing passes between ports (S = −1 on the diagonal, 0 elsewhere), " +
-                "which is what a solve that failed without saying so leaves behind — most often its sparse solver running out of " +
-                $"memory. No .sNp was written. EMerge's log is {Path.Combine(dir, EmergeResults.LogFile)}; a smaller mesh " +
-                "(EMerge.ElementOrder: 1, or a smaller crop) is the usual remedy."));
+                "which is what a solve that failed without saying so leaves behind. No .sNp was written. EMerge's log is " +
+                $"{Path.Combine(dir, EmergeResults.LogFile)}."));
         var requested = FrequenciesHz(problem.Frequency);
         if (sweep.FrequenciesHz.Length != requested.Length ||
             sweep.FrequenciesHz.Where((f, k) => Math.Abs(f - requested[k]) > 1e-9 * Math.Abs(requested[k])).Any())

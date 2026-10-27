@@ -61,6 +61,11 @@ public sealed record Em3dLayoutSolidsOptions(double? FMaxHz, double TempC, bool 
     /// <see cref="Em3dLayoutSolids.Builder.PadRefusal"/>. The bug this answers: a wBond placed in a schematic and pushed
     /// to an empty layout by Update Layout from Schematic has wires and no artwork, so its 3D view showed nothing.</summary>
     public bool PadsOptional { get; init; }
+
+    /// <summary>brief-dfr28-3 — <see cref="EmSetup.RobustMeshing"/>: every artwork conductor's outline loses the points that lie
+    /// within <see cref="Em3dOutlineCleanup.Tolerance"/> of their neighbours' line, and one note says how many and how far.
+    /// Never a via's barrel, an edge-cut drill's cut, a slab or the board outline.</summary>
+    public bool RobustMeshing { get; init; }
 }
 
 /// <summary>A layout's geometry as the 3D problem's vocabulary: solids, sheets and materials, and where
@@ -571,8 +576,10 @@ public static class Em3dLayoutSolids
             foreach (var p in _outline) Grow(p);
             foreach (var list in _filmPolys.Values) foreach (var p in list) Grow(p);
             foreach (var bd in _bodies) foreach (var p in bd.Polys) Grow(p);
+            // R-dfr28-3-0a — an edge-cut drill bounds the content by the part of it that is built (ClipDisc), so a zero-padded
+            // face ends at the board edge rather than 150 µm past it, where nothing is
             foreach (var v in _viaSpans)
-                foreach (var p in ViaFootprint(v.Shape)) Grow(p);
+                foreach (var p in Drill(v.Shape) is var (x, y, r) && !OnBoard(x, y, r) ? ClipDisc(x, y, r) : ViaFootprint(v.Shape)) Grow(p);
 
             double zLow = double.PositiveInfinity, zHigh = double.NegativeInfinity;
             foreach (var (b, tp) in _dielZ)
@@ -686,14 +693,17 @@ public static class Em3dLayoutSolids
                     OriginMap[p.Name] = new Em3dObjectOrigin(Em3dObjectKind.Conductor, b.Layer.Name, p.Layer, p.SheetReason);
                     Net(p.Name, p.Net);
                     if (b.Layer.IsGroundReference) GroundBandObjectList.Add(p.Name);
+                    var poly = Robust(p.Poly, p.ZTop - p.ZBottom);
                     if (p.IsSheet)
-                        sheets.Add(new Em3dSheet(p.Name, p.Material, Ring(p.Poly.Outer),
-                                                 [.. p.Poly.HoleRings.Select(Ring)], p.SheetZ, p.ZTop - p.ZBottom, order));
+                        sheets.Add(new Em3dSheet(p.Name, p.Material, Ring(poly.Outer),
+                                                 [.. poly.HoleRings.Select(Ring)], p.SheetZ, p.ZTop - p.ZBottom, order));
                     else
                         solids.Add(new Em3dSolid(p.Name, p.Material, Em3dRole.Conductor,
-                                                 Extrude(p.Poly, p.ZBottom, p.ZTop), order));
+                                                 Extrude(poly, p.ZBottom, p.ZTop), order));
                 }
             }
+            if (_robust.Removed > 0)
+                Notes.Add(RobustNote(_robust));
             int sheetCount = sheets.Count;
             if (sheetCount > 0)
                 Notes.Add($"{sheetCount} conductor piece(s) are thinner than {Em3dGenerator.SheetMaxSkinDepths:G} skin depths " +
@@ -1268,6 +1278,25 @@ public static class Em3dLayoutSolids
 
         /// <summary>A line's hole smaller than this fraction of its largest hole is not a board (<see cref="BoardRegions"/>).</summary>
         internal const double OutlineGapFraction = 0.01;
+
+        private readonly Em3dOutlineCleanup.Stats _robust = new();
+
+        /// <summary>brief-dfr28-3 — an artwork conductor's polygon as Robust meshing leaves it (itself when it is off).</summary>
+        private PlanarPolygon Robust(PlanarPolygon poly, double thicknessM)
+        {
+            if (!options.RobustMeshing) return poly;
+            double tol = Em3dOutlineCleanup.Tolerance(thicknessM);
+            IReadOnlyList<EmPoint> Clean(IReadOnlyList<EmPoint> ring) => Em3dOutlineCleanup.Clean(ring, q => (q.X, q.Y), tol, _robust);
+            var outer = Clean(poly.Outer);
+            var holes = poly.HoleRings.Select(Clean).ToList();
+            return ReferenceEquals(outer, poly.Outer) && holes.Zip(poly.HoleRings).All(h => ReferenceEquals(h.First, h.Second))
+                ? poly : new PlanarPolygon(outer, poly.Holes is null ? null : holes);
+        }
+
+        /// <summary>The note a run gets when Robust meshing removed anything.</summary>
+        internal static string RobustNote(Em3dOutlineCleanup.Stats s) =>
+            $"Robust meshing removed {s.Removed:N0} of {s.Points:N0} outline points that lay within a fraction of a micrometre " +
+            $"of the line through their neighbours; no outline moved by more than {Fmt(s.MaxMoveM * 1e6)} µm.";
 
         private static Em3dExtrudedPolygon Extrude(PlanarPolygon p, double z0, double z1)
             => new(Ring(p.Outer), [.. p.HoleRings.Select(Ring)], z0, z1);

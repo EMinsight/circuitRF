@@ -350,6 +350,7 @@ public sealed partial class EmSetupEditorViewModel
     private void RaiseThermalVisibility()
     {
         OnPropertyChanged(nameof(IsThermalSetup));
+        OnPropertyChanged(nameof(ShowRobustMeshing));
         OnPropertyChanged(nameof(IsNotThermalSetup));
         OnPropertyChanged(nameof(Is3DSetup));
         OnPropertyChanged(nameof(ShowProblem3D));

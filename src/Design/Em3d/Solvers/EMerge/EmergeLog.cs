@@ -143,8 +143,13 @@ public static class EmergeLog
 
     /// <summary>brief-emw-3 — the driver's refusal (an error line marked <c>"refused"</c>: a terminal face whose modes cannot be
     /// converted), or null when the run failed otherwise or not at all.</summary>
-    public static string? DriverRefusal(IEnumerable<string> lines)
+    public static string? DriverRefusal(IEnumerable<string> lines) => DriverRefusal(lines, out _);
+
+    /// <summary>The driver's refusal and its <c>"cause"</c> (brief-dfr28-3: <see cref="NonFiniteSolveCause"/>), null for a
+    /// terminal face's, which names none.</summary>
+    public static string? DriverRefusal(IEnumerable<string> lines, out string? cause)
     {
+        cause = null;
         foreach (string line in lines.Reverse())
         {
             if (!line.TrimStart().StartsWith('{')) continue;
@@ -153,12 +158,20 @@ public static class EmergeLog
                 using var doc = JsonDocument.Parse(line);
                 var r = doc.RootElement;
                 if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var e))
-                    return r.TryGetProperty("refused", out var refused) && refused.ValueKind == JsonValueKind.True ? e.GetString() : null;
+                {
+                    if (!r.TryGetProperty("refused", out var refused) || refused.ValueKind != JsonValueKind.True) return null;
+                    if (r.TryGetProperty("cause", out var c) && c.ValueKind == JsonValueKind.String) cause = c.GetString();
+                    return e.GetString();
+                }
             }
             catch (JsonException) { }
         }
         return null;
     }
+
+    /// <summary>brief-dfr28-3 R-dfr28-3-1 — the cause the driver names when a solve's matrix or solution is not finite
+    /// (<c>NON_FINITE</c> in <c>circuitrf_emerge.py</c>).</summary>
+    public const string NonFiniteSolveCause = "non-finite-solve";
 
     private static long Long(Group g) => long.Parse(g.Value, CultureInfo.InvariantCulture);
     private static double Num(Group g) => double.Parse(g.Value, NumberStyles.Float, CultureInfo.InvariantCulture);

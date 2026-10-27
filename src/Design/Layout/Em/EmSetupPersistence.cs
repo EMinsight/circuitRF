@@ -1394,6 +1394,11 @@ public sealed class CemFile
     /// <summary>A 3D setup's air box, per face. Null takes the default on every face.</summary>
     public CemAirBox? AirBox { get; set; }
 
+    /// <summary>brief-dfr28-3 — <see cref="EmSetup.RobustMeshing"/>. <b>Null means off</b>, which is what every <c>.cem</c> and
+    /// embedded setup written before it existed means, so such a file reproduces its results and re-serialises
+    /// byte-identically. A new setup writes it on.</summary>
+    public bool? RobustMeshing { get; set; }
+
     /// <summary>Palace's own section. Null takes the defaults.</summary>
     public CemPalace? Palace { get; set; }
 
@@ -1578,6 +1583,7 @@ public static class EmSetupPersistence
             YMin = ToFace(box.YMin), YMax = ToFace(box.YMax),
             ZMin = ToFace(box.ZMin), ZMax = ToFace(box.ZMax),
         } : null,
+        RobustMeshing  = s.RobustMeshing ? true : null,
         Palace         = s.Palace,
         OpenEms        = s.OpenEms,
         Emerge         = s.Emerge is { IsEmpty: false } emerge ? emerge : null,
@@ -1662,6 +1668,7 @@ public static class EmSetupPersistence
             ? new EmAirBox(FromFace(box.XMin), FromFace(box.XMax), FromFace(box.YMin),
                            FromFace(box.YMax), FromFace(box.ZMin), FromFace(box.ZMax))
             : null,
+        RobustMeshing         = f.RobustMeshing ?? false,
         Palace                = f.Palace,
         OpenEms               = f.OpenEms,
         Emerge                = f.Emerge,

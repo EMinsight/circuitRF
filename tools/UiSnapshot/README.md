@@ -54,6 +54,15 @@ dotnet run --project tools/UiSnapshot --no-build -- --tuning <file.csch> -o out.
 After every step it prints which control holds the keyboard and each row's value, so what a key did is read
 rather than guessed from pixels. Default size 420x500.
 
+**The EM Setup editor** opens on a `.cem`, as the workspace opens one, and prints every visible named check box's state,
+position and tooltip, so a setting is read as well as seen:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --cem <file.cem> -o out.png [--size WxH] [steps]
+```
+
+Default size 900x1200.
+
 **The 3D editor** draws a `.c3d` on the platform's own GPU backend (Metal, D3D11 or Vulkan — what the application
 picks), through the editor's view model and Export Picture's own `CapturePicture`. No window is opened, so this mode
 starts no Avalonia platform at all:

@@ -233,7 +233,7 @@ public static class Em3dGenerator
             // ── The geometry, up to the bond wires (Em3dLayoutSolids' first stage) ────────────
             var earlier = _notes;
             _g = new Em3dLayoutSolids.Builder(source, tech, wires,
-                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, FloorAllowed = !floorStatedAway, DisplaySlabs = displaySlabs, PadsOptional = padsOptional });
+                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, FloorAllowed = !floorStatedAway, DisplaySlabs = displaySlabs, PadsOptional = padsOptional, RobustMeshing = setup.RobustMeshing });
             _g.Notes.AddRange(earlier);
             _notes = _g.Notes;
             if (_g.Prepare() is { } geometryRefusal) return No(geometryRefusal);
@@ -269,6 +269,8 @@ public static class Em3dGenerator
             var airBox = PaddedAirBox(setup, (cx0, cy0, cx1, cy1, zLow, zHigh), fMin, pecFloor ? floorZ : null,
                                 waves.Select(w => (w.Face, w.EdgeAt, w.Port.Number)).ToList(), _notes, out string? boxRefusal);
             if (boxRefusal is not null) return No(boxRefusal);
+            airBox = ClearOfPortSheets(airBox!, ports, _notes, out string? sheetRefusal);
+            if (sheetRefusal is not null) return No(sheetRefusal);
             foreach (var w in waves)
             {
                 var (wave, why) = WavePort(w, airBox!);
@@ -1082,6 +1084,53 @@ public static class Em3dGenerator
         var faces = new Em3dFaces(Kind(box.XMin), Kind(box.XMax), Kind(box.YMin), Kind(box.YMax),
                                   floorZ is not null ? Em3dBoundaryKind.Pec : Kind(box.ZMin), Kind(box.ZMax));
         return new Em3dAirBox(boxMin, boxMax, faces);
+    }
+
+    /// <summary>
+    /// brief-dfr28-3 R-dfr28-3-3 — a lumped port's sheet lying IN an absorbing face of the box is moved off it: that face is
+    /// padded outward by the sheet's longer side, and a Note says so. In the face, the port shares its power with the
+    /// absorber — on the TP149 board a through line read a flat −2.15 dB on Palace and −2.9 dB on EMerge where 0 dB was
+    /// right; openEMS's PML begins at that face (and its Mur boundary overwrites the very field the port drives). A sheet
+    /// in a PMC face is refused instead, because moving a symmetry plane changes the problem. Coplanar to the tolerance
+    /// <see cref="PaddedAirBox"/> holds a wave port's line end to; a port ending ON a PEC face (a pad-to-plane port's
+    /// floor) is not a sheet in it.
+    /// </summary>
+    public static Em3dAirBox ClearOfPortSheets(Em3dAirBox box, IReadOnlyList<Em3dPort> ports, List<string> notes, out string? refusal)
+    {
+        refusal = null;
+        double[] lo = [box.Min.X, box.Min.Y, box.Min.Z], hi = [box.Max.X, box.Max.Y, box.Max.Z];
+        var f = box.Faces;
+        Em3dBoundaryKind[] kinds = [f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax];
+        string[] names = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];
+        bool moved = false;
+        foreach (var p in ports.Where(q => q.Kind == Em3dPortKind.Lumped).OrderBy(q => q.Number))
+        {
+            double[] pMin = [p.Min.X, p.Min.Y, p.Min.Z], pMax = [p.Max.X, p.Max.Y, p.Max.Z];
+            int axis = -1;
+            for (int a = 0; a < 3; a++) if (Math.Abs(pMax[a] - pMin[a]) <= 1e-9 * Math.Max(1e-3, Math.Abs(pMin[a]))) axis = a;
+            if (axis < 0) continue;
+            double side = Enumerable.Range(0, 3).Where(a => a != axis).Max(a => pMax[a] - pMin[a]);
+            for (int end = 0; end < 2; end++)
+            {
+                int face = 2 * axis + end;
+                double at = end == 0 ? lo[axis] : hi[axis];
+                if (kinds[face] == Em3dBoundaryKind.Pec || Math.Abs(pMin[axis] - at) > 1e-9 * Math.Max(1e-3, Math.Abs(at)) ||
+                    Enumerable.Range(0, 3).Any(a => a != axis && (pMax[a] <= lo[a] || pMin[a] >= hi[a])))
+                    continue;
+                if (kinds[face] != Em3dBoundaryKind.Absorbing)
+                {
+                    refusal = $"Port {p.Number}'s sheet lies in the air box's {names[face]} face, which is {kinds[face]}: a port " +
+                              $"there is cut by that boundary. Pad the {names[face]} face (AirBox {names[face]} PaddingUm) so the " +
+                              "port is inside the box.";
+                    return box;
+                }
+                if (end == 0) lo[axis] -= side; else hi[axis] += side;
+                moved = true;
+                notes.Add($"Port {p.Number}'s sheet lay in the air box's {names[face]} face, an absorbing face, which would take " +
+                          $"part of its power; that face is padded {Fmt(side * 1e6)} µm outward so the port is inside the box.");
+            }
+        }
+        return moved ? box with { Min = new Point3(lo[0], lo[1], lo[2]), Max = new Point3(hi[0], hi[1], hi[2]) } : box;
     }
 
     /// <summary>

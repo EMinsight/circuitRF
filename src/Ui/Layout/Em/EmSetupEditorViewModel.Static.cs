@@ -91,6 +91,9 @@ public sealed partial class EmSetupEditorViewModel
     private void RaiseStaticVisibility()
     {
         OnPropertyChanged(nameof(IsThermalSetup));
+        OnPropertyChanged(nameof(ShowRobustMeshing));
+        OnPropertyChanged(nameof(ShowReturnPlane));
+        OnPropertyChanged(nameof(ShowConductorsGroup));
         OnPropertyChanged(nameof(IsNotThermalSetup));
         OnPropertyChanged(nameof(ShowProblem3D));
         OnPropertyChanged(nameof(IsStaticSetup));

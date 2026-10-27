@@ -92,6 +92,30 @@ public sealed class Em3dGeneratorTests
         Assert.Equal(35 * Um, result.Problem.Boundary.Min.Z, 15);
     }
 
+    /// <summary>brief-dfr28-3 R-dfr28-3-3 — the thru's port 1 is a sheet on its line's end at x = 0, the content's edge: a
+    /// zero-padded absorbing xmin face would hold it, so that face is padded out by the sheet's longer side and a Note says
+    /// so; a PMC face there is refused by name; the default padding keeps the port clear and says nothing.</summary>
+    [Fact]
+    public void ALumpedPortInAnAbsorbingFace_IsPaddedClear_AndInAPmcFaceIsRefused()
+    {
+        var (setup, source) = Microstrip();
+        setup.AirBox = new EmAirBox(XMin: new EmAirBoxFace(0, null));
+        var padded = Em3dGenerator.Generate(setup, source, source.Technology!);
+        Assert.True(padded.Ok, padded.Refusal);
+        var port = padded.Problem!.Ports.Single(q => q.Number == 1);
+        double side = Math.Max(port.Max.Y - port.Min.Y, port.Max.Z - port.Min.Z);
+        Assert.Equal(-side, padded.Problem.Boundary.Min.X, 15);
+        Assert.Contains(padded.Notes, n => n.StartsWith("Port 1's sheet lay in the air box's xmin face, an absorbing face", StringComparison.Ordinal));
+
+        setup.AirBox = new EmAirBox(XMin: new EmAirBoxFace(0, Em3dBoundaryKind.Pmc));
+        var pmc = Em3dGenerator.Generate(setup, source, source.Technology!);
+        Assert.False(pmc.Ok);
+        Assert.StartsWith("Port 1's sheet lies in the air box's xmin face, which is Pmc", pmc.Refusal);
+
+        setup.AirBox = null;
+        Assert.DoesNotContain(Em3dGenerator.Generate(setup, source, source.Technology!).Notes, n => n.Contains("sheet lay in"));
+    }
+
     // ── 2. Determinism ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
