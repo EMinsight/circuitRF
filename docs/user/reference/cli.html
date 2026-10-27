@@ -1769,7 +1769,7 @@ the default. A saved layer the technology no longer has is skipped with a line o
 </tr>
 <tr>
 <td><code>--max-freq &lt;freq&gt;</code></td>
-<td>The highest frequency the traces carry. A stretch outside the warning band shorter than <strong>λ/20</strong> there warns rather than fails — see <a href="layout-editor.html#impedance-findings">electrically short</a>. <strong>The unit is required</strong> (<code>6GHz</code>); a bare number is refused. Default off.</td>
+<td>The highest frequency the traces carry. A stretch outside the warning band shorter than <strong>λ/20</strong> there warns rather than fails — see <a href="layout-editor.html#impedance-findings">electrically short</a> — and a <a href="layout-editor.html#impedance-pads">test pad hanging off a trace</a> is judged there. <strong>The unit is required</strong> (<code>6GHz</code>); a bare number is refused. Default off.</td>
 </tr>
 <tr>
 <td><code>--severity warning\|fail</code></td>
@@ -1850,6 +1850,9 @@ and coordinates are in <strong>the layout's own unit</strong>. With <code>--json
 finding, with coordinates and lengths in <strong>µm</strong> whatever the layout's unit, so a script reads one unit;
 <code>warningCount</code> sits beside <code>pass</code> and <code>fail</code>, a trace's verdict can be <code>&quot;warning&quot;</code>, and every finding
 carries <code>&quot;severity&quot;: &quot;warning&quot;</code> or <code>&quot;fail&quot;</code> — and an accepted one <code>&quot;accepted&quot;: { &quot;reason&quot;, &quot;date&quot; }</code>.
+A test pad loading its line is a finding of kind <code>&quot;pad-shunt&quot;</code> whose <code>shunt</code> holds <code>padLayer</code>, <code>diameter</code> (µm),
+<code>planes</code>, <code>capacitance</code> (the pad's, F), <code>stubCapacitance</code> (pad, via barrel and unused pads, F), <code>inductance</code> (the
+via's, H; absent with no via), <code>resonanceHz</code>, <code>s11Db</code>, <code>atHz</code> and <code>lineOhms</code>.
 Each layer's <code>junctions</code> lists its junctions (<code>id</code>, <code>kind</code>, <code>verdict</code>, <code>at</code>, and <code>arms</code>, each with
 <code>trace</code>, <code>width</code>, <code>z0</code> and <code>verdict</code>), and <code>junctions</code> at the top counts them; both are absent when there
 are none. <code>accepted</code> counts the accepted findings and <code>staleAcceptances</code> lists the saved acceptances that matched

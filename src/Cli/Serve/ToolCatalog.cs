@@ -1291,7 +1291,8 @@ internal static class ToolCatalog
             "Trace Impedance Analysis of a layout: find every trace on the chosen copper layers, cut it "
           + "along its length with a quasi-static cross-section solve, and report per trace Z0 min/max/mean, "
           + "the share inside target +/- tolerance, the line type (microstrip, grounded CPW, stripline…), "
-          + "and every finding: Z0 out of band, a return path that breaks or steps to another layer. "
+          + "and every finding: Z0 out of band, a return path that breaks or steps to another layer, and (with maxFreq) "
+          + "a test pad hanging off a trace that loads the line there (kind pad-shunt, with its C, L, resonance and |S11|). "
           + "Each trace is PASS, WARNING or FAIL, and each finding a warning or a fail. "
           + "Exit 0 when no trace fails (warnings are reported and still exit 0 unless severity is "
           + "warning), 1 when one fails or is unsolved. Writes nothing unless output is given. "
@@ -1319,7 +1320,7 @@ internal static class ToolCatalog
                         new("maxFreq", "--max-freq", OptKind.Str,
                             "The highest frequency the traces carry, WITH its unit (6GHz); a bare number is "
                           + "refused. A stretch outside the warning band shorter than lambda/20 there is a "
-                          + "warning, not a fail. Default off."),
+                          + "warning, not a fail, and a test pad hanging off a trace is judged here. Default off."),
                         new("severity", "--severity", OptKind.Str,
                             "What decides the exit code: warning or fail. Default fail; warnings are reported either way."),
                         new("layers", "--layers", OptKind.StrList,

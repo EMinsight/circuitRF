@@ -1196,7 +1196,7 @@ the default. A saved layer the technology no longer has is skipped with a line o
 | `--target <ohms>` | The target Z0. Default `50`. `50`, `50ohm` and `50R` all read as 50 Ω. |
 | `--tol <percent>` | ± this many percent passes. Default `10`. |
 | `--warn <percent>` | ± this many percent is a **warning** rather than a fail. Default `20`; it must be wider than `--tol`, so a `--tol` of 20 or more needs a wider `--warn` too. |
-| `--max-freq <freq>` | The highest frequency the traces carry. A stretch outside the warning band shorter than **λ/20** there warns rather than fails &mdash; see [electrically short](layout-editor.html#impedance-findings). **The unit is required** (`6GHz`); a bare number is refused. Default off. |
+| `--max-freq <freq>` | The highest frequency the traces carry. A stretch outside the warning band shorter than **λ/20** there warns rather than fails &mdash; see [electrically short](layout-editor.html#impedance-findings) &mdash; and a [test pad hanging off a trace](layout-editor.html#impedance-pads) is judged there. **The unit is required** (`6GHz`); a bare number is refused. Default off. |
 | `--severity warning\|fail` | What decides the exit code. Default `fail`; `warning` makes a warning exit 1 too. Warnings are reported either way. |
 | `--layers "A,B"` | The copper layers, by the technology's layer names. Default every copper layer. A name that is not a copper layer is refused with the names that are. |
 | `--max-width <um>` | The widest copper read as a trace. Default ten times the distance to the nearest other copper layer, between 1 and 8 mm. |
@@ -1238,6 +1238,9 @@ and coordinates are in **the layout's own unit**. With `--json` the result carri
 finding, with coordinates and lengths in **µm** whatever the layout's unit, so a script reads one unit;
 `warningCount` sits beside `pass` and `fail`, a trace's verdict can be `"warning"`, and every finding
 carries `"severity": "warning"` or `"fail"` &mdash; and an accepted one `"accepted": { "reason", "date" }`.
+A test pad loading its line is a finding of kind `"pad-shunt"` whose `shunt` holds `padLayer`, `diameter` (µm),
+`planes`, `capacitance` (the pad's, F), `stubCapacitance` (pad, via barrel and unused pads, F), `inductance` (the
+via's, H; absent with no via), `resonanceHz`, `s11Db`, `atHz` and `lineOhms`.
 Each layer's `junctions` lists its junctions (`id`, `kind`, `verdict`, `at`, and `arms`, each with
 `trace`, `width`, `z0` and `verdict`), and `junctions` at the top counts them; both are absent when there
 are none. `accepted` counts the accepted findings and `staleAcceptances` lists the saved acceptances that matched

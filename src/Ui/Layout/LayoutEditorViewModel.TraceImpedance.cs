@@ -317,6 +317,14 @@ public partial class LayoutEditorViewModel
         if (ReferenceEquals(trace, _impedanceSelectedTrace) && ReferenceEquals(issue, _impedanceSelectedIssue)) return;
         _impedanceSelectedTrace = trace;
         _impedanceSelectedIssue = issue;
+        // brief-dfr29-2 R-dfr29-2-2: a pad shunt's finding selects the pad — the shape whose bounds it is, when the
+        // pad is drawn in this layout rather than inside an instance.
+        if (issue is { Kind: TraceIssueKind.PadShunt } p)
+        {
+            var pads = Model.Shapes.Where(sh => sh is not ViaShape && LayoutGeometry.BboxOf(sh) is var b
+                                                && b.MinX == p.X0 && b.MinY == p.Y0 && b.MaxX == p.X1 && b.MaxY == p.Y1).ToList();
+            if (pads.Count > 0) SelectShapes(pads);
+        }
         RebuildOverlay();
     }
 
@@ -366,6 +374,19 @@ public partial class LayoutEditorViewModel
                 ReferenceEquals(t, _impedanceSelectedTrace) && _impedanceSelectedIssue is null));
             foreach (var i in t.Issues)
             {
+                if (i.Kind == TraceIssueKind.PadShunt)
+                {
+                    // A pad shunt's disc stands outside the pad, leading back to its rim up and to the right (brief-dfr29-2
+                    // R-dfr29-2-2): on the pad's centre it sat on the via's drill and read as part of the via.
+                    const double diag = 0.70710678;
+                    double rim = (i.X1 - i.X0) / 2.0 * diag;
+                    findings.Add(new ImpedanceFindingMarker((long)Math.Round(i.X + rim), (long)Math.Round(i.Y + rim), true, i.Fails,
+                        ReferenceEquals(i, _impedanceSelectedIssue))
+                    {
+                        Accepted = i.Accepted is not null, NormalX = diag, NormalY = diag,
+                    });
+                    continue;
+                }
                 // The cut nearest the finding gives the side to draw its disc on: (Ux, Uy) is across the trace.
                 var at = t.Stations.MinBy(st => (st.X - i.X) * (st.X - i.X) + (st.Y - i.Y) * (st.Y - i.Y));
                 findings.Add(new ImpedanceFindingMarker(i.X, i.Y, i.Kind != TraceIssueKind.OutOfTolerance, i.Fails,

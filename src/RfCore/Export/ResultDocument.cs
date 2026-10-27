@@ -1437,13 +1437,28 @@ namespace RfCore.Export
     public sealed record ImpedanceTypeJson(string Type, double Share);
 
     /// <param name="Kind"><c>out-of-tolerance</c>, <c>return-broken</c>, <c>partial-reference</c>,
-    /// <c>reference-step</c>, <c>no-reference</c> or <c>unsolved</c>.</param>
+    /// <c>reference-step</c>, <c>no-reference</c>, <c>unsolved</c> or <c>pad-shunt</c>.</param>
     /// <param name="Severity"><c>warning</c> or <c>fail</c>.</param>
     /// <param name="Accepted">The acceptance covering this finding, or absent.</param>
+    /// <param name="Shunt">For a <c>pad-shunt</c>, the pad's numbers; absent otherwise.</param>
     public sealed record ImpedanceIssueJson(
         string Kind, string Severity, double[] From, double[] To, string Message,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ImpedanceAcceptedJson? Accepted = null);
+        ImpedanceAcceptedJson? Accepted = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ImpedancePadShuntJson? Shunt = null);
+
+    /// <summary>A pad hanging off a trace, as the shunt it is (brief-dfr29-2). SI throughout.</summary>
+    /// <param name="Diameter">The pad's diameter, µm.</param>
+    /// <param name="Capacitance">The pad's capacitance to the planes it faces, F.</param>
+    /// <param name="StubCapacitance">The pad's, the via barrel's and the unused pads' together, F.</param>
+    /// <param name="Inductance">The via's inductance, H; absent for a pad joined directly.</param>
+    /// <param name="ResonanceHz">Where the via's inductance and the capacitance below it resonate; absent with no via.</param>
+    /// <param name="S11Db">|S11| of the shunt on its line at <paramref name="AtHz"/>, dB.</param>
+    /// <param name="LineOhms">The Z0 of the line it loads.</param>
+    public sealed record ImpedancePadShuntJson(
+        string PadLayer, double Diameter, IReadOnlyList<string> Planes, double Capacitance, double StubCapacitance,
+        double? Inductance, double? ResonanceHz, double? S11Db, double? AtHz, double? LineOhms);
 
     /// <summary>
     /// What <c>impedance --survey</c> found: the traces on each layer grouped by width, with nothing

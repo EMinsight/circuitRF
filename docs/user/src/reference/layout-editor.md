@@ -1270,15 +1270,21 @@ layer's map.
 | **Copper only partly under the trace** &mdash; a plane edge running beneath it | Warning |
 | **A reference step** &mdash; the reference changes from one layer to another along the trace; often a designed transition | Warning |
 | **Part of the trace could not be solved** &mdash; not checked, which is not the same as wrong | Warning |
+| **A test pad loads the line** &mdash; with a **Highest frequency** given, [below](#impedance-pads) | Warning or fail |
 
 A layer cleared under the **whole** trace is not a fault; it is noted, with the deeper layer that
 became the reference.
 
-**A round pad hanging off a trace** &mdash; a test point, joined straight to the trace's end or through a via to
-another layer &mdash; is not a finding but is noted on the trace: the pad's capacitance to the plane it faces and,
-through a via, the via's inductance and the frequency the two resonate at. The numbers are the
-[TESTPAD](components.html#testpad) model's, worked out from what is drawn: the plane is the nearest one with copper
-under most of the pad, and each plane the via passes contributes through the clearance drawn round it.
+<a id="impedance-pads"></a>**A round pad hanging off a trace** &mdash; a test point, joined straight to the trace's end, or
+through a via at its end or on a stub too short to be a trace of its own &mdash; is read as the shunt it puts on the
+line: the pad's capacitance to the plane it faces and, through a via, the via's inductance and the frequency the two
+resonate at. The numbers are the [TESTPAD](components.html#testpad) model's, worked out from what is drawn: the
+plane is the nearest one with copper under most of the pad, and each plane the via passes contributes through the
+clearance drawn round it. With a **Highest frequency** given, the pad is judged there against the trace's own Z0, by
+the |S11| it puts on the line: above **−20 dB**, or a via resonance below twice that frequency, it is a warning;
+above **−10 dB**, or a resonance inside the band, a fail &mdash; *0.526 pF to 'Inner 1', the via 0.586 nH,
+resonating at 8.82 GHz: |S11| −4.0 dB at 6 GHz on the 43.5 Ω line*. Its marker stands beside the pad, and selecting
+the finding selects the pad. Below those, or with no frequency given, it is a note on the trace.
 
 **Electrically short.** With a **Highest frequency** given, a stretch outside the warning band whose
 electrical length is under **λ/20** there &mdash; a neck-down into a pad, a width step at a launch

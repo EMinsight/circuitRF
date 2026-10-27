@@ -661,7 +661,12 @@ internal static partial class Impedance
                     [.. t.Configurations.Select(c => new ImpedanceTypeJson(c.Name, c.Share))], t.References,
                     [.. t.Issues.Select(i => new ImpedanceIssueJson(
                         IssueId(i.Kind), i.Fails ? "fail" : "warning", [Um(i.X0), Um(i.Y0)], [Um(i.X1), Um(i.Y1)], i.Text,
-                        i.Accepted is { } a ? new ImpedanceAcceptedJson(a.Reason, a.AcceptedUtc) : null))],
+                        i.Accepted is { } a ? new ImpedanceAcceptedJson(a.Reason, a.AcceptedUtc) : null,
+                        i.Kind == TraceIssueKind.PadShunt && t.PadShunts.FirstOrDefault(sh => sh.X == i.X && sh.Y == i.Y) is { } sh
+                            ? new ImpedancePadShuntJson(sh.PadLayer, Um(sh.Diameter), sh.ReferencePlanes, sh.Capacitance,
+                                                        sh.Capacitance + sh.BarrelCapacitance + sh.UnusedPadCapacitance,
+                                                        sh.ViaInductance, sh.ResonanceHz, sh.S11Db, sh.JudgedAtHz, sh.LineOhms)
+                            : null))],
                     t.Notes))],
                 l.JunctionReviews.Count == 0 ? null : [.. l.JunctionReviews.Select(j => new ImpedanceJunctionJson(
                     j.Id, j.Kind, j.Verdict.ToString().ToLowerInvariant(), [Um(j.X), Um(j.Y)],
@@ -680,6 +685,7 @@ internal static partial class Impedance
         TraceIssueKind.PartialReference => "partial-reference",
         TraceIssueKind.ReferenceStep    => "reference-step",
         TraceIssueKind.NoReference      => "no-reference",
+        TraceIssueKind.PadShunt         => "pad-shunt",
         _                               => "unsolved",
     };
 }

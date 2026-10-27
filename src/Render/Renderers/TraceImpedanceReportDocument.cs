@@ -413,7 +413,11 @@ public static class TraceImpedanceReportDocument
                     (report.MaxFrequencyHz is { } f
                         ? $" A stretch outside the warning band that is shorter than λ/{TraceImpedanceAnalysis.ShortFraction:0} " +
                           $"at {TraceImpedanceReport.Hz(f)} (λ from each cut's own effective permittivity) is electrically " +
-                          "short, and warns rather than fails."
+                          "short, and warns rather than fails. A round pad hanging off a trace — a test point, directly or " +
+                          $"through a via — is judged at {TraceImpedanceReport.Hz(f)} as the shunt it puts on its line: it WARNS " +
+                          $"when its |S11| there is above {TraceImpedanceAnalysis.PadShuntWarnDb:0} dB or its via resonates below " +
+                          $"twice that frequency, and FAILS above {TraceImpedanceAnalysis.PadShuntFailDb:0} dB or with the " +
+                          "resonance inside the band."
                         : "") +
                     (report.ViaTransitionMicrons > 0
                         ? $" Trace within {report.Len(report.ViaTransitionMicrons * report.DbuPerMicron)} of the land of a via " +
@@ -626,7 +630,9 @@ public static class TraceImpedanceReportDocument
                     float half = (float)Math.Max(trace.Stations.FirstOrDefault()?.Width * s ?? 2, 2) / 2 + 2.2f;
                     double len = Math.Max(1e-6, Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2)));
                     float nx = (float)(-(b.Y - a.Y) / len * half), ny = (float)((b.X - a.X) / len * half);
-                    if (len < 1) { C.DrawCircleDashSafe(a, half + 1, span); }
+                    // A pad shunt's box is the pad's bounds (brief-dfr29-2): ring the pad.
+                    if (issue.Kind == TraceIssueKind.PadShunt) C.DrawCircleDashSafe(P(issue.X, issue.Y), (float)(len / Math.Sqrt(8)) + 2.2f, span);
+                    else if (len < 1) { C.DrawCircleDashSafe(a, half + 1, span); }
                     else
                     {
                         using var path = new SKPath();
@@ -839,7 +845,7 @@ public static class TraceImpedanceReportDocument
             // most of it is deliberately not a trace: say what it is.
             Key(CopperEdge, "pale copper: not a trace (a pad or land, a taper, a pour, or a run too short for its width), so not reviewed", false);
             Key(ZMark, "numbered: Z0 outside the pass band", true);
-            Key(GroundMark, "numbered, with the stretch outlined: return path broken or partial, or the reference steps to another layer", true);
+            Key(GroundMark, "numbered, with the stretch outlined: return path broken or partial, or the reference steps to another layer; with the pad ringed: a test pad loading the line", true);
             {
                 float top = y;
                 Marker(new SKPoint(r.Left + 5, top + 5.5f), 4.5f, 1, Muted, true, 4.6f);
@@ -891,6 +897,7 @@ public static class TraceImpedanceReportDocument
             TraceIssueKind.PartialReference => "partial reference: " + i.Text.Split(" for ")[0],
             TraceIssueKind.ReferenceStep  => i.Text.Split(" at (")[0],
             TraceIssueKind.NoReference    => "no return path",
+            TraceIssueKind.PadShunt       => "pad loads the line: " + (i.Text.Split(": |S11| ") is [_, var tail] ? "|S11| " + tail.Split(" on the ")[0] : "a shunt"),
             _                             => "not solved",
         };
 

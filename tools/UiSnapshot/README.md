@@ -134,6 +134,8 @@ Messages print as they are posted. Besides the steps below:
 | `--menu <header>` | Clicks the open context menu's item whose header starts with this (submenus searched), then closes it. A miss lists the headers. |
 | `--type <text>` | Types into the open dialog's first text box, replacing what is there. `--type Name=text` sets the text box of that `x:Name` instead (an inline box such as `SizeInput`). |
 | `--button <label>` | A real click on the open dialog's visible button with this label. A miss lists the buttons. |
+| `--impedance <freq\|none>` | Runs the editor's own Impedance Analysis with that highest frequency (`6GHz`, or `none`) before the steps, and prints each trace's findings. The canvas shows its overlay. |
+| `--finding <kind>` | With `--impedance`: selects the first finding of that kind (`pad-shunt`, `return-broken`, …) as the panel's row does, and zooms to it. The selection status prints. |
 
 A capture while a dialog is open also writes `<out>.dialog.png`, the dialog's own window. A commanded "open" of
 another document (Crop to New Cell's new cell) prints `opens <path>`; there is no workspace to open it in.

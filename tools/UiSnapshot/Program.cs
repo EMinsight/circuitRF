@@ -31,6 +31,7 @@ using CircuitRF.Design.Layout;
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]
 //            [--rclick x,y] [--menu <header>] [--type <text>] [--button <label>]
+//            [--impedance <freq|none>] [--finding <kind>]
 // UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--marker]... [--size WxH] [steps]
 //
@@ -52,6 +53,9 @@ using CircuitRF.Design.Layout;
 // items by header (prefix), --type types into the open dialog's text box and --button clicks a dialog button by its
 // label. --hide and --lock untick a layer's row in the layer list. Messages print as they are posted. An open context
 // menu is drawn in the window's own frame; a dialog is its own window, so a capture also writes <out>.dialog.png.
+// --impedance runs the Impedance Analysis on the editor with that highest frequency (6GHz, or none) and prints each
+// trace's findings; --finding then selects the first finding of that kind (pad-shunt, return-broken, …) as the
+// panel's row does and zooms to it, so the canvas shows its marker selected.
 //
 // --cem opens the EM Setup editor on a .cem, as the workspace opens one: the file's setup, its own view model, the real
 // EmSetupEditorView. Every named CheckBox's state and tooltip is printed, so a setting is read as well as seen.
@@ -65,6 +69,7 @@ using CircuitRF.Design.Layout;
 // --c3d is the 3D editor's picture: no Avalonia window, so it branches off before the headless platform starts (Snapshot3D.cs).
 if (args.Contains("--c3d")) return Snapshot3D.Run(args);
 
+string? impedance = null, finding = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
 string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
 string? image = null, imageTech = null;
@@ -102,6 +107,8 @@ for (int i = 0; i < args.Length; i++)
         case "--run" when i + 1 < args.Length: cmcRun = args[++i]; break;
         case "--marker": cmcMarkers++; break;
         case "--hide" when i + 1 < args.Length: layerToggles.Add((args[++i], true)); break;
+        case "--impedance" when i + 1 < args.Length: impedance = args[++i]; break;
+        case "--finding" when i + 1 < args.Length: finding = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--size" when i + 1 < args.Length:
@@ -167,6 +174,7 @@ if (clay is not null)
     Pump();
     layoutCanvas = host.GetVisualDescendants().OfType<LayoutCanvas>().First();
     layoutCanvas.ZoomToFit();
+    if (impedance is not null && !RunImpedance(layoutVm, impedance, finding)) return 2;
 }
 else if (image is not null)
 {
@@ -541,6 +549,36 @@ static void WaitIdle(CircuitRF.Ui.ModelComposer.ModelComposerViewModel vm)
 {
     var until = DateTime.UtcNow.AddSeconds(120);
     do { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); } while (vm.IsRunning && DateTime.UtcNow < until);
+}
+
+// --impedance: the editor's own run (RunTraceImpedanceAsync), then --finding selected as the panel's row selects it.
+static bool RunImpedance(LayoutEditorViewModel vm, string freq, string? kind)
+{
+    double? hz = null;
+    if (!freq.Equals("none", StringComparison.OrdinalIgnoreCase))
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(freq, @"^([0-9.]+)\s*(GHz|MHz|kHz|Hz)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!m.Success) { Console.Error.WriteLine($"--impedance takes a frequency with its unit (6GHz) or none, not '{freq}'"); return false; }
+        hz = double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
+           * m.Groups[2].Value.ToLowerInvariant() switch { "ghz" => 1e9, "mhz" => 1e6, "khz" => 1e3, _ => 1 };
+    }
+    var task = vm.RunTraceImpedanceAsync(new CircuitRF.Design.Layout.Em.TraceImpedanceOptions { MaxFrequencyHz = hz }, new CircuitRF.Engine.RunControl());
+    Await(task);
+    if (task.Result is not { } report) { Console.Error.WriteLine("the Impedance Analysis gave no report"); return false; }
+    foreach (var t in report.AllTraces)
+    {
+        Console.WriteLine($"{t.Id} {t.Verdict} on {t.LayerName}");
+        foreach (var i in t.Issues) Console.WriteLine($"  {i.Kind} {i.Severity}: {i.Text}");
+    }
+    if (kind is null) return true;
+    string Id(CircuitRF.Design.Layout.Em.TraceIssueKind k) =>
+        System.Text.RegularExpressions.Regex.Replace(k.ToString(), "(?<=[a-z])(?=[A-Z])", "-").ToLowerInvariant();
+    var hit = report.AllTraces.SelectMany(t => t.Issues.Select(i => (t, i))).FirstOrDefault(p => Id(p.i.Kind) == kind.ToLowerInvariant());
+    if (hit.t is null) { Console.Error.WriteLine($"no {kind} finding"); return false; }
+    vm.SelectImpedance(hit.t, hit.i);
+    vm.ZoomToImpedance(hit.t, hit.i);
+    Console.WriteLine($"selected {hit.t.Id}'s {kind}; {vm.SelectionStatusText}");
+    return true;
 }
 
 static bool Await2(Task<bool> task)

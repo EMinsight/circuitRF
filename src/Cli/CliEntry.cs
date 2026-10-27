@@ -2750,7 +2750,7 @@ static int PrintHelp()
     Console.WriteLine("  --target 50             the target Z0, ohms. Default 50.");
     Console.WriteLine("  --tol 10                the tolerance, percent either side. Default 10.");
     Console.WriteLine("  --warn 20               the warning band, percent either side; wider than --tol. Default 20.");
-    Console.WriteLine("  --max-freq 6GHz         a stretch under λ/20 here warns rather than fails. Unit required.");
+    Console.WriteLine("  --max-freq 6GHz         a stretch under λ/20 here warns rather than fails; test pads are judged here. Unit required.");
     Console.WriteLine("  --severity warning|fail what decides the exit code. Default fail; warnings are");
     Console.WriteLine("                          reported either way.");
     Console.WriteLine("  --layers \"A,B\"          the copper layers, by name. Default every copper layer.");

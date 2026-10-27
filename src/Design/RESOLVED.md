@@ -23637,3 +23637,37 @@ The driven TP149 setup on EMerge at Standard, compared with Palace. The open wor
   not trip it (its centre is in the hole). Test:
   `TestPadRound26Tests.AViaOnGround_InsideTheTerminalsCopper_IsRefusedByAStaticSolve_NotByADrivenOne`; the `.c3d` path was
   checked by running the real cells, which refuse in one second naming `board/via/6`.
+
+## brief-dfr29-2 — a test pad that loads the line is an impedance-check finding (2026-10-27)
+
+**What changed.** `TraceIssueKind.PadShunt` (appended, so stored numbers keep their meaning). A `TracePadShunt` is
+judged at `MaxFrequencyHz` against its trace's own mean Z0 (the target where none was solved): **warning** when |S11|
+is above `PadShuntWarnDb` (−20 dB) or the via resonates below 2 × fmax, **fail** above `PadShuntFailDb` (−10 dB) or
+with the resonance below fmax (owner decision D1, the recommended defaults). The issue's box is the pad's bounds. With
+no fmax the pad stays a note, and the note says it was not judged; a judged pad below both thresholds also stays a
+note. `WithPadShunts` attaches either and re-takes the verdict, so the end search and the side search share it.
+
+**|S11| comes out of the TESTPAD's own two-port, not a second formula.** Through a via, Y is `TestPadModel.Admittance`
+at the line pin with the pad pin open (`y11 − y12²/y22`): the via's L in series with the barrel shunts, the unused
+lands and the pad — so the series resonance is in it and |S11| → 0 dB there. A directly joined pad is jωC alone; the
+model's B is only its series floor with no via, and `d/b − 1/(b²(a/b + jωC))` loses everything to cancellation.
+
+**A pad through a via on a SHORT STUB was invisible** (R-dfr29-2-4). A stub under `MinAspect` widths is never a trace,
+so no trace END is at the via, and the end-by-end search never looked there — the via keep-out was not the cause (a
+trace that is all keep-out keeps its own Z0). `SidePadShunts` takes every drilled via on the layer that is at no
+trace's end, finds the nearest trace's centre line, and accepts it when the gap from the trace's edge is under
+`MinAspect` × the width and the copper is continuous along the perpendicular; `PadShuntAt` then applies the same pad
+rule (isolated disc wider than `PadOverLand` × the land on another conductor). A ground via in a side pour fails the
+continuity test, and a layer-change via has no isolated disc.
+
+**The four-layer half of the brief's gate 1 does not hold under D1.** The same 1 mm pad through a through-via at
+6 GHz: ten-layer, 0.526 pF to Inner 1 at 71 µm, via 0.586 nH, resonance 8.82 GHz, |S11| −4.0 dB (fail). Four-layer
+62 mil, 0.225 pF at 0.2 mm — but the 1.6 mm via adds 0.268 pF of barrel to Inner 1 and resonates at 9.99 GHz, so
+|S11| is −6.1 dB: also a fail, where the brief expected a warning or nothing. The test asserts what is true (less
+than half the pad capacitance, a smaller |S11|); the thresholds were not moved to make it pass.
+
+**What the search still misses on a Gerber-imported board** (R-dfr29-2-3, measured, nothing added). On the round-26
+test-point board no pad is found at all, for three separate reasons, each enough alone: the drills arrive as
+`CircleShape`s on the drill layer, not `ViaShape`s, so there is no via to look through; the pads are flashed
+apertures read as `PolygonShape`s, not discs; and the test pad is joined to the via's land by a short trace on the
+pad's own layer, so the disc is neither centred on the via nor `Isolated`. Each needs a decision before it is added.

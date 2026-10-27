@@ -2038,15 +2038,24 @@ layer's map.</p>
 <td><strong>Part of the trace could not be solved</strong> — not checked, which is not the same as wrong</td>
 <td>Warning</td>
 </tr>
+<tr>
+<td><strong>A test pad loads the line</strong> — with a <strong>Highest frequency</strong> given, <a href="#impedance-pads">below</a></td>
+<td>Warning or fail</td>
+</tr>
 </tbody>
 </table>
 <p>A layer cleared under the <strong>whole</strong> trace is not a fault; it is noted, with the deeper layer that
 became the reference.</p>
-<p><strong>A round pad hanging off a trace</strong> — a test point, joined straight to the trace's end or through a via to
-another layer — is not a finding but is noted on the trace: the pad's capacitance to the plane it faces and,
-through a via, the via's inductance and the frequency the two resonate at. The numbers are the
-<a href="components.html#testpad">TESTPAD</a> model's, worked out from what is drawn: the plane is the nearest one with copper
-under most of the pad, and each plane the via passes contributes through the clearance drawn round it.</p>
+<p><a id="impedance-pads"></a><strong>A round pad hanging off a trace</strong> — a test point, joined straight to the trace's end, or
+through a via at its end or on a stub too short to be a trace of its own — is read as the shunt it puts on the
+line: the pad's capacitance to the plane it faces and, through a via, the via's inductance and the frequency the two
+resonate at. The numbers are the <a href="components.html#testpad">TESTPAD</a> model's, worked out from what is drawn: the
+plane is the nearest one with copper under most of the pad, and each plane the via passes contributes through the
+clearance drawn round it. With a <strong>Highest frequency</strong> given, the pad is judged there against the trace's own Z0, by
+the |S11| it puts on the line: above <strong>−20 dB</strong>, or a via resonance below twice that frequency, it is a warning;
+above <strong>−10 dB</strong>, or a resonance inside the band, a fail — <em>0.526 pF to 'Inner 1', the via 0.586 nH,
+resonating at 8.82 GHz: |S11| −4.0 dB at 6 GHz on the 43.5 Ω line</em>. Its marker stands beside the pad, and selecting
+the finding selects the pad. Below those, or with no frequency given, it is a note on the trace.</p>
 <p><strong>Electrically short.</strong> With a <strong>Highest frequency</strong> given, a stretch outside the warning band whose
 electrical length is under <strong>λ/20</strong> there — a neck-down into a pad, a width step at a launch
 — is a warning, not a fail. λ is taken from each cut's own effective permittivity, and the

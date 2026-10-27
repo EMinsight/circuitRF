@@ -116,6 +116,9 @@ public enum TraceIssueKind
     NoReference,
     /// <summary>The cross-section could not be solved here.</summary>
     Unsolved,
+    /// <summary>A pad hanging off the trace — a test point — loads the line at the highest frequency
+    /// asked (brief-dfr29-2 R-dfr29-2-1). The stretch is the pad's bounds.</summary>
+    PadShunt,
 }
 
 /// <summary>How much a finding counts against its trace.</summary>
@@ -318,8 +321,9 @@ public sealed record TraceRun
     /// length, for instance.</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
 
-    /// <summary>Round pads hanging off this trace's ends — a test point, directly or through a via — as the shunt
-    /// elements they are (brief-dfr26-7 R-dfr26-7-5). Each is also one of <see cref="Notes"/>.</summary>
+    /// <summary>Round pads hanging off this trace — a test point at an end, directly or through a via, or through a
+    /// via on a stub too short to be a trace (brief-dfr29-2 R-dfr29-2-4) — as the shunt elements they are (brief-dfr26-7
+    /// R-dfr26-7-5). Each judged one is also one of <see cref="Issues"/>, each other one of <see cref="Notes"/>.</summary>
     public IReadOnlyList<TracePadShunt> PadShunts { get; init; } = [];
 
     public TraceVerdict Verdict { get; init; }
@@ -821,8 +825,8 @@ public static partial class TraceImpedanceAnalysis
                 {
                     var run = Assemble(chain, lw, answers, options, dbuPerMicron, ref id);
                     // brief-dfr26-7 R-dfr26-7-5: a round pad hanging off either end, reported as the shunt it is.
-                    if (PadShunts(run, shapes, ctx, padFmt) is { Count: > 0 } shunts)
-                        run = run with { PadShunts = shunts, Notes = [.. run.Notes, .. shunts.Select(sh => sh.Text)] };
+                    // brief-dfr29-2 R-dfr29-2-1: one that loads the line at MaxFrequencyHz is a finding, not a note.
+                    run = WithPadShunts(run, PadShunts(run, shapes, ctx, padFmt, options));
                     runOf[chain] = run.Id;
                     string? JunctionOf(int key, bool atStart)
                     {
@@ -833,6 +837,9 @@ public static partial class TraceImpedanceAnalysis
                     }
                     runs.Add(run with { StartJunction = JunctionOf(chain.StartKey, true), EndJunction = JunctionOf(chain.EndKey, false) });
                 }
+                // brief-dfr29-2 R-dfr29-2-4: a pad reached from a trace's side through a stub too short to be a trace.
+                foreach (var (ri, shunt) in SidePadShunts(runs, band, shapes, ctx, padFmt, options))
+                    runs[ri] = WithPadShunts(runs[ri], [shunt]);
                 var junctions = junctionIds.Select(kv =>
                 {
                     var (jx, jy) = lw.JunctionCentres[kv.Key];
