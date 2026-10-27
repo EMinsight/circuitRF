@@ -164,6 +164,10 @@ public sealed record C3dElaboration(
     /// name (a terminal names a drawn conductor by its name).</summary>
     public IReadOnlyDictionary<string, HashSet<string>> ObjectNets { get; init; } = new Dictionary<string, HashSet<string>>();
 
+    /// <summary>brief-dfr28-5 — each layout instance's via that is on a net of its own and passes copper of another, by
+    /// object name: what a static solve refuses (<see cref="Em3dGenerator.ViaNetRefusal"/>).</summary>
+    public IReadOnlyDictionary<string, string> ViaNetConflicts { get; init; } = new Dictionary<string, string>();
+
     /// <summary>The conductors on a layout instance's ground-reference stackup entries.</summary>
     public IReadOnlyList<string> GroundBandObjects { get; init; } = [];
 
@@ -727,6 +731,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly HashSet<string> _broken = new(StringComparer.Ordinal);
         private readonly HashSet<string> _unheld = new(StringComparer.Ordinal);
         private readonly Dictionary<string, HashSet<string>> _nets = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _viaNetConflicts = new(StringComparer.Ordinal);
         private readonly List<string> _groundBand = [];
         private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
         private readonly List<Em3dWireReport> _wires = [];
@@ -855,6 +860,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 Unresolved = _unresolved,
                 Instances = _instances,
                 ObjectNets = _nets,
+                ViaNetConflicts = _viaNetConflicts,
                 GroundBandObjects = _groundBand,
                 MaterialSources = sources,
                 SolidMaterials = records,
@@ -1624,6 +1630,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
             foreach (var (obj, nets) in solids.ObjectNets)
                 foreach (string n in nets) Net(prefix + obj, n);
+            foreach (var (obj, conflict) in solids.ViaNetConflicts) _viaNetConflicts[prefix + obj] = conflict;
             _groundBand.AddRange(solids.GroundBandObjects.Select(o => prefix + o));
             foreach (var (obj, origin) in solids.Origins) _origins[prefix + obj] = origin;
             // A pad top is a height in the layout's own stack; the thermal chain and its contact patches read it as a WORLD height,

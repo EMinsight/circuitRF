@@ -3844,8 +3844,8 @@ identity with the junction-only stamp).
   the shipped ten-layer stackup, a 0.6 mm top land, the 1.5 mm pad on Bottom) gives the stub as **1.446 pF** and the
   eight pads as **0.192 pF**. Clearing Inner 8 + 7 to 2.0 mm moves it −0.71 pF (Palace −1.00). 0.2 pF per pad is not
   reachable here: it needs more than the pad's whole area facing solid copper 69 µm away, and the planes either side are
-  cleared to the same antipad. Under-resolved conforming FEM overstates capacitance, worst on small thin (18 µm)
-  conductors. The owner chose the field solve as the reference; the gate is restated on it.
+  cleared to the same antipad. (The Palace figure's cause was a grounded barrel, not under-resolution: DFR28-5
+  below.) The owner chose the field solve as the reference; the gate is restated on it.
 - **The form**: each pad's rim term less the bare barrel's, both a coaxial term over a fringe length,
   `2πε₀εᵣ(t + k_r·r + k_g·(b − r))/ln(b/r)`, pad (0.2, 1.0), barrel (0.19, 1.2); `TestPadFormulas.InnerPadCapacitance`.
   Fitted to 60 single-pad solves (planes 69-460 µm apart, pads 0.45-0.75 mm, antipads 0.8-1.2 mm, drills 0.2-0.4 mm):
@@ -3876,6 +3876,60 @@ identity with the junction-only stamp).
     centred on the via. On the board the 1.5 mm pad is 1.4 mm off the via, at the end of a bottom trace, beside C211 and
     a pour. The cause of a ~10× gap is NOT found; TESTPAD's inner-pad term reads ~10× low on this board until it is.
   - The reissued TP149 report says so on page 3.
+
+### brief DFR28-5 — the 10-27 reference was wrong; the model stands (2026-10-27)
+
+- **Cause: the TP149 barrel was a GROUND conductor in both 10-27 cells.** The EM cells' drill hit at the TP149 via
+  is labelled `GND` (the full-board import leaves it unlabelled; the label came with the hand-built EM cells), and
+  `Em3dLayoutSolids` gives a via its own `Net` ahead of the copper it lands on (`viaNets`). So in an electrostatic
+  solve the TP terminal's lands and all eight inner pads TOUCHED a 0 V barrel: a contact, not a capacitance. The field
+  is singular at every contact circle, so the value grows as the mesh refines and grows with the number of pads
+  touching. That is exactly the 10-27 table's signature (as built rising 4.57 → 5.02 pF, error indicator stuck at 0.19)
+  and why "under-resolved FEM overstates" never fitted. A driven run is not affected: there every metal is PEC and
+  the net label is not read. Nothing in the 3D build compares a via's own net with the copper it joins.
+- **Reproduced**: rung 5 below with the barrel labelled `GND` gives 4.646 / 2.941 / 1.71 pF at pass 1 and
+  5.047 / 3.046 / 2.00 pF final — the 10-27 table to within 1 %. With the barrel on the TP net it gives 0.218 pF.
+- **R-1, the artwork (the round-26 crop), per layer round the TP149 via at (126.6, 117.5) mm**, sampled in 72
+  directions:
+
+  | Layer | TP copper | Clearance to other copper | In it / within 1 mm |
+  |---|---|---|---|
+  | Top | 0.6 mm land + trace to the RF junction | GND pour 0.94 mm over about half the circle, opening to 1.7-5.5 mm toward the RF pads | RFin/RFout copper beyond the opening |
+  | Inner 1-8 | 0.60 mm round land (r 300-305 µm) | 0.94 mm round (r 470-475 µm), solid GND plane all round | nothing; nearest is a GND via barrel Ø0.2 mm, 1.12 mm away |
+  | Bottom | land + trace to the 1.5 mm pad, centre 1.36 mm away | GND pour 0.94 mm over about 240°, open 2.2-4.6 mm toward the pad | the pour only |
+
+  Every inner clearance is round and 0.94 mm, as the axisymmetric solve assumed, and no other conductor is inside one:
+  the artwork is not the explanation.
+- **R-2, the ladder** (Palace electrostatic, order 2, three adaptive passes; each rung as built and with the eight
+  inner pads deleted; worth = the difference, pF):
+
+  | Rung | Geometry | Pass 1 | Pass 2 | Pass 3 | Final |
+  |---|---|---|---|---|---|
+  | 1 | FD geometry: via, round pads/clearances, solid planes, pad on the via | 0.219 | 0.210 | 0.202 | 0.197 |
+  | 2 | + the board's bottom TP copper (pad 1.36 mm off the via on its trace) | 0.236 | 0.226 | 0.218 | 0.212 |
+  | 3 | + the board's own inner-layer copper, GND vias and drills | 0.230 | 0.223 | 0.215 | 0.210 |
+  | 4 | + the board's Top and Bottom copper (pour, C211, RF lines), three terminals | 0.250 | 0.229 | 0.222 | 0.221 |
+  | 5 | + the board outline: the round-26 crop itself | 0.222 | 0.221 | 0.219 | 0.218 |
+  | 5g | rung 5 with the barrel labelled GND, as the 10-27 cells had it | 1.71 | 1.60 | 1.79 | 2.00 |
+
+  No geometry rung moves it; the label does. Rung 1 also answers the solver question: Palace and the axisymmetric
+  solve agree on the FD geometry (0.197 against 0.192; a second, independent axisymmetric finite-volume solve gives
+  1.440 pF as built and 0.189 pF for the pads, converged to 0.05 % between grids). Moving the pad off the via adds 8 %.
+- **R-3, convergence**: rung 5 as built 3.179 / 3.213 / 3.224 / 3.224 pF and pads removed 2.957 / 2.992 / 3.005 /
+  3.006 pF — the last two passes agree within 0.03 % — so the board's pads are worth **0.218 pF**, converged.
+  Each rung took 0.5-3.5 min at 6-10 GB. The Gmsh meshes of two of the fixtures failed (one inverted tetrahedron; one
+  "could not recover boundary mesh") and meshed when the planes were made 50 µm wider. The as-built TP net on the board is
+  **3.22 pF, not 4.65-5.02**, which also agrees with the 3.1 pF a driven run reads off the same board.
+- **R-4: the model is unchanged.** It gives the eight pads 0.191 pF: −0.5 % from the FD geometry's reference and
+  −12 % from the board's, both inside 25 %. The gate is restated on both references
+  (`TestPadRound26Tests.UnusedInnerPads_OnTheTenLayerBoard_AddWhatTheFieldSolveDoes`).
+- **Every Palace ES figure of round 26 with the via in it came from those cells**, so the 1.61 pF of DFR26-8's brief
+  was the same contact, and so were the report's as-built 4.80 pF and the stub of 3.36 pF it implies. Re-solved with the
+  via on its own net (order 2, two passes; the report's second revision): as built 3.21 pF, test point cut off 1.33, so
+  the stub is 1.88 pF; the unused pads −0.22, Inner 8 + 7 cleared −0.94, both −1.14, leaving 0.73 pF. The clearances'
+  share barely moved; only the pads' share and the totals did. TESTPAD's stubs (1.35, 1.15, 0.29 pF) read 0.44-0.53 pF
+  low, most of it the 1.4 mm bottom trace from the via to the pad (rung 1 → 2 above: +0.37 pF), which the model does not
+  have. A static solve now refuses such a via (`src/Design/RESOLVED.md`, brief-dfr28-5).
 
 ## A side-fed TESTPAD stamped nothing (designer round 27, 2026-10-25)
 

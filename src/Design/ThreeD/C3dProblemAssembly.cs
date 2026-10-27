@@ -467,6 +467,8 @@ public static class C3dProblemAssembly
         // ── Terminals and ground (R-em3d22-2), by net ───────────────────────────────────────────
         List<Em3dTerminal> terminals = [];
         List<string> ground = [];
+        if (setup.IsStatic3D && Em3dGenerator.ViaNetRefusal(setup, e.ViaNetConflicts) is { } viaNetRefusal)
+            return No(viaNetRefusal, e.Warnings);
         if (setup.IsStatic3D &&
             Em3dGenerator.Terminals(setup, solids, sheets, ports, pecFloor: false, e.ObjectNets.ToDictionary(kv => kv.Key, kv => kv.Value),
                                     [.. e.GroundBandObjects], out terminals, out ground) is { } terminalRefusal)

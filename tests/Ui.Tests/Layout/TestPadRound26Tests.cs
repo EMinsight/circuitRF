@@ -263,8 +263,9 @@ public sealed class TestPadRound26Tests : IDisposable
     /// <summary>
     /// R-dfr26-8-1's gate, against an axisymmetric finite-difference solve of the same via (fixed reference data,
     /// computed outside circuitRF): the stub as built 1.446 pF, of which the eight 0.6 mm pads in 0.94 mm antipads are
-    /// 0.192 pF. The brief's Palace figures (3.36 and 1.61 pF) came from one unrefined pass and are not the
-    /// reference — src/Core/RESOLVED.md says why.
+    /// 0.192 pF. R-dfr28-5-4 adds the round-26 board itself: converged Palace puts the same eight pads at 0.218 pF, the
+    /// test pad 1.4 mm off the via on its trace. The brief's Palace figures (3.36 and 1.61 pF, and 1.6-2.0 pF refined)
+    /// had the via barrel on the ground net — src/Core/RESOLVED.md says why.
     /// </summary>
     [Fact]
     public void UnusedInnerPads_OnTheTenLayerBoard_AddWhatTheFieldSolveDoes()
@@ -276,6 +277,7 @@ public sealed class TestPadRound26Tests : IDisposable
         Assert.Empty(without.Pads);
         Assert.InRange(with.StubCapacitance, 0.75 * 1.446e-12, 1.25 * 1.446e-12);
         Assert.InRange(with.StubCapacitance - without.StubCapacitance, 0.75 * 0.192e-12, 1.25 * 0.192e-12);
+        Assert.InRange(with.StubCapacitance - without.StubCapacitance, 0.75 * 0.218e-12, 1.25 * 0.218e-12);
     }
 
     // ── brief-dfr27-1 R-dfr27-1-1: the pad's capacitance depends on ClearD ───────────────────────
@@ -406,6 +408,14 @@ public sealed class TestPadRound26Tests : IDisposable
     /// line meets the edge, with no air-box padding at the sides.</summary>
     private (EmSetup Setup, CircuitRF.Engine.Em3d.Em3dProblem Problem) Fixture(string cem)
     {
+        var (setup, g) = Generated(cem);
+        Assert.True(g.Ok, g.Refusal);
+        return (setup, g.Problem!);
+    }
+
+    /// <summary><see cref="Fixture"/>'s generation, refusal and all; <paramref name="viaNet"/> is the via's own net.</summary>
+    private (EmSetup Setup, CircuitRF.Design.Layout.Em3d.Em3dGenerationResult Result) Generated(string cem, string viaNet = "SIG")
+    {
         const long c = 2_000_000;
         long[] hole = [.. Enumerable.Range(0, 64).SelectMany(k => new[]
         {
@@ -420,16 +430,14 @@ public sealed class TestPadRound26Tests : IDisposable
             view.Shapes.Add(new PolygonShape { Layer = k, Xy = [0, 0, 4_000_000, 0, 4_000_000, 4_000_000, 0, 4_000_000], Holes = [hole], Net = "GND" });
             view.Shapes.Add(new CircleShape { Layer = k, Cx = c, Cy = c, R = 300_000, Net = "SIG" });
         }
-        view.Shapes.Add(new ViaShape { Layer = ThroughDrill, X = c, Y = c, PadSize = 600_000, DrillSize = 300_000, LandingLayer = TopKey, Net = "SIG" });
+        view.Shapes.Add(new ViaShape { Layer = ThroughDrill, X = c, Y = c, PadSize = 600_000, DrillSize = 300_000, LandingLayer = TopKey, Net = viaNet });
         view.Shapes.Add(new LabelShape { Layer = TopKey, X = 0, Y = c, Text = "P1", Height = 100_000, IsPort = true,
                                          PortDirection = LayoutRotation.R0, PortLayer = TopKey, PortKind = PlanarPortKind.Edge });
         Directory.CreateDirectory(_root);
         string path = Path.Combine(_root, Guid.NewGuid().ToString("N")[..8] + ".cem");
         File.WriteAllText(path, cem);
         var setup = EmSetupPersistence.LoadFromFile(path);
-        var g = CircuitRF.Design.Layout.Em3d.Em3dGenerator.Generate(setup, new EmLayoutSource("fixture.clay", view, _tech, view.DbuPerMicron), _tech);
-        Assert.True(g.Ok, g.Refusal);
-        return (setup, g.Problem!);
+        return (setup, CircuitRF.Design.Layout.Em3d.Em3dGenerator.Generate(setup, new EmLayoutSource("fixture.clay", view, _tech, view.DbuPerMicron), _tech));
     }
 
     /// <summary>R-dfr26-8-3 — an electrostatic estimate is in Palace's scalar unknowns, sized as the script sizes a static
@@ -466,5 +474,29 @@ public sealed class TestPadRound26Tests : IDisposable
         string geo = CircuitRF.Design.Em3d.GmshGeoWriter.Write(p, CircuitRF.Design.Layout.Em.PalaceSettings.Resolve(setup.Palace)).Geo!;
         Assert.True(geo.IndexOf("q0[] = ", StringComparison.Ordinal) is var port and >= 0
                     && port < geo.IndexOf("// air box", StringComparison.Ordinal), "the port is claimed after the air-box faces");
+    }
+
+    // ── brief-dfr28-5: a via on one net passing another's copper ─────────────────────────────────
+
+    /// <summary>R-dfr28-5 — the TP149 study's fault: the via drawn on GND inside the terminal's lands and pads. A static solve
+    /// would hold one piece of metal at two potentials (on the board it read the unused pads 10× high), so it is refused,
+    /// naming the via and the copper it passes; a driven solve reads no nets and builds.</summary>
+    [Fact]
+    public void AViaOnGround_InsideTheTerminalsCopper_IsRefusedByAStaticSolve_NotByADrivenOne()
+    {
+        var (_, es) = Generated("""
+            { "FormatVersion": 1, "Name": "es", "LayoutRef": "fixture.clay", "Solver3D": "Palace", "Problem3D": "Electrostatic",
+              "Terminals3D": [ { "Name": "SIG", "Net": "SIG" } ], "Ground3D": "GND" }
+            """, viaNet: "GND");
+        Assert.False(es.Ok);
+        Assert.Contains("'via/1': the via at (2, 2) mm is on net 'GND' and passes through copper of net 'SIG'", es.Refusal);
+        Assert.Contains("'Inner 8'", es.Refusal);
+
+        var (_, driven) = Generated("""
+            { "FormatVersion": 1, "Name": "drv", "LayoutRef": "fixture.clay", "Solver3D": "Palace",
+              "Frequency": { "StartExpr": "1", "StopExpr": "3", "StepExpr": "", "NumPoints": 3, "Mode": "PointCount", "Kind": "Linear",
+                             "StartUnit": "GHz", "StopUnit": "GHz", "StepUnit": "Hz" } }
+            """, viaNet: "GND");
+        Assert.True(driven.Ok, driven.Refusal);
     }
 }

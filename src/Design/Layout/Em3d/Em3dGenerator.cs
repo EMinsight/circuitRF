@@ -310,6 +310,7 @@ public static class Em3dGenerator
             List<string> groundObjects = [];
             if (setup.IsStatic3D)
             {
+                if (ViaNetRefusal(setup, _g.ViaNetConflictMap) is { } viaNetRefusal) return No(viaNetRefusal);
                 if (Terminals(setup, solids, sheets, ports, pecFloor, _g.ObjectNetMap, _g.GroundBandObjectList,
                               out terminals, out groundObjects) is { } terminalRefusal)
                     return No(terminalRefusal);
@@ -1038,6 +1039,24 @@ public static class Em3dGenerator
             => new(null, refusal, _notes) { Warnings = _g is null ? [] : _g.WarningList };
 
         private static string Fmt(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// brief-dfr28-5 — a static solve's refusal of a via that is on one net and passes copper of another
+    /// (<see cref="Em3dLayoutSolids.Builder.ViaNetConflictMap"/>), or null. The via's own net wins in the net map, so the
+    /// solve would hold one piece of metal at two potentials: on the TP149 board a drill labelled GND under a test point
+    /// grounded its barrel inside the terminal's copper, and the "capacitance" grew with every refinement pass to ten
+    /// times the real one. A driven solve does not read nets, so only a static one refuses.
+    /// </summary>
+    internal static string? ViaNetRefusal(EmSetup setup, IReadOnlyDictionary<string, string> conflicts)
+    {
+        if (conflicts.Count == 0) return null;
+        string kind = setup.Problem3D == Em3dProblemType.Magnetostatic ? "magnetostatic" : "electrostatic";
+        var shown = conflicts.Take(3).Select(kv => $"'{kv.Key}': {kv.Value}");
+        return $"{conflicts.Count} via(s) are on a net of their own and pass copper of another net — {string.Join("; ", shown)}" +
+               (conflicts.Count > 3 ? $"; and {conflicts.Count - 3} more" : "") +
+               $". A via is one piece of metal with the copper it passes, so this {kind} solve would hold it at two potentials. " +
+               "Give the via the net of the copper it joins, or clear its net so it takes that copper's.";
     }
 
     /// <summary>

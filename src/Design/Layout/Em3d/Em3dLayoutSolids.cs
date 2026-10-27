@@ -86,6 +86,9 @@ public sealed record Em3dLayoutSolidsResult(
     public IReadOnlyDictionary<string, IReadOnlySet<string>> ObjectNets { get; init; } =
         new Dictionary<string, IReadOnlySet<string>>();
 
+    /// <summary>brief-dfr28-5 — each via on a net of its own that passes copper of another net, by object name.</summary>
+    public IReadOnlyDictionary<string, string> ViaNetConflicts { get; init; } = new Dictionary<string, string>();
+
     /// <summary>The conductors on ground-reference stackup entries.</summary>
     public IReadOnlyList<string> GroundBandObjects { get; init; } = [];
 
@@ -132,6 +135,9 @@ public static class Em3dLayoutSolids
         // entries, which are the ground when the setup names no Ground3D.
         public readonly Dictionary<string, HashSet<string>> ObjectNetMap = new(StringComparer.Ordinal);
         public readonly List<string> GroundBandObjectList = [];
+        // brief-dfr28-5 — each via whose own net is not the net of copper it passes, by object name: what it is on and what
+        // it joins. A static solve refuses these (Em3dGenerator.ViaNetRefusal); its own net still wins in the net map.
+        public readonly Dictionary<string, string> ViaNetConflictMap = new(StringComparer.Ordinal);
 
         /// <summary>One merged conductor piece: its polygon, its name and what it became.</summary>
         internal sealed record Piece(PlanarPolygon Poly, string Name, string Material, bool IsSheet,
@@ -725,6 +731,9 @@ public static class Em3dLayoutSolids
                 string name = $"via/{viaN}";
                 // A via is on its own net when it names one, else on the nets of the metal it lands on.
                 var viaNets = shape.Net is { Length: > 0 } vn ? [vn] : ViaLandingNets(shape, top, bottom);
+                if (shape.Net is { Length: > 0 } own && ViaPassedNets(shape, top, bottom, own) is { Count: > 0 } other)
+                    ViaNetConflictMap[name] = $"the via at ({Fmt(other[0].X * 1e3)}, {Fmt(other[0].Y * 1e3)}) mm is on net '{own}' " +
+                        $"and passes through copper of {string.Join(" and ", other.Select(o => $"net '{o.Net}' on {o.Layers}"))}";
                 if (Drill(shape) is var (x, y, r) && OnBoard(x, y, r))
                 {
                     var a = new Point3(x, y, z0);
@@ -973,6 +982,7 @@ public static class Em3dLayoutSolids
             Origins = OriginMap,
             MaterialSources = _materialSource,
             ObjectNets = ObjectNetMap.ToDictionary(kv => kv.Key, kv => (IReadOnlySet<string>)kv.Value, StringComparer.Ordinal),
+            ViaNetConflicts = ViaNetConflictMap,
             GroundBandObjects = GroundBandObjectList,
             Wires = WireBuild?.Reports ?? [],
             NoAlpha = NoAlphaList,
@@ -1075,6 +1085,24 @@ public static class Em3dLayoutSolids
                     foreach (var p in list)
                         if (p.Net is { } n && p.Poly.Contains(cx, cy) && !nets.Contains(n)) nets.Add(n);
             return nets;
+        }
+
+        /// <summary>brief-dfr28-5 — the nets other than <paramref name="own"/> of the pieces a via's footprint centre lies
+        /// in, on every conductor it spans, each with the layers it is on; the centre, metres, on each row.</summary>
+        private List<(string Net, string Layers, double X, double Y)> ViaPassedNets(LayoutShape shape, PlanarExtractor.StackBand top,
+                                                                                   PlanarExtractor.StackBand bottom, string own)
+        {
+            var fp = ViaFootprint(shape).ToList();
+            if (fp.Count == 0) return [];
+            var (x0, y0, x1, y1) = fp[0].Bounds();
+            double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+            var layers = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var band in Bands.Where(b => b.BottomM >= bottom.BottomM - 1e-15 && b.TopM <= top.TopM + 1e-15).OrderByDescending(b => b.TopM))
+                if (Pieces.TryGetValue(band.Index, out var list))
+                    foreach (var p in list)
+                        if (p.Net is { } n && n != own && p.Poly.Contains(cx, cy))
+                            (layers.TryGetValue(n, out var l) ? l : layers[n] = []).Add($"'{band.Layer.Name}'");
+            return [.. layers.Select(kv => (kv.Key, string.Join(", ", kv.Value.Distinct()), cx, cy))];
         }
 
         public string Add(Em3dMaterial m, string source)

@@ -23616,3 +23616,24 @@ The driven TP149 setup on EMerge at Standard, compared with Palace. The open wor
   extraction says: a fresh setup on TP149 lists ports 1-6, all in the layout.
 - **`tools/UiSnapshot --cem` now resolves the setup's layout** (the CLI's `EmSetupResolver` walk), so the panel shows
   the layout's ports and stackup; before, it rendered every `.cem` as if its layout were missing.
+
+## brief-dfr28-5 — a static solve refuses a via on one net that passes another net's copper (2026-10-27)
+
+- **Symptom**: on the TP149 board the electrostatic TP net read 4.6-5.0 pF as built, rising with every refinement pass, and
+  its eight unused inner pads 1.6-2.0 pF against a field solve's 0.19. Converged, it is 3.22 pF and 0.218 pF.
+- **Cause**: the EM cells' drill hit under TP149 carried net `GND`. `Em3dLayoutSolids` takes a via's own `Net` ahead of the
+  copper it lands on (`viaNets`), so the barrel was a ground conductor standing inside the terminal's lands and pads. Palace
+  held one piece of metal at 0 V and 1 V where they touch: the field is singular round every contact circle, so the energy
+  grows as the mesh refines there, and with the number of pads touching. A driven solve never reads nets (all metal is PEC),
+  which is why the S-parameters on the same cells were right and disagreed with the electrostatic value.
+- **Fix**: the builder records each via whose own net differs from the net of a piece its footprint centre lies in, on any
+  conductor it spans (`ViaNetConflictMap` → `Em3dLayoutSolidsResult.ViaNetConflicts`, carried through `C3dElaborator` and
+  `C3dModelled` as `C3dElaboration.ViaNetConflicts`). An electrostatic or magnetostatic solve refuses on it before the
+  terminals are assigned, in both the `.cem` path (`Em3dGenerator`) and the `.c3d` path (`C3dProblemAssembly`), through one
+  sentence (`Em3dGenerator.ViaNetRefusal`): the via, where it is, its net, and each other net with the layers it is on. A
+  driven solve is unchanged. The net map is unchanged too: the via keeps its own net, so nothing that reads nets for a
+  driven port moves.
+- A via whose net is empty still takes the nets it lands on, and a via passing another net's plane through a clearance does
+  not trip it (its centre is in the hole). Test:
+  `TestPadRound26Tests.AViaOnGround_InsideTheTerminalsCopper_IsRefusedByAStaticSolve_NotByADrivenOne`; the `.c3d` path was
+  checked by running the real cells, which refuse in one second naming `board/via/6`.
