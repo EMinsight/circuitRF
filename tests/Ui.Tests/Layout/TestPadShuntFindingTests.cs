@@ -115,6 +115,111 @@ public sealed class TestPadShuntFindingTests
         Assert.Equal((10_000_000L, vy), (issue.X, issue.Y));
     }
 
+    // brief-dfr29-3: a board drawn the way an import draws it. A line on Top Copper into a 0.3 mm hole at (20 mm, 0); the
+    // pad, 1.5 mm across, on the far side.
+    private const double TwoPointFourFourGHz = 2.44e9;
+    private const long Hx = 20_000_000, PadR = 750_000, LandR = 300_000, Stub = 310_000, StubW = 300_000;
+
+    /// <summary>Land + 0.31 mm stub + round pad, or + a square <paramref name="square"/>, as ONE polygon on Bottom.</summary>
+    private static PolygonShape LandStubPad(bool square = false)
+    {
+        long px = Hx + LandR + Stub + PadR;
+        Clipper2Lib.Paths64 parts =
+        [
+            Clipper2Lib.Clipper.MakePath(Disc(Hx, 0, LandR)),
+            Clipper2Lib.Clipper.MakePath([Hx, -StubW / 2, px, -StubW / 2, px, StubW / 2, Hx, StubW / 2]),
+            Clipper2Lib.Clipper.MakePath(square ? [px - PadR, -PadR, px + PadR, -PadR, px + PadR, PadR, px - PadR, PadR]
+                                                : Disc(px, 0, PadR)),
+        ];
+        foreach (var part in parts) if (!Clipper2Lib.Clipper.IsPositive(part)) part.Reverse();
+        var union = Assert.Single(Clipper2Lib.Clipper.Union(parts, Clipper2Lib.FillRule.NonZero));
+        return new PolygonShape { Layer = TenLayer.Bottom, Xy = [.. union.SelectMany(p => new[] { p.X, p.Y })] };
+    }
+
+    private static List<LayoutShape> ImportedBoard(string fixture)
+    {
+        var drill = new CircleShape { Layer = TenLayer.Drill, Cx = Hx, Cy = 0, R = 150_000 };
+        var shapes = new List<LayoutShape>
+        {
+            new RectShape { Layer = Top, X1 = 0, Y1 = -TenLayer.Width / 2, X2 = Hx, Y2 = TenLayer.Width / 2 },
+            new CircleShape { Layer = Top, Cx = Hx, Cy = 0, R = LandR },
+            Plane(TenLayer, (Hx, 0)),
+        };
+        switch (fixture)
+        {
+            case "drill circle, disc pad":
+                shapes.Add(drill);
+                shapes.Add(new CircleShape { Layer = TenLayer.Bottom, Cx = Hx, Cy = 0, R = PadR });
+                break;
+            case "via, 64-gon pad":
+                shapes.Add(new ViaShape { Layer = TenLayer.Drill, X = Hx, Y = 0, PadSize = 2 * LandR, DrillSize = 300_000 });
+                shapes.Add(new PolygonShape { Layer = TenLayer.Bottom, Xy = Disc(Hx, 0, PadR) });
+                break;
+            case "drill circle, land + stub + pad":
+                shapes.Add(drill);
+                shapes.Add(LandStubPad());
+                break;
+            case "the Bottom copper continues as a trace":
+                shapes.Add(drill);
+                shapes.Add(LandStubPad());
+                shapes.Add(new RectShape { Layer = TenLayer.Bottom, X1 = Hx - 10_000_000, Y1 = -TenLayer.Width / 2, X2 = Hx, Y2 = TenLayer.Width / 2 });
+                break;
+            case "a second drill in the island":
+                shapes.Add(drill);
+                shapes.Add(LandStubPad());
+                shapes.Add(new CircleShape { Layer = TenLayer.Drill, Cx = Hx + LandR + Stub + PadR, Cy = 0, R = 150_000 });
+                break;
+            case "a square pad":
+                shapes.Add(drill);
+                shapes.Add(LandStubPad(square: true));
+                break;
+            case "a blind drill's own land at its far end":
+                // Laser 1-2 spans Top to Inner 1, so nothing between its ends carries a land to measure.
+                shapes[1] = new CircleShape { Layer = Top, Cx = Hx, Cy = 0, R = 260_000 };
+                shapes.Add(new CircleShape { Layer = new LayerKey(22, 0), Cx = Hx, Cy = 0, R = 100_000 });
+                shapes.Add(new CircleShape { Layer = new LayerKey(10, 0), Cx = Hx, Cy = 0, R = 260_000 });
+                break;
+        }
+        return shapes;
+    }
+
+    /// <summary>brief-dfr29-3 gate 1: a hole that is a bare circle on the drill layer (R1), a pad that is a polygon (R2),
+    /// and a pad joined to the hole's land by a short stub on its own layer (R1 + R2 + R3) are each found, failing at
+    /// 2.44 GHz, and the sentence says what was read rather than drawn (R4).</summary>
+    [Theory]
+    [InlineData("drill circle, disc pad")]
+    [InlineData("via, 64-gon pad")]
+    [InlineData("drill circle, land + stub + pad")]
+    public void APadOnAnImportedBoard_IsFound(string fixture)
+    {
+        var trace = Assert.Single(Analyze(ImportedBoard(fixture), TenLayer.Tech, Top, TwoPointFourFourGHz).AllTraces);
+        var issue = Assert.Single(trace.Issues, i => i.Kind == TraceIssueKind.PadShunt);
+        Assert.Equal(IssueSeverity.Fail, issue.Severity);
+        var shunt = Assert.Single(trace.PadShunts);
+        Assert.StartsWith("Bottom Copper", shunt.PadLayer);
+        Assert.InRange(shunt.Diameter, 2 * PadR - 2 * PadR / 50, 2 * PadR + 2 * PadR / 50);
+        Assert.Equal(fixture.StartsWith("drill circle"), issue.Text.Contains("through a 300 µm drill hole from 'Top Copper"));
+        Assert.Equal(!fixture.EndsWith("disc pad"), issue.Text.Contains("across, fitted to its outline,"));
+        bool stub = fixture.EndsWith("stub + pad");
+        Assert.Equal(stub, issue.Text.Contains("µm trace on 'Bottom Copper (1 oz)' the estimate leaves out"));
+        long px = stub ? Hx + LandR + Stub + PadR : Hx;
+        Assert.InRange(shunt.X, px - 5_000, px + 5_000);
+    }
+
+    /// <summary>brief-dfr29-3 gate 2: the same hole is not a test pad where its Bottom copper continues as a trace, where
+    /// its island carries a second drill, or where the pad is a rectangle — nor is a blind drill's own land at its far end,
+    /// measured at its other end where nothing between them carries one.</summary>
+    [Theory]
+    [InlineData("the Bottom copper continues as a trace")]
+    [InlineData("a second drill in the island")]
+    [InlineData("a square pad")]
+    [InlineData("a blind drill's own land at its far end")]
+    public void NotATestPad(string fixture)
+    {
+        var report = Analyze(ImportedBoard(fixture), TenLayer.Tech, Top, TwoPointFourFourGHz);
+        Assert.Empty(report.AllTraces.SelectMany(t => t.PadShunts));
+    }
+
     /// <summary>Gate 6: the CLI's --json carries the finding as kind pad-shunt with its C, L, resonance and |S11|. The MCP
     /// impedance tool is this verb.</summary>
     [Fact]

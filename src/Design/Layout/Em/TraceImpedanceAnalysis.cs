@@ -740,6 +740,8 @@ public static partial class TraceImpedanceAnalysis
         var notes = prep.Notes;
         var scope = options.Scope is { IsEmpty: false } s ? s : null;
         var selection = new Selection(scope, prep, shapes, tech);
+        // brief-dfr29-3 R-dfr29-3-1: the drilled holes the pad search looks through, vias and bare drill circles alike.
+        var padSearch = PadSearchOf(shapes, ctx);
 
         // ── layer by layer ──────────────────────────────────────────────────────────────────────
         // Each layer is found, cut, solved and assembled before the next is started, so a run that
@@ -826,7 +828,7 @@ public static partial class TraceImpedanceAnalysis
                     var run = Assemble(chain, lw, answers, options, dbuPerMicron, ref id);
                     // brief-dfr26-7 R-dfr26-7-5: a round pad hanging off either end, reported as the shunt it is.
                     // brief-dfr29-2 R-dfr29-2-1: one that loads the line at MaxFrequencyHz is a finding, not a note.
-                    run = WithPadShunts(run, PadShunts(run, shapes, ctx, padFmt, options));
+                    run = WithPadShunts(run, PadShunts(run, padSearch, ctx, padFmt, options));
                     runOf[chain] = run.Id;
                     string? JunctionOf(int key, bool atStart)
                     {
@@ -838,7 +840,7 @@ public static partial class TraceImpedanceAnalysis
                     runs.Add(run with { StartJunction = JunctionOf(chain.StartKey, true), EndJunction = JunctionOf(chain.EndKey, false) });
                 }
                 // brief-dfr29-2 R-dfr29-2-4: a pad reached from a trace's side through a stub too short to be a trace.
-                foreach (var (ri, shunt) in SidePadShunts(runs, band, shapes, ctx, padFmt, options))
+                foreach (var (ri, shunt) in SidePadShunts(runs, band, padSearch, ctx, padFmt, options))
                     runs[ri] = WithPadShunts(runs[ri], [shunt]);
                 var junctions = junctionIds.Select(kv =>
                 {
@@ -1252,7 +1254,7 @@ public static partial class TraceImpedanceAnalysis
                 }
             });
             if (shape is ViaShape via)
-                foreach (var b in BandsSpanned(via, tech, bands))
+                foreach (var b in BandsSpanned(via.Layer, tech, bands))
                 {
                     if (via.LandingLayer is { } land && bandOf.TryGetValue(land, out var lb) && lb.Index == b.Index) continue;
                     if (!barrels.TryGetValue(b.Index, out var bl)) barrels[b.Index] = bl = [];
@@ -1400,12 +1402,13 @@ public static partial class TraceImpedanceAnalysis
     /// through hole, which is what a Gerber drill file is. A via's own copper is only its landing pad
     /// (<see cref="DrcRegions.Expand"/>), so without this a trace on an inner layer running onto a
     /// through via never knew the via was there (round-10 report: the imported board's 1,291 vias all
-    /// land on the top layer).
+    /// land on the top layer). The barrel is named by its drawing LAYER, so a bare circle on a drill layer spans
+    /// what a via there would (brief-dfr29-3 R-dfr29-3-1).
     /// </summary>
-    private static IEnumerable<CrossSectionExtractor.Band> BandsSpanned(ViaShape via, Technology tech,
+    private static IEnumerable<CrossSectionExtractor.Band> BandsSpanned(LayerKey barrelLayer, Technology tech,
                                                                        List<CrossSectionExtractor.Band> bands)
     {
-        var entry = tech.Stackup.Layers.FirstOrDefault(l => l.Kind == StackupKind.Via && l.DrawingLayers.Contains(via.Layer));
+        var entry = ViaSpanResolver.EntryFor(barrelLayer, tech);
         var from = bands.FirstOrDefault(b => entry?.SpanFromLayer is { } n && string.Equals(b.Layer.Name, n, StringComparison.OrdinalIgnoreCase));
         var to = bands.FirstOrDefault(b => entry?.SpanToLayer is { } n && string.Equals(b.Layer.Name, n, StringComparison.OrdinalIgnoreCase));
         if (from is null || to is null) return bands;

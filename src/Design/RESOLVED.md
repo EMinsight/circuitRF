@@ -23671,3 +23671,59 @@ test-point board no pad is found at all, for three separate reasons, each enough
 `CircleShape`s on the drill layer, not `ViaShape`s, so there is no via to look through; the pads are flashed
 apertures read as `PolygonShape`s, not discs; and the test pad is joined to the via's land by a short trace on the
 pad's own layer, so the disc is neither centred on the via nor `Isolated`. Each needs a decision before it is added.
+
+## brief-dfr29-3 — the impedance check finds a test pad on an imported board (2026-10-27)
+
+**What changed.** The pad search looks through a `PadSearch` built once per run: every drilled hole — a `ViaShape`, or
+a bare `CircleShape` on a layer some `StackupKind.Via` entry claims (`ViaSpanResolver.DrillLayerKeys`, R-via-5's
+identity for a barrel) — every disc by conductor, and each conductor's ring bounds. `BandsSpanned` takes the barrel's
+drawing layer, so a drill circle spans what a via on that layer would. A bare drill's land is MEASURED: the largest
+`MeasuredLand` on the conductors strictly between its span's two ends (at an end the land may be part of a pad, a stub
+or a trace and would read as the pad's radius), else twice the drill.
+
+**A pad is read off the copper as well as off a disc.** Through a hole, on each conductor other than the trace's, a
+disc centred on it is taken first, as before; failing that, the copper island joined to the hole's land (the
+innermost ring round the hole). It is a test pad when its outline holds exactly one round run wider than
+`PadOverLand` × the land, that pad is over the land or within `MinAspect` × the stub's width of the land's edge, no
+other hole is in the island, and every outline vertex lies inside the convex hull of the land's circle and the pad's.
+That hull test is `Isolated`'s rule for an island: a trace leaving the land or the pad — reviewed on this run or not —
+leaves the hull, which is what keeps a via that continues as a line from reading as a test pad.
+
+**Round is a run of the outline, not a fit of the whole region** (R-dfr29-3-2). Consecutive vertices whose edges'
+MIDPOINTS, not only the vertices, lie within 2 % of the radius, sweeping ≥ 240°. The midpoints are what keep a
+rectangle out — its four corners lie on one circle exactly — and they also exclude an octagon (7.6 % sag) while a
+16-gon (1.9 %) passes. A stub bends, so its width is not one chord on the centre line (that chord missed the copper on
+the board that asked for this): it is twice the erosion that empties what is left of the island outside the two
+circles — which is the stub's length instead where that is the less, and then the stub is short whatever its width.
+
+**A blind drill's own far-end land is not a pad.** A laser drill spanning two adjacent conductors passes nothing
+between them, so no land is measured there; falling back to twice the drill (0.4 mm for a 0.2 mm drill) read the
+drill's own 0.5 mm capture land on its far end as a pad wider than `PadOverLand` × the land. With nothing between, the
+land is now the smaller of the two ends' measured lands (a pad is on one end at most), and twice the drill only when
+neither end has one.
+
+**Owner decision D1 taken as recommended (a):** the stub on the pad's layer stays out of the numbers, as in the
+TESTPAD, and the sentence names it (`joined by a 310 µm trace on 'Bottom Copper' the estimate leaves out`). A hole and
+a pad that were read rather than drawn say so (`through a 300 µm drill hole`, `fitted to its outline`).
+
+**A bare drill is measured only once the copper joins it to the trace end.** `Dist ≤ land + width` alone also matched
+drills a trace merely passes: on an imported board, a trace jogging 0.63 mm from a test-pad drill, across a clearance
+gap, was reported as loaded by that pad. Requiring copper all the way from the end to the hole removes those, and is
+also the speed: measuring a drill's land is a radial scan on every inner conductor, and doing it for every drill within
+reach of every end made the end search the largest single cost of a one-layer run on a board with ~1,500 holes. A
+`ViaShape` keeps the old reach rule (its land is a stated number, no scan) — so a drawn via a trace merely passes can
+still be matched; that is unchanged from DFR29-2 and not fixed here.
+
+**Cost.** Growth of a round run uses the circle through the run's first, middle and last vertices; the least-squares
+`Fit.Circle` (Gauss–Newton, up to 50 iterations) runs once, on a run already sweeping near 240°. The land and clearance
+scans round a hole are memoised per conductor, so two traces into one pad scan once, and rings wider than 10 mm are
+skipped before any point-in-polygon test.
+
+**The finding's barrel capacitance is larger than a hand-placed TESTPAD's on the same board.** The check counts every
+conductor whose drawn copper rings the barrel as a plane it passes, at the clearance measured; a TESTPAD placed from
+the stackup counts only the ground-reference planes. On a board with pours on every inner layer that is 8 planes
+against 2 — the same pad read 0.31 pF of barrel against ~0.04 pF — so pad, unused-pad and via numbers agree and the
+total does not. Not changed here (it is DFR29-2's plane rule); stated so a reviewer comparing the two knows why.
+
+**Not read:** a polygon pad on the trace's OWN conductor with no via (that branch still takes discs only), rectangular
+and rounded-rectangle pads, and TESTPAD instances from their parameters (DFR29-2 R-dfr29-2-3's other cases).
