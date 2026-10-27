@@ -102,7 +102,8 @@ public static partial class TraceImpedanceAnalysis
         var found = shunts.Where(sh => sh.Severity is not null)
                           .Select(sh => new TraceIssue(TraceIssueKind.PadShunt, sh.Severity!.Value,
                                                        sh.X - sh.Diameter / 2, sh.Y - sh.Diameter / 2,
-                                                       sh.X + sh.Diameter / 2, sh.Y + sh.Diameter / 2, sh.Text))
+                                                       sh.X + sh.Diameter / 2, sh.Y + sh.Diameter / 2, sh.Text)
+                                          { S11Db = sh.S11Db })
                           .ToList();
         var issues = found.Count == 0 ? run.Issues : [.. run.Issues, .. found];
         return run with

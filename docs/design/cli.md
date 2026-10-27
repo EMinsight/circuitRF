@@ -3299,7 +3299,7 @@ double-click routes still targeting the `.exe` and `%F`, the `.com`'s subsystem 
 
 ## 21. `impedance` — Trace Impedance Analysis, headless
 
-`circuitrf impedance <layout> [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz] [--layers "A,B"] [--max-width <um>] [--severity warning|fail] [-o report.pdf]`
+`circuitrf impedance <layout> [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz] [--layers "A,B"] [--max-width <um>] [--severity warning|fail] [-o report.pdf [--report full|summary]]`
 
 **It owns no analysis and no page.** Every number is `TraceImpedanceAnalysis.AnalyzeFile`
 (`src/Design/Layout/Em`) and every pixel of the PDF is `TraceImpedanceReportDocument.Pdf`
@@ -3325,6 +3325,12 @@ parsing, the layer-name lookup, refusals and reporting.
   writes anything, and the report's first page says it was cancelled.
 - **The findings are the report, not diagnostics.** Every `impedance.` id is a refusal of the verb's
   own; a failing trace is the verb working.
+- **`--report full|summary`** (brief-impedance-9) picks the PDF's style, `TraceImpedanceReportDocument.Pdf(report,
+  style)`. **The default is Full and stays Full** (owner decision D1 (a)): a script that exported Full yesterday gets
+  Full today. Only the panel pre-selects Summary, past 50 pages (`TraceImpedanceReportDocument.SummaryAbovePages`);
+  past the same length a Full written WITHOUT `--report` carries the warning `impedance.report.long` with both page
+  counts, laid out by `PageCount` rather than written twice. Anything else is
+  `impedance.args.unknown-report-style`. `--json` is unaffected: it always carries everything.
 - MCP: the `impedance` tool, single-mode, `path` positional (`ToolCatalog`); `path` is optional so the
   calculator below is reachable as the same tool.
 

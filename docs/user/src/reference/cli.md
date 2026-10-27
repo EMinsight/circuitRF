@@ -1173,7 +1173,7 @@ asked) was written, **1** when refused.
 <span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--via-transition 400um] [--width "Top Copper=457"]… [--no-scope]
 <span class="prompt">  </span>[--region [&lt;layer&gt;@]x0,y0,x1,y1]… [--net &lt;name&gt;]… [--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]]…
 <span class="prompt">  </span>[--whole-layer &lt;layer&gt;]…
-<span class="prompt">  </span>[--survey] [--severity warning|fail] [--ignore-accepted] [-o report.pdf]</code></pre>
+<span class="prompt">  </span>[--survey] [--severity warning|fail] [--ignore-accepted] [-o report.pdf [--report full|summary]]</code></pre>
 
 `impedance` is the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis): it finds
 every trace on the chosen copper layers, cuts it along its length with the same quasi-static
@@ -1210,6 +1210,7 @@ the default. A saved layer the technology no longer has is skipped with a line o
 | `--ignore-accepted` | Report as if no finding had been [accepted](layout-editor.html#impedance-accept): every finding counts against its trace, and against the exit code. |
 | `--survey` | List the width classes per layer &mdash; width, trace count, total length and one **typical** Z0 (a single cut at the middle of the class's longest trace) &mdash; and analyse nothing. The way to choose `--width`. |
 | `-o report.pdf` | The PDF report. With no `-o` it writes nothing. |
+| `--report full\|summary` | Which PDF `-o` writes: `full` (the default) lists every trace and finding; `summary` keeps the map and groups the findings, with the 20 worst in full &mdash; see [the Summary](layout-editor.html#impedance-report-summary). `--json` carries everything either way. With no `--report`, a Full report of more than 50 pages is still written, with a warning on stderr saying how many pages the Summary would take. |
 
 **Accepted findings apply by default.** A finding accepted in the editor's panel is saved in the
 `.clay`, and the verb reports it marked `✓ ACCEPTED` with its reason and date; it does not count against

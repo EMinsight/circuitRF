@@ -1136,6 +1136,12 @@ artwork as it is now.
 there are results; a PDF exported from stale results says so at the top of its first page, so it cannot
 pass as a review of the board as it is now. The Messages line for an export links to the file.
 
+Above the button, choose **Full** or **Summary**, each with the number of pages it comes to. **Full**
+lists every trace, junction and finding; **Summary** keeps the map and groups the findings, for a board
+too large to read trace by trace (see [The report](#impedance-report)). Full is chosen unless it would
+run to more than 50 pages, when Summary is chosen instead. Whenever Full would run past 50 pages, the line
+under the choice says how long it is, whichever style you pick. The choice is yours either way.
+
 **The review is saved in the layout** as you edit it: the target, both bands, the frequency, the layers
 the trace widths ticked, and the regions, picks and nets are stored in the `.clay`, beside the layout's design-rule waivers, so the
 panel opens on them next time and [`circuitrf impedance`](cli.html#impedance) reviews the same traces
@@ -1337,7 +1343,10 @@ not undone by **Undo**. [`circuitrf impedance`](cli.html#impedance) applies them
   Z0** &mdash; green inside the pass band, blue below, red above &mdash; its id, and a numbered marker at
   every finding: **filled** for a fail, **hollow** for a warning, orange for Z0 and purple for the
   return path. The colour scale marks the pass band, and the warning band's edges as a lighter pair of
-  ticks. A trace outside the scope is plain grey copper &mdash; no colour, no label, no marker.
+  ticks. A trace outside the scope is plain grey copper &mdash; no colour, no label, no marker. Where
+  markers are too close to draw apart, one **badge** &mdash; a rounded label instead of a disc &mdash;
+  stands for them, carrying their numbers (*232, 234–235, 239 +4*); the list after the table has each
+  in full.
 - **A table per layer**: each trace's start and end, what each end is, its length and width, its line
   **type**, Z0 min, max and average, the share of its length inside the band, its reference layers,
   PASS, WARN or FAIL; then the layer's **junctions**, one row per arm with its trace, width, Z0 and
@@ -1346,6 +1355,27 @@ not undone by **Undo**. [`circuitrf impedance`](cli.html#impedance) applies them
 - **Accepted findings**, when there are any: each accepted finding with its trace, its text, the reason
   and the date, and any acceptance that matched nothing in this run. An accepted finding is also still
   on its layer's map, **grey with a check** where its number would be.
+
+#### The Summary {#impedance-report-summary}
+
+A whole-board review of a large board finds thousands of findings, most of them the same few kinds
+repeated trace after trace, and Full writes each one out. **Summary** has the same summary page, then per
+layer:
+
+- **The map**, coloured as in Full, with **one marker per trace** at its worst finding, carrying how many
+  findings that trace has. Traces close together share one **badge** with their findings counted. Ids
+  are shown only on traces that fail.
+- **The findings, grouped**: one row per kind of finding, result (FAIL or WARN) and **width class**
+  &mdash; the classes [Choosing the traces](#impedance-scope) lists &mdash; with how many are open, how
+  many are accepted, the worst of them (the largest Z0 excursion, the longest broken return, the
+  smallest coverage, the largest pad |S11|) and the traces they are on. Every finding on the layer is in
+  one row, and the **Total** row says how many.
+- **The 20 worst findings in full**, failures first and then by Z0 excursion, written exactly as Full
+  writes them, so the numbers you quote are on the page.
+- Passing traces and junctions are **counted** in a line, not listed.
+
+Accepted findings are counted in their group's **Accepted** column and listed on the Accepted findings
+page as in Full.
 
 The **type** is microstrip, **GCPW** (grounded coplanar waveguide: a plane below and ground beside it on
 both sides), **GCPW 1-side**, stripline or CPW. A trace that is **both** along its run &mdash; grounded CPW

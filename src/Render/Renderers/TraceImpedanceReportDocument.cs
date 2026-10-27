@@ -24,10 +24,34 @@
 //     is not one anybody can rely on.
 //
 // Every number and sentence arrives from TraceImpedanceReport; nothing is recomputed here.
+//
+// ══ TWO STYLES (brief-impedance-9) ════════════════════════════════════════════════════════════
+//
+// FULL is the above, every trace and finding listed. A whole-board review of a large board is thousands
+// of pages of it, most of them one finding written out once per occurrence, so SUMMARY keeps the same
+// summary page and, per layer, the map (one marker per trace, carrying its count; ids on failing traces
+// only) and ONE findings page: the findings grouped by kind × severity × width class with their count,
+// the traces they hit and the worst value, then the 20 worst written out as Full writes them, with
+// passing traces and junctions counted rather than listed. Every finding is counted somewhere — an
+// accepted one in its group's Accepted column, never dropped. A layer with no trace reviewed has no pages
+// in a Summary (the summary page's By layer row says so); on a multilayer board those are the planes.
+//
+// On either map, markers that would land on one another are one BADGE (a pill, not a disc): its count in
+// Summary, and in Full the numbers it stands for, which the list after the table spells out. A map where
+// no two markers meet draws exactly what it drew before badges existed.
 
 using SkiaSharp;
 
 namespace CircuitRF.Render;
+
+/// <summary>Which composition <see cref="TraceImpedanceReportDocument.Pdf(TraceImpedanceReport, TraceImpedanceReportStyle)"/> writes.</summary>
+public enum TraceImpedanceReportStyle
+{
+    /// <summary>Every trace, junction and finding listed, per layer.</summary>
+    Full,
+    /// <summary>Per layer the map and one page of grouped findings, the worst written out (brief-impedance-9).</summary>
+    Summary,
+}
 
 public static class TraceImpedanceReportDocument
 {
@@ -54,9 +78,16 @@ public static class TraceImpedanceReportDocument
     /// <summary>An accepted finding's marker (brief-impedance-5): grey, with a check — kept, not removed.</summary>
     internal static readonly SKColor AcceptedMark = new(0x8a, 0x91, 0x99);
 
-    /// <summary>The whole report as PDF bytes. Complete before the caller writes anything, so a
-    /// failed or cancelled export leaves no half-written file.</summary>
-    public static byte[] Pdf(TraceImpedanceReport report)
+    /// <summary>A Full report longer than this many pages is too long to read: the panel pre-selects the Summary
+    /// and the CLI, which keeps Full, warns (owner decision D1 (a), brief-impedance-9).</summary>
+    public const int SummaryAbovePages = 50;
+
+    /// <summary>The whole report as PDF bytes, <see cref="TraceImpedanceReportStyle.Full"/>.</summary>
+    public static byte[] Pdf(TraceImpedanceReport report) => Pdf(report, TraceImpedanceReportStyle.Full);
+
+    /// <summary>The whole report as PDF bytes, in <paramref name="style"/>. Complete before the caller writes
+    /// anything, so a failed or cancelled export leaves no half-written file.</summary>
+    public static byte[] Pdf(TraceImpedanceReport report, TraceImpedanceReportStyle style)
     {
         ArgumentNullException.ThrowIfNull(report);
         var metadata = new SKDocumentPdfMetadata
@@ -72,18 +103,72 @@ public static class TraceImpedanceReportDocument
         using var stream = new SKDynamicMemoryWStream();
         using (var document = SKDocument.CreatePdf(stream, metadata))
         {
-            var writer = new Writer(document, report);
-            writer.Summary();
-            foreach (var layer in report.Layers)
-            {
-                writer.LayerMap(layer);
-                writer.LayerTable(layer);
-            }
-            writer.Accepted();
-            writer.Finish();
+            new Writer(document, report, style).Compose();
             document.Close();
         }
         return stream.DetachAsData().ToArray();
+    }
+
+    /// <summary>
+    /// How many pages <see cref="Pdf(TraceImpedanceReport, TraceImpedanceReportStyle)"/> would write — laid out
+    /// on a canvas that draws nothing, with the maps and the stackup (one page each, whatever is on them) not
+    /// drawn at all, so the export can offer both styles with their lengths without writing either.
+    /// </summary>
+    public static int PageCount(TraceImpedanceReport report, TraceImpedanceReportStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        var writer = new Writer(null, report, style);
+        writer.Compose();
+        return writer.Pages;
+    }
+
+    /// <summary>The markers <paramref name="layer"/>'s map draws in <paramref name="style"/>, after clustering —
+    /// what the map tests read.</summary>
+    internal static IReadOnlyList<MapMark> MapMarks(TraceImpedanceReport report, TraceLayerResult layer,
+                                                     TraceImpedanceReportStyle style)
+    {
+        var writer = new Writer(null, report, style);
+        return writer.PlaceMarks(layer, writer.MapGeometry(layer, Writer.MapBox)).Select(k => k.Mark).ToList();
+    }
+
+    /// <summary>A Summary's grouped findings on <paramref name="layer"/> — what its findings page lists.</summary>
+    internal static IReadOnlyList<FindingGroup> FindingGroups(TraceImpedanceReport report, TraceLayerResult layer) =>
+        new Writer(null, report, TraceImpedanceReportStyle.Summary).Groups(layer);
+
+    /// <summary>The findings a Summary writes out in full on <paramref name="layer"/>, worst first.</summary>
+    internal static IReadOnlyList<(int N, TraceRun Trace, TraceIssue Issue)> WorstFindings(TraceImpedanceReport report, TraceLayerResult layer) =>
+        new Writer(null, report, TraceImpedanceReportStyle.Summary).Worst(layer);
+
+    /// <summary>One row of a layer's grouped findings: a kind, a severity and a width class, with how many
+    /// findings of it are open and how many accepted, the traces they are on, and the worst of them.</summary>
+    internal sealed record FindingGroup(TraceIssueKind Kind, IssueSeverity Severity, TraceWidthClass Class,
+                                        int Open, int Accepted, IReadOnlyList<string> TraceIds, string Worst);
+
+    /// <summary>
+    /// One marker on a map: a finding (Full), a trace's findings (Summary), or a BADGE standing for several
+    /// that would have landed on one another. <see cref="Numbers"/> are the findings' numbers in the layer's
+    /// list; <see cref="Count"/> how many findings it stands for.
+    /// </summary>
+    internal sealed record MapMark(SKPoint Anchor, SKPoint Along, IReadOnlyList<int> Numbers, int Count,
+                                   bool Fails, SKColor Color, bool Accepted, bool Badge)
+    {
+        /// <summary>What the marker reads: the finding's number (Full), the count (Summary, and a Summary
+        /// badge), or the numbers a Full badge stands for, as ranges.</summary>
+        public string Label(TraceImpedanceReportStyle style) =>
+            style == TraceImpedanceReportStyle.Summary ? Count.ToString()
+            : Badge ? Ranges(Numbers) : Numbers[0].ToString();
+
+        /// <summary>"5–16, 20" — at most three runs, then "+n".</summary>
+        internal static string Ranges(IReadOnlyList<int> numbers)
+        {
+            var runs = new List<(int A, int B)>();
+            foreach (int n in numbers.Order())
+                if (runs.Count > 0 && n == runs[^1].B + 1) runs[^1] = (runs[^1].A, n);
+                else runs.Add((n, n));
+            string text = string.Join(", ", runs.Take(3).Select(r => r.A == r.B ? $"{r.A}" : $"{r.A}–{r.B}"));
+            int rest = runs.Skip(3).Sum(r => r.B - r.A + 1);
+            return rest > 0 ? $"{text} +{rest}" : text;
+        }
     }
 
     /// <summary>The colour a Z0 is drawn in: green inside the band, blue below it, red above,
@@ -130,10 +215,12 @@ public static class TraceImpedanceReportDocument
 
     private static string SeverityText(TraceIssue i) => TraceImpedanceReport.SeverityText(i);
 
-    /// <summary>The page stream: the current page, a cursor, and the running header and footer.</summary>
-    private sealed class Writer(SKDocument document, TraceImpedanceReport report)
+    /// <summary>The page stream: the current page, a cursor, and the running header and footer. With no
+    /// document it lays the pages out on a canvas that draws nothing, to count them.</summary>
+    private sealed class Writer(SKDocument? document, TraceImpedanceReport report, TraceImpedanceReportStyle style)
     {
         private SKCanvas? _canvas;
+        private SKCanvas? _noDraw;
         private int _page;
         private float _y;
         private string _section = "";
@@ -147,7 +234,31 @@ public static class TraceImpedanceReportDocument
         private readonly SKFont _big = Font(SkiaFonts.PlexSemiBold, 22);
 
         private SKCanvas C => _canvas!;
-        private float Bottom => PageH - Margin - 14;
+        private static float Bottom => PageH - Margin - 14;
+        private bool Counting => document is null;
+        private bool IsSummary => style == TraceImpedanceReportStyle.Summary;
+
+        /// <summary>The pages begun so far.</summary>
+        public int Pages => _page;
+
+        /// <summary>The whole report: the summary page, each layer's pages in the style's composition, the
+        /// accepted findings.</summary>
+        public void Compose()
+        {
+            Summary();
+            foreach (var layer in report.Layers)
+            {
+                // A Summary gives a layer with no trace reviewed no pages: the summary page's By layer table
+                // already says so, and on a multilayer board the planes are most of the layers.
+                if (IsSummary && layer.Traces.Count == 0) continue;
+                LayerMap(layer);
+                if (IsSummary) LayerFindings(layer);
+                else LayerTable(layer);
+            }
+            Accepted();
+            Finish();
+            _noDraw?.Dispose();
+        }
 
         private static SKPaint Fill(SKColor c) => new() { IsAntialias = true, Style = SKPaintStyle.Fill, Color = c };
         private static SKPaint Stroke(SKColor c, float w) =>
@@ -157,7 +268,7 @@ public static class TraceImpedanceReportDocument
         {
             EndPage();
             _section = section;
-            _canvas = document.BeginPage(PageW, PageH);
+            _canvas = document?.BeginPage(PageW, PageH) ?? (_noDraw ??= new SKNoDrawCanvas(PageW, PageH));
             _page++;
             using (var bg = Fill(SKColors.White)) C.DrawRect(0, 0, PageW, PageH, bg);
 
@@ -184,7 +295,7 @@ public static class TraceImpedanceReportDocument
                        $"{report.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}  ·  circuitRF",
                        Margin, PageH - Margin + 13, SKTextAlign.Left, _small, muted);
             C.DrawText($"Page {_page}", PageW - Margin, PageH - Margin + 13, SKTextAlign.Right, _small, muted);
-            document.EndPage();
+            document?.EndPage();
             _canvas = null;
         }
 
@@ -429,7 +540,7 @@ public static class TraceImpedanceReportDocument
             }
 
             // ── right: the stackup ──────────────────────────────────────────────────────────────
-            DrawStackup(new SKRect(rightX, columnsTop, rightX + rightW, Bottom));
+            if (!Counting) DrawStackup(new SKRect(rightX, columnsTop, rightX + rightW, Bottom));
         }
 
         /// <summary>The stackup the analysis cut through, as the Technology editor's Stackup tab
@@ -516,6 +627,9 @@ public static class TraceImpedanceReportDocument
             return list;
         }
 
+        /// <summary>Where a layer's map is drawn: under its title line, left of the legend column.</summary>
+        internal static readonly SKRect MapBox = new(Margin, Margin + 12 + 14 + 8, PageW - Margin - 170 - 14, PageH - Margin - 14);
+
         public void LayerMap(TraceLayerResult layer)
         {
             NewPage($"{layer.Name} — map");
@@ -535,23 +649,44 @@ public static class TraceImpedanceReportDocument
 
             const float sideW = 170;
             var box = new SKRect(Margin, _y, PageW - Margin - sideW - 14, Bottom);
-            DrawMap(layer, box);
-            DrawLegend(new SKRect(box.Right + 14, _y, PageW - Margin, Bottom), layer);
+            // One page whatever is on it: counting pages needs none of the drawing.
+            if (Counting) return;
+            bool badges = DrawMap(layer, box);
+            DrawLegend(new SKRect(box.Right + 14, _y, PageW - Margin, Bottom), layer, badges);
         }
 
-        private void DrawMap(TraceLayerResult layer, SKRect box)
+        /// <summary>A map's frame on the page: the board rectangle <see cref="MapFrame"/> chooses, scaled
+        /// uniformly into the box and centred.</summary>
+        internal sealed class MapView(SKRect box, Bbox ext, double s, double ox, double oy)
         {
-            using (var frame = Stroke(Rule, 0.6f)) C.DrawRect(box, frame);
+            public SKRect Box => box;
+            public double S => s;
+            public double ExtW => ext.MaxX - (double)ext.MinX;
+            public SKPoint P(double x, double y) => new((float)(ox + (x - ext.MinX) * s), (float)(oy + (ext.MaxY - y) * s));
+        }
 
+        /// <summary>The map's frame in <paramref name="box"/>, or null when there is nothing to frame.</summary>
+        internal MapView? MapGeometry(TraceLayerResult layer, SKRect box)
+        {
             var ext = MapFrame(layer);
             double extW = ext.MaxX - (double)ext.MinX, extH = ext.MaxY - (double)ext.MinY;
-            if (ext.IsEmpty || extW <= 0 || extH <= 0) return;
+            if (ext.IsEmpty || extW <= 0 || extH <= 0) return null;
             float pad = 8;
             double sx = (box.Width - 2 * pad) / extW, sy = (box.Height - 2 * pad) / extH;
             double s = Math.Min(sx, sy);
             double ox = box.Left + pad + 0.5 * (box.Width - 2 * pad - extW * s);
             double oy = box.Top + pad + 0.5 * (box.Height - 2 * pad - extH * s);
-            SKPoint P(double x, double y) => new((float)(ox + (x - ext.MinX) * s), (float)(oy + (ext.MaxY - y) * s));
+            return new MapView(box, ext, s, ox, oy);
+        }
+
+        /// <summary>Draws the map; true when a badge stood in for markers that would have overlapped.</summary>
+        private bool DrawMap(TraceLayerResult layer, SKRect box)
+        {
+            using (var frame = Stroke(Rule, 0.6f)) C.DrawRect(box, frame);
+
+            if (MapGeometry(layer, box) is not { } v) return false;
+            double s = v.S;
+            SKPoint P(double x, double y) => v.P(x, y);
 
             C.Save();
             C.ClipRect(box);
@@ -600,59 +735,42 @@ public static class TraceImpedanceReportDocument
                     C.DrawLine(a, b, paint);
                 }
 
-            // Finding markers: the stretch outlined, the number in a disc BESIDE the trace with a leader to
-            // the finding — never on it, where the disc hid the copper it was about (round-10 report).
-            // Every station stroke is an obstacle; so is the scale bar.
-            var placer = new MapLabelPlacer(new SKRect(box.Left + 2, box.Top + 2, box.Right - 2, box.Bottom - 2));
-            foreach (var t in layer.Traces)
-                foreach (var st in t.Stations)
-                {
-                    double dx = st.Uy, dy = -st.Ux;
-                    placer.AddSegment(P(st.X - 0.5 * st.Length * dx, st.Y - 0.5 * st.Length * dy),
-                                      P(st.X + 0.5 * st.Length * dx, st.Y + 0.5 * st.Length * dy),
-                                      (float)Math.Max(st.Width * s, 1.4) / 2 + 0.6f);
-                }
-            var (barW, nice) = ScaleBar(extW, s);
-            placer.AddRect(new SKRect(box.Left + 6, box.Bottom - 18, box.Left + 16 + barW + _small.MeasureText(report.Len(nice)), box.Bottom - 4));
-            var marks = new List<(MapLabelPlacer.Placement At, int N, TraceIssue Issue, SKColor Color)>();
-            foreach (var (n, trace, issue) in Findings(layer))
+            // An out-of-band stretch is already in its colour, so only its marker marks it; a return-path
+            // finding has no colour of its own and gets its stretch outlined — every one, in both styles.
+            foreach (var (_, trace, issue) in Findings(layer))
             {
-                // An out-of-band stretch is already in its colour, so only the number marks it; a
-                // return-path finding has no colour of its own and gets its stretch outlined.
-                bool ground = issue.Kind != TraceIssueKind.OutOfTolerance;
-                var color = issue.Accepted is not null ? AcceptedMark : ground ? GroundMark : ZMark;
-                if (ground)
+                if (issue.Kind == TraceIssueKind.OutOfTolerance) continue;
+                var a = P(issue.X0, issue.Y0); var b = P(issue.X1, issue.Y1);
+                using var span = Stroke(ColorOf(issue), 1.1f);
+                span.StrokeCap = SKStrokeCap.Round;
+                span.PathEffect = SKPathEffect.CreateDash([2.5f, 1.5f], 0);
+                float half = (float)Math.Max(trace.Stations.FirstOrDefault()?.Width * s ?? 2, 2) / 2 + 2.2f;
+                double len = Math.Max(1e-6, Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2)));
+                float nx = (float)(-(b.Y - a.Y) / len * half), ny = (float)((b.X - a.X) / len * half);
+                // A pad shunt's box is the pad's bounds (brief-dfr29-2): ring the pad.
+                if (issue.Kind == TraceIssueKind.PadShunt) C.DrawCircleDashSafe(P(issue.X, issue.Y), (float)(len / Math.Sqrt(8)) + 2.2f, span);
+                else if (len < 1) { C.DrawCircleDashSafe(a, half + 1, span); }
+                else
                 {
-                    var a = P(issue.X0, issue.Y0); var b = P(issue.X1, issue.Y1);
-                    using var span = Stroke(color, 1.1f);
-                    span.StrokeCap = SKStrokeCap.Round;
-                    span.PathEffect = SKPathEffect.CreateDash([2.5f, 1.5f], 0);
-                    float half = (float)Math.Max(trace.Stations.FirstOrDefault()?.Width * s ?? 2, 2) / 2 + 2.2f;
-                    double len = Math.Max(1e-6, Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2)));
-                    float nx = (float)(-(b.Y - a.Y) / len * half), ny = (float)((b.X - a.X) / len * half);
-                    // A pad shunt's box is the pad's bounds (brief-dfr29-2): ring the pad.
-                    if (issue.Kind == TraceIssueKind.PadShunt) C.DrawCircleDashSafe(P(issue.X, issue.Y), (float)(len / Math.Sqrt(8)) + 2.2f, span);
-                    else if (len < 1) { C.DrawCircleDashSafe(a, half + 1, span); }
-                    else
-                    {
-                        using var path = new SKPath();
-                        path.MoveTo(a.X + nx, a.Y + ny); path.LineTo(b.X + nx, b.Y + ny);
-                        path.LineTo(b.X - nx, b.Y - ny); path.LineTo(a.X - nx, a.Y - ny); path.Close();
-                        C.DrawPath(path, span);
-                    }
+                    using var path = new SKPath();
+                    path.MoveTo(a.X + nx, a.Y + ny); path.LineTo(b.X + nx, b.Y + ny);
+                    path.LineTo(b.X - nx, b.Y - ny); path.LineTo(a.X - nx, a.Y - ny); path.Close();
+                    C.DrawPath(path, span);
                 }
-                var m = P(issue.X, issue.Y);
-                var along = issue.X0 == issue.X1 && issue.Y0 == issue.Y1
-                    ? NearestAlong(trace, issue.X, issue.Y)
-                    : new SKPoint(P(issue.X1, issue.Y1).X - P(issue.X0, issue.Y0).X, P(issue.X1, issue.Y1).Y - P(issue.X0, issue.Y0).Y);
-                marks.Add((placer.Place([(m, along)], 8.6f, 8.6f), n, issue, color));
             }
 
-            // Trace ids beside their longest piece — or the next longest where that one is crowded.
+            // Finding markers: the number in a disc BESIDE the trace with a leader to the finding — never on
+            // it, where the disc hid the copper it was about (round-10 report). Every station stroke is an
+            // obstacle; so is the scale bar.
+            var marks = PlaceMarks(layer, v, out var placer);
+
+            // Trace ids beside their longest piece — or the next longest where that one is crowded. A
+            // Summary names only the traces that fail: on a large board every id is a label over copper.
             using var idFont = Font(SkiaFonts.PlexSemiBold, 5.5f);
             var ids = new List<(MapLabelPlacer.Placement At, string Id)>();
             foreach (var t in layer.Traces)
             {
+                if (IsSummary && t.Verdict != TraceVerdict.Fail) continue;
                 var anchors = t.Pieces
                     .OrderByDescending(q => Math.Pow(q.X1 - q.X0, 2) + Math.Pow(q.Y1 - q.Y0, 2)).Take(4)
                     .Select(q => (P(0.5 * (q.X0 + q.X1), 0.5 * (q.Y0 + q.Y1)),
@@ -670,11 +788,16 @@ public static class TraceImpedanceReportDocument
                         C.DrawLine(at.Anchor, MapLabelPlacer.Nearest(at.Box, at.Anchor), leader);
                         C.DrawCircle(at.Anchor, 0.55f, leader);
                     }
-            foreach (var (at, n, issue, color) in marks)
+            foreach (var (mark, at) in marks)
             {
-                var c = new SKPoint(at.Box.MidX, at.Box.MidY);
-                if (issue.Accepted is not null) Check(c, 4.3f);
-                else Marker(c, 4.3f, n, color, issue.Fails, n >= 100 ? 3.4f : 4.6f);
+                string label = mark.Label(style);
+                if (mark.Badge) Badge(at.Box, label, mark.Color, mark.Fails, mark.Accepted);
+                else
+                {
+                    var c = new SKPoint(at.Box.MidX, at.Box.MidY);
+                    if (mark.Accepted) Check(c, 4.3f);
+                    else Marker(c, 4.3f, label, mark.Color, mark.Fails, label.Length >= 3 ? 3.4f : 4.6f);
+                }
             }
             using (var halo = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = 2, Color = SKColors.White })
             using (var inkId = Fill(Ink))
@@ -687,6 +810,7 @@ public static class TraceImpedanceReportDocument
             C.Restore();
 
             // Scale bar.
+            var (barW, nice) = ScaleBar(v.ExtW, s);
             float bx = box.Left + 10, by = box.Bottom - 10;
             using (var bar = Stroke(Ink, 1.2f))
             {
@@ -696,7 +820,192 @@ public static class TraceImpedanceReportDocument
             }
             using var inkS = Fill(Ink);
             C.DrawText(report.Len(nice), bx + barW + 5, by + 2.5f, SKTextAlign.Left, _small, inkS);
+            return marks.Any(k => k.Mark.Badge);
         }
+
+        /// <summary>A finding's colour on the map: grey when accepted, purple for a return-path finding,
+        /// orange for Z0.</summary>
+        private static SKColor ColorOf(TraceIssue issue) =>
+            issue.Accepted is not null ? AcceptedMark : issue.Kind != TraceIssueKind.OutOfTolerance ? GroundMark : ZMark;
+
+        /// <summary>The direction along the trace at a finding, in page space: its stretch's, or the
+        /// trace's at the nearest station for a finding at a point.</summary>
+        private static SKPoint AlongOf(TraceRun trace, TraceIssue issue, MapView v) =>
+            issue.X0 == issue.X1 && issue.Y0 == issue.Y1
+                ? NearestAlong(trace, issue.X, issue.Y)
+                : new SKPoint(v.P(issue.X1, issue.Y1).X - v.P(issue.X0, issue.Y0).X, v.P(issue.X1, issue.Y1).Y - v.P(issue.X0, issue.Y0).Y);
+
+        /// <summary>A fresh placer holding what no label may cover: every station stroke and the scale bar.</summary>
+        private MapLabelPlacer NewPlacer(TraceLayerResult layer, MapView v)
+        {
+            var box = v.Box;
+            var placer = new MapLabelPlacer(new SKRect(box.Left + 2, box.Top + 2, box.Right - 2, box.Bottom - 2));
+            foreach (var t in layer.Traces)
+                foreach (var st in t.Stations)
+                {
+                    double dx = st.Uy, dy = -st.Ux;
+                    placer.AddSegment(v.P(st.X - 0.5 * st.Length * dx, st.Y - 0.5 * st.Length * dy),
+                                      v.P(st.X + 0.5 * st.Length * dx, st.Y + 0.5 * st.Length * dy),
+                                      (float)Math.Max(st.Width * v.S, 1.4) / 2 + 0.6f);
+                }
+            var (barW, nice) = ScaleBar(v.ExtW, v.S);
+            placer.AddRect(new SKRect(box.Left + 6, box.Bottom - 18, box.Left + 16 + barW + _small.MeasureText(report.Len(nice)), box.Bottom - 4));
+            return placer;
+        }
+
+        /// <summary>The markers before any would land on another: one per finding in Full; in Summary one per
+        /// trace, at its worst finding and carrying its count, those of traces close together already one badge.</summary>
+        private List<MapMark> Marks(TraceLayerResult layer, MapView v)
+        {
+            var marks = new List<MapMark>();
+            if (!IsSummary)
+            {
+                foreach (var (n, trace, issue) in Findings(layer))
+                    marks.Add(new MapMark(v.P(issue.X, issue.Y), AlongOf(trace, issue, v), [n], 1, issue.Fails,
+                                          ColorOf(issue), issue.Accepted is not null, Badge: false));
+                return marks;
+            }
+            int first = 1;
+            foreach (var t in layer.Traces)
+            {
+                if (t.Issues.Count == 0) continue;
+                var open = t.Issues.Where(i => i.Accepted is null).ToList();
+                var worst = open.Count > 0 ? ByWorst(open, i => i).First() : t.Issues[0];
+                marks.Add(new MapMark(v.P(worst.X, worst.Y), AlongOf(t, worst, v), [.. Enumerable.Range(first, t.Issues.Count)],
+                                      t.Issues.Count, open.Any(i => i.Fails), ColorOf(worst), open.Count == 0, Badge: false));
+                first += t.Issues.Count;
+            }
+
+            // Seats: a failing marker, then the one with most findings, takes a seat; a marker anchored within
+            // a marker's width or so of a seat joins it. Bounded by the seat, so a dense board is many badges
+            // of neighbours rather than one chained across the page.
+            const float reach = 12f;
+            var order = Enumerable.Range(0, marks.Count)
+                .OrderByDescending(i => marks[i].Fails && !marks[i].Accepted).ThenByDescending(i => marks[i].Count).ToList();
+            var seats = new List<(int Lead, List<int> Members)>();
+            var grid = new Dictionary<(int, int), List<int>>();
+            (int, int) Cell(SKPoint p) => ((int)MathF.Floor(p.X / reach), (int)MathF.Floor(p.Y / reach));
+            foreach (int i in order)
+            {
+                var p = marks[i].Anchor;
+                var (cx, cy) = Cell(p);
+                int seat = -1;
+                for (int gx = cx - 1; gx <= cx + 1 && seat < 0; gx++)
+                    for (int gy = cy - 1; gy <= cy + 1 && seat < 0; gy++)
+                        if (grid.TryGetValue((gx, gy), out var near))
+                            foreach (int k in near)
+                                if (SKPoint.Distance(marks[seats[k].Lead].Anchor, p) <= reach) { seat = k; break; }
+                if (seat >= 0) { seats[seat].Members.Add(i); continue; }
+                seats.Add((i, [i]));
+                (grid.TryGetValue((cx, cy), out var l) ? l : grid[(cx, cy)] = []).Add(seats.Count - 1);
+            }
+            return [.. seats.OrderBy(q => q.Members.Min())
+                            .Select(q => q.Members.Count == 1 ? marks[q.Lead] : Merge(marks, q.Members, q.Lead))];
+        }
+
+        /// <summary>
+        /// The markers placed, beside their anchors (<see cref="MapLabelPlacer"/>). Where two placed markers
+        /// overlap — the placer found no free spot for one — they become one badge, and the lot is placed
+        /// again, until none overlaps. A map whose markers all found room is placed exactly once, as it was
+        /// before badges existed. <paramref name="placer"/> is the placer the last round filled, for the ids.
+        /// </summary>
+        private List<(MapMark Mark, MapLabelPlacer.Placement At)> PlaceMarks(TraceLayerResult layer, MapView v, out MapLabelPlacer placer)
+        {
+            var marks = Marks(layer, v);
+            for (int round = 0; ; round++)
+            {
+                var p = NewPlacer(layer, v);
+                var placed = marks.Select(m => p.Place([(m.Anchor, m.Along)], MarkWidth(m), 8.6f)).ToList();
+                placer = p;
+                var groups = Overlapping(placed);
+                if (round == 8 || groups.Count == marks.Count) return [.. marks.Zip(placed)];
+                marks = [.. groups.Select(g => g.Count == 1 ? marks[g[0]] : Merge(marks, g, Central(marks, g)))];
+            }
+        }
+
+        internal List<(MapMark Mark, MapLabelPlacer.Placement At)> PlaceMarks(TraceLayerResult layer, MapView? v) =>
+            v is null ? [] : PlaceMarks(layer, v, out _);
+
+        private float MarkWidth(MapMark m) =>
+            m.Badge ? Math.Max(8.6f, BadgeFont.MeasureText(m.Label(style)) + 4.4f) : 8.6f;
+
+        private static readonly SKFont BadgeFont = Font(SkiaFonts.PlexSemiBold, 4.6f);
+
+        /// <summary>The placed boxes that overlap, as groups of indices joined through any overlap — each
+        /// group in order, the groups in the order of their first member.</summary>
+        private static List<List<int>> Overlapping(List<MapLabelPlacer.Placement> placed)
+        {
+            var parent = Enumerable.Range(0, placed.Count).ToArray();
+            int Root(int i) { while (parent[i] != i) i = parent[i] = parent[parent[i]]; return i; }
+            const float cell = 12f;
+            var grid = new Dictionary<(int, int), List<int>>();
+            for (int i = 0; i < placed.Count; i++)
+            {
+                var b = placed[i].Box;
+                for (int gx = (int)MathF.Floor(b.Left / cell); gx <= (int)MathF.Floor(b.Right / cell); gx++)
+                    for (int gy = (int)MathF.Floor(b.Top / cell); gy <= (int)MathF.Floor(b.Bottom / cell); gy++)
+                    {
+                        var key = (gx, gy);
+                        if (!grid.TryGetValue(key, out var l)) grid[key] = l = [];
+                        foreach (int j in l)
+                            if (placed[j].Box.IntersectsWith(b)) parent[Root(i)] = Root(j);
+                        l.Add(i);
+                    }
+            }
+            return [.. Enumerable.Range(0, placed.Count).GroupBy(Root).Select(g => g.ToList()).OrderBy(g => g[0])];
+        }
+
+        /// <summary>The member whose anchor is nearest the group's centre — where its badge is anchored.</summary>
+        private static int Central(List<MapMark> marks, List<int> group)
+        {
+            float x = group.Average(i => marks[i].Anchor.X), y = group.Average(i => marks[i].Anchor.Y);
+            return group.MinBy(i => SKPoint.Distance(marks[i].Anchor, new SKPoint(x, y)));
+        }
+
+        /// <summary>One badge for <paramref name="group"/>, anchored where <paramref name="lead"/> is: every
+        /// number, the count summed, filled when any fails, in the colour of its worst member.</summary>
+        private static MapMark Merge(List<MapMark> marks, List<int> group, int lead)
+        {
+            var members = group.Select(i => marks[i]).ToList();
+            var worst = members.OrderByDescending(m => m.Fails && !m.Accepted).ThenByDescending(m => !m.Accepted).First();
+            bool accepted = members.All(m => m.Accepted);
+            return new MapMark(marks[lead].Anchor, marks[lead].Along, [.. members.SelectMany(m => m.Numbers).Order()],
+                               members.Sum(m => m.Count), members.Any(m => m.Fails && !m.Accepted),
+                               accepted ? AcceptedMark : worst.Color, accepted, Badge: true);
+        }
+
+        /// <summary>A badge: a pill in place of markers that would overlap, FILLED when one of them fails and
+        /// HOLLOW when they only warn, like a marker; grey when every one is accepted.</summary>
+        private void Badge(SKRect box, string label, SKColor color, bool fails, bool accepted)
+        {
+            var r = new SKRect(box.Left + 0.2f, box.Top + 0.2f, box.Right - 0.2f, box.Bottom - 0.2f);
+            float rad = 0.5f * r.Height;
+            if (fails || accepted)
+            {
+                using var fill = Fill(color);
+                using var ring = Stroke(SKColors.White, 0.7f);
+                C.DrawRoundRect(r, rad, rad, fill);
+                C.DrawRoundRect(r, rad, rad, ring);
+                using var white = Fill(SKColors.White);
+                C.DrawText(label, r.MidX, r.MidY + 0.35f * BadgeFont.Size, SKTextAlign.Center, BadgeFont, white);
+            }
+            else
+            {
+                using var inside = Fill(SKColors.White);
+                using var ring = Stroke(color, 0.95f);
+                C.DrawRoundRect(r, rad, rad, inside);
+                C.DrawRoundRect(new SKRect(r.Left + 0.4f, r.Top + 0.4f, r.Right - 0.4f, r.Bottom - 0.4f), rad - 0.4f, rad - 0.4f, ring);
+                using var ink = Fill(color);
+                C.DrawText(label, r.MidX, r.MidY + 0.35f * BadgeFont.Size, SKTextAlign.Center, BadgeFont, ink);
+            }
+        }
+
+        /// <summary>Findings worst first: failing ones first, then by Z0 excursion, then by the length of trace
+        /// they cover; otherwise in their order on the layer.</summary>
+        private IEnumerable<T> ByWorst<T>(IEnumerable<T> items, Func<T, TraceIssue> of) =>
+            items.OrderByDescending(x => of(x).Fails)
+                 .ThenByDescending(x => of(x).WorstOhms is { } z ? Math.Abs(z - report.TargetOhms) : -1)
+                 .ThenByDescending(x => of(x).SpanLength ?? 0);
 
         /// <summary>
         /// What a layer's map frames: the traces it reviewed, with room round them — not the whole
@@ -747,7 +1056,7 @@ public static class TraceImpedanceReportDocument
 
         /// <summary>A numbered finding marker: FILLED in the kind colour with a white number for a fail,
         /// HOLLOW — white inside a ring of the kind colour, the number in that colour — for a warning.</summary>
-        private void Marker(SKPoint c, float radius, int n, SKColor color, bool fails, float textSize)
+        private void Marker(SKPoint c, float radius, string n, SKColor color, bool fails, float textSize)
         {
             using var f = Font(SkiaFonts.PlexSemiBold, textSize);
             if (fails)
@@ -757,7 +1066,7 @@ public static class TraceImpedanceReportDocument
                 C.DrawCircle(c, radius, disc);
                 C.DrawCircle(c, radius, ring);
                 using var white = Fill(SKColors.White);
-                C.DrawText(n.ToString(), c.X, c.Y + 0.35f * textSize, SKTextAlign.Center, f, white);
+                C.DrawText(n, c.X, c.Y + 0.35f * textSize, SKTextAlign.Center, f, white);
             }
             else
             {
@@ -766,7 +1075,7 @@ public static class TraceImpedanceReportDocument
                 C.DrawCircle(c, radius, inside);
                 C.DrawCircle(c, radius - 0.4f, ring);
                 using var ink = Fill(color);
-                C.DrawText(n.ToString(), c.X, c.Y + 0.35f * textSize, SKTextAlign.Center, f, ink);
+                C.DrawText(n, c.X, c.Y + 0.35f * textSize, SKTextAlign.Center, f, ink);
             }
         }
 
@@ -785,7 +1094,7 @@ public static class TraceImpedanceReportDocument
             C.DrawPath(path, tick);
         }
 
-        private void DrawLegend(SKRect r, TraceLayerResult layer)
+        private void DrawLegend(SKRect r, TraceLayerResult layer, bool badges)
         {
             using var ink = Fill(Ink);
             using var muted = Fill(Muted);
@@ -844,13 +1153,35 @@ public static class TraceImpedanceReportDocument
             // Pale copper reads as "not evaluated" beside the darker grey above (designer feedback round 11), and
             // most of it is deliberately not a trace: say what it is.
             Key(CopperEdge, "pale copper: not a trace (a pad or land, a taper, a pour, or a run too short for its width), so not reviewed", false);
-            Key(ZMark, "numbered: Z0 outside the pass band", true);
-            Key(GroundMark, "numbered, with the stretch outlined: return path broken or partial, or the reference steps to another layer; with the pad ringed: a test pad loading the line", true);
+            if (IsSummary)
+            {
+                Key(ZMark, "Z0 outside the pass band", true);
+                Key(GroundMark, "with the stretch outlined: return path broken or partial, or the reference steps to another layer; with the pad ringed: a test pad loading the line", true);
+                float top = y;
+                Marker(new SKPoint(r.Left + 5, top + 5.5f), 4.5f, "3", Muted, true, 4.6f);
+                Marker(new SKPoint(r.Left + 16, top + 5.5f), 4.5f, "1", Muted, false, 4.6f);
+                y = Paragraph("one marker per trace, at its worst finding: the number is how many findings it has; " +
+                              "filled when one fails, hollow when they only warn", r.Left + 27, top - 1.5f, r.Width - 27, _small, Muted, 1.35f) + 6;
+            }
+            else
+            {
+                Key(ZMark, "numbered: Z0 outside the pass band", true);
+                Key(GroundMark, "numbered, with the stretch outlined: return path broken or partial, or the reference steps to another layer; with the pad ringed: a test pad loading the line", true);
+                float top = y;
+                Marker(new SKPoint(r.Left + 5, top + 5.5f), 4.5f, "1", Muted, true, 4.6f);
+                Marker(new SKPoint(r.Left + 16, top + 5.5f), 4.5f, "2", Muted, false, 4.6f);
+                y = Paragraph("filled: a fail; hollow: a warning", r.Left + 27, top - 1.5f, r.Width - 27, _small, Muted, 1.35f) + 6;
+            }
+            if (badges || IsSummary)
             {
                 float top = y;
-                Marker(new SKPoint(r.Left + 5, top + 5.5f), 4.5f, 1, Muted, true, 4.6f);
-                Marker(new SKPoint(r.Left + 16, top + 5.5f), 4.5f, 2, Muted, false, 4.6f);
-                y = Paragraph("filled: a fail; hollow: a warning", r.Left + 27, top - 1.5f, r.Width - 27, _small, Muted, 1.35f) + 6;
+                string sample = IsSummary ? "12" : "4–9";
+                float w = Math.Max(8.6f, BadgeFont.MeasureText(sample) + 4.4f);
+                Badge(new SKRect(r.Left + 0.7f, top + 1.2f, r.Left + 0.7f + w, top + 9.8f), sample, Muted, true, false);
+                y = Paragraph(IsSummary
+                                  ? "a badge: the markers of traces too close to draw apart, with their findings counted"
+                                  : "a badge: markers too close to draw apart, with the numbers of the findings it stands for",
+                              r.Left + w + 6, top - 1.5f, r.Width - w - 6, _small, Muted, 1.35f) + 6;
             }
             if (layer.Traces.Any(t => t.AcceptedCount > 0))
             {
@@ -859,7 +1190,28 @@ public static class TraceImpedanceReportDocument
                 y = Paragraph("grey, checked: an accepted finding — listed, with its reason, under Accepted findings",
                               r.Left + 16, top - 1.5f, r.Width - 16, _small, Muted, 1.35f) + 6;
             }
+            if (IsSummary)
+                y = Paragraph("Ids are on the traces that fail.", r.Left, y - 1.5f, r.Width, _small, Muted, 1.35f) + 6;
             y += 10;
+
+            // A Summary's findings are counted here and grouped on the next page.
+            if (IsSummary)
+            {
+                var all = layer.Traces.SelectMany(t => t.Issues).ToList();
+                if (all.Count == 0)
+                {
+                    C.DrawText(layer.Traces.Count == 0 ? "No traces on this layer." : "No findings on this layer.",
+                               r.Left, y + 2, SKTextAlign.Left, _body, layer.Traces.Count == 0 ? muted : Fill(PassInk));
+                    return;
+                }
+                C.DrawText("Findings", r.Left, y, SKTextAlign.Left, _h2, ink);
+                int accepted = all.Count(i => i.Accepted is not null);
+                Paragraph($"{all.Count:N0} on {layer.Traces.Count(t => t.Issues.Count > 0):N0} traces: " +
+                          $"{all.Count(i => i.Accepted is null && i.Fails):N0} fail, {all.Count(i => i.Accepted is null && !i.Fails):N0} warning" +
+                          (accepted > 0 ? $", {accepted:N0} accepted" : "") + ". Grouped, with the worst in full, on the next page.",
+                          r.Left, y + 1, r.Width, _small, Ink, 1.35f);
+                return;
+            }
 
             // The worst findings on this page, briefly; the full list follows the table.
             var findings = Findings(layer);
@@ -900,6 +1252,191 @@ public static class TraceImpedanceReportDocument
             TraceIssueKind.PadShunt       => "pad loads the line: " + (i.Text.Split(": |S11| ") is [_, var tail] ? "|S11| " + tail.Split(" on the ")[0] : "a shunt"),
             _                             => "not solved",
         };
+
+        // ── the Summary's findings page (brief-impedance-9) ─────────────────────────────────────
+
+        /// <summary>How many findings a Summary writes out in full per layer.</summary>
+        internal const int WorstInFull = 20;
+
+        /// <summary>A finding kind as a group's row names it.</summary>
+        internal static string KindText(TraceIssueKind kind) => kind switch
+        {
+            TraceIssueKind.OutOfTolerance   => "Z0 outside the pass band",
+            TraceIssueKind.ReturnBroken     => "Return path broken",
+            TraceIssueKind.PartialReference => "Reference covers part of the width",
+            TraceIssueKind.ReferenceStep    => "Reference steps to another layer",
+            TraceIssueKind.NoReference      => "No return path",
+            TraceIssueKind.PadShunt         => "Test pad loads the line",
+            _                               => "Not solved",
+        };
+
+        /// <summary>
+        /// The layer's findings grouped by kind × severity × width class (owner decision D2 (a)) — the class the
+        /// survey would put the trace in, so the rows name the widths the reviewer chose the scope from. Fails
+        /// first, then by kind, narrowest class first. Every finding is in exactly one row.
+        /// </summary>
+        internal List<FindingGroup> Groups(TraceLayerResult layer)
+        {
+            // A class by its index, narrowest first.
+            var classes = TraceImpedanceAnalysis.WidthClasses(layer.Traces, report.DbuPerMicron);
+            var classOf = new Dictionary<TraceRun, int>(ReferenceEqualityComparer.Instance);
+            for (int k = 0; k < classes.Count; k++)
+                foreach (var t in classes[k].Traces) classOf[t] = k;
+
+            return [.. layer.Traces.SelectMany(t => t.Issues.Select(i => (Trace: t, Issue: i)))
+                .GroupBy(f => (f.Issue.Kind, f.Issue.Severity, Class: classOf[f.Trace]))
+                .OrderByDescending(g => g.Key.Severity == IssueSeverity.Fail)
+                .ThenBy(g => g.Key.Kind)
+                .ThenBy(g => g.Key.Class)
+                .Select(g => new FindingGroup(g.Key.Kind, g.Key.Severity, classes[g.Key.Class].Class,
+                    g.Count(f => f.Issue.Accepted is null), g.Count(f => f.Issue.Accepted is not null),
+                    [.. g.Select(f => f.Trace.Id).Distinct()], WorstText(g.Key.Kind, [.. g.Select(f => f.Issue)])))];
+        }
+
+        /// <summary>The worst value in a group: the largest Z0 excursion, the longest stretch, the smallest
+        /// coverage, the largest |S11| — each as the analysis measured it.</summary>
+        private string WorstText(TraceIssueKind kind, IReadOnlyList<TraceIssue> issues)
+        {
+            switch (kind)
+            {
+                case TraceIssueKind.OutOfTolerance when issues.Where(i => i.WorstOhms is not null)
+                                                              .MaxBy(i => Math.Abs(i.WorstOhms!.Value - report.TargetOhms)) is { WorstOhms: { } z }:
+                    return $"{z:0.0} Ω ({(z - report.TargetOhms) / report.TargetOhms:+0%;-0%})";
+                case TraceIssueKind.PartialReference when issues.Min(i => i.Coverage) is { } cov:
+                    return $"{cov:P0} covered";
+                case TraceIssueKind.PadShunt when issues.Max(i => i.S11Db) is { } db:
+                    return $"|S11| {db:0.0} dB";
+                case TraceIssueKind.ReturnBroken or TraceIssueKind.NoReference or TraceIssueKind.Unsolved
+                    when issues.Max(i => i.SpanLength) is { } len:
+                    return $"{report.Len(len)} long";
+                default:
+                    return "—";
+            }
+        }
+
+        /// <summary>A class's widths in the report's unit: one width, or the range merged into it.</summary>
+        private string ClassText(TraceWidthClass c)
+        {
+            double um = report.DbuPerMicron;
+            return c.MaxMicrons - c.MinMicrons < 0.05
+                ? report.Num(c.NominalMicrons * um, 0)
+                : $"{report.Num(c.MinMicrons * um, 0)}–{report.Num(c.MaxMicrons * um, 0)}";
+        }
+
+        /// <summary>Ids joined while they fit <paramref name="width"/>, then "+ n more".</summary>
+        private static string IdsThatFit(IReadOnlyList<string> ids, SKFont font, float width)
+        {
+            string text = "";
+            for (int k = 0; k < ids.Count; k++)
+            {
+                string next = k == 0 ? ids[k] : text + ", " + ids[k];
+                string tail = k + 1 < ids.Count ? $" + {ids.Count - k - 1} more" : "";
+                if (font.MeasureText(next + tail) > width && k > 0) return $"{text} + {ids.Count - k} more";
+                text = next;
+            }
+            return text;
+        }
+
+        /// <summary>The open findings on the layer, worst first, at most <see cref="WorstInFull"/>.</summary>
+        internal List<(int N, TraceRun Trace, TraceIssue Issue)> Worst(TraceLayerResult layer) =>
+            [.. ByWorst(Findings(layer).Where(f => f.Issue.Accepted is null), f => f.Issue).Take(WorstInFull)];
+
+        private static readonly float[] GroupCols =
+            [Margin, Margin + 150, Margin + 186, Margin + 262, Margin + 300, Margin + 346, Margin + 436];
+
+        /// <summary>
+        /// The Summary's page for a layer, after its map: the traces and junctions counted, the findings grouped,
+        /// then the worst <see cref="WorstInFull"/> written exactly as Full writes them. Continued only when the
+        /// groups or the worst run past the page.
+        /// </summary>
+        public void LayerFindings(TraceLayerResult layer)
+        {
+            string section = $"{layer.Name} — findings";
+            NewPage(section);
+            using var ink = Fill(Ink);
+            using var muted = Fill(Muted);
+            _y += 14;
+            C.DrawText($"{layer.Name}: findings", Margin, _y, SKTextAlign.Left, _h1, ink);
+            _y += 4;
+
+            // Counts, not tables.
+            int Of(TraceVerdict v) => layer.Traces.Count(t => t.Verdict == v);
+            string traces = $"{layer.Traces.Count:N0} traces: {Of(TraceVerdict.Pass):N0} pass, {Of(TraceVerdict.Warning):N0} warning, " +
+                            $"{Of(TraceVerdict.Fail):N0} fail" + (Of(TraceVerdict.Unsolved) > 0 ? $", {Of(TraceVerdict.Unsolved):N0} not solved" : "") +
+                            (layer.PoursSkipped > 0 ? $"; {layer.PoursSkipped:N0} pour{(layer.PoursSkipped == 1 ? "" : "s")} not analysed" : "") +
+                            (layer.OutOfScope > 0 ? $"; {layer.OutOfScope:N0} outside the scope" : "") + ".";
+            if (layer.JunctionReviews.Count > 0)
+            {
+                var j = layer.JunctionReviews;
+                var bad = j.Where(x => x.Verdict != TraceVerdict.Pass).Select(x => x.Id).ToList();
+                string head = $" {j.Count:N0} junctions: {j.Count(x => x.Verdict == TraceVerdict.Pass):N0} pass, " +
+                              $"{j.Count(x => x.Verdict == TraceVerdict.Warning):N0} warning, " +
+                              $"{j.Count(x => x.Verdict is TraceVerdict.Fail or TraceVerdict.Unsolved):N0} fail or not solved";
+                traces += head + (bad.Count > 0 ? " (" + IdsThatFit(bad, _body, PageW - 2 * Margin - _body.MeasureText(traces + head) - 20) + ")." : ".");
+            }
+            int notes = layer.Traces.Sum(t => t.Notes.Count);
+            if (notes > 0) traces += $" {notes:N0} note{(notes == 1 ? "" : "s")} on {layer.Traces.Count(t => t.Notes.Count > 0):N0} traces, in the Full report.";
+            _y = Paragraph(traces, Margin, _y, PageW - 2 * Margin, _body, Ink) + 18;
+
+            var groups = Groups(layer);
+            if (groups.Count == 0)
+            {
+                C.DrawText(layer.Traces.Count == 0 ? "No traces on this layer." : "No findings on this layer.",
+                           Margin, _y + 4, SKTextAlign.Left, _body, layer.Traces.Count == 0 ? muted : Fill(PassInk));
+                return;
+            }
+
+            // The groups.
+            string[] heads = ["Finding", "Result", $"Width ({report.Unit})", "Open", "Accepted", "Worst", "Traces"];
+            C.DrawText("Grouped by kind, result and width class", Margin, _y, SKTextAlign.Left, _h2, ink);
+            _y += 4;
+            Header(GroupCols, heads);
+            int row = 0;
+            float idsW = PageW - Margin - GroupCols[^1] - 6;
+            foreach (var g in groups)
+            {
+                if (_y + 13 > Bottom) { NewPage(section + " (continued)"); _y += 6; Header(GroupCols, heads); }
+                bool fails = g.Severity == IssueSeverity.Fail;
+                Row(GroupCols,
+                    [KindText(g.Kind), fails ? "FAIL" : "WARN", ClassText(g.Class), g.Open.ToString("N0"),
+                     g.Accepted > 0 ? g.Accepted.ToString("N0") : "", g.Worst, IdsThatFit(g.TraceIds, _body, idsW)],
+                    [Ink, fails ? FailInk : WarnInk, Ink, Ink, Muted, Ink, Muted],
+                    row++ % 2 == 1 ? new SKColor(0xfa, 0xfb, 0xfc) : null);
+            }
+            if (_y + 13 > Bottom) { NewPage(section + " (continued)"); _y += 6; }
+            using (var boldRow = Font(SkiaFonts.PlexSemiBold, _body.Size))
+            {
+                int sum = groups.Sum(g => g.Open), acc = groups.Sum(g => g.Accepted);
+                C.DrawText("Total", GroupCols[0] + 3, _y + 9.5f, SKTextAlign.Left, boldRow, ink);
+                C.DrawText(sum.ToString("N0"), GroupCols[3] + 3, _y + 9.5f, SKTextAlign.Left, boldRow, ink);
+                if (acc > 0) C.DrawText(acc.ToString("N0"), GroupCols[4] + 3, _y + 9.5f, SKTextAlign.Left, boldRow, muted);
+                _y += 13;
+            }
+            _y += 4;
+            C.DrawText($"Width classes as the width survey groups them; \"Open\" counts against the trace, \"Accepted\" does not. " +
+                       $"Every finding on the layer is in one row.", Margin, _y + 6, SKTextAlign.Left, _small, muted);
+            _y += 12;
+
+            // The worst, in full — the sentences a reviewer quotes.
+            int open = layer.Traces.Sum(t => t.Issues.Count(i => i.Accepted is null));
+            var worst = Worst(layer);
+            if (worst.Count == 0) return;
+            if (_y + 40 > Bottom) NewPage(section + " (continued)");
+            _y += 10;
+            C.DrawText(open <= WorstInFull ? "Every open finding, in full" : $"The {worst.Count} worst of {open:N0}, in full",
+                       Margin, _y, SKTextAlign.Left, _h2, ink);
+            _y += 2;
+            // In the small type, so twenty fit under a dozen groups on one page: the sentence is Full's, word for word.
+            foreach (var (n, trace, issue) in worst)
+            {
+                string line = $"{trace.Id} {Tier(issue)}: {issue.Text}";
+                var lines = Wrap(line, _small, PageW - 2 * Margin - 18);
+                if (_y + lines.Count * 9.5f + 2 > Bottom) { NewPage(section + " (continued)"); _y += 6; }
+                var color = issue.Kind == TraceIssueKind.OutOfTolerance ? ZMark : GroundMark;
+                Marker(new SKPoint(Margin + 4, _y + 6.6f), 3.8f, "", color, issue.Fails, 6f);
+                _y = Paragraph(line, Margin + 12, _y, PageW - 2 * Margin - 18, _small, Ink, 1.35f) + 2.5f;
+            }
+        }
 
         // ── the table and the findings ──────────────────────────────────────────────────────────
 
@@ -975,7 +1512,7 @@ public static class TraceImpedanceReportDocument
                 if (_y + lines.Count * 12 + 2 > Bottom) { NewPage(section + " (continued)"); _y += 6; }
                 var color = issue.Kind == TraceIssueKind.OutOfTolerance ? ZMark : GroundMark;
                 if (issue.Accepted is not null) Check(new SKPoint(Margin + 6, _y + 8.5f), 5.5f);
-                else Marker(new SKPoint(Margin + 6, _y + 8.5f), 5.5f, n, color, issue.Fails, n >= 100 ? 4.5f : 6f);
+                else Marker(new SKPoint(Margin + 6, _y + 8.5f), 5.5f, n.ToString(), color, issue.Fails, n >= 100 ? 4.5f : 6f);
                 _y = Paragraph(line, Margin + 18, _y - 1, PageW - 2 * Margin - 24, _body, Ink) + 4;
             }
             if (notes.Count > 0)

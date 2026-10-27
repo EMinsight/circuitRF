@@ -12,7 +12,8 @@ namespace CircuitRF.Cli;
 /// <summary>
 /// <c>circuitrf impedance &lt;layout&gt;</c> — Trace Impedance Analysis: every trace on the chosen
 /// copper layers, end to end, against a target Z0 ± tolerance, with where the return path under each
-/// one breaks. <c>-o report.pdf</c> writes the report the layout editor's Impedance Analysis exports.
+/// one breaks. <c>-o report.pdf</c> writes the report the layout editor's Impedance Analysis exports, Full
+/// unless <c>--report summary</c> asks for the Summary (brief-impedance-9).
 ///
 /// <para><b>It owns no analysis and no page</b>, on <c>src/Cli/Authoring.cs</c>' terms: every number
 /// comes out of <see cref="TraceImpedanceAnalysis.LoadLayout"/> and <c>TraceImpedanceAnalysis.Analyze</c> and every pixel of the PDF out of
@@ -42,6 +43,9 @@ internal static partial class Impedance
     {
         public string? Path;
         public string? Output;
+        // brief-impedance-9: Full unless --report summary, so a script that exported Full yesterday gets Full today.
+        // Null = not given: Full, with a warning when it is long.
+        public TraceImpedanceReportStyle? ReportStyle;
         // Null = not given: the value saved on the layout applies, and the default where none is.
         public double? Target;
         public double? Tolerance;
@@ -273,7 +277,13 @@ internal static partial class Impedance
 
         if (o.Output is { } path && report.Layers.Count > 0)
         {
-            byte[] pdf = TraceImpedanceReportDocument.Pdf(report);
+            var style = o.ReportStyle ?? TraceImpedanceReportStyle.Full;
+            // The panel pre-selects the Summary past this length; a script keeps Full, and is told.
+            if (o.ReportStyle is null
+                && TraceImpedanceReportDocument.PageCount(report, style) is var fullPages and > TraceImpedanceReportDocument.SummaryAbovePages)
+                JsonRun.Report(CliDiagnostics.ImpedanceFullReportLong(
+                    fullPages, TraceImpedanceReportDocument.PageCount(report, TraceImpedanceReportStyle.Summary)));
+            byte[] pdf = TraceImpedanceReportDocument.Pdf(report, style);
             try
             {
                 if (Path.GetDirectoryName(Path.GetFullPath(path)) is { Length: > 0 } dir) Directory.CreateDirectory(dir);
@@ -369,7 +379,7 @@ internal static partial class Impedance
             "                           [--width \"Top Copper=457\"]... [--no-scope] [--survey]\n" +
             "                           [--region [<layer>@]x0,y0,x1,y1]... [--net <name>]... [--pick <layer>@<x>,<y>[:connected]]...\n" +
             "                           [--whole-layer <layer>]...\n" +
-            "                           [--severity warning|fail] [--ignore-accepted] [-o report.pdf]\n" +
+            "                           [--severity warning|fail] [--ignore-accepted] [-o report.pdf [--report full|summary]]\n" +
             "       circuitrf impedance --tech <ctech|workspace|document|shipped-id> --layer <name>\n" +
             "                           (--width <w>[,<w>...] | --z0 <ohms>[,<ohms>...]) [--gap <g>] [--freq 10GHz]\n" +
             "  <layout> is a .clay or a cell folder holding one. The review saved on the layout applies\n" +
@@ -379,6 +389,8 @@ internal static partial class Impedance
             "  every coordinate carries a unit (12.5mm, 400um, 50mil). Findings accepted in the editor are\n" +
             "  reported ACCEPTED and do not count; --ignore-accepted counts them. Trace within --via-transition\n" +
             "  of the land of a via on it is not checked (the plane is cleared there) and each is noted; 0 checks it.\n" +
+            "  --report summary writes the map and the findings grouped, with the worst in full, per layer;\n" +
+            "  full (the default) lists every trace and finding. --json always carries everything.\n" +
             "  With --tech it is a line calculator and draws nothing: the circuit model's answer (an elaborated\n" +
             "  MLIN) beside the cross-section's (what impedance reports on a drawn line); --gap makes it coplanar.");
         return 1;
@@ -455,6 +467,14 @@ internal static partial class Impedance
                     o.FreqHz = hz;
                     continue;
                 }
+                case "--report" when i + 1 < args.Length:
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "full":    o.ReportStyle = TraceImpedanceReportStyle.Full;    break;
+                        case "summary": o.ReportStyle = TraceImpedanceReportStyle.Summary; break;
+                        default: return JsonRun.Fail(CliDiagnostics.ImpedanceUnknownReportStyle(args[i]));
+                    }
+                    continue;
                 case "--severity" when i + 1 < args.Length:
                     switch (args[++i].ToLowerInvariant())
                     {
@@ -530,7 +550,7 @@ internal static partial class Impedance
     private static readonly HashSet<string> ReviewOnly =
     [
         "-o", "--output", "--target", "--tol", "--tolerance", "--warn", "--max-freq", "--severity", "--max-width",
-        "--via-transition", "--region", "--net", "--pick", "--whole-layer", "--no-scope", "--survey", "--ignore-accepted",
+        "--via-transition", "--report", "--region", "--net", "--pick", "--whole-layer", "--no-scope", "--survey", "--ignore-accepted",
     ];
 
     /// <summary>A frequency WITH its unit, or null — the rule every CLI frequency follows.</summary>

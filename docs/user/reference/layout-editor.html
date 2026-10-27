@@ -1890,6 +1890,11 @@ artwork as it is now.</p>
 <p><strong>Export PDF…</strong> writes the results the panel holds as a PDF, without running again. It is available once
 there are results; a PDF exported from stale results says so at the top of its first page, so it cannot
 pass as a review of the board as it is now. The Messages line for an export links to the file.</p>
+<p>Above the button, choose <strong>Full</strong> or <strong>Summary</strong>, each with the number of pages it comes to. <strong>Full</strong>
+lists every trace, junction and finding; <strong>Summary</strong> keeps the map and groups the findings, for a board
+too large to read trace by trace (see <a href="#impedance-report">The report</a>). Full is chosen unless it would
+run to more than 50 pages, when Summary is chosen instead. Whenever Full would run past 50 pages, the line
+under the choice says how long it is, whichever style you pick. The choice is yours either way.</p>
 <p><strong>The review is saved in the layout</strong> as you edit it: the target, both bands, the frequency, the layers
 the trace widths ticked, and the regions, picks and nets are stored in the <code>.clay</code>, beside the layout's design-rule waivers, so the
 panel opens on them next time and <a href="cli.html#impedance"><code>circuitrf impedance</code></a> reviews the same traces
@@ -2103,7 +2108,10 @@ technology editor's Stackup tab draws it, with each layer's thickness, εr, tan�
 Z0</strong> — green inside the pass band, blue below, red above — its id, and a numbered marker at
 every finding: <strong>filled</strong> for a fail, <strong>hollow</strong> for a warning, orange for Z0 and purple for the
 return path. The colour scale marks the pass band, and the warning band's edges as a lighter pair of
-ticks. A trace outside the scope is plain grey copper — no colour, no label, no marker.</li>
+ticks. A trace outside the scope is plain grey copper — no colour, no label, no marker. Where
+markers are too close to draw apart, one <strong>badge</strong> — a rounded label instead of a disc —
+stands for them, carrying their numbers (<em>232, 234–235, 239 +4</em>); the list after the table has each
+in full.</li>
 <li><strong>A table per layer</strong>: each trace's start and end, what each end is, its length and width, its line
 <strong>type</strong>, Z0 min, max and average, the share of its length inside the band, its reference layers,
 PASS, WARN or FAIL; then the layer's <strong>junctions</strong>, one row per arm with its trace, width, Z0 and
@@ -2113,6 +2121,25 @@ reason.</li>
 and the date, and any acceptance that matched nothing in this run. An accepted finding is also still
 on its layer's map, <strong>grey with a check</strong> where its number would be.</li>
 </ul>
+<h4 id="impedance-report-summary">The Summary</h4>
+<p>A whole-board review of a large board finds thousands of findings, most of them the same few kinds
+repeated trace after trace, and Full writes each one out. <strong>Summary</strong> has the same summary page, then per
+layer:</p>
+<ul>
+<li><strong>The map</strong>, coloured as in Full, with <strong>one marker per trace</strong> at its worst finding, carrying how many
+findings that trace has. Traces close together share one <strong>badge</strong> with their findings counted. Ids
+are shown only on traces that fail.</li>
+<li><strong>The findings, grouped</strong>: one row per kind of finding, result (FAIL or WARN) and <strong>width class</strong>
+— the classes <a href="#impedance-scope">Choosing the traces</a> lists — with how many are open, how
+many are accepted, the worst of them (the largest Z0 excursion, the longest broken return, the
+smallest coverage, the largest pad |S11|) and the traces they are on. Every finding on the layer is in
+one row, and the <strong>Total</strong> row says how many.</li>
+<li><strong>The 20 worst findings in full</strong>, failures first and then by Z0 excursion, written exactly as Full
+writes them, so the numbers you quote are on the page.</li>
+<li>Passing traces and junctions are <strong>counted</strong> in a line, not listed.</li>
+</ul>
+<p>Accepted findings are counted in their group's <strong>Accepted</strong> column and listed on the Accepted findings
+page as in Full.</p>
 <p>The <strong>type</strong> is microstrip, <strong>GCPW</strong> (grounded coplanar waveguide: a plane below and ground beside it on
 both sides), <strong>GCPW 1-side</strong>, stripline or CPW. A trace that is <strong>both</strong> along its run — grounded CPW
 where the pour runs beside it and microstrip where the pour falls away — lists both, with the share

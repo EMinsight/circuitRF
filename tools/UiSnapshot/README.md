@@ -136,6 +136,8 @@ Messages print as they are posted. Besides the steps below:
 | `--button <label>` | A real click on the open dialog's visible button with this label. A miss lists the buttons. |
 | `--impedance <freq\|none>` | Runs the editor's own Impedance Analysis with that highest frequency (`6GHz`, or `none`) before the steps, and prints each trace's findings. The canvas shows its overlay. |
 | `--finding <kind>` | With `--impedance`: selects the first finding of that kind (`pad-shunt`, `return-broken`, …) as the panel's row does, and zooms to it. The selection status prints. |
+| `--impedance-layer <name>` | With `--impedance`: run on this copper layer only. Repeat for several. |
+| `--impedance-panel` | With `--impedance`: the real Impedance panel on the editor, waited until its export page counts are in. The export choice and its note print, and `<out>.impedance.png` is the panel scrolled to **Export PDF…**. |
 
 A capture while a dialog is open also writes `<out>.dialog.png`, the dialog's own window. A commanded "open" of
 another document (Crop to New Cell's new cell) prints `opens <path>`; there is no workspace to open it in.

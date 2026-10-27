@@ -4163,6 +4163,16 @@ internal static class CliDiagnostics
         "impedance.args.unknown-severity", DiagnosticSeverity.Error,
         "impedance: --severity takes warning or fail, got '{text}'.", ("text", text));
 
+    public static Diagnostic ImpedanceUnknownReportStyle(string text) => Diagnostic.Create(
+        "impedance.args.unknown-report-style", DiagnosticSeverity.Error,
+        "impedance: --report takes full or summary, got '{text}'.", ("text", text));
+
+    public static Diagnostic ImpedanceFullReportLong(int fullPages, int summaryPages) => Diagnostic.Create(
+        "impedance.report.long", DiagnosticSeverity.Warning,
+        "impedance: the Full report is {fullPages} pages; --report summary writes it in {summaryPages}.",
+        ("fullPages", fullPages.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)),
+        ("summaryPages", summaryPages.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)));
+
     public static Diagnostic ImpedanceOutputNotPdf(string path) => Diagnostic.Create(
         "impedance.args.output-not-pdf", DiagnosticSeverity.Error,
         "impedance: the report is a PDF — give -o a path ending in .pdf, got '{path}'.", ("path", path));

@@ -5544,3 +5544,37 @@ wall biased; a carved slab's two batches, their ties, picks on each, the edge-li
   its directory (Gmsh's files), and `Discover` counted any directory as a run. A directory whose `status.json`
   reads failed or cancelled no longer counts, and the sentence is "No finished run of setup … yet". The tree row's
   detail text carries the warning's tooltip too, not only the 12-px glyph, which the designer had not noticed.
+
+## Impedance report: a Summary style for a large board (brief-impedance-9, 2026-10-27)
+
+`TraceImpedanceReportDocument.Pdf(report, style)`; the style-less `Pdf(report)` is Full and is byte-identical to the
+report before this change on every map whose markers all found room (checked against PDFs written by the previous
+build for three synthetic reports, and by the panel's and the CLI's existing gates).
+
+- **What the Summary carries.** The same summary page; per layer with traces, the map and one findings page: the
+  traces and junctions counted in a line, the findings grouped by kind × severity × width class (owner decision D2
+  (a)) with Open and Accepted counts, the worst value and the trace ids that fit a line, a Total row, then the 20
+  worst open findings in Full's own sentences (fails first, then Z0 excursion, then stretch length). A layer with no
+  trace reviewed has no pages: on a 10-layer board three plane layers were six pages of "no traces". The worst list
+  is in the small type so twenty fit under a dozen groups on one page; at body size they wrapped and every layer
+  spilled a page.
+- **Grouping reads numbers, not sentences.** `TraceIssue` gained `SpanLength`, `WorstOhms`, `Coverage` and `S11Db`,
+  set by the analysis where it writes the sentence, so ranking and "worst" never parse text.
+- **Width class is the survey's rule.** `TraceImpedanceAnalysis.WidthClasses(traces, dbuPerMicron)` classes each
+  reported trace by its dominant width (its pieces clustered by the survey's own `Cluster`). It is drawn from the
+  report's traces only; a survey draws from every trace on the layer, so a class straddling a scoped-out width can
+  merge differently.
+- **Markers.** A Summary map has one marker per trace, at its worst finding, carrying its count; markers anchored
+  within 12 pt of a seat (failing ones and the most findings take seats first) are one badge, bounded by the seat
+  so a dense board is many neighbourhood badges rather than one chain across the page. Ids only on failing traces.
+  On BOTH maps, markers the placer still had to put on top of each other merge into a badge and the lot is placed
+  again (up to 8 rounds). A Full badge reads the finding numbers it stands for ("232, 234–235, 239 +4"). A map with
+  no overlap is placed once, exactly as before, which is what keeps Full byte-identical.
+- **Page counts without writing.** `PageCount(report, style)` runs the same composition on an `SKNoDrawCanvas`,
+  skipping the maps and the stackup (one page each whatever is on them): 714 ms for a 531-page Full on board C.
+  The panel shows both counts and pre-selects Summary past `SummaryAbovePages` (50), with a note naming Full's
+  length while Full is long; the CLI keeps Full (D1 (a)) and warns `impedance.report.long` with both counts.
+- **Board C, whole board, no scope** (1,800 traces, 7,711 findings): Full would be 531 pages; the Summary measured
+  29 before the two page fixes above; they remove the plane layers' six pages and the three continuation pages
+  re-measured on the small layers, so it is at most 20. Every layer's groups summed to its findings exactly. The
+  PDF was 57.8 MB, almost all of it the maps' copper, which Full draws too.

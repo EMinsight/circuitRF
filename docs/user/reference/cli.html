@@ -1733,7 +1733,7 @@ asked) was written, <strong>1</strong> when refused.</p>
 <span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--via-transition 400um] [--width "Top Copper=457"]… [--no-scope]
 <span class="prompt">  </span>[--region [&lt;layer&gt;@]x0,y0,x1,y1]… [--net &lt;name&gt;]… [--pick &lt;layer&gt;@&lt;x&gt;,&lt;y&gt;[:connected]]…
 <span class="prompt">  </span>[--whole-layer &lt;layer&gt;]…
-<span class="prompt">  </span>[--survey] [--severity warning|fail] [--ignore-accepted] [-o report.pdf]</code></pre>
+<span class="prompt">  </span>[--survey] [--severity warning|fail] [--ignore-accepted] [-o report.pdf [--report full|summary]]</code></pre>
 <p><code>impedance</code> is the layout editor's <a href="layout-editor.html#impedance-analysis">Impedance Analysis</a>: it finds
 every trace on the chosen copper layers, cuts it along its length with the same quasi-static
 cross-section solve the canvas's <strong>Trace Impedance</strong> uses, and reports per trace Z0 min, max and
@@ -1822,6 +1822,10 @@ the default. A saved layer the technology no longer has is skipped with a line o
 <tr>
 <td><code>-o report.pdf</code></td>
 <td>The PDF report. With no <code>-o</code> it writes nothing.</td>
+</tr>
+<tr>
+<td><code>--report full\|summary</code></td>
+<td>Which PDF <code>-o</code> writes: <code>full</code> (the default) lists every trace and finding; <code>summary</code> keeps the map and groups the findings, with the 20 worst in full — see <a href="layout-editor.html#impedance-report-summary">the Summary</a>. <code>--json</code> carries everything either way. With no <code>--report</code>, a Full report of more than 50 pages is still written, with a warning on stderr saying how many pages the Summary would take.</td>
 </tr>
 </tbody>
 </table>

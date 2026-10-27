@@ -31,7 +31,7 @@ using CircuitRF.Design.Layout;
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]
 //            [--rclick x,y] [--menu <header>] [--type <text>] [--button <label>]
-//            [--impedance <freq|none>] [--finding <kind>]
+//            [--impedance <freq|none>] [--impedance-layer <name>]... [--finding <kind>] [--impedance-panel]
 // UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--marker]... [--size WxH] [steps]
 //
@@ -55,7 +55,9 @@ using CircuitRF.Design.Layout;
 // menu is drawn in the window's own frame; a dialog is its own window, so a capture also writes <out>.dialog.png.
 // --impedance runs the Impedance Analysis on the editor with that highest frequency (6GHz, or none) and prints each
 // trace's findings; --finding then selects the first finding of that kind (pad-shunt, return-broken, …) as the
-// panel's row does and zooms to it, so the canvas shows its marker selected.
+// panel's row does and zooms to it, so the canvas shows its marker selected. --impedance-layer narrows the run to the
+// named copper layers. --impedance-panel then shows the real Impedance panel on the editor, waits for its export
+// page counts, prints the export choice and its note, and writes <out>.impedance.png scrolled to the Export button.
 //
 // --cem opens the EM Setup editor on a .cem, as the workspace opens one: the file's setup, its own view model, the real
 // EmSetupEditorView. Every named CheckBox's state and tooltip is printed, so a setting is read as well as seen.
@@ -70,6 +72,8 @@ using CircuitRF.Design.Layout;
 if (args.Contains("--c3d")) return Snapshot3D.Run(args);
 
 string? impedance = null, finding = null;
+var impedanceLayers = new List<string>();
+bool impedancePanel = false;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
 string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
 string? image = null, imageTech = null;
@@ -109,6 +113,8 @@ for (int i = 0; i < args.Length; i++)
         case "--hide" when i + 1 < args.Length: layerToggles.Add((args[++i], true)); break;
         case "--impedance" when i + 1 < args.Length: impedance = args[++i]; break;
         case "--finding" when i + 1 < args.Length: finding = args[++i]; break;
+        case "--impedance-layer" when i + 1 < args.Length: impedanceLayers.Add(args[++i]); break;
+        case "--impedance-panel": impedancePanel = true; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--size" when i + 1 < args.Length:
@@ -174,7 +180,8 @@ if (clay is not null)
     Pump();
     layoutCanvas = host.GetVisualDescendants().OfType<LayoutCanvas>().First();
     layoutCanvas.ZoomToFit();
-    if (impedance is not null && !RunImpedance(layoutVm, impedance, finding)) return 2;
+    if (impedance is not null && !RunImpedance(layoutVm, impedance, finding, impedanceLayers)) return 2;
+    if (impedancePanel && output is not null) ShowImpedancePanel(layoutVm, Path.ChangeExtension(output, ".impedance.png"));
 }
 else if (image is not null)
 {
@@ -552,8 +559,19 @@ static void WaitIdle(CircuitRF.Ui.ModelComposer.ModelComposerViewModel vm)
 }
 
 // --impedance: the editor's own run (RunTraceImpedanceAsync), then --finding selected as the panel's row selects it.
-static bool RunImpedance(LayoutEditorViewModel vm, string freq, string? kind)
+static bool RunImpedance(LayoutEditorViewModel vm, string freq, string? kind, List<string> layerNames)
 {
+    List<CircuitRF.Design.Layout.LayerKey>? layers = null;
+    if (layerNames.Count > 0)
+    {
+        layers = [];
+        foreach (string name in layerNames)
+        {
+            var def = vm.Technology?.Layers.FirstOrDefault(l => l.Name == name);
+            if (def is null) { Console.Error.WriteLine($"--impedance-layer: no layer '{name}'"); return false; }
+            layers.Add(def.Key);
+        }
+    }
     double? hz = null;
     if (!freq.Equals("none", StringComparison.OrdinalIgnoreCase))
     {
@@ -562,7 +580,8 @@ static bool RunImpedance(LayoutEditorViewModel vm, string freq, string? kind)
         hz = double.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)
            * m.Groups[2].Value.ToLowerInvariant() switch { "ghz" => 1e9, "mhz" => 1e6, "khz" => 1e3, _ => 1 };
     }
-    var task = vm.RunTraceImpedanceAsync(new CircuitRF.Design.Layout.Em.TraceImpedanceOptions { MaxFrequencyHz = hz }, new CircuitRF.Engine.RunControl());
+    var task = vm.RunTraceImpedanceAsync(new CircuitRF.Design.Layout.Em.TraceImpedanceOptions { MaxFrequencyHz = hz, Layers = layers },
+                                         new CircuitRF.Engine.RunControl());
     Await(task);
     if (task.Result is not { } report) { Console.Error.WriteLine("the Impedance Analysis gave no report"); return false; }
     foreach (var t in report.AllTraces)
@@ -579,6 +598,26 @@ static bool RunImpedance(LayoutEditorViewModel vm, string freq, string? kind)
     vm.ZoomToImpedance(hit.t, hit.i);
     Console.WriteLine($"selected {hit.t.Id}'s {kind}; {vm.SelectionStatusText}");
     return true;
+}
+
+// --impedance-panel: the real panel on the editor, as the dock shows it, its export counted, scrolled to Export.
+static void ShowImpedancePanel(LayoutEditorViewModel vm, string path)
+{
+    var tool = new CircuitRF.Ui.ViewModels.Dock.ImpedanceTool();
+    tool.SetActiveLayout(vm);
+    var window = new Window { Width = 400, Height = 900, Content = new CircuitRF.Ui.Views.Impedance.ImpedanceToolView { DataContext = tool } };
+    window.Show();
+    var until = DateTime.UtcNow.AddSeconds(120);
+    do { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
+    while ((tool.Panel.FullPageCount is null || tool.Panel.IsSurveying) && DateTime.UtcNow < until);
+    var panel = tool.Panel;
+    Console.WriteLine($"export: [{(panel.ExportFull ? "x" : " ")}] {panel.FullStyleText}   [{(panel.ExportSummary ? "x" : " ")}] {panel.SummaryStyleText}");
+    Console.WriteLine($"note: {(panel.ExportStyleNote.Length > 0 ? panel.ExportStyleNote : "(none)")}");
+    for (int k = 0; k < 4; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    window.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault()?.ScrollToEnd();
+    for (int k = 0; k < 4; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
 }
 
 static bool Await2(Task<bool> task)

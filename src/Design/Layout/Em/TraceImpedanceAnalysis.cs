@@ -151,6 +151,21 @@ public sealed record TraceIssue(
 
     /// <summary>The finding's own sentence, as the analysis wrote it.</summary>
     public string FindingText => Finding ?? Text;
+
+    // The numbers the sentence states, kept as numbers so the Summary report (brief-impedance-9) can rank and
+    // group findings without reading its own text back. Set by the analysis; null where a kind has none.
+
+    /// <summary>The length of trace the finding covers, DBU — null for a reference step (a point) and a pad.</summary>
+    public double? SpanLength { get; init; }
+
+    /// <summary><see cref="TraceIssueKind.OutOfTolerance"/>: the Z0 in the stretch furthest from the target, Ω.</summary>
+    public double? WorstOhms { get; init; }
+
+    /// <summary><see cref="TraceIssueKind.PartialReference"/>: the share of the width the nearest layer covers, 0–1.</summary>
+    public double? Coverage { get; init; }
+
+    /// <summary><see cref="TraceIssueKind.PadShunt"/>: the pad's |S11| on its line, dB.</summary>
+    public double? S11Db { get; init; }
 }
 
 /// <summary>One cut along a trace. Coordinates and lengths in DBU.</summary>
@@ -1062,6 +1077,45 @@ public static partial class TraceImpedanceAnalysis
     {
         var widths = chain.Pieces.Select(p => p.Piece.Width).ToArray();
         var lengths = chain.Pieces.Select(p => p.Piece.Length).ToArray();
+        var best = Cluster(widths, lengths, dbuPerMicron).MaxBy(m => m.Sum(i => lengths[i]))!;
+        return best.Sum(i => widths[i] * lengths[i]) / best.Sum(i => lengths[i]);
+    }
+
+    /// <summary>
+    /// A report's traces in width classes, by the survey's own rule (<see cref="Survey(IReadOnlyList{LayoutShape},
+    /// Technology, int, TraceImpedanceOptions, RunControl?)"/>): each trace classed by its dominant width, the
+    /// widths merged within <see cref="MergeToleranceMicrons"/> — so a grouping by width in the report
+    /// (brief-impedance-9) names the classes the reviewer chose the scope from. Narrowest first; nothing is
+    /// solved, so <see cref="TraceWidthClass.TypicalZ0"/> is null. A class here is drawn from the report's
+    /// traces only, where a survey's is drawn from every trace on the layer.
+    /// </summary>
+    public static IReadOnlyList<(TraceWidthClass Class, IReadOnlyList<TraceRun> Traces)> WidthClasses(
+        IReadOnlyList<TraceRun> traces, int dbuPerMicron)
+    {
+        ArgumentNullException.ThrowIfNull(traces);
+        if (dbuPerMicron <= 0) dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
+        var widths = traces.Select(t => DominantWidth(t, dbuPerMicron)).ToArray();
+        var lengths = traces.Select(t => Math.Max(t.Length, 1e-9)).ToArray();
+        return [.. Cluster(widths, lengths, dbuPerMicron).Select(members =>
+        {
+            double total = members.Sum(i => lengths[i]);
+            return (new TraceWidthClass
+            {
+                NominalMicrons = members.Sum(i => widths[i] * lengths[i]) / total / dbuPerMicron,
+                MinMicrons = members.Min(i => widths[i]) / dbuPerMicron,
+                MaxMicrons = members.Max(i => widths[i]) / dbuPerMicron,
+                TraceCount = members.Count,
+                TotalLengthMicrons = total / dbuPerMicron,
+            }, (IReadOnlyList<TraceRun>)[.. members.Order().Select(i => traces[i])]);
+        })];
+    }
+
+    /// <summary><see cref="DominantWidth(ChainWork, int)"/> of a reported trace, from its pieces.</summary>
+    private static double DominantWidth(TraceRun trace, int dbuPerMicron)
+    {
+        if (trace.Pieces.Count == 0) return 0.5 * (trace.WidthMin + trace.WidthMax);
+        var widths = trace.Pieces.Select(p => p.Width).ToArray();
+        var lengths = trace.Pieces.Select(p => Math.Max(Math.Sqrt(Sq(p.X1 - p.X0) + Sq(p.Y1 - p.Y0)), 1e-9)).ToArray();
         var best = Cluster(widths, lengths, dbuPerMicron).MaxBy(m => m.Sum(i => lengths[i]))!;
         return best.Sum(i => widths[i] * lengths[i]) / best.Sum(i => lengths[i]);
     }
@@ -2097,13 +2151,15 @@ public static partial class TraceImpedanceAnalysis
             var run = stations.Skip(i).Take(j - i + 1).ToList();
             var zs = run.Select(s => s.Z0!.Value).ToList();
             var (x0, y0, x1, y1) = Span(i, j);
+            double worst = zs.MaxBy(z => Math.Abs(z - options.TargetOhms));
             string range = zs.Min() == zs.Max() || Math.Abs(zs.Max() - zs.Min()) < 0.05
                 ? $"{zs[0]:0.0} Ω" : $"{zs.Min():0.0}–{zs.Max():0.0} Ω";
             string head = $"Z0 {range} over {fmt.Len(SpanLen(i, j))} from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}, outside ";
             if (zs.All(z => z >= wlo && z <= whi))
             {
                 issues.Add(new TraceIssue(TraceIssueKind.OutOfTolerance, IssueSeverity.Warning, x0, y0, x1, y1,
-                    head + $"{options.TargetOhms:0.#} Ω ± {options.TolerancePercent:0.#} %, inside ± {options.WarningPercent:0.#} %."));
+                    head + $"{options.TargetOhms:0.#} Ω ± {options.TolerancePercent:0.#} %, inside ± {options.WarningPercent:0.#} %.")
+                    { SpanLength = SpanLen(i, j), WorstOhms = worst });
                 return;
             }
             string text = head + $"{options.TargetOhms:0.#} Ω ± {options.WarningPercent:0.#} %";
@@ -2117,7 +2173,8 @@ public static partial class TraceImpedanceAnalysis
                 if (waves < 1 / ShortFraction) { severity = IssueSeverity.Warning; text += $"; {at} — electrically short"; }
                 else text += $"; {at}";
             }
-            issues.Add(new TraceIssue(TraceIssueKind.OutOfTolerance, severity, x0, y0, x1, y1, text + "."));
+            issues.Add(new TraceIssue(TraceIssueKind.OutOfTolerance, severity, x0, y0, x1, y1, text + ".")
+                { SpanLength = SpanLen(i, j), WorstOhms = worst });
         });
 
         // The nearest layer on each side, walked along the whole trace.
@@ -2158,7 +2215,8 @@ public static partial class TraceImpedanceAnalysis
                     issues.Add(new TraceIssue(TraceIssueKind.ReturnBroken, IssueSeverity.Fail, x0, y0, x1, y1,
                         $"'{nearest.Layer.Name}' is missing {where} the trace for {fmt.Len(SpanLen(i, j))}, from " +
                         $"{fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}, but present elsewhere along it — the return path " +
-                        $"is broken there ({(refThere is null ? $"no reference {where} there" : $"the reference there is '{refThere}'")})."));
+                        $"is broken there ({(refThere is null ? $"no reference {where} there" : $"the reference there is '{refThere}'")}).")
+                        { SpanLength = SpanLen(i, j) });
                 });
             }
             Runs(i => status[i] == 1, (i, j) =>
@@ -2167,7 +2225,8 @@ public static partial class TraceImpedanceAnalysis
                 double cov = skippedOf(cuts[i]!).First().Cov;
                 issues.Add(new TraceIssue(TraceIssueKind.PartialReference, IssueSeverity.Warning, x0, y0, x1, y1,
                     $"'{nearest.Layer.Name}' covers only {cov:P0} of the width {where} the trace for " +
-                    $"{fmt.Len(SpanLen(i, j))}, from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}: copper edge under the trace."));
+                    $"{fmt.Len(SpanLen(i, j))}, from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}: copper edge under the trace.")
+                    { SpanLength = SpanLen(i, j), Coverage = cov });
             });
 
             // The reference stepping between two stations neither of which the nearest layer covers.
@@ -2194,13 +2253,15 @@ public static partial class TraceImpedanceAnalysis
             var (x0, y0, x1, y1) = Span(i, j);
             issues.Add(new TraceIssue(TraceIssueKind.NoReference, IssueSeverity.Fail, x0, y0, x1, y1,
                 $"No copper covers the trace on any layer, and nothing is beside it, for {fmt.Len(SpanLen(i, j))} " +
-                $"from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}: there is no return path to take an impedance against."));
+                $"from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}: there is no return path to take an impedance against.")
+                { SpanLength = SpanLen(i, j) });
         });
         Runs(i => stations[i].Refusal is { } r && r != "no return conductor", (i, j) =>
         {
             var (x0, y0, x1, y1) = Span(i, j);
             issues.Add(new TraceIssue(TraceIssueKind.Unsolved, IssueSeverity.Warning, x0, y0, x1, y1,
-                $"The cross-section could not be solved over {fmt.Len(SpanLen(i, j))} from {fmt.Pt(x0, y0)}: {stations[i].Refusal}."));
+                $"The cross-section could not be solved over {fmt.Len(SpanLen(i, j))} from {fmt.Pt(x0, y0)}: {stations[i].Refusal}.")
+                { SpanLength = SpanLen(i, j) });
         });
 
         // ── the numbers ─────────────────────────────────────────────────────────────────────────

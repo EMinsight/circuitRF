@@ -275,15 +275,17 @@ public partial class LayoutEditorViewModel
         ImpedanceReport is { } r ? r with { Stale = IsImpedanceStale } : null;
 
     /// <summary>
-    /// Writes the PDF of the report already held — no second run (R-imp3-4a). A stale report is written
-    /// with its stale sentence on the summary page. Returns whether the file was written.
+    /// Writes the PDF of the report already held — no second run (R-imp3-4a), in <paramref name="style"/>
+    /// (brief-impedance-9). A stale report is written with its stale sentence on the summary page. Returns
+    /// whether the file was written.
     /// </summary>
-    public async Task<bool> ExportTraceImpedancePdfAsync(string pdfPath)
+    public async Task<bool> ExportTraceImpedancePdfAsync(string pdfPath,
+                                                         TraceImpedanceReportStyle style = TraceImpedanceReportStyle.Full)
     {
         if (ImpedanceReportForExport is not { } report) return false;
         try
         {
-            byte[] pdf = await Task.Run(() => TraceImpedanceReportDocument.Pdf(report));
+            byte[] pdf = await Task.Run(() => TraceImpedanceReportDocument.Pdf(report, style));
             await File.WriteAllBytesAsync(pdfPath, pdf);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

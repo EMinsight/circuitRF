@@ -19,6 +19,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Engine;
+using CircuitRF.Render;
 
 namespace CircuitRF.Ui.Layout.Impedance;
 
@@ -840,6 +841,7 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         foreach (var a in Report?.StaleAcceptances ?? [])
             StaleAcceptances.Add(new ImpedanceStaleAcceptanceRow(a, row => Editor?.RemoveImpedanceAcceptances([row.Acceptance])));
         OnPropertyChanged(nameof(HasStaleAcceptances));
+        CountExportPages();
 
         OnPropertyChanged(nameof(Report));
         OnPropertyChanged(nameof(HasResults));
@@ -984,9 +986,77 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
     public string SuggestedPdfName => Editor?.CurrentLayoutPath is { Length: > 0 } p
         ? TraceImpedanceAnalysis.CellTitle(p) + " impedance.pdf" : "impedance.pdf";
 
-    /// <summary>Writes the held report to <paramref name="pdfPath"/> — the view asks where.</summary>
+    /// <summary>Writes the held report to <paramref name="pdfPath"/> in the chosen style — the view asks where.</summary>
     public Task<bool> ExportPdfAsync(string pdfPath) =>
-        Editor is { } vm ? vm.ExportTraceImpedancePdfAsync(pdfPath) : Task.FromResult(false);
+        Editor is { } vm ? vm.ExportTraceImpedancePdfAsync(pdfPath, ExportStyle) : Task.FromResult(false);
+
+    // ── the export's style (brief-impedance-9) ───────────────────────────────────────────────
+
+    /// <summary>A Full report longer than this pre-selects the Summary (owner decision D1 (a)); the choice
+    /// stays the reviewer's.</summary>
+    public const int SummaryAbovePages = TraceImpedanceReportDocument.SummaryAbovePages;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ExportFull), nameof(ExportStyleNote))]
+    private bool _exportSummary;
+
+    /// <summary>The page count each style comes to, laid out from the report rather than written — null
+    /// while it is being counted or with no results.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FullStyleText), nameof(ExportStyleNote))]
+    private int? _fullPageCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SummaryStyleText))]
+    private int? _summaryPageCount;
+
+    public bool ExportFull
+    {
+        get => !ExportSummary;
+        set => ExportSummary = !value;
+    }
+
+    public TraceImpedanceReportStyle ExportStyle =>
+        ExportSummary ? TraceImpedanceReportStyle.Summary : TraceImpedanceReportStyle.Full;
+
+    public string FullStyleText => "Full" + Pages(FullPageCount);
+    public string SummaryStyleText => "Summary" + Pages(SummaryPageCount);
+    private static string Pages(int? n) => n is { } p ? $" — {p:N0} page{(p == 1 ? "" : "s")}" : "";
+
+    /// <summary>Said whenever the Full report is long, whichever style is chosen: why the Summary was chosen,
+    /// or what choosing Full instead comes to.</summary>
+    public string ExportStyleNote => FullPageCount is not (> SummaryAbovePages and var n) ? ""
+        : ExportSummary ? $"Summary chosen: the Full report is {n:N0} pages."
+        : $"The Full report is {n:N0} pages; Summary is {SummaryPageCount:N0}.";
+
+    private int _countVersion;
+    private bool? _recommendedSummary;
+
+    /// <summary>Counts both styles' pages in the background whenever the report changes, and pre-selects
+    /// the Summary when the Full report is long — only when that recommendation CHANGES, so accepting a
+    /// finding does not undo the reviewer's own choice.</summary>
+    private async void CountExportPages()
+    {
+        int version = ++_countVersion;
+        FullPageCount = SummaryPageCount = null;
+        if (Editor?.ImpedanceReportForExport is not { } report)
+        {
+            _recommendedSummary = null;
+            return;
+        }
+        var (full, summary) = await Task.Run(() =>
+            (TraceImpedanceReportDocument.PageCount(report, TraceImpedanceReportStyle.Full),
+             TraceImpedanceReportDocument.PageCount(report, TraceImpedanceReportStyle.Summary)));
+        if (version != _countVersion) return;
+        FullPageCount = full;
+        SummaryPageCount = summary;
+        bool recommend = full > SummaryAbovePages;
+        if (recommend != _recommendedSummary)
+        {
+            _recommendedSummary = recommend;
+            ExportSummary = recommend;
+        }
+    }
 
     private void RefreshCommands()
     {
