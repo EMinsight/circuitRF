@@ -14,13 +14,23 @@ namespace CircuitRF.Engine.Mom;
 /// can be quietly wrong, so it is an explicit setting with its own convergence test.
 /// </param>
 /// <param name="TruncationTailCells">Graded cells in each truncated tail.</param>
+/// <param name="OmitFacesOnGround">
+/// A conductor face lying ON the ground plane is left out of the mesh, and the substrate height is
+/// taken from the lowest conductor that does not touch the plane. Such a conductor is grounded copper
+/// standing on the plane — a bump on it — and its face there carries no charge: meshed, that face
+/// coincides with its own image, its unknowns produce no potential anywhere and the system is
+/// singular, while the substrate height (plane to lowest conductor) is zero and over-refines every
+/// interface. Off by default; the trace-impedance check turns it on (brief-impedance-8 follow-up).
+/// Inert on a problem with no such face.
+/// </param>
 public sealed record EmMeshSettings(
     int    MinCellsAcrossWidth = 6,
     int    EdgeCells           = 3,
     double EdgeFractionOfWidth = 0.03,
     double EdgeGrowthRatio     = 1.7,
     double TruncationHeights   = 20.0,
-    int    TruncationTailCells = 12)
+    int    TruncationTailCells = 12,
+    bool   OmitFacesOnGround   = false)
 {
     public static readonly EmMeshSettings Default = new();
 

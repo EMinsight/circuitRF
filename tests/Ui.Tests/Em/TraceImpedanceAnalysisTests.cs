@@ -12,6 +12,8 @@
 // --region coordinate. Accepted findings (brief-impedance-5): an accepted warning passes until the trace
 // moves; a tolerance change keeps it; a worse finding shows again with both numbers; acceptances
 // round-trip and are absent when none; and the verb's exit code counts un-accepted findings only.
+// A large board (brief-impedance-8): a cut with ground copper standing on the image plane is solved;
+// and a long solve says how far it has got and how long is left, on stderr only.
 
 using System.Text.Json;
 using CircuitRF.Cli;
@@ -934,6 +936,102 @@ public class TraceImpedanceAnalysisTests
             Assert.Equal(1, InProcess("impedance", clay, "--layers", "Top", "--target", targetText, "--ignore-accepted"));
         }
         finally { try { Directory.Delete(dir, true); } catch (IOException) { } }
+    }
+
+    // ── a large board (brief-impedance-8) ───────────────────────────────────────────────────────
+
+    /// <summary>A stripline layer whose plane below is pulled back from under the trace, on a stackup
+    /// whose bottom boundary is ground: the plane is that boundary, and the bottom copper beside the
+    /// trace stands ON it. Meshed whole that copper's face on the plane was singular and the trace was
+    /// unsolved — on a 10-layer board 762 stations, and ~90 % of a 29-minute run. It is a grounded bump
+    /// on the plane, its face there is left out, and the trace has an answer.</summary>
+    [Fact]
+    public void GroundCopperOnTheImagePlane_IsSolved()
+    {
+        var mid = new LayerKey(3, 0);
+        var tech = new Technology
+        {
+            Name = "stripline",
+            Layers =
+            [
+                new LayerDef { Key = Top, Name = "Top", Purpose = "conductor" },
+                new LayerDef { Key = mid, Name = "Mid", Purpose = "conductor" },
+                new LayerDef { Key = Gnd, Name = "Bottom", Purpose = "conductor" },
+            ],
+            Stackup = new Stackup
+            {
+                Top = BoundaryCondition.Open,
+                Bottom = BoundaryCondition.Ground,
+                Layers =
+                [
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Top", ThicknessDbu = Um(35), SigmaSm = 5.8e7, DrawingLayers = [Top] },
+                    new StackupLayer { Kind = StackupKind.Dielectric, Name = "Core 1", ThicknessDbu = Um(200), Epsr = 4.4 },
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Mid", ThicknessDbu = Um(18), SigmaSm = 5.8e7, DrawingLayers = [mid] },
+                    new StackupLayer { Kind = StackupKind.Dielectric, Name = "Core 2", ThicknessDbu = Um(200), Epsr = 4.4 },
+                    new StackupLayer { Kind = StackupKind.Conductor, Name = "Bottom", ThicknessDbu = Um(35), SigmaSm = 5.8e7, DrawingLayers = [Gnd] },
+                ],
+            },
+        };
+        LayoutShape[] shapes =
+        [
+            Rect(mid, -6000, -50, 6000, 50),
+            Rect(Top, -8000, -8000, 8000, 8000),
+            Rect(Gnd, -8000, 300, 8000, 8000), Rect(Gnd, -8000, -8000, 8000, -300),   // pulled back under the trace
+        ];
+
+        var report = Analyze(shapes, layers: [mid], tech: tech);
+
+        var trace = Assert.Single(Assert.Single(report.Layers).Traces);
+        Assert.NotEqual(TraceVerdict.Unsolved, trace.Verdict);
+        Assert.InRange(trace.Z0Mean!.Value, 20, 80);
+        Assert.DoesNotContain(trace.Issues, i => i.Text.Contains("solved to no capacitance", StringComparison.Ordinal));
+    }
+
+    /// <summary>A long solve repeats its line on stderr at most once per interval, with the count done,
+    /// the time elapsed and — once the rate means something — the time left; and the verb's --json
+    /// stdout is the same bytes however often that line is printed.</summary>
+    [Fact]
+    public void ALongSolve_SaysHowFarItHasGot_OnStderrOnly()
+    {
+        var err = new StringWriter();
+        var now = TimeSpan.Zero;
+        var lines = new CircuitRF.Cli.Impedance.ProgressLines(err, TimeSpan.FromSeconds(3), () => now);
+        const string stage = "Inner 7 (8 of 10): solving";
+        lines.Report(new RunProgress(stage, 7, 10, 0, 6368, "cross-sections"));
+        now = TimeSpan.FromSeconds(1);
+        lines.Report(new RunProgress(stage, 7, 10, 100, 6368, "cross-sections"));
+        now = TimeSpan.FromSeconds(42);
+        lines.Report(new RunProgress(stage, 7, 10, 3184, 6368, "cross-sections"));
+
+        Assert.Equal(
+            "[circuitRF] Inner 7 (8 of 10): solving (6368 cross-sections)" + Environment.NewLine +
+            "[circuitRF] Inner 7 (8 of 10): solving: 3,184 of 6,368 cross-sections, 42 s elapsed, about 42 s left" + Environment.NewLine,
+            err.ToString());
+
+        string dir = Path.Combine(Path.GetTempPath(), "crf-impedance-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var interval = CircuitRF.Cli.Impedance.ProgressInterval;
+        try
+        {
+            TechPersistence.SaveToFile(Path.Combine(dir, "board.ctech"), Tech());
+            var view = new LayoutView { TechRef = "board.ctech" };
+            view.Shapes.Add(Rect(Top, -6000, -500, 6000, 500));
+            view.Shapes.Add(Rect(Gnd, -8000, -8000, 8000, 8000));
+            string clay = Path.Combine(dir, "board.clay");
+            LayoutPersistence.SaveToFile(clay, view);
+
+            CircuitRF.Cli.Impedance.ProgressInterval = TimeSpan.MaxValue;
+            InProcess("impedance", clay, "--layers", "Top", "--json");
+            string quiet = _last;
+            CircuitRF.Cli.Impedance.ProgressInterval = TimeSpan.Zero;
+            InProcess("impedance", clay, "--layers", "Top", "--json");
+            Assert.Equal(quiet, _last);
+        }
+        finally
+        {
+            CircuitRF.Cli.Impedance.ProgressInterval = interval;
+            try { Directory.Delete(dir, true); } catch (IOException) { }
+        }
     }
 
     private string _last = "";

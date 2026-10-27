@@ -705,10 +705,15 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         RunLayerCountText = $"Layer {i} of {n}";
         RunLayerProgress = stage;
         RunOverallProgress = (i - 1 + stage) / Math.Max(1, n);
+        if (p.Stage != _progressStage) { _progressStage = p.Stage; _stageClock.Restart(); }
         RunStageText = what == "solving" && p.StageTotal > 0
-            ? $"Solving cross-sections — {p.StageCompleted:N0} of {p.StageTotal:N0}"
+            ? "Solving " + TraceSolveProgress.Text(p.StageCompleted, p.StageTotal, p.StageUnit, _stageClock.Elapsed)
             : what.Length > 0 ? char.ToUpperInvariant(what[0]) + what[1..] + "…" : "";
     }
+
+    // brief-impedance-8 R-imp8-4: the stage's own clock, for the elapsed time and the estimate of what is left.
+    private string _progressStage = "";
+    private readonly System.Diagnostics.Stopwatch _stageClock = new();
 
     // ── the results ──────────────────────────────────────────────────────────────────────────
 

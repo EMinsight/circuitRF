@@ -1099,8 +1099,10 @@ the layout you are working in, and each layout keeps its own results.
   drawn round them, the traces clicked, or their net. See [On the board](#impedance-scope-board).
 - **Scope** &mdash; the traces that will be reviewed, in one sentence, updated as you tick and untick.
 
-**Run** analyses them. A bar shows the layer being analysed and how far through it the run is; a whole
-eight-layer board of about 300 traces takes a couple of minutes, a single outer layer a few seconds.
+**Run** analyses them. A bar shows the layer being analysed and how far through it the run is, and the
+line under it counts the cross-sections solved, the time elapsed and, once a few are done, about how long
+the layer has left. A whole ten-layer board of about 1,800 traces takes a few minutes, a single outer
+layer a few seconds.
 **Cancel** stops the run and keeps **every layer that finished**. The Messages panel gets one line with
 the counts that pass, warn and fail; it is a warning line only when something **failed** or the run was
 cancelled.

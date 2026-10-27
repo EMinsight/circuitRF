@@ -69,7 +69,7 @@ public static class BoundaryMesher
         // plane that is the plane-to-lowest-conductor distance; without one there is no substrate,
         // so the conductor bounding box is the only available scale.
         double hRef = problem.Ground is not null
-            ? Math.Max(y0 - problem.Ground.Y, 1e-12)
+            ? Math.Max(LowestOffGround(problem, outlines, y0, settings, tol) - problem.Ground.Y, 1e-12)
             : scale;
 
         var notes = new List<string>();
@@ -80,6 +80,8 @@ public static class BoundaryMesher
         var segments    = new List<EmSegment>();
         segments.AddRange(BuildConductorSegments(outlines, template,
             (mid, outward) => problem.EpsAt(RegionProbeY(mid, outward, tol))));
+        if (settings.OmitFacesOnGround && problem.Ground is { } plane)
+            segments.RemoveAll(sg => Math.Abs(sg.A.Y - plane.Y) <= tol && Math.Abs(sg.B.Y - plane.Y) <= tol);
 
         var perConductor = new int[outlines.Count];
         foreach (var s in segments) perConductor[s.ConductorIndex]++;
@@ -150,6 +152,21 @@ public static class BoundaryMesher
         return new EmMeshReport(
             mesh, segments.Count, perConductor, perInterface, interfaceYs,
             minCell, maxCell, truncation, wheeler, template, notes);
+    }
+
+    /// <summary>The bottom of the lowest conductor — under <see cref="EmMeshSettings.OmitFacesOnGround"/>,
+    /// of the lowest one not standing on the plane, when there is one.</summary>
+    private static double LowestOffGround(EmProblem problem, List<IReadOnlyList<EmPoint>> outlines, double y0,
+                                          EmMeshSettings settings, double tol)
+    {
+        if (!settings.OmitFacesOnGround || problem.Ground is null) return y0;
+        double lowest = double.PositiveInfinity;
+        foreach (var o in outlines)
+        {
+            double bottom = Polygon2D.Bounds(o).Y0;
+            if (bottom > problem.Ground.Y + tol) lowest = Math.Min(lowest, bottom);
+        }
+        return double.IsPositiveInfinity(lowest) ? y0 : lowest;
     }
 
     /// <summary>R-mom-13: f at which δ = t/2, i.e. f = 4/(π·t²·µ₀·σ).</summary>

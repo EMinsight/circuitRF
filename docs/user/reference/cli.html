@@ -1843,7 +1843,9 @@ command-line spelling, still applies unless <code>--region</code> replaces it.</
 trace — <code>PASS</code>, <code>WARN</code> or <code>FAIL</code> — its findings under it (<code>!</code> a fail, <code>?</code> a warning), then
 one line per <a href="layout-editor.html#impedance-traces">junction</a> — its kind and each arm's trace, width,
 Z0 and result — and a closing line <em>N pass, W warning, F fail</em>, with the junctions' counts after it
-when there are any; stderr says which layer is being analysed. Traces outside the
+when there are any. stderr says which layer is being analysed and, through a long solve, repeats the
+line every few seconds with the cross-sections done, the time elapsed and an estimate of the time left on
+that layer. Traces outside the
 scope are not cut, solved or listed, only counted, and they still count as grounded copper beside the
 traces under review. Lengths
 and coordinates are in <strong>the layout's own unit</strong>. With <code>--json</code> the result carries every layer, trace and

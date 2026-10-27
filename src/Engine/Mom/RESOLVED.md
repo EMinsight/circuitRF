@@ -12200,3 +12200,16 @@ provenance hashes append roughness only when it is set.
   the same convention as the circuit models, so the loss is overstated when only one face is rough.
 - Hammerstad-Bekkadal saturates at 2×. Very rough foils exceed that, and Huray is the usual next model.
 - Palace runs do not read roughness yet: its conductivity boundary takes one σ for a whole sweep.
+
+## `EmMeshSettings.OmitFacesOnGround` — a conductor face on the ground plane (2026-10-27)
+
+Kernel A could not solve a conductor standing ON its ground plane: the face on the plane coincides with its own
+image, so its unknowns produce no potential anywhere (a singular column, NaN out of the LU), and the substrate height
+— plane to lowest conductor — is zero, which over-refines every dielectric interface (N 1,013 against 376 on the
+gate's stripline). The trace-impedance check meets it whenever a stackup's bottom boundary is the plane and the bottom
+layer's copper sits beside the trace. Under the setting that face is left out (it is grounded copper on a grounded
+plane and carries no charge) and the substrate height comes from the lowest conductor off the plane. **Off by
+default and inert on any problem without such a face**, segment for segment, so no EM-extraction number moves. The
+oracle is the same copper lifted off the plane, well posed for any lift, which closes linearly on the omitted-face
+answer. `tests/Engine.Tests/Mom/FaceOnGroundTests`; the board measurement is in `src/Design/RESOLVED.md`
+(brief-impedance-8).

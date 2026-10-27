@@ -23727,3 +23727,48 @@ total does not. Not changed here (it is DFR29-2's plane rule); stated so a revie
 
 **Not read:** a polygon pad on the trace's OWN conductor with no via (that branch still takes discs only), rectangular
 and rounded-rectangle pads, and TESTPAD instances from their parameters (DFR29-2 R-dfr29-2-3's other cases).
+
+## brief-impedance-8 — a whole large board in minutes: the expensive cuts were the ones that could not be solved, and now can (2026-10-27)
+
+**Measured first (R-imp8-1), on Inner 7 of the 10-layer board (6,368 unique cross-sections),** with a temporary
+probe that meshed every cut and timed a 1-in-25 sample plus the 20 largest (removed). Per-cut solve time: median
+0.13 s, 90th percentile 15 s, 99th 26 s, max 28 s; the top 10 % of cuts carried ~43 % of the layer by an N³ model.
+The mesh is ~0.02 % of a cut's time and the air-filled C₀ solve ~0.6 %; the dense C solve is the rest. Memory is
+the same thing: N ≈ 2,300 complex unknowns is ~85 MB per matrix, several times that held by the LU, ten at once.
+
+**Every expensive cut solved to NaN** — they were the `unsolved` stations (`solved to no capacitance`, 762 on the
+board). 104 of 104 sampled cuts of one shape came back NaN and 215 of 215 others solved: no copper covers the trace
+below, so the stackup's bottom boundary (Ground on an imported technology) is the image plane, and Bottom Copper
+beside the trace lies ON that plane. A conductor face on the plane coincides with its own image, so those
+unknowns produce no potential anywhere — a singular column — and the mesher's substrate height (plane to lowest
+conductor) is zero, so the top-surface dielectric interface was graded to ~1,850 panels (N ≈ 2,300 against ~400
+for an ordinary stripline cut). 2,011 of Inner 7's cuts had this shape: ~90 % of the layer's solve time, and of the
+whole 29-minute run. Not the reach, not the conductor count (7, under the cap like every cut), not interfaces
+between the references.
+
+**Changed (R-imp8-2, §3 item 5), in two steps.** First the brief as written: `TraceCut.GroundOnPlane` named the shape
+and `Solve` refused it before meshing with the answer it always reached — 4 min 40 s, 3.47 GB, the `--json` result
+identical to the baseline (largest Z0 change 0, no verdict changes), every layer under 2 min. Then, on the owner's
+instruction, the 762 stations were made SOLVABLE and the refusal removed: the copper on the plane is a grounded bump
+on it, and its face there carries no charge, so `EmMeshSettings.OmitFacesOnGround` (off by default; the impedance
+check's `TraceCrossSection.MeshSettings` turns it on) leaves that face out of the mesh and takes the substrate height
+from the lowest conductor that does not touch the plane. It is inert on a problem with no such face — segment for
+segment — so no other cut's mesh changed. The oracle is the same copper lifted off the plane with the ordinary mesh,
+which is well posed for any lift: on a 97 µm stripline it closes linearly on the omitted-face answer (61.7759 Ω at
+0.25 µm against 61.7767 Ω), and the mesh is 376 unknowns against 273 for the cut with no bump at all (1,013 meshed
+whole). `tests/Engine.Tests/Mom/FaceOnGroundTests`. Interface grading by distance, truncating the stack at the
+references and scheduling large solves were not needed and not built.
+
+**Result, same machine and command as the baseline:** 5 min 22 s wall (29 min 22 s before; 4 min 40 s with the
+refusal), peak RSS 4.14 GB (8.2 GB; 3.47 GB) — just over the brief's 5 min / 4 GB, the difference being the 2,011
+cuts that are now solved. Per layer: Bottom Copper ~1 min 56 s, Inner 2 ~1 min 14 s, Inner 7 1 min 8 s (was ~24 min),
+Top Copper 19 s, the rest seconds. **Against the baseline:** all 762 `unsolved` stations (on 269 traces) have an answer;
+no trace without one changed in any byte; two verdicts changed, both Inner 7 and both unsolved → fail (T765, Z0
+52.6–66.0 Ω; T788, 55.5–71.0 Ω, 85–97 µm traces with no plane under them); on the 269 traces 211 out-of-tolerance
+findings appeared and 64 merged away, and the largest change in a trace's mean Z0 is 8.4 Ω (stretches that were
+unsolved now count). The newly solved Inner 7 traces read a median mean of 45.07 Ω against 45.08 Ω for the rest of
+the layer.
+
+**Progress (R-imp8-4):** `TraceSolveProgress` writes one sentence — done of total, elapsed, and the time left once
+2 s and 2 % of the stage are done — used by the CLI's stderr line (at most every 3 s, `Impedance.ProgressLines`;
+reports arrive from the solve's worker threads, so it locks) and the Impedance panel's stage line. stdout is untouched.

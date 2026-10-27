@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using CircuitRF.Design.Layout;
@@ -237,18 +238,14 @@ internal static partial class Impedance
 
         // Progress: one stderr line per stage (a layer's finding, cutting, solving), and whatever a
         // host installed beside it.
-        string lastStage = "";
+        var lines = new ProgressLines(Console.Error, ProgressInterval);
         var control = new RunControl
         {
             Token = RunHost.Cancellation,
             Progress = new Inline(p =>
             {
                 RunHost.Observer?.Invoke(p);
-                if (p.Stage != lastStage)
-                {
-                    lastStage = p.Stage;
-                    Console.Error.WriteLine($"[circuitRF] {p.Stage}" + (p.StageTotal > 0 ? $" ({p.StageTotal} {p.StageUnit})" : ""));
-                }
+                lines.Report(p);
             }),
         };
 
@@ -326,6 +323,42 @@ internal static partial class Impedance
     private sealed class Inline(Action<RunProgress> a) : IProgress<RunProgress>
     {
         public void Report(RunProgress value) => a(value);
+    }
+
+    /// <summary>How often a long stage repeats its line with how far it has got; tests shorten it.</summary>
+    internal static TimeSpan ProgressInterval = TraceSolveProgress.Interval;
+
+    /// <summary>
+    /// The stderr lines: one when a stage starts, and — through a long stage with a known total — one
+    /// at most every <c>interval</c> with the count done, the time elapsed and, once the rate means
+    /// something, the time left (brief-impedance-8 R-imp8-4: a layer of 6,368 cross-sections said
+    /// "solving" and then nothing for 24 minutes). Reports arrive from the solve's worker threads.
+    /// </summary>
+    internal sealed class ProgressLines(TextWriter err, TimeSpan interval, Func<TimeSpan>? clock = null)
+    {
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private readonly Lock _gate = new();
+        private string _stage = "";
+        private TimeSpan _stageStart, _lastLine;
+
+        public void Report(RunProgress p)
+        {
+            lock (_gate)
+            {
+                var now = clock?.Invoke() ?? _clock.Elapsed;
+                if (p.Stage != _stage)
+                {
+                    _stage = p.Stage;
+                    _stageStart = _lastLine = now;
+                    err.WriteLine($"[circuitRF] {p.Stage}" + (p.StageTotal > 0 ? $" ({p.StageTotal} {p.StageUnit})" : ""));
+                    return;
+                }
+                if (p.StageTotal <= 0 || p.StageCompleted >= p.StageTotal || now - _lastLine < interval) return;
+                _lastLine = now;
+                err.WriteLine($"[circuitRF] {p.Stage}: " +
+                              TraceSolveProgress.Text(p.StageCompleted, p.StageTotal, p.StageUnit, now - _stageStart));
+            }
+        }
     }
 
     private static int Usage()

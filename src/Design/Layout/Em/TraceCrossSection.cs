@@ -407,7 +407,7 @@ internal static class TraceCrossSection
                                     [], cut.Width * s.MetresPerDbu);
         try
         {
-            var mesh = BoundaryMesher.Mesh(problem, EmMeshSettings.Default).Mesh;
+            var mesh = BoundaryMesher.Mesh(problem, MeshSettings).Mesh;
             ct.ThrowIfCancellationRequested();
             double c  = ChargeSolver.MaxwellCapacitance(mesh)[0, 0].Real;
             double c0 = ChargeSolver.MaxwellCapacitance(ChargeSolver.AirFilled(mesh))[0, 0].Real;
@@ -419,6 +419,17 @@ internal static class TraceCrossSection
             return (0, 0, ex.Message);
         }
     }
+
+    /// <summary>
+    /// The mesh every cut is solved on. Copper standing ON the image plane — a ground layer's copper
+    /// beside the trace when the stackup's bottom boundary is the plane, or a plating layer on the
+    /// reference — is a grounded bump on that plane, and its face there is left out of the mesh
+    /// (<see cref="EmMeshSettings.OmitFacesOnGround"/>). Meshed, that face is singular: such cuts
+    /// were the board's `unsolved` stations, and with the substrate height read as zero they were also
+    /// its largest solves — on a 10-layer board 2,011 of one layer's 6,368 cross-sections and ~90 %
+    /// of a 29-minute run (brief-impedance-8 and its follow-up).
+    /// </summary>
+    internal static readonly EmMeshSettings MeshSettings = EmMeshSettings.Default with { OmitFacesOnGround = true };
 
     public static double Z0(double c, double c0) => 1.0 / (EmConstants.C0 * Math.Sqrt(c * c0));
 }

@@ -1231,7 +1231,9 @@ stdout starts with the target and, on the next line, the **scope in words** &mda
 trace &mdash; `PASS`, `WARN` or `FAIL` &mdash; its findings under it (`!` a fail, `?` a warning), then
 one line per [junction](layout-editor.html#impedance-traces) &mdash; its kind and each arm's trace, width,
 Z0 and result &mdash; and a closing line *N pass, W warning, F fail*, with the junctions' counts after it
-when there are any; stderr says which layer is being analysed. Traces outside the
+when there are any. stderr says which layer is being analysed and, through a long solve, repeats the
+line every few seconds with the cross-sections done, the time elapsed and an estimate of the time left on
+that layer. Traces outside the
 scope are not cut, solved or listed, only counted, and they still count as grounded copper beside the
 traces under review. Lengths
 and coordinates are in **the layout's own unit**. With `--json` the result carries every layer, trace and
