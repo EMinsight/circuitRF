@@ -1107,7 +1107,7 @@ public static class NetExtractor
                 $"'{card.Name}'), and no compiled model implementing it was found for kit " +
                 $"'{provider}'. These are built from the kit's own Verilog-A sources with a " +
                 $"Verilog-A compiler; compile them, then add the folder holding the resulting " +
-                $"'.osdi' files in File ▸ Manage PDKs.");
+                $"'.osdi' files in File ▸ Manage Libraries.");
             return null;
         }
 
@@ -1184,7 +1184,12 @@ public static class NetExtractor
             return null;
         }
 
-        string? path = SpiceModelSymbolProvider.ResolvePath(file, model.SchematicDirectory);
+        string? path = SpiceModelSymbolProvider.ResolvePath(file, model.SchematicDirectory, out string? unresolved);
+        if (path is null && unresolved is not null)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': {unresolved}");
+            return null;
+        }
         if (path is null)
         {
             conflicts.Add($"Instance '{comp.InstanceName}': '{file}' is a relative path and this " +

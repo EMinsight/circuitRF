@@ -33,6 +33,15 @@ public static class SpiceNetlistReader
     /// <summary>Nesting limit for inclusion. A cycle is caught by identity; this catches depth.</summary>
     private const int MaxIncludeDepth = 32;
 
+    [ThreadStatic] private static int t_reads;
+
+    /// <summary>
+    /// How many reads (<see cref="ReadFile"/> or <see cref="Read"/>) THIS thread has made. A counter,
+    /// so a caller that promises to read no circuit — the vendor-library index scans headers only —
+    /// can be held to it by a test. Per thread, so tests running in parallel do not see each other.
+    /// </summary>
+    public static int ReadsOnThisThread => t_reads;
+
     /// <summary>
     /// Reads a file, optionally reading only one of the <c>.lib</c> SECTIONS it declares.
     ///
@@ -48,6 +57,7 @@ public static class SpiceNetlistReader
     public static SpiceNetlistResult ReadFile(string path, string? section = null,
                                               SpiceDistributions distributions = SpiceDistributions.Live)
     {
+        t_reads++;
         string full  = Path.GetFullPath(path);
         var    lines = File.ReadAllLines(full);
 
@@ -70,6 +80,7 @@ public static class SpiceNetlistReader
         string text, string? sourceDirectory = null, string fileLabel = "<text>", string? section = null,
         SpiceDistributions distributions = SpiceDistributions.Live)
     {
+        t_reads++;
         var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
         var session = new Session(distributions);
         session.Run(lines, fileLabel, sourceDirectory, Blank(section), depth: 0);
@@ -1182,6 +1193,18 @@ public static class SpiceNetlistReader
 
                 string spelling = NormaliseInstanceParameter(k);
                 if (letter is 'R' or 'C' or 'L') spelling = NormalisePassiveParameter(letter, spelling);
+
+                // A native inductor reads L, R, C and the multiplier and NOTHING else, so anything
+                // more on its line would be carried as an override and silently ignored — a lossy
+                // part simulating lossless. Said by name and dropped instead. An inductor that names
+                // a model card hands its overrides to the card, which is a different contract.
+                if (letter == 'L' && reference == "L" && !InductorParameters.Contains(spelling))
+                {
+                    Note(file, number,
+                         $"'{name}' states {k}={v}, which circuitRF's inductor does not take; dropped. "
+                         + "The inductor reads L, R (series resistance), C (series capacitance) and m.");
+                    continue;
+                }
                 overrides.Add(new ParameterAssignment(spelling, Rewrite(v, file, number)));
             }
 
@@ -1259,6 +1282,17 @@ public static class SpiceNetlistReader
             if (name.Equals(letter.ToString(), StringComparison.OrdinalIgnoreCase))
                 return char.ToUpperInvariant(letter).ToString();
 
+            // One dialect spells an inductor's series resistance `Rser`; circuitRF's inductor reads
+            // `R`. Carried through verbatim it was an override nothing read, so a non-zero value
+            // simulated as a lossless part (spice-models.md §2 property 2).
+            // `r`/`c` on an inductor are the same case trap as `r=55m` on a resistor.
+            if (letter is 'L')
+            {
+                if (name.Equals("Rser", StringComparison.OrdinalIgnoreCase)
+                    || name.Equals("R", StringComparison.OrdinalIgnoreCase)) return "R";
+                if (name.Equals("C", StringComparison.OrdinalIgnoreCase)) return "C";
+            }
+
             foreach (string canonical in NativePassiveParameters)
                 if (name.Equals(canonical, StringComparison.OrdinalIgnoreCase)) return canonical;
 
@@ -1267,6 +1301,11 @@ public static class SpiceNetlistReader
 
         private static readonly string[] NativePassiveParameters =
             ["TC1", "TC2", "Tnom", "Temp", "Dtemp"];
+
+        /// <summary>Every override circuitRF's native inductor reads (<c>InductorModel</c> plus the
+        /// elaborator's multiplier), in the spelling <see cref="NormalisePassiveParameter"/> produces.</summary>
+        private static readonly HashSet<string> InductorParameters =
+            new(StringComparer.Ordinal) { "L", "R", "C", Elaborator.MultiplierParamName };
 
         // ── shared plumbing ───────────────────────────────────────────────────
 

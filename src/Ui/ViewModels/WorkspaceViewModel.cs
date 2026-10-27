@@ -434,6 +434,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         NewTechnologyCommand.NotifyCanExecuteChanged();
         NewEmSetupCommand.NotifyCanExecuteChanged();
         ManagePdksCommand.NotifyCanExecuteChanged();
+        AddVendorLibraryCommand.NotifyCanExecuteChanged();
         SetGroundPourMarginCommand.NotifyCanExecuteChanged();
 
         if (_factory.ProjectTreeTool is { } tree)
@@ -1533,8 +1534,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // layout, the tree, the launch action.
             // brief-dfr22-1 R-dfr22-1-3: the preferred length unit is written into the copied
             // technology, which is how every new layout and placed line in it follows the preference.
+            // brief vendorlib-1 R-vl1-4c: the user's own vendor libraries (each one ticked Use in new
+            // workspaces), passed as an argument — WorkspaceCreate reads no preference.
             cwsPath = WorkspaceCreate.Create(result.ParentDir, result.Name, result.TechnologyId,
-                                             PreferredUnits.Length).CwsPath;
+                                             PreferredUnits.Length,
+                                             UserVendorLibraries.ForNewWorkspace()).CwsPath;
 
             // Update tracked location to the chosen parent (seeds the next New Workspace dialog).
             _lastWorkspaceParentDir = result.ParentDir;
@@ -5974,6 +5978,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         string wsRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
         var cws  = TryLoadCws(CurrentWorkspacePath);
         var refs = cws.PdkRefs ?? [];
+        var vendorRefs = cws.VendorLibraries ?? [];
+        string VendorKey() => string.Join("\n", vendorRefs.Select(r => r.Name + "\t" + r.Path));
+        string vendorBefore = VendorKey();
 
         // Collected during the dialog and acted on after it closes — see Context.KitAdded for why the
         // offer cannot be made from inside a modal.
@@ -5991,6 +5998,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 {
                     var latest = TryLoadCws(CurrentWorkspacePath!);
                     latest.PdkRefs = refs;
+                    latest.VendorLibraries = vendorRefs.Count == 0 ? null : vendorRefs;
                     // SL2 R-sl2-6: the second site with something better to say than silence — see
                     // WorkspaceViewModel.ExternalRefs.cs. A kit reference the user has just repaired
                     // by hand is the gesture itself, not session state, and it would be gone at the
@@ -6003,13 +6011,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 }
                 catch (Exception ex)
                 {
-                    Messages.Warning($"Manage PDKs — the change could not be recorded: {ex.Message}");
+                    Messages.Warning($"Manage Libraries — the change could not be recorded: {ex.Message}");
                 }
             },
             Reveal:           RevealPathInFileManager,
             Loaded:           ReloadAllReferencedKits,
             Report:           (level, text) => Messages.Post(level, text),
-            KitAdded:         (kit, kitPath) => added.Add((kit, kitPath))));
+            KitAdded:         (kit, kitPath) => added.Add((kit, kitPath)),
+            VendorRefs:        vendorRefs,
+            PlacedVendorParts: PlacedVendorParts(),
+            AddVendor:         (dlg, folder, build) => AddVendorLibraryFromAsync(dlg, folder, build, vendorRefs)));
+
+        // A library added, removed or repaired changes what placed parts resolve to.
+        if (VendorKey() != vendorBefore) RefreshAfterReferenceChange();
 
         foreach (var (kit, kitPath) in added)
             await OfferTechnologyFromKitAsync(window, kit, kitPath);
@@ -6430,10 +6444,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Messages.Warning(
                 $"{broken.Count} referenced PDK(s) could not be loaded ({string.Join(", ", broken)}). " +
                 $"Parts placed from them show as unresolved until the reference is repaired in " +
-                $"File ▸ Manage PDKs.",
+                $"File ▸ Manage Libraries.",
                 PdkLoadLog.PathFor(wsRoot!));
 
         PublishKitPaletteItems();
+
+        // brief vendorlib-1 R-vl1-2e: the vendor libraries' indexes, started and never waited for.
+        RestoreVendorLibraries(wsRoot);
 
         RegisterKitProviderResolver(wsRoot);
         RefreshCornerAxes(wsRoot);
@@ -6819,7 +6836,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             return new KitRead(kitPath, null, null,
                 $"'{r.Provider}' was translated by an older reader (version {r.TranslationVersion}; " +
                 $"this build uses {DsnSymbolReader.TranslationVersion}). It was NOT re-translated: " +
-                $"pin positions could move and disconnect wires. Re-import it from File ▸ Manage PDKs " +
+                $"pin positions could move and disconnect wires. Re-import it from File ▸ Manage Libraries " +
                 $"when you are ready.",
                 Missing: false);
 

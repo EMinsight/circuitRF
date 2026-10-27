@@ -198,7 +198,9 @@ public partial class ProjectTreeView
             Item("Add Cell to Workspace…", ws.AddCellToWorkspaceCommand, MaterialIconKind.FolderMoveOutline, owner,
                  "Take a cell from another project into this one — copy it in, or reference it where it is."),
             import,
-            Item("Manage PDKs…", ws.ManagePdksCommand, MaterialIconKind.PackageVariant, owner),
+            Item("Add Vendor Library…", ws.AddVendorLibraryCommand, MaterialIconKind.Bookshelf, owner,
+                 "Reference a manufacturer's part library (plain-text SPICE) where it is — never copied."),
+            Item("Manage Libraries…", ws.ManagePdksCommand, MaterialIconKind.PackageVariant, owner),
             new Separator(),
 
             // The workspace as a whole.

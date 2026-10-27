@@ -567,7 +567,7 @@ public static class PdkPartInstaller
             diags.Add($"This kit's devices ({string.Join(", ", types.Take(3))}" +
                       $"{(types.Count > 3 ? ", …" : "")}) are compiled models, and the library that " +
                       $"implements them was not found near '{report.RootPath}'. It usually ships as " +
-                      $"a separate package beside the kit. Add that package in File ▸ Manage PDKs — " +
+                      $"a separate package beside the kit. Add that package in File ▸ Manage Libraries — " +
                       $"it needs no parts of its own — or import the folder holding both.");
             return null;
         }

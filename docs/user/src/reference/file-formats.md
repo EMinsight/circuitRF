@@ -380,6 +380,16 @@ bookmarks, the default technology and assembly rules, and the other projects and
 uses. It **references, never embeds** — the same cell or library can be used by multiple
 workspaces.
 
+A workspace that references a [vendor part library](pdk-integration.html#vendor) lists it under
+`VendorLibraries`, by name and folder; the key is absent when there are none:
+
+```json
+"VendorLibraries": [ { "Name": "Caps", "Path": "/home/you/libraries/caps" } ]
+```
+
+A placed part names its file as `vendorlib://Caps/<file inside the library>`, so moving the library is
+one edit to `Path`.
+
 Beside it sits a second, optional file: the **`.cwsuser`**, which is yours rather than the
 project's.
 

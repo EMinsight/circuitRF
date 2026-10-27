@@ -890,7 +890,7 @@ public sealed class WorkspaceArchiveTests : IDisposable
         var cws = JsonNode.Parse(System.IO.File.ReadAllText(opened.CwsPath!))!.AsObject();
         var storedKnown = cws["KnownFiles"]![0]!.GetValue<string>();
         Assert.True(System.IO.File.Exists(
-            CircuitRF.Ui.Schematic.WorkspaceRefs.Resolve(storedKnown, root)), storedKnown);
+            CircuitRF.Design.Workspace.WorkspaceRefs.Resolve(storedKnown, root)), storedKnown);
 
         var comps = JsonNode.Parse(System.IO.File.ReadAllText(
             Path.Combine(root, "Amp", "schematic", "Amp.csch")))!["Components"]!.AsArray();

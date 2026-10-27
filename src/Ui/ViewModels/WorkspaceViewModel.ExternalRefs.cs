@@ -138,7 +138,7 @@ public partial class WorkspaceViewModel
 
         cws.ReferencedWorkspaces ??= [];
 
-        string stored = Schematic.WorkspaceRefs.ToStoredRef(otherCwsPath, workspaceRoot);
+        string stored = WorkspaceRefs.ToStoredRef(otherCwsPath, workspaceRoot);
         string otherRoot = Path.GetFullPath(Path.GetDirectoryName(otherCwsPath)!);
 
         // Already referenced under some name — reuse it rather than adding a second alias.
@@ -148,7 +148,7 @@ public partial class WorkspaceViewModel
             try
             {
                 existingRoot = Path.GetFullPath(Path.GetDirectoryName(
-                    Schematic.WorkspaceRefs.Resolve(existing.Path, workspaceRoot))!);
+                    WorkspaceRefs.Resolve(existing.Path, workspaceRoot))!);
             }
             catch { continue; }
 

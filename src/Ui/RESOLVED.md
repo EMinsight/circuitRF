@@ -40801,3 +40801,23 @@ two-port passive block it found:
 - UiSnapshot: `--button` finds ToggleButtons too, by string content. Two visible buttons named "Via" (the tool and
   the hole picker's) resolve to the first, the tool. The canvas re-fits after the scale is set, because the report
   grows, so take click coordinates from a render made after **Set**.
+
+## brief vendorlib-1 — Add Vendor Library, Manage Libraries (2026-10-27)
+
+**Manage PDKs… is Manage Libraries… on every menu surface** (in-window File menu, macOS native menu, torn-off
+File menu, the Project Tree's blank-area menu), and every message that pointed users at the old item now
+names the new one. **The code identifiers keep `Pdk`** — `ManagePdksDialog`, `ManagePdksCommand`, the
+`manage-pdks` figure id — because renaming them would touch source scans, a figure id and key bindings with no
+benefit to anyone reading the application. The dialog is 720 wide now, for its Kind column; the figure
+catalogue entry follows.
+
+**One dialog, two kinds of row.** `ManagePdksDialog.LibraryRow` wraps either a `PdkReferenceManager.RefStatus`
+or a `VendorLibraryRefs.Status`; every rule stays in those two framework-free types. A vendor row's state is
+its part count from the last finished background index, or *Indexing…* until `VendorLibraryIndex.Built`
+fires (the dialog subscribes while open and posts the refresh to the UI thread). The per-row *New workspaces*
+checkbox is the per-user list's `UseInNewWorkspaces`; ticking it for a library this user never added adds
+it to their list.
+
+**Workspace open never waits.** `RestoreInstalledPdks` ends by calling `RestoreVendorLibraries`, which only
+STARTS each index build and posts one line per missing library — with a **Repair** action when the user's own
+list knows that name at a folder that exists.

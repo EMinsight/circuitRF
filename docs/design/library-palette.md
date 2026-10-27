@@ -345,3 +345,13 @@ connectivity-union-on-commit (step 4) must **reuse** the existing on-`P` union �
 
 `PaletteTool` tabs alongside `ProjectTreeTool` in `projectTreeDock`. Tab switching works correctly app-wide
 via **`CrfToolControlCachedContentTemplate`** (inline `<Setter.Value>` in the `<Style Selector="dockCtrl|ToolControl">` block in `App.axaml`): a plain `ContentControl` replaces `DeferredContentControl+ControlRecyclingDataTemplate` from the package ControlTheme, so Avalonia re-resolves the App DataTemplate on each tab switch. The same fix covers `PropertiesPane` (Properties + Analyses). No per-tool layout isolation required. On Dock upgrades, re-extract `Controls/ToolControl.axaml` from the package and mirror the chrome in `App.axaml`.
+
+## Vendor part libraries (brief vendorlib-1, palette in brief vendorlib-2)
+
+A workspace may reference manufacturers' part libraries (`.cws` `VendorLibraries`). Their parts are not
+`PaletteItem`s and never enter the tile grid: each library is an in-memory header index
+(`VendorLibraryIndex`, built in the background at workspace open), searched by `VendorLibrarySearch`.
+Brief vendorlib-2 puts them in the palette as a virtualized list; brief vendorlib-1 provides the index,
+the search, **File ▸ Add Vendor Library…**, the vendor rows in **Manage Libraries…**, and the headless
+`import library` / `find --parts`.
+

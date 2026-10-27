@@ -692,6 +692,12 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "find.cell.unreadable",
         "find.depth.malformed",
         "find.nothing",
+        // brief vendorlib-1 R-vl1-5b: `find --parts` — a workspace's vendor-library parts.
+        "find.parts.library-unavailable",
+        "find.parts.limit-malformed",
+        "find.parts.limited",
+        "find.parts.no-library",
+        "find.parts.not-a-workspace",
         "find.root.is-a-cell",
         "find.root.not-found",
         "find.walk.truncated",
@@ -762,6 +768,10 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "import.args.unknown-option",
         "import.layers.no-technology",
         "import.layers.not-installed",
+        // brief vendorlib-1 R-vl1-5a: `import library` — a vendor part library, referenced in place.
+        "import.library.into-required",
+        "import.library.not-a-workspace",
+        "import.library.refused",
         "import.no-technology",
         "import.note",
         "import.nothing-created",
@@ -843,6 +853,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "new.parent.not-found",
         "new.refused",
         "new.tech.unknown",
+        // brief vendorlib-1 R-vl1-4c: `new workspace --vendor-library <name>=<folder>`.
+        "new.vendor-library.malformed",
         "new.views.unknown",
         // brief-img-11: a picture read by convert or recognize — one family for both verbs.
         "picture.args.px-required",

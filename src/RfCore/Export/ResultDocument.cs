@@ -182,7 +182,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ConvertImageJson? Convert = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ModelReportJson? Model = null);
+        ModelReportJson? Model = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        VendorLibraryJson? Library = null);
 
     /// <summary>What a <c>model</c> noun did (brief-modelcomposer-13 R-mc13-3): the same lines stdout carries, one item
     /// each, with what each is about.</summary>
@@ -608,11 +610,59 @@ namespace RfCore.Export
     /// silently stopped short is the one failure this verb must not have: a caller would conclude the
     /// workspace it is looking for does not exist.
     /// </param>
+    /// <param name="Parts">brief vendorlib-1 R-vl1-5b — <c>find --parts</c>'s matches; absent on an
+    /// ordinary walk.</param>
     public sealed record FindReportJson(
         string                              Root,
         int                                 Depth,
         bool                                Truncated,
-        IReadOnlyList<FoundWorkspaceJson>   Workspaces);
+        IReadOnlyList<FoundWorkspaceJson>   Workspaces,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<FoundPartJson>?       Parts = null);
+
+    /// <summary>
+    /// brief vendorlib-1 R-vl1-5b — one vendor-library part <c>find --parts</c> matched, with the
+    /// instance parameters to write so a caller can place it in a <c>.csch</c> without another
+    /// question.
+    /// </summary>
+    /// <param name="Value">The header's stated value in SI (F, H, Ω); absent when it states none.</param>
+    /// <param name="Quantity"><c>C</c>, <c>L</c>, <c>R</c> or <c>other</c>; absent when the header states none.</param>
+    /// <param name="Parameters">The SpiceModel instance's parameters: <c>File</c>, <c>Name</c>, <c>Glyph</c>.</param>
+    public sealed record FoundPartJson(
+        string  Library,
+        string  Part,
+        string  File,
+        int     Ports,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Value,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Quantity,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Description,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? FrequencyLowHz,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? FrequencyHighHz,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? CaseMetric,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? CaseImperial,
+        IReadOnlyDictionary<string, string> Parameters);
+
+    /// <summary>brief vendorlib-1 R-vl1-5a — what <c>import library</c> added: the reference written
+    /// and what indexing the folder found.</summary>
+    /// <param name="Path">The reference as stored in the <c>.cws</c>.</param>
+    /// <param name="Groups">Top-level folder → part count (<c>""</c> for parts at the library's root).</param>
+    public sealed record VendorLibraryJson(
+        string Name,
+        string Path,
+        int    Parts,
+        int    Files,
+        int    EncryptedFiles,
+        int    EmptyFiles,
+        int    UnreadableFiles,
+        int    Duplicates,
+        IReadOnlyDictionary<string, int> Groups);
 
     // ── `rail`: the railRF answer, and the provenance that has to travel with it ──────────────
 

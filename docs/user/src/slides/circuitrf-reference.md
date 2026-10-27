@@ -198,10 +198,10 @@ Artwork, technologies, kits and the planar solver.
 - Compiled vendor model libraries run in a **separate worker process**, so a kit is data rather than a plug-in we compile.
 - A workspace records a **reference** to a kit, never a copy of it, so nothing vendor-owned travels with a shared design.
 
-## Manage PDKs
+## Manage Libraries
 
 {{ui: manage-pdks | full}}
-{{caption: Every kit the workspace references, what it resolved to, how many parts it loaded, and the actions that repair it}}
+{{caption: Every kit and vendor library the workspace references, what it resolved to, how many parts it loaded, and the actions that repair it}}
 
 ## The method-of-moments engine
 

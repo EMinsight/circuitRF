@@ -1620,6 +1620,7 @@ per line, so a script can consume them directly:
 ## `new` — a workspace or a cell {#new}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf new workspace &lt;dir&gt; [--name N] [--tech &lt;id&gt;|none] [--length-unit um|mm|mil]
+                        [--vendor-library &lt;name&gt;=&lt;folder&gt;]...
 <span class="prompt">$ </span>circuitrf new cell &lt;workspace&gt; &lt;cellName&gt; [--views schematic,symbol,layout]</code></pre>
 
 These create the **first correct document** — the thing that is awkward to write by hand because the
@@ -1641,6 +1642,10 @@ the application created.
 
 `--length-unit` writes the copied technology's display unit — what a preferred length unit in **Settings ▸ General
 ▸ Units** does for **File ▸ New Workspace**. Left out, the technology keeps its own.
+
+`--vendor-library` references a [vendor part library](pdk-integration.html#vendor) from the start, and
+may be given more than once. **File ▸ New Workspace** references the libraries you have ticked for new
+workspaces; headless there is no such list, so nothing is referenced unless you name it here.
 
 **The paths it creates are the result**, on stdout, because what you do next is almost always read or
 rewrite one of them.
@@ -1688,6 +1693,25 @@ A source holding several parts is **refused with them listed**, never resolved b
 **Layers the technology does not have are reported, and nothing is written**, unless you pass
 `--add-layers`. The GUI's own install is session-only and writes nothing to disk either, so this is
 the same behaviour and not a headless restriction.
+
+---
+
+## `import library` — a vendor part library, referenced in place {#import-library}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf import library &lt;folder&gt; --into &lt;workspace&gt; [--name N]</code></pre>
+
+The same code **File ▸ Add Vendor Library…** runs: the folder is indexed, and the workspace's `.cws`
+gains a reference to it under `--name` (the folder's own name when left out). Nothing is copied.
+Adding a name that is already referenced repairs it to the new folder.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf import library ~/libraries/caps --into ~/designs/Amp --name Caps
+<span class="output">Caps	/home/you/libraries/caps
+12,410 parts in 31 files.
+Folders: general (8,902), automotive (3,508).
+2 files are encrypted for another simulator and cannot be read. The plain-text (static) edition of this library can be.</span></code></pre>
+
+A folder with no readable part is refused (exit 1) with that sentence. `--json` carries the counts and
+the folder groups as `result.library`.
 
 ---
 
@@ -2765,7 +2789,8 @@ cleanly and looks exactly like a measurement that came back empty.
 
 ## `find` — what is in this folder? {#find}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf find &lt;root&gt; [--depth n] [--no-analyses]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf find &lt;root&gt; [--depth n] [--no-analyses]
+<span class="prompt">$ </span>circuitrf find &lt;workspace&gt; --parts "&lt;query&gt;" [--library &lt;name&gt;] [--limit 50]</code></pre>
 
 The workspaces under a directory, their cells, each cell's views, and the analyses each cell declares.
 
@@ -2788,6 +2813,20 @@ workspace the application has open.
 |---|---|
 | `--depth n` | How many levels below the root a workspace is looked for. Default 4, at most 12. |
 | `--no-analyses` | Skip the analyses. Each one costs an extraction, which adds up on a large tree. |
+
+<h3 id="find-parts">Searching vendor libraries: <code>--parts</code></h3>
+
+With `--parts`, `find` searches the workspace's [vendor part libraries](pdk-integration.html#vendor)
+instead of listing documents. Every word of the query must match. A word matches a part when it appears
+in the part's name, its description, its file or its folder, or when it reads as a value (`10p`,
+`10pF`, `2.2n`, `4n7`) equal to the part's stated value within 0.5 %.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf find ~/designs/Amp --parts "10p C0G"
+<span class="output">Caps	TSTC0402A0018	10 pF	1005M(0402)/C0G(-55~125degC)/10[pF]/50[V]	100 MHz – 30 GHz	File=vendorlib://Caps/capacitors/series-a.lib Name=TSTC0402A0018 Glyph=C</span></code></pre>
+
+Each row ends with **the instance parameters to write** for a SpiceModel component in a `.csch`, so a
+part found here can be placed without another question. Rows are sorted by library, then by value.
+At most `--limit` rows are printed (50 by default), and a note says how many matched in all.
 
 <div class="callout">
 <span class="label">The walk is bounded, and it says when it stopped</span>

@@ -169,7 +169,8 @@
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
-                        <NativeMenuItem Header="Manage PDKs…" Command="{Binding ManagePdksCommand}" CommandParameter="{Binding $parent[Window]}" Gesture="Meta+P"/>
+                        <NativeMenuItem Header="Add Vendor Library…" Command="{Binding AddVendorLibraryCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                        <NativeMenuItem Header="Manage Libraries…" Command="{Binding ManagePdksCommand}" CommandParameter="{Binding $parent[Window]}" Gesture="Meta+P"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Close Window"    Command="{Binding CloseWindowCommand}" Gesture="Meta+W"/>
                         <NativeMenuItem Header="Close Workspace" Command="{Binding CloseWorkspaceCommand}"/>
@@ -1077,7 +1078,13 @@
                               Command="{Binding ExportBomCommand}"
                               ToolTip.Tip="Write one row per placement: reference, value, footprint and type. No part numbers — a part number is a purchasing decision circuitRF does not hold. Requires an active layout document."/>
                 </MenuItem>
-                <MenuItem Header="_Manage PDKs…"
+                <MenuItem Header="Add _Vendor Library…"
+                          Command="{Binding AddVendorLibraryCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="Reference a manufacturer's part library (plain-text SPICE) where it is — never copied. Requires an open workspace.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="Bookshelf" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Manage Libraries…"
                           Command="{Binding ManagePdksCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           InputGesture="Ctrl+P"

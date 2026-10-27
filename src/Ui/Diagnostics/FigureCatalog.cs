@@ -150,9 +150,9 @@ public static class FigureCatalog
             "A design-rule check on the MMIC starter process: a 2 um neck breaking minimum width and "
           + "a 2 um gap breaking minimum spacing, listed in the DRC panel and marked on the artwork."),
 
-        new("manage-pdks", DocVerifyFixtures.ManagePdks, 640, 440,
-            WindowFrame.Titled("Manage PDKs"),
-            "Manage PDKs: the workspace's kit references, what each one resolved to, how many parts "
+        new("manage-pdks", DocVerifyFixtures.ManagePdks, 720, 440,
+            WindowFrame.Titled("Manage Libraries"),
+            "Manage Libraries: the workspace's kit and vendor-library references, what each one resolved to, how many parts "
           + "it loaded, and the Add / Remove / Reveal / Validate actions."),
 
         new("pdk-import-report", DocVerifyFixtures.PdkImportReport, 660, 460,

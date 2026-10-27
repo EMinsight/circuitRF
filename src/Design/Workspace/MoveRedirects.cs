@@ -6,7 +6,7 @@ namespace CircuitRF.Design.Workspace;
 
 /// <summary>One recorded move: where something used to be, where it is now, and when it happened.
 /// Paths are ROOT-RELATIVE and forward-slash, the convention
-/// <see cref="CircuitRF.Ui"/>'s <c>WorkspaceRefs.ToStoredRef</c> normalises to.</summary>
+/// <see cref="WorkspaceRefs.ToStoredRef"/> normalises to.</summary>
 public sealed class MoveRedirect
 {
     public string From { get; set; } = "";

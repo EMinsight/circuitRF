@@ -1086,3 +1086,24 @@ log must not be parsed line by line to discover that it includes nothing.
    divergence into a converged answer at the clamp limit. The detection is a general engine
    question — "a node whose only DC path is `gmin`, feeding a clamp" — not a SPICE-reader one, and
    it may belong in its own brief.
+
+## 14. Vendor part libraries (brief vendorlib-1)
+
+A manufacturer's static part library is a folder of `.subckt` files — tens of thousands of small R/L/C
+parts, each with a comment header. It is **not** a second SPICE path: a placed part is the ordinary
+`SymbolKind.SpiceModel` component whose `File` is `vendorlib://<library>/<file>`, and it is translated
+by `SubcircuitTranslation` / `SpiceModelNetlist` like any other.
+
+- **The reference.** `CwsFile.VendorLibraries` (`CwsVendorLibraryRef`: `Name`, `Path`), keyed on the
+  name exactly as `CwsPdkRef.Provider` is. `SpiceModelSymbolProvider.ResolvePath` resolves the scheme
+  through the nearest ancestor `.cws` (`VendorLibraryRefs.ResolveFile`), and says WHY when it cannot —
+  an unknown name and a missing folder are different reasons.
+- **The index** (`src/Design/VendorLibraries/VendorLibraryIndex.cs`) reads headers only and never calls
+  `SpiceNetlistReader`: one entry per `.subckt`, with the byte offset and length of its block, so a run
+  reads that block alone. Header fields are parsed by `VendorLibraryHeader`; an encrypted or binary
+  file is counted, never read. Per-file results are cached in memory on mtime and length; there is no
+  on-disk cache.
+- **The reader drops nothing.** An inductor's `Rser` is the inductor's `R`, and any other override a
+  native inductor does not take is a note rather than a silently ignored parameter (§2 property 2).
+- **Search** is `VendorLibrarySearch`, shared by the palette and `circuitrf find --parts`.
+

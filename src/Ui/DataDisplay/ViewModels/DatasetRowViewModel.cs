@@ -51,7 +51,7 @@ public sealed partial class DatasetRowViewModel : ObservableObject
     /// </summary>
     public bool IsExternal =>
         _entry.FilePath is { } fp &&
-        CircuitRF.Ui.Schematic.WorkspaceRefs.IsExternal(fp, WorkspaceRootProvider?.Invoke());
+        CircuitRF.Design.Workspace.WorkspaceRefs.IsExternal(fp, WorkspaceRootProvider?.Invoke());
 
     public string StatusText => IsBroken ? "Missing" : IsExternal ? "External" : "Live";
 

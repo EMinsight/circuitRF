@@ -50,6 +50,8 @@ internal static class Find
         string? root = null;
         int     depth = DefaultDepth;
         bool    analyses = true;
+        string? parts = null, library = null;
+        int     limit = VendorLibraryVerbs.DefaultLimit;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -66,6 +68,14 @@ internal static class Find
                 // extraction, and a caller enumerating a large tree to find a NAME does not need it.
                 case "--no-analyses": analyses = false; continue;
 
+                // brief vendorlib-1 R-vl1-5b — the workspace's vendor-library parts, not its documents.
+                case "--parts" when i + 1 < args.Length: parts = args[++i]; continue;
+                case "--library" when i + 1 < args.Length: library = args[++i]; continue;
+                case "--limit" when i + 1 < args.Length:
+                    if (!VendorLibraryVerbs.TryParseLimit(args[++i], out limit))
+                        return JsonRun.Fail(CliDiagnostics.FindLimitMalformed(args[i]));
+                    continue;
+
                 default:
                     if (args[i].StartsWith('-'))
                     { JsonRun.Report(CliDiagnostics.FindUnknownOption(args[i])); return Usage(); }
@@ -78,6 +88,8 @@ internal static class Find
 
         if (root is null) { JsonRun.Report(CliDiagnostics.FindRootRequired()); return Usage(); }
         JsonRun.InputPath = root;
+
+        if (parts is not null) return VendorLibraryVerbs.FindParts(root, parts, library, limit);
 
         // A `.cws` is accepted as well as its directory, because that is what `create` handed the
         // caller — the same courtesy `new cell` already extends.
@@ -147,6 +159,7 @@ internal static class Find
     private static int Usage()
     {
         Console.Error.WriteLine("Usage: circuitrf find <root> [--depth n] [--no-analyses]");
+        Console.Error.WriteLine("       circuitrf find <workspace> --parts \"<query>\" [--library <name>] [--limit 50]");
         return 1;
     }
 

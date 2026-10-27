@@ -255,6 +255,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? HarmonicaKitFolders { get; set; }
 
+    // brief vendorlib-1 R-vl1-4c (overview D3): the vendor libraries this user has added, remembered
+    // per USER so New Workspace can reference them from the start and a workspace whose library is
+    // missing can be repaired in one click. The WORKSPACE stays the truth — this is the convenience.
+    [JsonPropertyName("vendor_libraries")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<UserVendorLibrary>? VendorLibraries { get; set; }
+
     // Message timestamp display — null means default (Time). Serialized as a number, like the others.
     [JsonPropertyName("message_timestamp")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -764,6 +771,16 @@ public sealed class AppPreferences
     [JsonPropertyName("oasis_standard_properties")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? OasisStandardProperties { get; set; }
+}
+
+/// <summary>One entry of the per-user vendor-library list (<see cref="AppPreferences.VendorLibraries"/>).</summary>
+public sealed class UserVendorLibrary
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("path")] public string Path { get; set; } = "";
+
+    /// <summary>Whether File ▸ New Workspace references it. On by default (overview D3).</summary>
+    [JsonPropertyName("use_in_new_workspaces")] public bool UseInNewWorkspaces { get; set; } = true;
 }
 
 public static class AppPreferencesIo

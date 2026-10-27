@@ -50,7 +50,7 @@ public sealed class ProviderUnavailableMessageTests : IDisposable
 
         var ex = Assert.Throws<ExternalDeviceException>(() => ExternalDeviceRegistry.Require("SampleKit"));
 
-        Assert.Contains("Manage PDKs",                  ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Manage Libraries",                  ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(DeviceWorkerManifest.FileName,  ex.Message, StringComparison.Ordinal);
     }
 

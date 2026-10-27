@@ -70,6 +70,7 @@ public static class Authoring
     {
         string? dir = null, name = null, tech = null, lengthUnitText = null;
         bool techStated = false;
+        var vendorLibraries = new List<(string Name, string Path)>();
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -78,6 +79,16 @@ public static class Authoring
                 case "--name" when i + 1 < args.Length: name = args[++i]; break;
                 case "--tech" when i + 1 < args.Length: tech = args[++i]; techStated = true; break;
                 case "--length-unit" when i + 1 < args.Length: lengthUnitText = args[++i]; break;
+                // brief vendorlib-1 R-vl1-4c: the GUI passes the user's own list; headless there is no
+                // user list, so nothing is referenced unless it is named here.
+                case "--vendor-library" when i + 1 < args.Length:
+                {
+                    string spec = args[++i];
+                    int eq = spec.IndexOf('=');
+                    if (eq <= 0 || eq == spec.Length - 1) return JsonRun.Fail(CliDiagnostics.NewVendorLibraryMalformed(spec));
+                    vendorLibraries.Add((spec[..eq].Trim(), Path.GetFullPath(spec[(eq + 1)..].Trim())));
+                    break;
+                }
                 default:
                     if (args[i].StartsWith('-')) { JsonRun.Report(CliDiagnostics.NewUnknownOption(args[i])); return NewUsage(); }
                     if (dir is not null) { JsonRun.Report(CliDiagnostics.NewMultipleDirectories()); return NewUsage(); }
@@ -167,7 +178,7 @@ public static class Authoring
 
         try
         {
-            var created = WorkspaceCreate.Create(parentDir, wsName, techId, lengthUnit);
+            var created = WorkspaceCreate.Create(parentDir, wsName, techId, lengthUnit, vendorLibraries);
 
             // R-aut1-3 / the brief's §1: a caller's next step is usually to read or rewrite one of
             // these, so the PATHS are the result and they go to stdout.
@@ -345,6 +356,7 @@ public static class Authoring
         if (noun == "voxels") return AnatomyImportVerb.RunVoxels(args[1..]);
         if (noun == "surfaces") return AnatomyImportVerb.RunSurfaces(args[1..]);
         if (noun == "schematic") return ImportSchematic(args[1..]);
+        if (noun == "library") return VendorLibraryVerbs.ImportLibrary(args[1..]);
         if (noun != "part")
         {
             JsonRun.Report(CliDiagnostics.ImportUnknownNoun(noun));
@@ -713,7 +725,7 @@ public static class Authoring
 
     private static int NewUsage()
     {
-        Console.Error.WriteLine("Usage: circuitrf new workspace <dir> [--name N] [--tech <id>|none] [--length-unit um|mm|mil]");
+        Console.Error.WriteLine("Usage: circuitrf new workspace <dir> [--name N] [--tech <id>|none] [--length-unit um|mm|mil] [--vendor-library <name>=<folder>]...");
         Console.Error.WriteLine("       circuitrf new cell <workspace-or-dir> <cellName> [--views schematic,symbol,layout,3d]");
         return 1;
     }
@@ -725,6 +737,7 @@ public static class Authoring
             + "[--cell N] [--variant V] [--tech <file.ctech>] [--add-layers] [--list-parts]\n"
             + "       circuitrf import schematic <file> --into <workspace-or-dir> [--cell N] [--port <ref-or-net>]... "
             + "[--symbol-cell <ref>]... [--codepage N] [--list]\n"
+            + VendorLibraryVerbs.ImportUsageText + "\n"
             + AnatomyImportVerb.UsageText);
         return 1;
     }

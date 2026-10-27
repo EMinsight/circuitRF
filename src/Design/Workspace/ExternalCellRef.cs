@@ -393,9 +393,9 @@ public static class ExternalCellRef
     /// <summary>
     /// The other workspace's ROOT from its stored <c>.cws</c> path — relative resolves against the
     /// referencing workspace root, rooted stays as it is, and <c>/</c> converts back to the platform
-    /// separator. That is <c>WorkspaceRefs.Resolve</c>'s rule, repeated here in three lines rather
-    /// than called: that helper lives in <c>src/Ui</c>, on the far side of the firewall, and a
-    /// headless <c>circuitrf convert</c> or EM run has to resolve these references too.
+    /// separator. That is <see cref="WorkspaceRefs.Resolve"/>'s rule, repeated here in three lines
+    /// because this one also expands <c>${NAME}</c> tokens and answers null for a <c>.cws</c> that is
+    /// not there.
     ///
     /// <para>Null when no <c>.cws</c> is there, which is what makes a moved or deleted project a
     /// reported state rather than a reference that half-resolves.</para>

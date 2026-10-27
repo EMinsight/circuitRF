@@ -722,6 +722,7 @@ internal static class ToolCatalog
                         new("name", "--name", OptKind.Str,  "The workspace name."),
                         new("tech", "--tech", OptKind.Str,  "A technology id, or none. Default: the one the New Workspace dialog pre-selects."),
                         new("lengthUnit", "--length-unit", OptKind.Str, "um, mm or mil: the copied technology's display unit. Default: the technology's own."),
+                        new("vendorLibrary", "--vendor-library", OptKind.StrRepeat, "<name>=<folder>: a vendor part library to reference from the start. None by default."),
                     ],
                     "A workspace, with a technology copied in."),
                 new("cell", ["new", "cell"],
@@ -758,6 +759,16 @@ internal static class ToolCatalog
                         Summary,
                     ],
                     "A footprint and its symbol, as a cell."),
+                // brief vendorlib-1 R-vl1-5c — a manufacturer's part library, referenced in place.
+                new("library", ["import", "library"],
+                    [new("path", true, "The library's root folder of plain-text SPICE files.")],
+                    [
+                        new("into", "--into", OptKind.Path, "The workspace whose .cws references the library."),
+                        new("name", "--name", OptKind.Str,  "The name parts reach it by (vendorlib://<name>/…). Default: the folder's name."),
+                    ],
+                    "A vendor part library, referenced from the workspace and indexed — never copied. "
+                  + "result.library has the part count and folder groups; encrypted files are counted, and a folder with "
+                  + "no readable part is refused."),
                 // brief-schimp-5 R-si5-6 — the dialog's fields as arguments; every default is the dialog's.
                 new("schematic", ["import", "schematic"],
                     [new("path", true, "The schematic design file: .kicad_sch, EDIF 2.0.0 (.edf, .edn, .edif) or a binary .DSN. Classified by content.")],
@@ -1134,7 +1145,8 @@ internal static class ToolCatalog
         new("find",
             "List what is under a directory: the workspaces, their cells, each cell's views and the "
           + "analyses it declares. The walk is bounded — the result says how deep it went and whether "
-          + "it stopped short. Reads no result and writes nothing.",
+          + "it stopped short. With parts, search a workspace's vendor libraries instead: each match "
+          + "carries the SpiceModel instance parameters to write (File, Name, Glyph). Reads no result and writes nothing.",
             null, null,
             [
                 new("", [ "find" ],
@@ -1144,6 +1156,11 @@ internal static class ToolCatalog
                             "How many levels below the root a workspace is looked for. Default 4, at most 12."),
                         new("noAnalyses", "--no-analyses", OptKind.Flag,
                             "Skip the analyses, which cost one extraction per cell."),
+                        new("parts", "--parts", OptKind.Str,
+                            "Search the workspace's vendor-library parts: every word must match the part name, "
+                          + "description, file or folder, or read as a value (10p, 4n7, 2.2nH) equal within 0.5 %."),
+                        new("library", "--library", OptKind.Str, "With parts: search only this library."),
+                        new("limit", "--limit", OptKind.Integer, "With parts: at most this many matches. Default 50."),
                     ],
                     ""),
             ]),

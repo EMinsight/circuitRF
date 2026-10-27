@@ -25,6 +25,7 @@ run time.
 <li><a href="#models">How a kit's models are evaluated</a></li>
 <li><a href="#failures">When something goes wrong</a></li>
 <li><a href="#managing">Managing kits</a></li>
+<li><a href="#vendor">Vendor part libraries</a></li>
 </ol>
 </nav>
 
@@ -67,7 +68,7 @@ tools. [PDK Authoring](pdk-authoring.html) covers producing one.
 
 ## Importing one {#importing}
 
-**File ▸ Manage PDKs… ▸ Add…** (<kbd>Ctrl/⌘ P</kbd>), then pick the kit's folder.
+**File ▸ Manage Libraries… ▸ Add…** (<kbd>Ctrl/⌘ P</kbd>), then pick the kit's folder.
 
 <div class="callout note">
 <span class="label">An import writes nothing into your workspace</span>
@@ -175,7 +176,7 @@ clickable path to it.
 
 What to check first, in order:
 
-1. **Is the kit still where the workspace thinks it is?** Manage PDKs… shows the stored path and whether
+1. **Is the kit still where the workspace thinks it is?** Manage Libraries… shows the stored path and whether
    it resolved. A kit is normally *outside* the workspace, so an absolute path is the common case and a
    moved kit is the common failure.
 2. **Was the model library found?** The resolved library path per platform is recorded per kit. If the
@@ -194,12 +195,13 @@ worth reporting with the kit's details rather than tuning tolerances against.
 {{ui: manage-pdks}}
 
 
-**File ▸ Manage PDKs…** (<kbd>Ctrl/⌘ P</kbd>) lists every referenced kit with its name, stored path,
-whether it resolved, its part count and its translation version.
+**File ▸ Manage Libraries…** (<kbd>Ctrl/⌘ P</kbd>) lists every library the workspace references — each
+kit, and each [vendor part library](#vendor) — with its kind, its name, stored path, whether it resolved
+and its part count.
 
 | Action | What it does |
 |---|---|
-| **Add…** | Folder picker; imports and adds the reference through the ordinary import path |
+| **Add…** | Folder picker. The folder is classified by what it holds — readable SPICE subcircuits and no kit structure is a vendor library, anything else is imported as a kit — so you are never asked which it is |
 | **Remove** | Drops the reference, after warning how many placed parts it will leave unresolved |
 | **Reveal** | Opens the kit folder in your file manager |
 | **Validate** | Runs the check below on the selected kit |
@@ -231,6 +233,46 @@ ever changes — a scale fix, a snap fix, anything touching pin placement — re
 translation version is what catches that: a mismatch is reported rather than re-derived underneath your
 wiring.</p>
 </div>
+
+## Vendor part libraries {#vendor}
+
+A component manufacturer's simulation library — a folder of plain-text SPICE files, one small
+subcircuit per capacitor or inductor — can be referenced from a workspace and searched by value, size
+and description.
+
+**File ▸ Add Vendor Library…** asks for the library's folder, reads it, and shows what it found before
+anything is added: the number of parts, the folders that group them, and any files it could not read.
+The name it offers is the folder's own; placed parts reach the library by that name. The Messages pane
+gets one line saying what was added.
+
+<div class="callout note">
+<span class="label">Referenced where it is, never copied</span>
+<p>A vendor library stays in the folder you downloaded it to. The workspace records its name and path,
+nothing else. To move it, add the folder again under the same name: every placed part resolves again
+and no schematic changes.</p>
+</div>
+
+**Only the static, plain-text edition can be read.** Manufacturers publish their libraries in several
+editions. The ones with bias- and temperature-dependent models are encrypted for one simulator each, and
+circuitRF does not read them. A file like that is counted, not read, and the library says once how many
+it found. A folder holding nothing readable is refused with the same sentence. If you need one bias or
+temperature condition, export that condition from the manufacturer as a plain static model and place it
+as an ordinary SpiceModel.
+
+Each part is listed from the comment header above its subcircuit (description, value, frequency range,
+temperature and bias). The circuit itself is read only when a run needs it. Indexing happens in the
+background each time the workspace opens, so opening never waits for it.
+
+**Use in new workspaces.** Every library you add is remembered for you, and **File ▸ New Workspace**
+references the ones ticked *New workspaces* in Manage Libraries. They are ticked by default. If a
+workspace opens and one of its libraries is missing, the Messages pane says so once per library. When you
+have that library somewhere else under the same name, the message offers **Repair**.
+
+**Validate** on a vendor library re-reads it and reports parts indexed, files it could not read, placed
+parts checked, and any placed part the library no longer holds.
+
+Headless, `circuitrf import library <folder> --into <workspace>` adds one, and
+`circuitrf find <workspace> --parts "<query>"` searches them; see [CLI](cli.html).
 
 ## Authoring a kit {#authoring}
 

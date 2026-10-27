@@ -260,6 +260,19 @@ public sealed class CwsFile
     public List<CwsPdkRef>? PdkRefs { get; set; }
 
     /// <summary>
+    /// Manufacturers' part libraries this workspace references — folders of plain SPICE
+    /// subcircuits the user downloaded, referenced IN PLACE and never copied (brief vendorlib-1
+    /// R-vl1-1a). A placed part names its library through <c>vendorlib://&lt;Name&gt;/…</c>, so the
+    /// NAME is the key, exactly as <see cref="CwsPdkRef.Provider"/> is for a kit: re-pointing a
+    /// moved library is one edit here, and no schematic changes.
+    ///
+    /// <para>Null or empty means none, and is not written. No <c>FormatVersion</c> bump — an absent
+    /// field on an older <c>.cws</c> loads as null.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<CwsVendorLibraryRef>? VendorLibraries { get; set; }
+
+    /// <summary>
     /// Other WORKSPACES this one may reference cells in — the alias table a <c>ws://</c> cell
     /// reference resolves through (MW2 R-mw2-2).
     ///
@@ -433,6 +446,28 @@ public sealed class CwsWorkspaceRef
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Pin { get; set; }
+}
+
+/// <summary>
+/// One referenced vendor part library: the name parts reach it by, and where it is.
+///
+/// <para><b>Keyed on <see cref="Name"/>, for the reason <see cref="CwsPdkRef.Provider"/> is.</b> Every
+/// placed part's <c>File</c> is <c>vendorlib://&lt;Name&gt;/&lt;file&gt;</c>, so the folder is written
+/// down once, here: a library that moved is repaired by changing <see cref="Path"/>, and every
+/// schematic resolves again untouched. Renaming it is the opposite — every placed part stops
+/// resolving.</para>
+/// </summary>
+public sealed class CwsVendorLibraryRef
+{
+    /// <summary>The name the user knows the library by, and the name every placed part carries.</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>
+    /// The library's root folder — workspace-relative inside the workspace, absolute outside it, via
+    /// <see cref="WorkspaceRefs.ToStoredRef"/> (the PDK reference's rule). A downloaded library
+    /// normally sits outside, so absolute is the common case.
+    /// </summary>
+    public string Path { get; set; } = "";
 }
 
 /// <summary>

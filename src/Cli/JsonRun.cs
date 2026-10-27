@@ -196,6 +196,9 @@ internal static class JsonRun
     /// <summary>What a <c>model</c> noun did (brief-modelcomposer-13 R-mc13-3).</summary>
     public static ModelReportJson? Model;
 
+    /// <summary>What <c>import library</c> added (brief vendorlib-1 R-vl1-5a).</summary>
+    public static VendorLibraryJson? Library;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -253,6 +256,7 @@ internal static class JsonRun
         StepImport          = null;
         ConvertImage        = null;
         Model               = null;
+        Library             = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -482,14 +486,14 @@ internal static class JsonRun
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
          || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
          || Center is not null || Doe is not null || Recognize is not null || StepImport is not null || ConvertImage is not null
-         || Model is not null)
+         || Model is not null || Library is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
                                      ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: Optimize,
                                      Yield: Yield, Corners: Corners, Center: Center, Doe: Doe,
                                      Recognize: Recognize, StepImport: StepImport, Convert: ConvertImage,
-                                     Model: Model);
+                                     Model: Model, Library: Library);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

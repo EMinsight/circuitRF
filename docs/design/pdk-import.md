@@ -246,14 +246,15 @@ rather than 0: "offers nothing" and "could not be read" are different answers to
 question is whether the kit still holds the part, not whether this session managed to load it; conflating
 the two turns "your kit changed" into "something went wrong at startup".
 
-### `File ▸ Manage PDKs…`
+### `File ▸ Manage Libraries…`
 
-One dialog, workspace-gated, listing every referenced kit with name, stored path, resolved/broken, part
-count and translation version.
+One dialog, workspace-gated, listing every referenced kit — and every vendor part library
+(brief vendorlib-1; `spice-models.md` §14) — with its kind, name, stored path, resolved/broken and part
+count. The type is still `ManagePdksDialog`; only the text a user reads changed.
 
 | Action | Behaviour |
 |---|---|
-| **Add…** | Folder picker; imports and adds the reference — through the *ordinary* import path, never a second implementation |
+| **Add…** | Folder picker; classified by content (`VendorLibraryRefs.Classify`): readable `.subckt` parts and no kit structure is a vendor library, anything else goes through the *ordinary* kit import path, never a second implementation |
 | **Remove** | Drops the reference, after warning how many placed parts it will leave unresolved |
 | **Reveal** | Opens the kit folder in the platform file manager |
 | **Validate** | Runs `Validate PDK` on the selected kit |

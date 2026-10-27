@@ -146,8 +146,16 @@ public static class WorkspaceCreate
     /// merges, and the guard is here rather than only in each caller's pre-flight so that no route
     /// into workspace creation can skip it.
     /// </exception>
+    /// <param name="vendorLibraries">
+    /// Vendor libraries to reference from the start (brief vendorlib-1 R-vl1-4c): the GUI passes the
+    /// user's own list (each entry ticked Use in new workspaces), the CLI passes only what
+    /// <c>--vendor-library</c> names. A preference is an ARGUMENT here, never read from a preferences
+    /// file. Nothing is read from the libraries — the reference is written, and the index is built
+    /// when the workspace opens. A name given twice keeps its first path.
+    /// </param>
     public static WorkspaceCreateResult Create(string parentDir, string name, string? technologyId,
-                                               LayoutUnit? displayUnit = null)
+                                               LayoutUnit? displayUnit = null,
+                                               IReadOnlyList<(string Name, string Path)>? vendorLibraries = null)
     {
         string workspaceDir = Path.Combine(parentDir, name);
         if (Directory.Exists(workspaceDir))
@@ -170,6 +178,19 @@ public static class WorkspaceCreate
         {
             techPath = CopyTechnology(workspaceDir, entry, libraries, displayUnit);
             cws.DefaultTechRef = Path.GetRelativePath(workspaceDir, techPath);
+        }
+
+        foreach (var (libName, libPath) in vendorLibraries ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(libName) || string.IsNullOrWhiteSpace(libPath)) continue;
+            cws.VendorLibraries ??= [];
+            if (cws.VendorLibraries.Any(r => string.Equals(r.Name, libName, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            cws.VendorLibraries.Add(new CwsVendorLibraryRef
+            {
+                Name = libName.Trim(),
+                Path = WorkspaceRefs.ToStoredRef(libPath, workspaceDir),
+            });
         }
 
         WorkspacePersistence.SaveToFileAtomic(cwsPath, cws);

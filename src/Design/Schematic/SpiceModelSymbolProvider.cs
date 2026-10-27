@@ -136,7 +136,21 @@ public static class SpiceModelSymbolProvider
     /// the simulated circuit cannot disagree about which file was read.</para>
     /// </summary>
     public static string? ResolvePath(string? file, string? schematicDir)
-        => SnpPathPolicy.Resolve(file, WBondSymbolProvider.WorkspaceRootOf(schematicDir), schematicDir);
+        => ResolvePath(file, schematicDir, out _);
+
+    /// <summary>
+    /// The same answer, and — when it is null — why. A <c>vendorlib://</c> reference (brief
+    /// vendorlib-1 R-vl1-1b) resolves through the library the nearest ancestor <c>.cws</c> names,
+    /// the same walk-up a relative path takes, and its two failures say different things: a name
+    /// the workspace does not reference, and a referenced library whose folder is missing.
+    /// </summary>
+    public static string? ResolvePath(string? file, string? schematicDir, out string? reason)
+    {
+        reason = null;
+        if (VendorLibraries.VendorLibraryRefs.IsVendorRef(file))
+            return VendorLibraries.VendorLibraryRefs.ResolveFile(file, schematicDir, out reason);
+        return SnpPathPolicy.Resolve(file, WBondSymbolProvider.WorkspaceRootOf(schematicDir), schematicDir);
+    }
 
     /// <summary>
     /// What to store in the <c>File</c> parameter for a picked absolute path — the exact inverse of

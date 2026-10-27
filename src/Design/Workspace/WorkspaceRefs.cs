@@ -11,7 +11,7 @@
 using System;
 using System.IO;
 
-namespace CircuitRF.Ui.Schematic;
+namespace CircuitRF.Design.Workspace;
 
 public static class WorkspaceRefs
 {

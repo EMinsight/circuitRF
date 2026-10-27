@@ -649,7 +649,7 @@ public sealed class PdkReferenceManagerTests : IDisposable
         var alone = PdkReferenceManager.AddOrRepair(WorkspaceDir, refs, kit, out _);
         Assert.NotNull(alone);
         Assert.Null(alone!.Settings);
-        Assert.Contains(alone.Diagnostics, d => d.Contains("Manage PDKs", StringComparison.Ordinal));
+        Assert.Contains(alone.Diagnostics, d => d.Contains("Manage Libraries", StringComparison.Ordinal));
 
         // Reference the package, re-add the kit: it now finds the models.
         PdkReferenceManager.AddOrRepair(WorkspaceDir, refs, pkg, out _);

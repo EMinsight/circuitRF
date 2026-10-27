@@ -326,7 +326,7 @@ public static class WorkspaceArchiveWriter
         if (string.IsNullOrWhiteSpace(stored)) return null;
 
         string abs;
-        try { abs = Schematic.WorkspaceRefs.Resolve(stored, plan.WorkspaceDir); }
+        try { abs = WorkspaceRefs.Resolve(stored, plan.WorkspaceDir); }
         catch { return null; }
 
         // Already inside the workspace: it travels as it is.

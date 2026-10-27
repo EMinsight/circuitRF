@@ -1,3 +1,4 @@
+using System.Globalization;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
@@ -851,6 +852,25 @@ internal static class CliDiagnostics
     /// <summary>A reader's or a scan's own refusal, forwarded whole.</summary>
     public static Diagnostic ImportRefused(string reason) => Diagnostic.Create(
         "import.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
+
+    // ── import library / new workspace --vendor-library (brief vendorlib-1 R-vl1-5a) ──────────
+
+    public static Diagnostic ImportLibraryIntoRequired() => new(
+        "import.library.into-required", DiagnosticSeverity.Error,
+        "import library: --into <workspace> says which workspace references the library.");
+
+    public static Diagnostic ImportLibraryNotAWorkspace(string path) => Diagnostic.Create(
+        "import.library.not-a-workspace", DiagnosticSeverity.Error,
+        "'{path}' is not in a workspace (no .cws there or above it). A vendor library is referenced "
+        + "from a workspace's .cws.", ("path", path));
+
+    /// <summary>The index's refusal (a folder with no readable part) or the reference's own problem, whole.</summary>
+    public static Diagnostic ImportLibraryRefused(string reason) => Diagnostic.Create(
+        "import.library.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
+
+    public static Diagnostic NewVendorLibraryMalformed(string text) => Diagnostic.Create(
+        "new.vendor-library.malformed", DiagnosticSeverity.Error,
+        "--vendor-library '{text}' is not <name>=<folder>.", ("text", text));
 
     /// <summary>R-aut3-12: one import message, on stderr and in the document. They are how a caller
     /// learns a pin was inferred, a layer was dropped or a variant was skipped.</summary>
@@ -3420,6 +3440,31 @@ internal static class CliDiagnostics
     public static Diagnostic FindRootNotFound(string path) => Diagnostic.Create(
         "find.root.not-found", DiagnosticSeverity.Error,
         "No such directory: {path}", ("path", path));
+
+    // ── find --parts (brief vendorlib-1 R-vl1-5b) ────────────────────────────
+
+    public static Diagnostic FindPartsNotAWorkspace(string path) => Diagnostic.Create(
+        "find.parts.not-a-workspace", DiagnosticSeverity.Error,
+        "find --parts searches a workspace's vendor libraries, and '{path}' is not in a workspace.",
+        ("path", path));
+
+    public static Diagnostic FindPartsNoLibrary(string wanted, string known) => Diagnostic.Create(
+        "find.parts.no-library", DiagnosticSeverity.Error,
+        "This workspace references no vendor library named '{wanted}'. It references: {known}.",
+        ("wanted", wanted), ("known", known));
+
+    /// <summary>A referenced library that could not be searched — named, never silently skipped.</summary>
+    public static Diagnostic FindPartsLibraryUnavailable(string reason) => Diagnostic.Create(
+        "find.parts.library-unavailable", DiagnosticSeverity.Warning, "{reason}", ("reason", reason));
+
+    public static Diagnostic FindPartsLimited(int shown, int matched) => Diagnostic.Create(
+        "find.parts.limited", DiagnosticSeverity.Info,
+        "Showing {shown} of {matched} matching parts. Narrow the query, or raise --limit.",
+        ("shown", shown.ToString(CultureInfo.InvariantCulture)), ("matched", matched.ToString(CultureInfo.InvariantCulture)));
+
+    public static Diagnostic FindLimitMalformed(string text) => Diagnostic.Create(
+        "find.parts.limit-malformed", DiagnosticSeverity.Error,
+        "find: --limit '{text}' is not a positive whole number.", ("text", text));
 
     public static Diagnostic FindDepthMalformed(string text, int max) => Diagnostic.Create(
         "find.depth.malformed", DiagnosticSeverity.Error,

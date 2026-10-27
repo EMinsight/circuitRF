@@ -23772,3 +23772,62 @@ the layer.
 **Progress (R-imp8-4):** `TraceSolveProgress` writes one sentence — done of total, elapsed, and the time left once
 2 s and 2 % of the stage are done — used by the CLI's stderr line (at most every 3 s, `Impedance.ProgressLines`;
 reports arrive from the solve's worker threads, so it locks) and the Impedance panel's stage line. stdout is untouched.
+
+## brief vendorlib-1 — a vendor part library's reference and header index (2026-10-27)
+
+**The index scans headers and never parses a circuit.** `VendorLibraryIndex.Build` walks the folder for
+`SpiceModelPeek.FileExtensions`, reads each file's bytes once, and records one entry per top-level
+`.subckt`: the comment lines since the previous `.ends` are its header, and the byte offset/length of its
+`.subckt`…`.ends` block make the entry self-sufficient. `SpiceNetlistReader` has a per-thread read counter
+(`ReadsOnThisThread`) so a test can hold the index to zero reads.
+
+**Measured with a scratch harness** (not a test; overview §3): a generated library of 35,000 parts in 30
+files, 38.5 MB, in the header shapes of the overview. Release build, Apple silicon, OS file cache warm:
+
+| Build | Time |
+|---|---:|
+| cold (first build in the process — JIT plus every file read and scanned) | 293–320 ms |
+| warm (same session, nothing changed — one stat per file) | 2.1–3.7 ms |
+| `VendorLibrarySearch` over all 35,000 entries, query `10p X7R` | ~11 ms |
+
+Well under the 100 ms warm expectation, so no on-disk cache (overview D5). The search number is brief
+vendorlib-2's to act on: it is under one frame but not by much, and §4d of that brief decides whether a
+keystroke's match moves off the UI thread.
+
+**Header values are prose, not the dialect.** `SpiceNumber` reads the NUMBER; the unit's prefix is read on
+SI's case-sensitive terms, because in a header `MHz` is megahertz while the dialect reads a leading `M` as
+milli. `1.00e-05[uF]` also defeats `SpiceNumber` alone: after an explicit exponent it applies no prefix.
+
+**A part's header is the comment block since the previous `.ends`,** so a file-level preamble merges into
+the first part's header. A field that appears twice takes the LAST value (the one nearest the `.subckt`),
+which is what keeps a preamble from overruling the part.
+
+**Encrypted files are recognised by shape and counted.** A protection directive (`.protect`), a protection
+pragma, a short line saying the content is encrypted (or a begin/start marker saying so), or three or more
+consecutive body lines that are nothing but a 40+ character hex/base64 run. A NUL in the first 4 KB makes a
+file unreadable (binary). Neither is ever handed to a reader. Only lines that contain `encrypt` or `protect`
+(checked on the bytes, case-insensitively) are decoded for the marker test, so the scan allocates almost
+nothing per line.
+
+**Manage Libraries' Add cannot ask the kit import what a folder is.** `PdkImporter.Import` on the
+35,000-part library ran for over two minutes (it reads netlists) before it was stopped. So
+`VendorLibraryRefs.Classify` asks a structural question first: a `device-provider.json`, or any file that is
+neither a SPICE-model extension nor documentation, means kit structure. Only a folder without it is
+indexed; readable parts make it a vendor library, encrypted-only parts make it a refusal with the library
+sentence, and anything else goes to the ordinary kit import.
+
+**`vendorlib://` failures are two different reasons**, as `pdk-import.md` §5 asks: a name the workspace's
+`.cws` does not reference, and a referenced library whose folder is missing (plus an unset `${NAME}` token,
+since a library path may carry one). `SpiceModelSymbolProvider.ResolvePath(file, dir, out reason)` carries
+the reason, and `NetExtractor` reports it instead of the "relative path and not saved" sentence. The
+name→path map is memoised per `.cws`, keyed on that file's time and length, because the CLI and the GUI
+both rewrite it.
+
+**`WorkspaceRefs` moved here** (`src/Design/Workspace`) from `src/Ui/Schematic`: it was framework-free, and
+`CwsVendorLibraryRef.Path` is stored by its `ToStoredRef` rule. Both test and UI global usings already
+carried `CircuitRF.Design.Workspace`; three fully qualified spellings were updated.
+
+**The SPICE reader dropped an inductor's `Rser`.** It was carried through as an override `InductorModel`
+never reads, so a lossy part simulated lossless. `Rser` (and `r`/`c` in either case) on an `L` element now
+become `R`/`C`, and any other override on a native inductor (one that names no model card) is a
+`SpiceNetlistNote` and dropped, rather than silently ignored.

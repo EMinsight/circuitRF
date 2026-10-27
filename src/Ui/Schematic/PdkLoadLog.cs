@@ -52,7 +52,7 @@ public static class PdkLoadLog
                 File.WriteAllText(path,
                     $"circuitRF — PDK load report{Environment.NewLine}" +
                     $"Kits referenced by this workspace that could not be loaded.{Environment.NewLine}" +
-                    $"Repair a reference in File > Manage PDKs.{Environment.NewLine}{Environment.NewLine}" +
+                    $"Repair a reference in File > Manage Libraries.{Environment.NewLine}{Environment.NewLine}" +
                     entry);
             else
                 File.AppendAllText(path, entry);

@@ -1,8 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="CircuitRF.Ui.Views.Dialogs.ManagePdksDialog"
-        Title="Manage PDKs"
-        Width="640"
+        Title="Manage Libraries"
+        Width="720"
         Height="440"
         MinWidth="520"
         MinHeight="320"
@@ -28,7 +28,7 @@
             itself (see UpdateDetail).
         -->
         <TextBlock Grid.Row="0"
-                   Text="Kits this workspace references"
+                   Text="Libraries this workspace references — PDKs and vendor part libraries"
                    FontSize="12"
                    FontWeight="SemiBold"
                    Margin="0,0,0,10"/>
@@ -40,7 +40,7 @@
                 CornerRadius="3">
             <Grid>
                 <TextBlock x:Name="EmptyMessage"
-                           Text="This workspace references no PDKs."
+                           Text="This workspace references no PDKs and no vendor libraries."
                            FontSize="11"
                            Opacity="0.6"
                            HorizontalAlignment="Center"

@@ -310,7 +310,7 @@ public static class ExternalDeviceRegistry
                 ? $"External device provider '{name}' is not available. Searched: " +
                   $"{string.Join("; ", searched)}. This is usually a compiled model, and the library " +
                   $"that implements it was not found — it often ships as a separate package beside " +
-                  $"the kit rather than inside it. Add that package in File ▸ Manage PDKs (it needs " +
+                  $"the kit rather than inside it. Add that package in File ▸ Manage Libraries (it needs " +
                   $"no parts of its own), or supply a '{DeviceWorkerManifest.FileName}' file " +
                   $"describing how to evaluate this kit's devices."
                 : $"External device provider '{name}' is not available: no providers are registered.");

@@ -1,0 +1,504 @@
+using System.Text;
+using CircuitRF.Design.Schematic;
+using CircuitRF.Engine;
+
+namespace CircuitRF.Design.VendorLibraries;
+
+/// <summary>
+/// One part of a vendor library, as its header and its <c>.subckt</c> line state it.
+///
+/// <para><b>Self-sufficient by its byte block.</b> <see cref="Offset"/>/<see cref="Length"/> span the
+/// <c>.subckt</c> … <c>.ends</c> lines, so the one consumer that needs the circuit (a run) reads
+/// exactly that block and nothing else of a file that can hold thousands of parts.</para>
+/// </summary>
+/// <param name="Part">The subcircuit's name, as written.</param>
+/// <param name="File">The file, relative to the library root, with <c>/</c> separators.</param>
+/// <param name="Folders">The folder segments between the root and the file.</param>
+/// <param name="FileStem">The file's name without its extension.</param>
+public sealed record VendorLibraryEntry(
+    string Part,
+    string File,
+    IReadOnlyList<string> Folders,
+    string FileStem,
+    long Offset,
+    int Length,
+    IReadOnlyList<string> Ports,
+    VendorLibraryHeader Header)
+{
+    public int PortCount => Ports.Count;
+}
+
+/// <summary>A part name defined by more than one file: the copy indexed, and the one that was not.</summary>
+public sealed record VendorLibraryDuplicate(string Part, string IndexedFile, string SkippedFile);
+
+/// <summary>How many parts sit under one top-level folder of a library (<c>""</c> for the root itself).</summary>
+public sealed record VendorLibraryGroup(string Folder, int Parts);
+
+/// <summary>What one build of a library's index found.</summary>
+public sealed record VendorLibraryBuild(
+    string Root,
+    IReadOnlyList<VendorLibraryEntry> Entries,
+    int FilesScanned,
+    int FilesRead,
+    int EncryptedFiles,
+    int EmptyFiles,
+    int UnreadableFiles,
+    int UnparsedFields,
+    IReadOnlyList<VendorLibraryDuplicate> Duplicates,
+    string? Refusal)
+{
+    /// <summary>True when the library holds at least one readable part.</summary>
+    public bool IsUsable => Refusal is null;
+
+    /// <summary>The top-level folders and their part counts, in path order.</summary>
+    public IReadOnlyList<VendorLibraryGroup> Groups =>
+        [.. Entries.GroupBy(e => e.Folders.Count > 0 ? e.Folders[0] : "", StringComparer.Ordinal)
+                   .OrderBy(g => g.Key, StringComparer.Ordinal)
+                   .Select(g => new VendorLibraryGroup(g.Key, g.Count()))];
+
+    /// <summary>
+    /// The one sentence about files that could not be read, or null when every file could. Said ONCE
+    /// per library, never once per file — a library of many series can carry dozens of them.
+    /// </summary>
+    public string? UnreadableSentence => EncryptedFiles > 0
+        ? VendorLibraryIndex.EncryptedSentence(EncryptedFiles)
+        : UnreadableFiles > 0
+            ? $"{Plural(UnreadableFiles, "file", "files")} could not be read."
+            : null;
+
+    /// <summary>The lines an Add reports, in the GUI's confirm step and on <c>import library</c>'s
+    /// stdout alike: the part count, the folder groups, the unreadable-file sentence, duplicates.</summary>
+    public IReadOnlyList<string> SummaryLines()
+    {
+        var lines = new List<string>
+        {
+            $"{Plural(Entries.Count, "part", "parts")} in {Plural(FilesScanned, "file", "files")}.",
+        };
+        var groups = Groups;
+        if (groups.Count > 1 || (groups.Count == 1 && groups[0].Folder.Length > 0))
+            lines.Add("Folders: " + string.Join(", ",
+                groups.Select(g => $"{(g.Folder.Length == 0 ? "(top level)" : g.Folder)} ({g.Parts:N0})")) + ".");
+        if (UnreadableSentence is { } s) lines.Add(s);
+        if (Duplicates.Count > 0)
+            lines.Add($"{Plural(Duplicates.Count, "part name is", "part names are")} defined in more than one " +
+                      $"file; the first by path is used: " +
+                      string.Join(", ", Duplicates.Take(5).Select(d => $"{d.Part} ({d.SkippedFile})")) +
+                      (Duplicates.Count > 5 ? ", …" : "") + ".");
+        return lines;
+    }
+
+    internal static string Plural(int n, string one, string many) => $"{n:N0} {(n == 1 ? one : many)}";
+}
+
+/// <summary>
+/// The index of a vendor part library: one entry per <c>.subckt</c>, built from HEADERS ONLY
+/// (brief vendorlib-1 R-vl1-2).
+///
+/// <para><b>It never parses a circuit.</b> A whole library is tens of thousands of parts in tens of
+/// megabytes, and what tells them apart — value, size, dielectric, frequency range — is all in the
+/// comment block above each <c>.subckt</c>. So the walk reads each file's bytes once, finds the
+/// <c>.subckt</c>/<c>.ends</c> lines and the comments above them, and stops there:
+/// <see cref="CircuitRF.Core.Netlist.Spice.SpiceNetlistReader"/> is never called. A placed part's
+/// circuit is read later, from its own byte block only.</para>
+///
+/// <para><b>In memory only; no on-disk cache</b> (overview D5). Each file's entries are kept keyed on
+/// its modification time and length, so a rebuild in the same session re-scans only the files that
+/// changed.</para>
+/// </summary>
+public static class VendorLibraryIndex
+{
+    /// <summary>The library-wide sentence for encrypted files (R-vl1-2c).</summary>
+    public static string EncryptedSentence(int files)
+        => $"{VendorLibraryBuild.Plural(files, "file is", "files are")} encrypted for another simulator " +
+           "and cannot be read. The plain-text (static) edition of this library can be.";
+
+    // ── The per-file cache ────────────────────────────────────────────────────
+
+    private enum FileKind { Readable, Encrypted, Empty, Unreadable }
+
+    private sealed record FileScan(DateTime Mtime, long Length, FileKind Kind,
+                                   IReadOnlyList<VendorLibraryEntry> Entries, int Unparsed);
+
+    private static readonly Dictionary<string, FileScan> _files = new(StringComparer.Ordinal);
+    private static readonly Lock _gate = new();
+
+    /// <summary>Drops every cached file scan.</summary>
+    public static void InvalidateAll() { lock (_gate) { _files.Clear(); _latest.Clear(); } }
+
+    // ── Build ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Walks <paramref name="root"/> for files with a SPICE-model extension
+    /// (<see cref="SpiceModelPeek.FileExtensions"/>; anything else is ignored silently) and indexes
+    /// every <c>.subckt</c> in them. Never throws for a file: an unreadable one is counted. A folder
+    /// with no readable part at all comes back with a <see cref="VendorLibraryBuild.Refusal"/>.
+    /// </summary>
+    public static VendorLibraryBuild Build(string root, RunControl? control = null)
+    {
+        string full;
+        try { full = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
+        catch (Exception ex) { return Refused(root, $"'{root}' is not a usable path: {ex.Message}"); }
+
+        if (!Directory.Exists(full)) return Refused(full, $"'{full}' is not a folder.");
+
+        var files = EnumerateLibraryFiles(full);
+
+        var entries    = new List<VendorLibraryEntry>();
+        var duplicates = new List<VendorLibraryDuplicate>();
+        var seen       = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        int read = 0, encrypted = 0, empty = 0, unreadable = 0, unparsed = 0;
+
+        foreach (var (abs, rel) in files)
+        {
+            control?.Token.ThrowIfCancellationRequested();
+
+            var scan = ScanCached(full, abs, rel, ref read);
+            switch (scan.Kind)
+            {
+                case FileKind.Encrypted:  encrypted++;  continue;
+                case FileKind.Empty:      empty++;      continue;
+                case FileKind.Unreadable: unreadable++; continue;
+            }
+            unparsed += scan.Unparsed;
+
+            foreach (var e in scan.Entries)
+            {
+                // First by path order wins; the later copy is counted and NAMED, because two files
+                // defining one part with different contents is exactly what a user needs to know
+                // before trusting whichever one got placed.
+                if (seen.TryGetValue(e.Part, out string? first))
+                {
+                    duplicates.Add(new VendorLibraryDuplicate(e.Part, first, e.File));
+                    continue;
+                }
+                seen[e.Part] = e.File;
+                entries.Add(e);
+            }
+        }
+
+        string? refusal = null;
+        if (entries.Count == 0)
+            refusal = encrypted > 0
+                ? EncryptedSentence(encrypted)
+                : $"'{full}' holds no readable .subckt part.";
+
+        return new VendorLibraryBuild(full, entries, files.Count, read, encrypted, empty, unreadable,
+                                      unparsed, duplicates, refusal);
+    }
+
+    private static VendorLibraryBuild Refused(string root, string why)
+        => new(root, [], 0, 0, 0, 0, 0, 0, [], why);
+
+    /// <summary>Every library file under <paramref name="root"/>, in ordinal relative-path order.
+    /// Hidden files and folders (a leading dot) are skipped.</summary>
+    private static List<(string Abs, string Rel)> EnumerateLibraryFiles(string root)
+    {
+        var exts = new HashSet<string>(SpiceModelPeek.FileExtensions, StringComparer.OrdinalIgnoreCase);
+        var list = new List<(string, string)>();
+        var stack = new Stack<string>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            string dir = stack.Pop();
+            IEnumerable<string> subdirs, here;
+            try
+            {
+                subdirs = Directory.EnumerateDirectories(dir);
+                here    = Directory.EnumerateFiles(dir);
+                foreach (string f in here)
+                {
+                    string name = Path.GetFileName(f);
+                    if (name.StartsWith('.') || !exts.Contains(Path.GetExtension(f))) continue;
+                    list.Add((f, Path.GetRelativePath(root, f).Replace('\\', '/')));
+                }
+                foreach (string d in subdirs)
+                    if (!Path.GetFileName(d).StartsWith('.')) stack.Push(d);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+        list.Sort((a, b) => string.CompareOrdinal(a.Item2, b.Item2));
+        return list;
+    }
+
+    private static FileScan ScanCached(string root, string abs, string rel, ref int read)
+    {
+        DateTime mtime;
+        long length;
+        try
+        {
+            var info = new FileInfo(abs);
+            mtime  = info.LastWriteTimeUtc;
+            length = info.Length;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return new FileScan(default, 0, FileKind.Unreadable, [], 0);
+        }
+
+        // Keyed on root AND file: an entry's relative path and folders are root-relative.
+        string key = root + "\n" + abs;
+        lock (_gate)
+            if (_files.TryGetValue(key, out var hit) && hit.Mtime == mtime && hit.Length == length)
+                return hit;
+
+        read++;
+        FileScan scan;
+        if (length == 0) scan = new FileScan(mtime, 0, FileKind.Empty, [], 0);
+        else
+        {
+            try { scan = Scan(File.ReadAllBytes(abs), rel) with { Mtime = mtime, Length = length }; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                scan = new FileScan(mtime, length, FileKind.Unreadable, [], 0);
+            }
+        }
+
+        lock (_gate) _files[key] = scan;
+        return scan;
+    }
+
+    // ── The scan ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// One file's bytes → its entries. A line-by-line pass over the raw bytes, tracking each line's
+    /// byte offset so an entry's block can be read back alone. The text is single-byte for every
+    /// token this looks at (directives, names, header field names), so the bytes are decoded only for
+    /// the lines that are kept.
+    /// </summary>
+    private static FileScan Scan(byte[] bytes, string rel)
+    {
+        // A NUL in the first few kilobytes is a binary file, not a netlist.
+        int probe = Math.Min(bytes.Length, 4096);
+        if (Array.IndexOf(bytes, (byte)0, 0, probe) >= 0)
+            return new FileScan(default, 0, FileKind.Unreadable, [], 0);
+
+        string[] folders = rel.Contains('/') ? rel[..rel.LastIndexOf('/')].Split('/') : [];
+        string stem = Path.GetFileNameWithoutExtension(rel);
+
+        var entries = new List<VendorLibraryEntry>();
+        var header  = new List<string>();
+        int unparsed = 0;
+
+        // The open subcircuit, if any.
+        string? part = null;
+        List<string>? ports = null;
+        long start = 0;
+        bool collectingPorts = false;
+        int depth = 0;
+        int encodedRun = 0;
+
+        int pos = 0;
+        while (pos < bytes.Length)
+        {
+            int lineStart = pos;
+            int nl = Array.IndexOf(bytes, (byte)'\n', pos);
+            int lineEnd = nl < 0 ? bytes.Length : nl;          // exclusive, before '\n'
+            pos = nl < 0 ? bytes.Length : nl + 1;
+
+            int s = lineStart;
+            while (s < lineEnd && bytes[s] is (byte)' ' or (byte)'\t') s++;
+            int e = lineEnd;
+            while (e > s && bytes[e - 1] is (byte)'\r' or (byte)' ' or (byte)'\t') e--;
+            if (s == e) { collectingPorts = false; continue; }
+
+            byte first = bytes[s];
+
+            if (IsEncryptionMarker(bytes, s, e)) return Encrypted();
+
+            if (first == (byte)'*')
+            {
+                collectingPorts = false;
+                if (part is null) header.Add(Encoding.Latin1.GetString(bytes, s, e - s));
+                continue;
+            }
+
+            if (first == (byte)'+' && collectingPorts && ports is not null)
+            {
+                if (AddPorts(Encoding.Latin1.GetString(bytes, s + 1, e - s - 1), ports)) collectingPorts = false;
+                continue;
+            }
+            collectingPorts = false;
+
+            if (StartsWithWord(bytes, s, e, ".subckt"))
+            {
+                if (part is not null) { depth++; continue; }   // nested: part of the outer body
+
+                string line = Encoding.Latin1.GetString(bytes, s, e - s);
+                var words = line.Split((char[]?)[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                if (words.Length < 2) { header.Clear(); continue; }
+
+                part  = words[1];
+                ports = [];
+                start = lineStart;
+                encodedRun = 0;
+                collectingPorts = !AddPorts(string.Join(' ', words.Skip(2)), ports);
+                continue;
+            }
+
+            if (StartsWithWord(bytes, s, e, ".ends"))
+            {
+                if (part is null) { header.Clear(); continue; }
+                if (depth > 0) { depth--; continue; }
+
+                var parsed = VendorLibraryHeader.Parse(header, out int bad);
+                unparsed += bad;
+                entries.Add(new VendorLibraryEntry(part, rel, folders, stem, start,
+                                                   checked((int)(pos - start)), ports!, parsed));
+                part = null; ports = null;
+                header.Clear();
+                continue;
+            }
+
+            // A body line made of nothing but a long hex/base64 run, several in a row, is an encoded
+            // block — the body of a part that cannot be read.
+            if (part is not null)
+            {
+                encodedRun = LooksEncoded(bytes, s, e) ? encodedRun + 1 : 0;
+                if (encodedRun >= 3) return Encrypted();
+            }
+        }
+
+        return new FileScan(default, 0, FileKind.Readable, entries, unparsed);
+
+        static FileScan Encrypted() => new(default, 0, FileKind.Encrypted, [], 0);
+    }
+
+    /// <summary>Adds the port words of a <c>.subckt</c> line; true once the parameter section starts.</summary>
+    private static bool AddPorts(string words, List<string> ports)
+    {
+        foreach (string w in words.Split((char[]?)[' ', '\t'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (w.Contains('=') || w.EndsWith(':')) return true;
+            ports.Add(w);
+        }
+        return false;
+    }
+
+    private static bool StartsWithWord(byte[] b, int s, int e, string word)
+    {
+        if (e - s < word.Length) return false;
+        for (int i = 0; i < word.Length; i++)
+            if (char.ToLowerInvariant((char)b[s + i]) != word[i]) return false;
+        return e - s == word.Length || b[s + word.Length] is (byte)' ' or (byte)'\t';
+    }
+
+    /// <summary>
+    /// The structural shapes of an encrypted model, from the format rather than from any tool:
+    /// a protection directive (<c>.protect</c>), a protection pragma (<c>pragma protect</c>), a
+    /// begin-marker naming encryption, or a comment stating the content is encrypted.
+    /// </summary>
+    private static bool IsEncryptionMarker(byte[] b, int s, int e)
+    {
+        if (StartsWithWord(b, s, e, ".protect")) return true;
+        // Only a short line can be a marker; a long body line is checked by LooksEncoded instead.
+        if (e - s > 200) return false;
+        // Allocation-free pre-test: almost no line holds either word, and this runs on every line.
+        if (!ContainsAscii(b, s, e, "encrypt") && !ContainsAscii(b, s, e, "protect")) return false;
+        string line = Encoding.Latin1.GetString(b, s, e - s).ToLowerInvariant();
+        if (line.Contains("pragma protect", StringComparison.Ordinal)) return true;
+        if (!line.Contains("encrypt", StringComparison.Ordinal)) return false;
+        if (line.Contains("not encrypt", StringComparison.Ordinal) || line.Contains("unencrypt", StringComparison.Ordinal))
+            return false;
+        // A comment saying so, or a begin/start marker for an encrypted block.
+        return line[0] is '*' or ';' or '$' or '/' || line.Contains("begin", StringComparison.Ordinal)
+                                                    || line.Contains("start", StringComparison.Ordinal);
+    }
+
+    /// <summary>Case-insensitive search for a lower-case ASCII word in a byte range.</summary>
+    private static bool ContainsAscii(byte[] b, int s, int e, string word)
+    {
+        for (int i = s; i <= e - word.Length; i++)
+        {
+            int k = 0;
+            while (k < word.Length && (b[i + k] | 0x20) == word[k]) k++;
+            if (k == word.Length) return true;
+        }
+        return false;
+    }
+
+    /// <summary>A line of 40+ characters drawn only from the hex/base64 alphabet, with no spaces.</summary>
+    private static bool LooksEncoded(byte[] b, int s, int e)
+    {
+        if (e - s < 40) return false;
+        for (int i = s; i < e; i++)
+        {
+            byte c = b[i];
+            bool ok = c is >= (byte)'A' and <= (byte)'Z' or >= (byte)'a' and <= (byte)'z'
+                         or >= (byte)'0' and <= (byte)'9' or (byte)'+' or (byte)'/' or (byte)'=';
+            if (!ok) return false;
+        }
+        return true;
+    }
+
+    // ── The session's indexes, built in the background ────────────────────────
+    //
+    // R-vl1-2e: a workspace open STARTS a build and never waits for one. What a caller can ask in the
+    // meantime is whether one is running, and what the last finished build found.
+
+    private static readonly Dictionary<string, Task<VendorLibraryBuild>> _running = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, VendorLibraryBuild> _latest = new(StringComparer.Ordinal);
+
+    /// <summary>Raised on a thread-pool thread when a background build finishes, with the library root.</summary>
+    public static event Action<string>? Built;
+
+    /// <summary>
+    /// Starts rebuilding <paramref name="root"/>'s index on a background thread, or returns the build
+    /// already running. A rebuild re-scans only the files whose time or length changed.
+    /// </summary>
+    public static Task<VendorLibraryBuild> StartBuild(string root)
+    {
+        string key = KeyOf(root);
+        lock (_gate)
+        {
+            if (_running.TryGetValue(key, out var running)) return running;
+            var task = Task.Run(() =>
+            {
+                VendorLibraryBuild b;
+                try { b = Build(key); }
+                catch (Exception ex) { b = Refused(key, $"'{key}' could not be indexed: {ex.Message}"); }
+                lock (_gate) { _latest[key] = b; _running.Remove(key); }
+                Built?.Invoke(key);
+                return b;
+            });
+            _running[key] = task;
+            return task;
+        }
+    }
+
+    /// <summary>The last finished build of <paramref name="root"/>, or null when none has finished.</summary>
+    public static VendorLibraryBuild? Latest(string root)
+    {
+        lock (_gate) return _latest.GetValueOrDefault(KeyOf(root));
+    }
+
+    /// <summary>True while a background build of <paramref name="root"/> is running.</summary>
+    public static bool IsBuilding(string root)
+    {
+        lock (_gate) return _running.ContainsKey(KeyOf(root));
+    }
+
+    /// <summary>Records a build made in the foreground (an Add, a Validate) as the latest.</summary>
+    internal static void Remember(VendorLibraryBuild build)
+    {
+        lock (_gate) _latest[KeyOf(build.Root)] = build;
+    }
+
+    private static string KeyOf(string root)
+    {
+        try { return Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
+        catch { return root; }
+    }
+
+    // ── Reading one block ─────────────────────────────────────────────────────
+
+    /// <summary>The text of one entry's <c>.subckt</c> … <c>.ends</c> block, read alone.</summary>
+    public static string ReadBlock(string libraryRoot, VendorLibraryEntry entry)
+    {
+        string path = Path.Combine(libraryRoot, CircuitRF.Core.RefPath.ToNative(entry.File));
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        fs.Seek(entry.Offset, SeekOrigin.Begin);
+        var buf = new byte[entry.Length];
+        fs.ReadExactly(buf);
+        return Encoding.Latin1.GetString(buf);
+    }
+}

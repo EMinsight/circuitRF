@@ -978,6 +978,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             // back as modes — every one of them brings something in.
             ["import/part"]       = ["path"],
             ["import/schematic"]  = ["path"],
+            ["import/library"]    = ["path"],
             ["import/voxels"]     = ["path"],
             ["import/surfaces"]   = ["path"],
             ["convert/"]          = ["path"],
