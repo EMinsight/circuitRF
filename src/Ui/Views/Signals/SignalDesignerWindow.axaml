@@ -1,6 +1,6 @@
-<!-- The MOD_Source Signal Designer. Left pane: the carriers (LTE / NR / CW / pulsed CW / FSK / imported I/Q) as cards, the
-     signal-wide settings and the presets for the common cases (one LTE or NR channel, two carriers at
-     any spacing, four contiguous LTE). Right pane: the composite spectrum and the CCDF — Data Display
+<!-- The MOD_Source Signal Designer. Left pane: the carriers (LTE / NR / CW / pulsed CW / FSK / DBPSK / CSS / imported I/Q)
+     as cards, the signal-wide settings and the presets for the common cases, one row per family (cellular, radar,
+     IoT and metering). Right pane: the composite spectrum and the CCDF — Data Display
      PlotControls at the golden ratio, exactly as the Match Designer hosts its two — and the numbers a
      designer reads first (IBW, PAPR, ideal ACLR). A second tab, EVM, shows each LTE / NR carrier's
      constellation over its ideal points with the EVM, and a few envelope cycles of
@@ -159,38 +159,75 @@
                         <Border Classes="card" Margin="0,4,0,6" IsEnabled="{Binding IsNotCustom}">
                             <StackPanel Spacing="6">
                                 <TextBlock Classes="cardhdr" Text="Presets"/>
-                                <WrapPanel>
-                                    <Button Classes="small" Margin="0,0,6,4" Content="LTE 20 MHz" Command="{Binding PresetLte20Command}"/>
-                                    <Button Classes="small" Margin="0,0,6,4" Content="NR 20 MHz (30 kHz)" Command="{Binding PresetNr20Command}"/>
-                                    <Button Classes="small" Margin="0,0,6,4" Content="NR 100 MHz (30 kHz)" Command="{Binding PresetNr100Command}"/>
-                                    <Button Classes="small" Margin="0,0,6,4" Content="4 x LTE 20 contiguous" Command="{Binding PresetFourCarrierLteCommand}"/>
-                                </WrapPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Button Classes="small" Content="2C NR 20 at spacing" Command="{Binding PresetTwoCarrierCommand}"/>
-                                    <NumericUpDown Value="{Binding PresetSpacingMHz}" Increment="20" Minimum="20" FormatString="0.#" MinWidth="90"/>
-                                    <TextBlock Classes="lbl" Text="MHz centre-to-centre"/>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Button Classes="small" Content="Pulsed CW" Command="{Binding PresetPulseCommand}"
-                                        ToolTip.Tip="One pulsed-CW carrier, for a pulsed-radar amplifier: set its PRI, width, edges and delay on the card"/>
-                                <!-- One FSK carrier on PN9 at the mode's chip rate and deviation; Fc moves to the mode's channel.
-                                     One button, one menu item per mode, so the presets row does not grow by four. -->
-                                <Button Classes="small" Tag="wmbus-presets" HorizontalAlignment="Left"
-                                        ToolTip.Tip="Wireless M-Bus (EN 13757-4): one FSK carrier on PN9 data at a mode's chip rate and deviation. Sets Centre Fc unless it is an expression.">
-                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                        <TextBlock Text="Wireless M-Bus"/>
-                                        <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14"/>
-                                    </StackPanel>
-                                    <Button.Flyout>
-                                        <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                                            <MenuItem Header="C1  meter → other   868.95 MHz, 100 kchip/s, ±45 kHz, GFSK BT 0.5" Command="{Binding PresetWmbusC1Command}"/>
-                                            <MenuItem Header="C2  other → meter   869.525 MHz, 50 kchip/s, ±25 kHz, GFSK BT 0.5" Command="{Binding PresetWmbusC2Command}"/>
-                                            <MenuItem Header="T1  meter → other   868.95 MHz, 100 kchip/s, ±50 kHz, FSK" Command="{Binding PresetWmbusT1Command}"/>
-                                            <MenuItem Header="T2  other → meter   868.3 MHz, 32.768 kchip/s, ±50 kHz, FSK" Command="{Binding PresetWmbusT2Command}"/>
-                                        </MenuFlyout>
-                                    </Button.Flyout>
-                                </Button>
-                                </StackPanel>
+                                <!-- One row per family, its name on the left. A family of several standards is one button with
+                                     a menu (one item per mode), so a row does not grow by a button per mode. -->
+                                <Grid ColumnDefinitions="64,*" RowDefinitions="Auto,Auto,Auto" Tag="preset-rows">
+                                    <TextBlock Classes="lbl" Text="Cellular" VerticalAlignment="Top" Margin="0,5,0,0"/>
+                                    <WrapPanel Grid.Column="1">
+                                        <Button Classes="small" Margin="0,0,6,4" Content="LTE 20 MHz" Command="{Binding PresetLte20Command}"/>
+                                        <Button Classes="small" Margin="0,0,6,4" Content="NR 20 MHz (30 kHz)" Command="{Binding PresetNr20Command}"/>
+                                        <Button Classes="small" Margin="0,0,6,4" Content="NR 100 MHz (30 kHz)" Command="{Binding PresetNr100Command}"/>
+                                        <Button Classes="small" Margin="0,0,6,4" Content="4 x LTE 20 contiguous" Command="{Binding PresetFourCarrierLteCommand}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
+                                            <Button Classes="small" Content="2C NR 20 at spacing" Command="{Binding PresetTwoCarrierCommand}"
+                                                    ToolTip.Tip="Two NR 20 MHz carriers at the centre-to-centre spacing in the field beside it"/>
+                                            <NumericUpDown Value="{Binding PresetSpacingMHz}" Increment="20" Minimum="20" FormatString="0.#" MinWidth="90"
+                                                           ToolTip.Tip="Centre-to-centre spacing of the 2C preset's two carriers"/>
+                                            <TextBlock Classes="lbl" Text="MHz apart"/>
+                                        </StackPanel>
+                                    </WrapPanel>
+                                    <TextBlock Grid.Row="1" Classes="lbl" Text="Radar" Margin="0,2,0,4"/>
+                                    <Button Grid.Row="1" Grid.Column="1" Classes="small" Margin="0,2,0,4" HorizontalAlignment="Left" Content="Pulsed CW"
+                                            Command="{Binding PresetPulseCommand}"
+                                            ToolTip.Tip="One pulsed-CW carrier, for a pulsed-radar amplifier: set its PRI, width, edges and delay on the card"/>
+                                    <TextBlock Grid.Row="2" Classes="lbl" Text="IoT" Margin="0,2,0,0"/>
+                                    <WrapPanel Grid.Row="2" Grid.Column="1" Margin="0,2,0,0">
+                                        <!-- Each sets one carrier and moves Centre Fc to the mode's channel (unless Fc is an expression). -->
+                                        <Button Classes="small" Margin="0,0,6,0" Tag="wmbus-presets"
+                                                ToolTip.Tip="Wireless M-Bus (EN 13757-4): one FSK carrier on PN9 data at a mode's chip rate and deviation. Sets Centre Fc unless it is an expression.">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock Text="Wireless M-Bus"/>
+                                                <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14"/>
+                                            </StackPanel>
+                                            <Button.Flyout>
+                                                <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                                    <MenuItem Header="C1 / C2  meter → other   868.95 MHz, 100 kchip/s, ±45 kHz, FSK" Command="{Binding PresetWmbusC1Command}"/>
+                                                    <MenuItem Header="C2  other → meter   869.525 MHz, 50 kchip/s, ±25 kHz, GFSK BT 0.5" Command="{Binding PresetWmbusC2Command}"/>
+                                                    <MenuItem Header="T1 / T2  meter → other   868.95 MHz, 100 kchip/s, ±50 kHz, FSK" Command="{Binding PresetWmbusT1Command}"/>
+                                                    <MenuItem Header="T2  other → meter   868.3 MHz, 32.768 kchip/s, ±50 kHz, FSK" Command="{Binding PresetWmbusT2Command}"/>
+                                                </MenuFlyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                        <Button Classes="small" Margin="0,0,6,0" Tag="ble-presets"
+                                                ToolTip.Tip="Bluetooth Low Energy: one GFSK carrier on PN9 data (h = 0.5, BT 0.5) at 2.44 GHz, mid-band. LE Coded (125 and 500 kb/s) uses the LE 1M air interface: its coding is in the bits. Sets Centre Fc unless it is an expression.">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock Text="Bluetooth LE"/>
+                                                <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14"/>
+                                            </StackPanel>
+                                            <Button.Flyout>
+                                                <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                                    <MenuItem Header="LE 1M / LE Coded   2.44 GHz, 1 Msym/s, ±250 kHz, GFSK BT 0.5" Command="{Binding PresetBle1MCommand}"/>
+                                                    <MenuItem Header="LE 2M   2.44 GHz, 2 Msym/s, ±500 kHz, GFSK BT 0.5" Command="{Binding PresetBle2MCommand}"/>
+                                                </MenuFlyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                        <Button Classes="small" Margin="0,0,6,0" Tag="lorawan-presets"
+                                                ToolTip.Tip="LoRaWAN, EU868: one LoRa (chirp spread spectrum) packet at 868.1 MHz, 125 kHz. Sets Centre Fc unless it is an expression.">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock Text="LoRaWAN"/>
+                                                <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14"/>
+                                            </StackPanel>
+                                            <Button.Flyout>
+                                                <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                                    <MenuItem Header="SF7    868.1 MHz, 125 kHz, CSS, 45 ms packet" Command="{Binding PresetLoRaWanSf7Command}"/>
+                                                    <MenuItem Header="SF12   868.1 MHz, 125 kHz, CSS, 1.45 s packet" Command="{Binding PresetLoRaWanSf12Command}"/>
+                                                </MenuFlyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                        <Button Classes="small" Content="Sigfox" Command="{Binding PresetSigfoxCommand}"
+                                                ToolTip.Tip="Sigfox RC1 uplink: 100 b/s DBPSK on PN9 at 868.13 MHz. Sets Centre Fc unless it is an expression."/>
+                                    </WrapPanel>
+                                </Grid>
                             </StackPanel>
                         </Border>
 
@@ -292,7 +329,7 @@
                                                     IsEnabled="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).HasSeveralCarriers}">
                                                 <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
                                             </Button>
-                                            <!-- A carrier with no bandwidth picker (CW, PCW, FSK, FILE) has the row's middle free: Offset and
+                                            <!-- A carrier with no bandwidth picker (CW, PCW, FSK, DBPSK, CSS, FILE) has the row's middle free: Offset and
                                                  Power sit there, a row higher, so a pulse or FSK card fits the window without scrolling. -->
                                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0" IsVisible="{Binding !IsOfdm}">
                                                 <TextBlock Classes="lbl" Text="Offset (MHz)"/>
@@ -375,6 +412,38 @@
                                                 <TextBlock Grid.Row="3" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding FskRefusal}"
                                                            Foreground="{DynamicResource CrfWarningBrush}" IsVisible="{Binding FskRefusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                                             </Grid>
+                                            <!-- DBPSK: the bit rate and the same Data as FSK; a 0 reverses the phase. -->
+                                            <Grid Grid.Row="4" Grid.ColumnSpan="4" ColumnDefinitions="Auto,140,Auto,110" RowDefinitions="Auto,Auto,Auto"
+                                                  Margin="0,6,0,0" IsVisible="{Binding IsDbpsk}" Tag="dbpsk-fields">
+                                                <TextBlock Classes="lbl" Text="Bit rate (b/s)" Margin="0,0,6,0"/>
+                                                <NumericUpDown Grid.Column="1" Value="{Binding DbpskRateBps}" Increment="100" Minimum="1" FormatString="0.######"
+                                                               ToolTip.Tip="Bit rate: 100 b/s for a UNB uplink in the 868 MHz band, 600 b/s where the rules allow it"/>
+                                                <TextBlock Grid.Row="1" Classes="lbl" Text="Data" Margin="0,6,6,0"/>
+                                                <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" HorizontalAlignment="Stretch"
+                                                          ItemsSource="{x:Static vm:CarrierRowViewModel.DataOptions}" SelectedItem="{Binding DataChoice}"
+                                                          ToolTip.Tip="PN9 (511 bits) or PN15 (32,767 bits), or a fixed pattern. A 0 reverses the phase, a 1 keeps it."/>
+                                                <TextBox Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" Margin="12,6,0,0" Text="{Binding BitsText}"
+                                                         IsVisible="{Binding IsFixedBits}" Classes.error="{Binding HasBitsError}"
+                                                         ToolTip.Tip="{Binding BitsError, TargetNullValue='The bits, first to last, as 0s and 1s; the pattern repeats'}"/>
+                                                <TextBlock Grid.Row="2" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding DbpskInfoText}"/>
+                                                <TextBlock Grid.Row="2" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding DbpskRefusal}"
+                                                           Foreground="{DynamicResource CrfWarningBrush}" IsVisible="{Binding DbpskRefusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                            </Grid>
+                                            <!-- CSS: spreading factor and chirp bandwidth, both picked; the record is one packet. -->
+                                            <Grid Grid.Row="4" Grid.ColumnSpan="4" ColumnDefinitions="Auto,140,Auto,110" RowDefinitions="Auto,Auto"
+                                                  Margin="0,6,0,0" IsVisible="{Binding IsCss}" Tag="css-fields">
+                                                <TextBlock Classes="lbl" Text="SF" Margin="0,0,6,0"/>
+                                                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                                                          ItemsSource="{x:Static vm:CarrierRowViewModel.SfOptions}" SelectedItem="{Binding Sf}"
+                                                          ToolTip.Tip="Spreading factor: 2^SF chips per symbol. Each step up doubles the symbol and the packet, for longer reach."/>
+                                                <TextBlock Grid.Column="2" Classes="lbl" Text="BW (kHz)" Margin="12,0,6,0"/>
+                                                <ComboBox Grid.Column="3" HorizontalAlignment="Stretch"
+                                                          ItemsSource="{x:Static vm:CarrierRowViewModel.CssBandwidthOptions}" SelectedItem="{Binding CssBandwidthKHz}"
+                                                          ToolTip.Tip="The chirp's sweep: 125 kHz on the 868 MHz channels, 250 or 500 kHz where allowed"/>
+                                                <TextBlock Grid.Row="1" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding CssInfoText}"/>
+                                                <TextBlock Grid.Row="1" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding CssRefusal}"
+                                                           Foreground="{DynamicResource CrfWarningBrush}" IsVisible="{Binding CssRefusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                            </Grid>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
@@ -391,7 +460,7 @@
                     <TextBlock Classes="panelhdr" Text="Preview"/>
                     <TabControl Grid.Row="1" SelectedIndex="{Binding PreviewTab}" Padding="0,4,0,0">
                         <TabItem Header="Spectrum and CCDF" FontSize="13">
-                            <Grid RowDefinitions="*,*,Auto">
+                            <Grid RowDefinitions="*,*,Auto,Auto">
                                 <!-- Golden ratio, the Match Designer's own layout: the panel LAYS the plot out at
                                      1.618:1 so the axis text and strokes keep the Data Display's own sizes. -->
                                 <ctl:AspectRatioPanel Grid.Row="0" Margin="0,2">
@@ -402,12 +471,16 @@
                                     <ddc:PlotControl Name="CcdfPlotControl" Plot="{Binding CcdfPlot}" Library="{Binding PlotHost.Library}"
                                                      CanDeletePlot="False" CanEditPlotProperties="False"/>
                                 </ctl:AspectRatioPanel>
-                                <Border Grid.Row="2" Classes="card" Margin="0,4,0,0">
+                                <!-- A pulse's CCDF over its on-time, as an analyser gates a burst; a Designer setting, never written. -->
+                                <CheckBox Grid.Row="2" Margin="2,2,0,0" FontSize="12" IsVisible="{Binding IsPulse}" IsChecked="{Binding GateCcdf}"
+                                          Content="CCDF over the pulse on-time only (gated)"
+                                          ToolTip.Tip="On: the CCDF and PAPR are measured from the rising edge's 50 % point to the falling edge's, against the pulse's own average, as a signal analyser gates a burst. Off: over the whole PRI, where the duty cycle sets the step."/>
+                                <Border Grid.Row="3" Classes="card" Margin="0,4,0,0">
                                     <SelectableTextBlock Text="{Binding Stats}" FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="11" TextWrapping="NoWrap"/>
                                 </Border>
                                 <!-- Marker info boxes for this tab's plots: the Data Display's own overlay, click-through
                                      (no Background) except on a box. One layer per tab, so a hidden tab's boxes hide too. -->
-                                <ItemsControl Name="SpectrumInfoBoxLayer" Grid.RowSpan="3" Background="{x:Null}">
+                                <ItemsControl Name="SpectrumInfoBoxLayer" Grid.RowSpan="4" Background="{x:Null}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <Canvas Background="{x:Null}"/>
@@ -433,8 +506,8 @@
                              envelope cycles of power around the peak with the average and peak lines. -->
                         <TabItem Header="{Binding SecondTabHeader}" FontSize="13">
                             <Grid>
-                            <!-- a pulse or an FSK carrier carries no QAM symbols, so in the EVM's place: the pulse over one PRI,
-                                 or the FSK's instantaneous frequency over its first bits, with its own marker layer -->
+                            <!-- a pulse, FSK, DBPSK or CSS carrier carries no QAM symbols, so in the EVM's place: the pulse over one
+                                 PRI, the instantaneous frequency (FSK, CSS) or the in-phase waveform (DBPSK), with its own marker layer -->
                             <Grid IsVisible="{Binding HasTimePlot}">
                                 <ctl:AspectRatioPanel VerticalAlignment="Top" Margin="0,2">
                                     <ddc:PlotControl Name="TimePlotControl" Plot="{Binding TimePlot}" Library="{Binding PlotHost.Library}"

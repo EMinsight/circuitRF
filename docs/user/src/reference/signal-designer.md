@@ -3,8 +3,8 @@ title: The Signal Designer
 slug: reference/signal-designer.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Signal Designer
-lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train, FSK or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
-keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
+lede: The signal a MOD_Source plays - LTE, NR, CW, a pulsed-CW train, FSK, Bluetooth LE, LoRa, Sigfox or your own I/Q file - with its spectrum, CCDF and EVM before you simulate.
+keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, duty, pulse-top power, FSK, CPFSK, GFSK, GMSK, MSK, PN9, PN15, wireless M-Bus, metering, LoRa, LoRaWAN, Sigfox, Bluetooth LE, BLE, LE 1M, LE 2M, LE Coded, LPWAN, DBPSK, BPSK, UNB, ultra-narrowband, CSS, chirp, chirp spread spectrum, spreading factor, SF, IoT, gated CCDF, Gaussian reference, modulated source, LTE, NR, OFDM, I/Q, IQ file, custom waveform, Load Custom, sample rate, PAPR, CCDF, clipping, ACLR, ACPR, EVM, constellation, envelope, export
 ---
 
 <nav class="toc">
@@ -18,6 +18,8 @@ keywords: Signal Designer, MOD_Source, pulsed CW, pCW, pulse, radar, PRI, PRF, d
 <li><a href="#carriers">Carriers</a></li>
 <li><a href="#pulse">Pulsed CW</a></li>
 <li><a href="#fsk">FSK</a></li>
+<li><a href="#dbpsk">DBPSK (Sigfox)</a></li>
+<li><a href="#css">Chirp spread spectrum (LoRa)</a></li>
 <li><a href="#preview">The spectrum and the CCDF</a></li>
 <li><a href="#evm">The EVM tab</a></li>
 <li><a href="#export">Export signal</a></li>
@@ -64,10 +66,18 @@ remembered by its full path. Several can be open at once, and each is listed in 
 
 ## Presets {#presets}
 
-One click replaces the carriers with a common case: **LTE 20 MHz**, **NR 20 MHz (30 kHz)**,
-**NR 100 MHz (30 kHz)**, **4 x LTE 20 contiguous**, or **2C NR 20 at spacing** — two NR 20 MHz carriers at
-the centre-to-centre spacing in the field beside it. **Pulsed CW** is one [pulse train](#pulse), and
-**Wireless M-Bus** opens a menu of [FSK](#fsk) metering modes.
+One click replaces the carriers with a common case. The presets are in one row per family:
+
+- **Cellular** — **LTE 20 MHz**, **NR 20 MHz (30 kHz)**, **NR 100 MHz (30 kHz)**, **4 x LTE 20 contiguous**,
+  or **2C NR 20 at spacing**: two NR 20 MHz carriers the number of MHz apart in the field beside it, centre
+  to centre.
+- **Radar** — **Pulsed CW**, one [pulse train](#pulse).
+- **IoT** — each sets one carrier and moves **Centre Fc** to the mode's channel; if Fc is an expression, it
+  is left as you typed it.
+  - **Wireless M-Bus** — a menu of the [FSK](#fsk) metering modes.
+  - **Bluetooth LE** — a menu: **LE 1M / LE Coded** and **LE 2M**, as [GFSK](#fsk) at 2.44 GHz.
+  - **LoRaWAN** — a menu: a [LoRa](#css) packet at **SF7** or **SF12**, 125 kHz at 868.1 MHz (EU868).
+  - **Sigfox** — the RC1 uplink: [DBPSK](#dbpsk) at 100 b/s, 868.13 MHz.
 
 ## A custom I/Q file {#custom}
 
@@ -146,7 +156,7 @@ which always gives a whole number of samples per record.
 
 ## Carriers {#carriers}
 
-Each card is one carrier: its standard (**LTE**, **NR**, **CW**, **PCW**, **FSK** or **FILE**), channel bandwidth, NR
+Each card is one carrier: its standard (**LTE**, **NR**, **CW**, **PCW**, **FSK**, **DBPSK**, **CSS** or **FILE**), channel bandwidth, NR
 subcarrier spacing, modulation, offset from `Fc`, relative power and random-data seed. **+** adds a
 carrier beside the last; **×** removes one. With a single carrier, **Power** is disabled — it is relative
 to the others, and `Pavg` is the total. Carriers more than three channel bandwidths apart get their own
@@ -212,7 +222,7 @@ pulsed bias source rather than a signal.
 
 An **FSK** card is binary frequency-shift keying with continuous phase: each bit holds the frequency at
 `Fc + Dev` (a 1) or `Fc − Dev` (a 0) for one bit period, and the phase never jumps. Choose **FSK** in a
-card's standard list, or a mode from the **Wireless M-Bus** preset.
+card's standard list, or a mode from the **Wireless M-Bus** or **Bluetooth LE** preset.
 
 | Field | Meaning | Default |
 |---|---|---|
@@ -230,10 +240,25 @@ The **Wireless M-Bus** menu (EN 13757-4) sets one FSK carrier on PN9 for a meter
 
 | Mode | Direction | Fc | Chip rate | Deviation | Filter |
 |---|---|---|---|---|---|
-| C1 | meter → other | 868.95 MHz | 100 kchip/s | ±45 kHz | Gaussian, BT 0.5 |
+| C1 / C2 | meter → other | 868.95 MHz | 100 kchip/s | ±45 kHz | none (2-FSK) |
 | C2 | other → meter | 869.525 MHz | 50 kchip/s | ±25 kHz | Gaussian, BT 0.5 |
-| T1 | meter → other | 868.95 MHz | 100 kchip/s | ±50 kHz | none |
+| T1 / T2 | meter → other | 868.95 MHz | 100 kchip/s | ±50 kHz | none |
 | T2 | other → meter | 868.3 MHz | 32.768 kchip/s | ±50 kHz | none |
+
+C1 meters only transmit; C2 meters also listen, on the other-to-meter link. Only that link is Gaussian
+filtered. T mode is the same split.
+
+The **Bluetooth LE** menu sets one GFSK carrier at 2.44 GHz, the middle of the 2.4 GHz band,
+with h = 0.5 and BT 0.5:
+
+| Mode | Symbol rate | Deviation | Filter |
+|---|---|---|---|
+| LE 1M / LE Coded | 1 Msym/s | ±250 kHz | Gaussian, BT 0.5 |
+| LE 2M | 2 Msym/s | ±500 kHz | Gaussian, BT 0.5 |
+
+LE Coded (125 kb/s at S = 8, 500 kb/s at S = 2) sends the LE 1M air interface: its coding is in the bits,
+so an RF front end sees the same signal. Classic Bluetooth's basic rate is the same FSK card at 1 Mb/s,
+±160 kHz, BT 0.5.
 
 The data is a test pattern, not a telegram. There is no preamble, sync word or 3-out-of-6 coding,
 because an RF front end responds to the modulation and does not depend on what the bits mean.
@@ -265,14 +290,93 @@ Carrier[1]="FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0"
 Not modelled: transmitting in bursts with a duty cycle (a metering transmitter sends a few milliseconds
 every several seconds), and AM or PM.
 
+## DBPSK (Sigfox) {#dbpsk}
+
+A **DBPSK** card is differential binary phase-shift keying at a low bit rate: the Sigfox uplink, an
+ultra-narrowband (UNB) signal at 100 b/s in the 868 MHz band (RC1). A **0** reverses the phase and a **1**
+keeps it. Choose **DBPSK** in a card's standard list, or the **Sigfox** preset, which also moves
+**Centre Fc** to 868.13 MHz.
+
+| Field | Meaning | Default |
+|---|---|---|
+| **Bit rate (b/s)** | the bit rate, Rb: 100 in the 868 MHz band, 600 where the rules allow it | 100 |
+| **Data** | **PN9**, **PN15** or **Fixed bits**, as on an [FSK](#fsk) card | PN9 |
+
+**The reversals are smooth.** Each bit is a raised-cosine pulse two bits long, centred on its bit, so two
+equal bits in a row hold a flat envelope and a reversal passes through zero along a cosine across the bit
+edge. The envelope therefore dips at each 0 and nowhere else: the PAPR of PN9 is 1.25 dB. Phase flips
+with no shaping would spread 99 % of the power over ±9 Rb; shaped, 99 % lies within ±0.7 Rb, and the
+channel bandwidth is the pulse's main lobe, 2 Rb (200 Hz at 100 b/s). The record is real-valued.
+
+**The record is one period of the data**, or two when one period holds an odd number of 0s: the phase
+would then end reversed and the record would not repeat. PN9 has 255 0s, so its record is 1,022 bits,
+10.22 s at 100 b/s. The record is sampled at 32 samples per bit (3.2 kS/s), which the Source box offers
+as **Native rate** and **Auto** uses. A standard rate is refused for so long a record. The envelope analysis steps at that
+native rate too, not at the 1.92 MHz the LTE and NR ladder starts from, so 50 ms (five bits) is a short run.
+
+The second preview tab reads **Waveform** and shows the in-phase waveform over the first 32 bits. The
+spectrum's offset axis reads in Hz. As with FSK, a DBPSK carrier is the source's only carrier, it is not
+clipped, and the card has no **Seed**. The data is a test pattern, not a frame: a Sigfox uplink frame of
+12 bytes lasts about 2 s, and a message sends it three times on three frequencies within its 192 kHz band,
+with gaps between. For a power amplifier, one continuous record is the same signal.
+
+```
+Carrier[1]="DBPSK;Rb=100bps;Data=PN9;Off=0;P=0"
+```
+
+## Chirp spread spectrum (LoRa) {#css}
+
+A **CSS** card is chirp spread spectrum, the LoRa modulation that LoRaWAN runs on; its EU868 channels are
+125 kHz wide. Each symbol is one chirp: the frequency sweeps the bandwidth **BW** once, up from Fc − BW/2, in
+2^SF / BW. A symbol's value, SF bits, is where on the sweep it starts; it wraps from the top to the bottom
+when it gets there. The phase never jumps, and the envelope is constant: the PAPR is 0 dB. Choose **CSS** in a
+card's standard list, or **SF7** or **SF12** from the **LoRaWAN** preset, which also moves **Centre Fc**
+to 868.1 MHz.
+
+| Field | Meaning | Default |
+|---|---|---|
+| **SF** | the spreading factor, 7 to 12: 2^SF chips per symbol. Each step up doubles the symbol | 7 |
+| **BW (kHz)** | the chirp's sweep: 125 kHz on the 868 MHz channels, 250 or 500 kHz where allowed | 125 |
+
+The line under the fields gives the symbol, the raw bit rate SF × BW / 2^SF (before coding) and the
+packet. **The record is one packet**: 8 preamble up-chirps, two sync symbols, 2.25 down-chirps that mark
+the start of the frame, and 32 payload symbols read SF bits at a time from PN9. That is 44.25 symbols:
+45.3 ms at SF7 and 125 kHz, 1.45 s at SF12. There is no header, coding or CRC, as an RF front end does
+not depend on what the bits mean.
+
+The channel bandwidth is BW. The record is sampled at 8 BW (1 MS/s at 125 kHz), offered as **Native
+rate**. The second preview tab reads **Frequency** and shows the instantaneous frequency over the
+preamble, the sync symbols, the start of frame and the first payload symbols: a sawtooth that turns down
+at the start of frame.
+
+```
+Carrier[1]="CSS;SF=7;BW=125kHz;Off=0;P=0"
+```
+
+`BW` takes Hz, kHz or MHz, and is 125 kHz when absent; `SF` may be 5 to 12 in the netlist.
+
 ## The spectrum and the CCDF {#preview}
 
 The **Spectrum** is the composite power spectral density against the offset from `Fc`, framed on the
 occupied channels; for a pulsed-CW source it is the train's. The **CCDF** is the probability that the instantaneous power exceeds the average by
-more than a given margin, against the Gaussian-noise reference (dashed). A clipped signal's curve bends
-down well inside the reference. A pulse train's is a step: flat at about its duty, then nothing past its peak-to-average,
-which is 1 / its power duty (10 dB at 10 %). Below the plots: the carrier count and instantaneous bandwidth, the record
-and the rate, the PAPR at 0.01 % and the peak, and each carrier's ideal ACPR.
+more than a given margin.
+
+- **The Gaussian reference.** For a noise-like signal (LTE, NR, several carriers, an I/Q file) the CCDF is
+  drawn against the CCDF of Gaussian noise, dashed and named in the plot's legend. Unclipped OFDM lies almost
+  on it, and a clipped signal's curve bends down well inside it. A pulse, FSK, Bluetooth LE, LoRa or Sigfox
+  signal is no kind of noise and never approaches the reference, so it is drawn alone.
+- **A constant envelope** (FSK, Bluetooth LE, LoRa, a gated pulse) is a step at 0 dB: its PAPR is 0 dB, and
+  an amplifier can run it in saturation. A Sigfox signal's step is at 1.25 dB, from the dip at each phase
+  reversal. A step this narrow is framed from 0 to 12 dB, so it reads as a step.
+- **A pulse is gated by default.** With **CCDF over the pulse on-time only (gated)** ticked, beneath the
+  plot, the CCDF and the PAPR are measured from the rising edge's 50 % point to the falling edge's, against
+  the pulse's own average, as a signal analyser gates a burst. The plot reads **CCDF (pulse on-time)** and
+  a flat-topped pulse is a step at 0 dB. Untick it to measure over the whole PRI, where the off-time is in
+  the average: the step then sits at the peak-to-average, which is 1 / the power duty (10 dB at 10 %). The
+  line beneath the plots gives both. The setting belongs to the Designer and is not written to the source.
+
+Below the plots: the carrier count and instantaneous bandwidth, the record and the rate, the PAPR at
+0.01 % and the peak, and each carrier's ideal ACPR.
 
 ## The EVM tab {#evm}
 
@@ -292,7 +396,8 @@ record, with no per-subcarrier equaliser. The tab shows:
 An unclipped signal reads close to 0 %. Clipping is what moves it. CW and I/Q-file carriers carry no
 reference symbols, so they have no EVM. A pulsed-CW signal has none either: for one, this tab reads
 **Pulse** and holds the pulse itself, |envelope| against time over one PRI, which zooms onto an edge like
-any plot. For an [FSK](#fsk) signal it reads **Frequency** and holds the instantaneous frequency.
+any plot. For an [FSK](#fsk) or [CSS](#css) signal it reads **Frequency** and holds the instantaneous
+frequency, and for a [DBPSK](#dbpsk) signal **Waveform**, the in-phase waveform.
 
 {{ui: signal-designer-evm}}
 

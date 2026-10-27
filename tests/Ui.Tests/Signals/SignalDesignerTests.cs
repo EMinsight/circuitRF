@@ -177,7 +177,8 @@ public class SignalDesignerTests
         using var d = Open(vm, s);
         await d.PreviewAsync();
         Assert.True(d.PsdPlot.Traces.Count > 0, "status: " + d.Status);
-        Assert.Equal(2, d.CcdfPlot.Traces.Count);
+        Assert.Equal(2, d.CcdfPlot.Traces.Count);                        // OFDM beside its Gaussian reference, named
+        Assert.Equal(CircuitRF.Render.DataDisplay.LegendPlacement.Inside, d.CcdfPlot.Legend);
         Assert.Contains("2 carrier(s)", d.Stats);
         Assert.StartsWith("Ready", d.Status);
         Assert.Equal(CircuitRF.Render.DataDisplay.AxisScale.Log, d.CcdfPlot.Axes.YScale);
@@ -549,12 +550,27 @@ public class SignalDesignerTests
         var (vm, s) = PulseBench();
         using var d = Open(vm, s);
         await d.PreviewAsync();
-        Assert.Equal(2, d.CcdfPlot.Traces.Count);                        // the train's CCDF is as true as any signal's
+        // gated by default, as an analyser gates a burst: the flat top against its own average, ~0 dB, with no Gaussian
+        // reference beside it (a pulse is no kind of noise)
+        Assert.Equal("CCDF", Assert.Single(d.CcdfPlot.Traces).CubeName);
+        Assert.Equal("CCDF (pulse on-time)", d.CcdfPlot.CustomTitle);
+        Assert.Equal(CircuitRF.Render.DataDisplay.LegendPlacement.Off, d.CcdfPlot.Legend);
         var t = Assert.Single(d.TimePlot.Traces);
         Assert.Equal("Pulse", t.CubeName);
         Assert.Equal("Pulse", d.SecondTabHeader);
         Assert.StartsWith("pCW   PRI 100 µs", d.Stats);
-        Assert.Contains("PAPR", d.Stats);
+        Assert.InRange(PaprOf(d.Stats, "on-time PAPR "), 0, 0.1);
+
+        d.GateCcdf = false;                                               // over the whole PRI: the duty cycle's step
+        await d.PreviewAsync();
+        Assert.Equal("CCDF", d.CcdfPlot.CustomTitle);
+        Assert.InRange(PaprOf(d.Stats, "\nPAPR "), 2.9, 3.1);            // 1 / power duty, ~50 % here
+    }
+
+    private static double PaprOf(string stats, string label)
+    {
+        int i = stats.IndexOf(label, StringComparison.Ordinal) + label.Length;
+        return double.Parse(stats[i..].Split(' ')[0], System.Globalization.CultureInfo.InvariantCulture);
     }
 
     [Fact]
@@ -578,11 +594,13 @@ public class SignalDesignerTests
         d.PresetWmbusC1Command.Execute(null);
         Assert.Equal("0.86895", d.FcText);                                    // a number moves to the mode's channel
         var c = Assert.Single(d.Carriers);
-        Assert.Equal(("FSK", 100.0, 45.0, true, "PN9"), (c.Standard, c.BitRateKbps, c.DeviationKHz, c.IsGaussian, c.Data));
+        // C mode, meter to other, is 2-FSK with no Gaussian filter (the GFSK is the other-to-meter link's, C2)
+        Assert.Equal(("FSK", 100.0, 45.0, false, "PN9"), (c.Standard, c.BitRateKbps, c.DeviationKHz, c.IsGaussian, c.Data));
         Assert.True(d.IsFsk);
         Assert.False(d.CanEditRecord || d.CanClip || d.CanShape || d.CanAddCarrier);
         Assert.Equal("Frequency", d.SecondTabHeader);
-        Assert.Equal("h = 0.9  ·  GFSK  ·  511 bits  ·  record 5.11 ms", c.FskInfoText);
+        Assert.Equal("h = 0.9  ·  FSK  ·  511 bits  ·  record 5.11 ms", c.FskInfoText);
+        c.Filter = CarrierRowViewModel.FilterOptions[1];                      // the card's filter: GFSK at BT 0.5
         Assert.Equal(3.2e6, Assert.Single(d.SampleRates, o => o.IsOwn).Hz);  // no standard rate divides 511 bits
 
         c.DataChoice = "Fixed bits";                                          // the card's pattern, at once
@@ -605,6 +623,68 @@ public class SignalDesignerTests
         e.SetTarget(vm2, s2, preview: false);
         e.PresetWmbusT2Command.Execute(null);
         Assert.Equal("RFfreq", e.FcText);
+    }
+
+    [Fact]
+    public void BlePresets_AreGfskAtHalfModulationIndex()
+    {
+        var (vm, s) = Bench(fc: "2", fcUnit: "GHz");
+        using var d = new SignalDesignerViewModel();
+        d.SetTarget(vm, s, preview: false);
+        d.PresetBle2MCommand.Execute(null);
+        Assert.Equal("2.44", d.FcText);
+        var c = Assert.Single(d.Carriers);
+        Assert.Equal(("FSK", 2000.0, 500.0, true, 0.5), (c.Standard, c.BitRateKbps, c.DeviationKHz, c.IsGaussian, c.Bt));
+        Assert.StartsWith("h = 0.5", c.FskInfoText);
+    }
+
+    // ── DBPSK and CSS ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SigfoxPreset_DbpskCardApplyAndPreview()
+    {
+        var (vm, s) = Bench(fc: "2", fcUnit: "GHz");
+        using var d = Open(vm, s);
+        d.PresetSigfoxCommand.Execute(null);
+        Assert.Equal("0.86813", d.FcText);
+        var c = Assert.Single(d.Carriers);
+        Assert.Equal(("DBPSK", 100.0, "PN9"), (c.Standard, c.DbpskRateBps, c.Data));
+        Assert.True(d.IsOwnModulated && !d.CanClip && !d.CanAddCarrier);
+        Assert.Equal("Waveform", d.SecondTabHeader);
+        Assert.Equal("bit 10 ms  ·  1,022 bits (the data twice, to end in phase)  ·  record 10.22 s  ·  bandwidth 200 Hz", c.DbpskInfoText);
+        Assert.Equal("Native rate (3.2 kS/s)", Assert.Single(d.SampleRates, o => o.IsOwn).Label);
+        d.ApplyCommand.Execute(null);
+        Assert.Equal("\"DBPSK;Rb=100bps;Data=PN9;Off=0;P=0\"", s.Parameters.Single(p => p.Name == "Carrier[1]").Expression);
+
+        await d.PreviewAsync();
+        Assert.Equal("Waveform", Assert.Single(d.TimePlot.Traces).CubeName);
+        Assert.Equal("Offset from Fc (Hz)", d.PsdPlot.CustomXLabel);           // a few hundred Hz reads in Hz
+        Assert.Equal("CCDF", Assert.Single(d.CcdfPlot.Traces).CubeName);      // no Gaussian reference: not a noise-like signal
+        Assert.StartsWith("3.2 kS/s (auto)", d.SampleRateInfo);
+        d.SampleRate = SignalDesignerViewModel.SampleRateOptions[^1];          // 1966 MS/s x 10 s: refused, not attempted
+        await d.PreviewAsync();
+        Assert.Contains("choose Auto or Native rate", d.Status);
+    }
+
+    [Fact]
+    public async Task LoRaWanPreset_CssCardApplyAndPreview()
+    {
+        var (vm, s) = Bench(fc: "2", fcUnit: "GHz");
+        using var d = Open(vm, s);
+        d.PresetLoRaWanSf7Command.Execute(null);
+        Assert.Equal("0.8681", d.FcText);
+        var c = Assert.Single(d.Carriers);
+        Assert.Equal(("CSS", 7, 125.0), (c.Standard, c.Sf, c.CssBandwidthKHz));
+        Assert.Equal("Frequency", d.SecondTabHeader);
+        Assert.Equal("symbol 1.024 ms  ·  6.836 kb/s raw  ·  packet 44.25 symbols, 45.312 ms", c.CssInfoText);
+        c.Sf = 9;
+        d.ApplyCommand.Execute(null);
+        Assert.Equal("\"CSS;SF=9;BW=125kHz;Off=0;P=0\"", s.Parameters.Single(p => p.Name == "Carrier[1]").Expression);
+
+        await d.PreviewAsync();
+        Assert.Equal("Frequency", Assert.Single(d.TimePlot.Traces).CubeName);
+        Assert.StartsWith("CSS   SF 9   BW 125 kHz", d.Stats);
+        Assert.True(d.CcdfPlot.Axes.Window.Width >= 12, "a constant envelope's step is framed 0-12 dB, not on its own hair");
     }
 
     // ── Tools ▸ Signal Designer ─────────────────────────────────────────────

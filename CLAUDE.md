@@ -576,6 +576,7 @@ suite on Windows, macOS, and Linux.
 - Do not allow references to commercial vendors or their products to leak into the circuitRF repo - not even as a glossery of names to filter out.
 - This includes the names of any specific PDK that does not come built into circuitRF
 - The only exception to this rule is ".kicad_pcb" - that is a file name extension for a data format.
+- Also exempt: wireless standard names (Sigfox, LoRa, LoRaWAN, Bluetooth LE) used to name the standard a signal follows — no logos, no trademark notice.
 - Before any commit, always grep search for these names that could pollute the repo.  Remove them, and indicate what was removed via chat.
 
 ## Licensing

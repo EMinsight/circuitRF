@@ -175,6 +175,9 @@ namespace RfCore.Signals
             double r = 1.92e6;
             while (r < need) r *= 2;
             r = Math.Max(r, Carriers.Max(c => c.NativeRateHz));
+            // a narrowband signal (DBPSK at 100 b/s needs ~1 kHz) steps at its own rate, below the ladder's base
+            double own = Math.Max(need, Carriers.Max(c => c.NativeRateHz));
+            if (own < SignalRate.LadderBaseHz && SignalRate.AtLeast(own, [this]) is var low && low < r) return low;
             return SignalRate.Divides(this, r) ? r : SignalRate.AtLeast(r, [this]);
         }
     }
@@ -183,7 +186,11 @@ namespace RfCore.Signals
     /// The rate a periodic record is stepped at. Every generated OFDM record lasts whole 0.5 ms slots, which the LTE / NR
     /// ladder (1.92 MHz x 2^k) always divides. An imported I/Q file lasts N / fs, which that ladder need not divide
     /// (12,345 samples at 100 MS/s); its own rate x 2^k always does, giving N x 2^k whole samples. An FSK record is one
-    /// data period, 511 bits / Rb for PN9, and is the same case: its native rate x 2^k always divides it.
+    /// data period, 511 bits / Rb for PN9, and is the same case: its native rate x 2^k always divides it; as do a DBPSK
+    /// record and a CSS packet.
+    ///
+    /// A signal that needs less than the ladder's base (a 100 b/s DBPSK uplink needs ~3 kHz) steps at its own rate
+    /// x 2^k instead: at 1.92 MHz its 10 s record would be 20 million envelope steps.
     /// </summary>
     public static class SignalRate
     {
@@ -194,11 +201,18 @@ namespace RfCore.Signals
         /// both (two files at unrelated rates), the ladder rate, which the caller refuses as it always has.</summary>
         public static double AtLeast(double needHz, IReadOnlyCollection<ModulatedSignal> signals)
         {
+            var fileRates = signals.SelectMany(s => s.Carriers)
+                                   .Where(c => c.Spec.Standard is CarrierStandard.File or CarrierStandard.Fsk
+                                                                 or CarrierStandard.Dbpsk or CarrierStandard.Css)
+                                   .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r).ToList();
+            if (needHz < LadderBaseHz)
+                foreach (double fs in fileRates)
+                {
+                    double r = Climb(fs, needHz);
+                    if (r < LadderBaseHz && signals.All(s => Divides(s, r))) return r;
+                }
             double ladder = Climb(LadderBaseHz, needHz);
             if (signals.All(s => Divides(s, ladder))) return ladder;
-            var fileRates = signals.SelectMany(s => s.Carriers)
-                                   .Where(c => c.Spec.Standard is CarrierStandard.File or CarrierStandard.Fsk)
-                                   .Select(c => c.NativeRateHz).Distinct().OrderBy(r => r);
             foreach (double fs in fileRates)
             {
                 double r = Climb(fs, needHz);
@@ -228,9 +242,11 @@ namespace RfCore.Signals
             if (spec.Carriers.Count == 0) throw new ArgumentException("a signal needs at least one carrier");
             var pulse = PulseOf(spec);
             var fsk = FskOf(spec);
+            var dbpsk = DbpskOf(spec);
+            var css = CssOf(spec);
             var file = spec.Carriers.FirstOrDefault(c => c.Standard == CarrierStandard.File);
             IqFile? iq = file is null ? null : IqFile.Read(file.FilePath!, file.SampleRateHz);
-            double record = pulse?.Pri ?? fsk?.RecordSeconds ?? iq?.DurationSeconds
+            double record = pulse?.Pri ?? fsk?.RecordSeconds ?? dbpsk?.RecordSeconds ?? css?.RecordSeconds ?? iq?.DurationSeconds
                             ?? Math.Max(0.5e-3, Math.Round(spec.RecordSeconds / 0.5e-3) * 0.5e-3);
             int halfMs = (int)Math.Round(record / 0.5e-3);
 
@@ -274,6 +290,21 @@ namespace RfCore.Signals
                         var shape = fsk!;
                         double rate = Fsk.NativeRateHz(shape), bw = Fsk.BandwidthHz(shape);
                         raw.Add((c with { BandwidthHz = bw }, Fsk.Generate(shape, rate).Samples, rate, 0.9 * bw));
+                        break;
+                    }
+                    case CarrierStandard.Dbpsk:
+                    {
+                        // normalised to unit mean power: the envelope dips at each phase reversal
+                        var shape = dbpsk!;
+                        double bw = Dbpsk.BandwidthHz(shape);
+                        raw.Add((c with { BandwidthHz = bw }, Dbpsk.Generate(shape), Dbpsk.NativeRateHz(shape), 0.7 * bw));
+                        break;
+                    }
+                    case CarrierStandard.Css:
+                    {
+                        // constant envelope, as FSK
+                        var shape = css!;
+                        raw.Add((c, Css.Generate(shape).Samples, Css.NativeRateHz(shape), 0.9 * shape.BandwidthHz));
                         break;
                     }
                     default:
@@ -336,6 +367,38 @@ namespace RfCore.Signals
                 throw new ArgumentException("an FSK carrier has a constant envelope and is not clipped: remove Clip from the source");
             return Fsk.Validate(c);
         }
+
+        /// <summary>The DBPSK carrier's settings (null when there is none), refused as an FSK carrier is: its record is
+        /// its data's, so it is the only carrier, and it is not clipped.</summary>
+        public static DbpskShape? DbpskOf(SignalSpec spec)
+        {
+            var c = OwnRecordCarrier(spec, CarrierStandard.Dbpsk, "a DBPSK carrier", "its envelope only dips at a phase reversal");
+            return c is null ? null : Dbpsk.Validate(c);
+        }
+
+        /// <summary>The CSS carrier's settings (null when there is none): its record is one packet, so it is the only
+        /// carrier, and its envelope is constant, so it is not clipped.</summary>
+        public static CssShape? CssOf(SignalSpec spec)
+        {
+            var c = OwnRecordCarrier(spec, CarrierStandard.Css, "a CSS carrier", "it has a constant envelope");
+            return c is null ? null : Css.Validate(c);
+        }
+
+        private static CarrierSpec? OwnRecordCarrier(SignalSpec spec, CarrierStandard standard, string what, string whyNoClip)
+        {
+            var c = spec.Carriers.FirstOrDefault(c => c.Standard == standard);
+            if (c is null) return null;
+            if (spec.Carriers.Count > 1)
+                throw new ArgumentException($"{what} must be the source's only carrier");
+            if (spec.ClipPaprDb is not null)
+                throw new ArgumentException($"{what} is not clipped ({whyNoClip}): remove Clip from the source");
+            return c;
+        }
+
+        /// <summary>True when the signal is one carrier whose record is its own — a pulse train, FSK, DBPSK or CSS — and
+        /// not the record length the source states.</summary>
+        public static bool HasOwnRecord(SignalSpec spec)
+            => PulseOf(spec) is not null || FskOf(spec) is not null || DbpskOf(spec) is not null || CssOf(spec) is not null;
     }
 
     /// <summary>

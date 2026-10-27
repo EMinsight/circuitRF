@@ -1052,3 +1052,23 @@ it. Each was silent:
 
 Clipping now applies to a file carrier as well (`OfdmGenerator.Clip` works at any length). `Fs=` gives a headerless
 file its rate. Generator `crf-signals-5`.
+
+### DBPSK and CSS carriers: the rate floor, and C-mode meter-to-other is not Gaussian (2026-10-26)
+
+- **`SignalRate.AtLeast` started every search at 1.92 MHz**, the LTE / NR ladder's base, and a ladder rate that divides
+  the record always won. A 100 b/s DBPSK uplink needs ~3 kHz and its 10.22 s record divides 1.92 MHz exactly, so an
+  envelope run would have stepped 20 million times per record — 600 × its own native rate. A need below the ladder's
+  base now climbs from the narrowband carriers' own rates first (FSK, DBPSK, CSS, FILE); above it nothing changed.
+  `SuggestedCompositeRateHz` takes the same exception for the Designer's Auto rate.
+- **The Designer's `RateFor` let a standard rate through for a seconds-long record**, and `LengthAt`'s `int` overflows
+  past 2^31 samples (10 s at 1966 MS/s is 2 × 10^10), so the refusal it was given has to test the size before calling
+  it. Over 2^25 samples is refused, naming Auto and Native rate.
+- **Wireless M-Bus C mode's meter-to-other link (868.95 MHz, 100 kchip/s, ±45 kHz) is plain 2-FSK.** Only the
+  other-to-meter link (869.525 MHz, 50 kchip/s, ±25 kHz) is GFSK, BT 0.5. The C1 preset had the Gaussian filter on.
+- **DBPSK with hard phase flips spreads 99 % of its power over ±9 Rb**, far from the ~100 Hz a UNB uplink occupies; a
+  raised-cosine pulse two bits long keeps 99 % within ±0.7 Rb, and putting its peak ON a sample makes each bit edge a
+  sample too, so a reversal is exactly zero and two equal bits exactly flat. A record whose data period holds an odd
+  number of 0s ends phase-reversed, so it is generated twice over (PN9: 1,022 bits).
+- **A chirp symbol `s` starts `s / 2^SF` of the way up the sweep**, i.e. the base up-chirp rotated EARLIER by `s` chips;
+  rotated later it dechirps as `2^SF − s`. And at more than one sample per chip the FFT bin of the dechirped tone is
+  already the symbol (bin spacing fs / N = BW / 2^SF); scaling it by 2^SF / N again is wrong.

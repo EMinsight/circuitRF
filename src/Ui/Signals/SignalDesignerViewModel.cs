@@ -45,7 +45,7 @@ namespace CircuitRF.Ui.Signals;
 
 public sealed partial class CarrierRowViewModel : ObservableObject
 {
-    public static IReadOnlyList<string> Standards { get; } = ["LTE", "NR", "CW", "PCW", "FSK", "FILE"];
+    public static IReadOnlyList<string> Standards { get; } = ["LTE", "NR", "CW", "PCW", "FSK", "DBPSK", "CSS", "FILE"];
     public static IReadOnlyList<string> Modulations { get; } = ["QPSK", "16QAM", "64QAM", "256QAM", "1024QAM"];
     public static IReadOnlyList<double> ScsOptions { get; } = [15, 30, 60];
 
@@ -111,6 +111,10 @@ public sealed partial class CarrierRowViewModel : ObservableObject
     public bool IsFile => Standard == "FILE";
     public bool IsPcw => Standard == "PCW";
     public bool IsFsk => Standard == "FSK";
+    public bool IsDbpsk => Standard == "DBPSK";
+    public bool IsCss => Standard == "CSS";
+    /// <summary>The card holds a Data choice: FSK and DBPSK both send PN9, PN15 or a fixed pattern.</summary>
+    public bool HasData => IsFsk || IsDbpsk;
 
     // ── an FSK carrier ────────────────────────────────────────────────────
     // The rate and deviation are numbers in kb/s and kHz; the data is picked (PN9, PN15) or, for a fixed pattern,
@@ -147,12 +151,90 @@ public sealed partial class CarrierRowViewModel : ObservableObject
     partial void OnDeviationKHzChanged(double value) => FskChanged();
     partial void OnFilterChanged(string value) => FskChanged();
     partial void OnBtChanged(double value) => FskChanged();
-    partial void OnDataChanged(string value) => FskChanged();
+    partial void OnDataChanged(string value) { FskChanged(); DbpskChanged(); }
 
     private void FskChanged()
     {
         OnPropertyChanged(nameof(FskInfoText));
         OnPropertyChanged(nameof(FskRefusal));
+    }
+
+    // ── a DBPSK carrier ───────────────────────────────────────────────────
+    // A rate in b/s (100 for a UNB uplink in the 868 MHz band, 600 elsewhere) and the same Data as an FSK card.
+    [ObservableProperty] private double _dbpskRateBps = Dbpsk.DefaultBitRate;
+
+    partial void OnDbpskRateBpsChanged(double value) => DbpskChanged();
+
+    private void DbpskChanged()
+    {
+        OnPropertyChanged(nameof(DbpskInfoText));
+        OnPropertyChanged(nameof(DbpskRefusal));
+    }
+
+    /// <summary>Why the DBPSK carrier cannot be generated, naming its field, or null.</summary>
+    public string? DbpskRefusal
+    {
+        get
+        {
+            if (!IsDbpsk) return null;
+            try { Dbpsk.Validate(ToSpec()); return null; }
+            catch (FormatException ex) { return ex.Message; }
+        }
+    }
+
+    /// <summary>Read-only under the fields: the bit period, the bits in the record (twice the data when it must be to
+    /// repeat), the record and the bandwidth.</summary>
+    public string DbpskInfoText
+    {
+        get
+        {
+            if (!IsDbpsk || DbpskRefusal is not null) return "";
+            var s = Dbpsk.Resolve(ToSpec());
+            int period = Fsk.DataLength(s.Data);
+            return string.Format(CultureInfo.InvariantCulture, "bit {0}  ·  {1:N0} bits{2}  ·  record {3}  ·  bandwidth {4}",
+                PulsedCw.FormatTime(1 / s.BitRate), s.Bits, s.Bits > period ? " (the data twice, to end in phase)" : "",
+                PulsedCw.FormatTime(s.RecordSeconds), Fsk.FormatHz(Dbpsk.BandwidthHz(s)));
+        }
+    }
+
+    // ── a CSS carrier ─────────────────────────────────────────────────────
+    // The spreading factor and the chirp bandwidth, both picked: the values an 868 MHz LPWAN uses.
+    public static IReadOnlyList<int> SfOptions { get; } = [7, 8, 9, 10, 11, 12];
+    public static IReadOnlyList<double> CssBandwidthOptions { get; } = [125, 250, 500];
+
+    [ObservableProperty] private int _sf = Css.DefaultSf;
+    [ObservableProperty] private double _cssBandwidthKHz = Css.DefaultBandwidthHz / 1e3;
+
+    partial void OnSfChanged(int value) => CssChanged();
+    partial void OnCssBandwidthKHzChanged(double value) => CssChanged();
+
+    private void CssChanged()
+    {
+        OnPropertyChanged(nameof(CssInfoText));
+        OnPropertyChanged(nameof(CssRefusal));
+    }
+
+    /// <summary>Why the CSS carrier cannot be generated, naming its field, or null.</summary>
+    public string? CssRefusal
+    {
+        get
+        {
+            if (!IsCss) return null;
+            try { Css.Validate(ToSpec()); return null; }
+            catch (FormatException ex) { return ex.Message; }
+        }
+    }
+
+    /// <summary>Read-only under the fields: the symbol, the raw bit rate and the packet the record holds.</summary>
+    public string CssInfoText
+    {
+        get
+        {
+            if (!IsCss || CssRefusal is not null) return "";
+            var s = Css.Resolve(ToSpec());
+            return string.Format(CultureInfo.InvariantCulture, "symbol {0}  ·  {1:0.###} kb/s raw  ·  packet {2:0.##} symbols, {3}",
+                PulsedCw.FormatTime(s.SymbolSeconds), s.RawBitRate / 1e3, Css.PacketSymbols, PulsedCw.FormatTime(s.RecordSeconds));
+        }
     }
 
     /// <summary>Why the FSK carrier cannot be generated, naming its field, or null.</summary>
@@ -303,9 +385,11 @@ public sealed partial class CarrierRowViewModel : ObservableObject
     partial void OnStandardChanged(string value)
     {
         OnPropertyChanged(nameof(IsOfdm)); OnPropertyChanged(nameof(IsNr)); OnPropertyChanged(nameof(IsFile)); OnPropertyChanged(nameof(IsPcw));
-        OnPropertyChanged(nameof(IsFsk));
+        OnPropertyChanged(nameof(IsFsk)); OnPropertyChanged(nameof(IsDbpsk)); OnPropertyChanged(nameof(IsCss)); OnPropertyChanged(nameof(HasData));
         PulseChanged();
         FskChanged();
+        DbpskChanged();
+        CssChanged();
         OnPropertyChanged(nameof(BandwidthOptions));
         if (!BandwidthOptions.Contains(BandwidthMHz)) BandwidthMHz = BandwidthOptions.Contains(20) ? 20 : BandwidthOptions.FirstOrDefault(20);
     }
@@ -330,6 +414,14 @@ public sealed partial class CarrierRowViewModel : ObservableObject
             try { return c with { BandwidthHz = Fsk.BandwidthHz(Fsk.Validate(c)) }; }
             catch (FormatException) { return c; }
         }
+        if (c.Standard == CarrierStandard.Dbpsk)
+        {
+            c = c with { BitRateBps = DbpskRateBps, Data = Data };
+            try { return c with { BandwidthHz = Dbpsk.BandwidthHz(Dbpsk.Validate(c)) }; }
+            catch (FormatException) { return c; }
+        }
+        if (c.Standard == CarrierStandard.Css)
+            return c with { SpreadingFactor = Sf, BandwidthHz = Scaled(CssBandwidthKHz, "e3") };
         if (c.Standard != CarrierStandard.Pcw) return c;
         c = c with
         {
@@ -346,7 +438,7 @@ public sealed partial class CarrierRowViewModel : ObservableObject
         Standard = Standard switch
         {
             "NR" => CarrierStandard.Nr, "CW" => CarrierStandard.Cw, "PCW" => CarrierStandard.Pcw, "FSK" => CarrierStandard.Fsk,
-            "FILE" => CarrierStandard.File, _ => CarrierStandard.Lte,
+            "DBPSK" => CarrierStandard.Dbpsk, "CSS" => CarrierStandard.Css, "FILE" => CarrierStandard.File, _ => CarrierStandard.Lte,
         },
         BandwidthHz = BandwidthMHz * 1e6,
         ScsHz = ScsKHz * 1e3,
@@ -371,6 +463,21 @@ public sealed partial class CarrierRowViewModel : ObservableObject
             else { row.BitsText = f.Data; row.DataChoice = DataOptions[2]; }
             return row;
         }
+        if (c.Standard == CarrierStandard.Dbpsk)
+        {
+            var b = Dbpsk.Resolve(c);
+            row.DbpskRateBps = b.BitRate;
+            if (b.Data is "PN9" or "PN15") row.DataChoice = b.Data;
+            else { row.BitsText = b.Data; row.DataChoice = DataOptions[2]; }
+            return row;
+        }
+        if (c.Standard == CarrierStandard.Css)
+        {
+            var css = Css.Resolve(c);
+            row.Sf = css.Sf;
+            row.CssBandwidthKHz = css.BandwidthHz / 1e3;
+            return row;
+        }
         if (c.Standard != CarrierStandard.Pcw) return row;
         // the stated values, and the defaults for the rest — except Delay, whose default (centred) is an empty field
         var s = PulsedCw.Resolve(c);
@@ -386,7 +493,7 @@ public sealed partial class CarrierRowViewModel : ObservableObject
         Standard = c.Standard switch
         {
             CarrierStandard.Nr => "NR", CarrierStandard.Cw => "CW", CarrierStandard.Pcw => "PCW", CarrierStandard.Fsk => "FSK",
-            CarrierStandard.File => "FILE", _ => "LTE",
+            CarrierStandard.Dbpsk => "DBPSK", CarrierStandard.Css => "CSS", CarrierStandard.File => "FILE", _ => "LTE",
         },
         ScsKHz = c.ScsHz / 1e3,
         BandwidthMHz = c.BandwidthHz / 1e6,
@@ -447,7 +554,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     private void RaiseCustom()
     {
         OnPropertyChanged(nameof(IsCustom)); OnPropertyChanged(nameof(IsNotCustom)); OnPropertyChanged(nameof(CustomCarrier));
-        foreach (var n in new[] { nameof(IsPulse), nameof(IsFsk), nameof(HasTimePlot), nameof(HasEvmTab), nameof(CanEditRecord),
+        foreach (var n in new[] { nameof(IsPulse), nameof(IsFsk), nameof(IsOwnModulated), nameof(HasTimePlot), nameof(HasEvmTab), nameof(CanEditRecord),
                                   nameof(CanClip), nameof(CanShape), nameof(CanAddCarrier), nameof(PowerLabel), nameof(PulsePowerInfo),
                                   nameof(SecondTabHeader) })
             OnPropertyChanged(n);
@@ -468,8 +575,14 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     /// </summary>
     public bool IsFsk => Carriers.Count == 1 && Carriers[0].IsFsk;
 
-    /// <summary>The second tab holds a plot against time (a pulse's envelope, an FSK carrier's frequency), not the EVM.</summary>
-    public bool HasTimePlot => IsPulse || IsFsk;
+    /// <summary>The signal is ONE FSK, DBPSK or CSS carrier: a modulation whose record is its own data (or packet), with
+    /// the FSK carrier's rules — Record, Clip, Shaping and Add carrier disabled, the native rate offered, a time plot
+    /// in the EVM's place.</summary>
+    public bool IsOwnModulated => Carriers.Count == 1 && (Carriers[0].IsFsk || Carriers[0].IsDbpsk || Carriers[0].IsCss);
+
+    /// <summary>The second tab holds a plot against time (a pulse's envelope, an FSK or CSS carrier's frequency, a DBPSK
+    /// carrier's waveform), not the EVM.</summary>
+    public bool HasTimePlot => IsPulse || IsOwnModulated;
     public bool HasEvmTab => !HasTimePlot;
     public bool CanEditRecord => IsNotCustom && !HasTimePlot;
     public bool CanClip => !HasTimePlot;
@@ -478,7 +591,9 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     public string PowerLabel => IsPulse ? "Pulse-top power (dBm)" : "Pavg (dBm)";
     /// <summary>The second preview tab: a pulse or an FSK carrier carries no QAM symbols, so where a modulated signal's
     /// EVM is it shows the pulse, or the frequency.</summary>
-    public string SecondTabHeader => IsPulse ? "Pulse" : IsFsk ? "Frequency" : "EVM";
+    public string SecondTabHeader => IsPulse ? "Pulse"
+        : IsOwnModulated && Carriers[0].IsDbpsk ? "Waveform"
+        : IsOwnModulated ? "Frequency" : "EVM";
 
     /// <summary>For a pulse: the record average the top power gives, and the power duty they differ by.</summary>
     public string PulsePowerInfo
@@ -510,6 +625,12 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     [ObservableProperty] private bool _shapingEnabled = true;
     [ObservableProperty] private double _shapingFloorDbc = -80;
     [ObservableProperty] private double _presetSpacingMHz = 400;
+    /// <summary>
+    /// A pulse's CCDF over its on-time only (50 % to 50 %), as a signal analyser gates a burst: the average it is
+    /// measured against is then the pulse's own, not the record's. Off, it is over the whole PRI, where the duty cycle
+    /// sets the step. A Designer setting: not written to the source.
+    /// </summary>
+    [ObservableProperty] private bool _gateCcdf = true;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private double _progress;
     [ObservableProperty] private string _status = "Edit the carriers, then Preview.";
@@ -601,11 +722,8 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         SampleRateOption? want = mhz > 0
             ? new SampleRateOption(mhz * 1e6, "File rate (" + mhz.ToString("0.######", inv) + " MS/s)", IsOwn: true)
             : null;
-        if (IsFsk && Carriers[0].FskRefusal is null)
-        {
-            double hz = Fsk.NativeRateHz(Fsk.Resolve(Carriers[0].ToSpec()));
-            want = new SampleRateOption(hz, "Native rate (" + (hz / 1e6).ToString("0.######", inv) + " MS/s)", IsOwn: true);
-        }
+        if (IsOwnModulated && NativeRateOf(Carriers[0]) is double hz)
+            want = new SampleRateOption(hz, "Native rate (" + FormatRate(hz) + ")", IsOwn: true);
         var have = SampleRates.FirstOrDefault(o => o.IsOwn);
         if (have == want) return;
         bool selected = SampleRate?.IsOwn == true;
@@ -613,6 +731,24 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         if (want is not null) SampleRates.Insert(1, want);
         if (selected) SampleRate = want ?? SampleRateOptions[0];
     }
+
+    /// <summary>An FSK, DBPSK or CSS carrier's native rate, or null when it cannot be generated as it stands.</summary>
+    private static double? NativeRateOf(CarrierRowViewModel c)
+    {
+        if (c.IsFsk && c.FskRefusal is null) return Fsk.NativeRateHz(Fsk.Resolve(c.ToSpec()));
+        if (c.IsDbpsk && c.DbpskRefusal is null) return Dbpsk.NativeRateHz(Dbpsk.Resolve(c.ToSpec()));
+        if (c.IsCss && c.CssRefusal is null) return Css.NativeRateHz(Css.Resolve(c.ToSpec()));
+        return null;
+    }
+
+    /// <summary>A sample rate as the list and the line under it read it: 122.88 MS/s, 3.2 kS/s.</summary>
+    public static string FormatRate(double hz)
+        => hz >= 1e6 ? (hz / 1e6).ToString("0.######", CultureInfo.InvariantCulture) + " MS/s"
+                     : (hz / 1e3).ToString("0.######", CultureInfo.InvariantCulture) + " kS/s";
+
+    /// <summary>Most samples a preview or export record may hold at the chosen rate (2^25, 512 MB of I/Q): a 10 s DBPSK
+    /// record at a cellular rate would otherwise ask for gigabytes.</summary>
+    public const int MaxRecordSamples = 1 << 25;
 
     /// <summary>
     /// The rate <paramref name="choice"/> gives for <paramref name="sig"/>. Refuses a rate that cannot hold the
@@ -629,13 +765,19 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
                 "{0:0.##} MS/s cannot hold this signal (carriers reach {1:0.##} MHz from Fc): choose {2} or more.",
                 rate / 1e6, edge / 1e6, ok));
         }
+        // before LengthAt, whose int a 10 s record at a cellular rate overflows
+        double n = Math.Round(sig.RecordSeconds * rate);
+        if (n > MaxRecordSamples)
+            throw new ArgumentException(string.Format(CultureInfo.InvariantCulture,
+                "{0} gives {1:N0} samples over the {2} record: choose Auto or Native rate.",
+                FormatRate(rate), n, PulsedCw.FormatTime(sig.RecordSeconds)));
         sig.LengthAt(rate);                       // throws when the record is not a whole number of samples
         return rate;
     }
 
     private static string DescribeRate(ModulatedSignal sig, double rate, bool auto)
-        => string.Format(CultureInfo.InvariantCulture, "{0:0.##} MS/s{1}   ·   {2:0.###} ns per sample   ·   {3:N0} samples per record",
-            rate / 1e6, auto ? " (auto)" : "", 1e9 / rate, sig.LengthAt(rate));
+        => string.Format(CultureInfo.InvariantCulture, "{0}{1}   ·   {2} per sample   ·   {3:N0} samples per record",
+            FormatRate(rate), auto ? " (auto)" : "", PulsedCw.FormatTime(1 / rate), sig.LengthAt(rate));
 
     /// <summary>
     /// Raised after any plot's traces or axes change. The Data Display repaints on its own only when its Plot
@@ -703,7 +845,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(RecordMs) or nameof(ClipEnabled) or nameof(ClipPaprDb)
-                or nameof(ShapingEnabled) or nameof(ShapingFloorDbc))
+                or nameof(ShapingEnabled) or nameof(ShapingFloorDbc) or nameof(GateCcdf))
                 SchedulePreview();
             if (e.PropertyName is nameof(PavgText)) OnPropertyChanged(nameof(PulsePowerInfo));
         };
@@ -714,14 +856,16 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         if (e.PropertyName is nameof(CarrierRowViewModel.Index) or nameof(CarrierRowViewModel.IsSelected)) return;
         if (e.PropertyName == nameof(CarrierRowViewModel.Standard)) RaiseCustom();
         if (e.PropertyName is nameof(CarrierRowViewModel.SampleRateMHz) or nameof(CarrierRowViewModel.BitRateKbps)
-            or nameof(CarrierRowViewModel.DeviationKHz)) SyncOwnRateOption();
+            or nameof(CarrierRowViewModel.DeviationKHz) or nameof(CarrierRowViewModel.DbpskRateBps)
+            or nameof(CarrierRowViewModel.Sf) or nameof(CarrierRowViewModel.CssBandwidthKHz)) SyncOwnRateOption();
         if (e.PropertyName is nameof(CarrierRowViewModel.PriS) or nameof(CarrierRowViewModel.WidthS)
             or nameof(CarrierRowViewModel.RiseS) or nameof(CarrierRowViewModel.FallS) or nameof(CarrierRowViewModel.DelayS))
             OnPropertyChanged(nameof(PulsePowerInfo));
         // a derived read-out of the pulse moved, not a value the signal is built from
         if (e.PropertyName is nameof(CarrierRowViewModel.PrfText) or nameof(CarrierRowViewModel.DutyText)
             or nameof(CarrierRowViewModel.DelayInfo) or nameof(CarrierRowViewModel.PulseRefusal)
-            or nameof(CarrierRowViewModel.FskRefusal) or nameof(CarrierRowViewModel.IsGaussian)
+            or nameof(CarrierRowViewModel.FskRefusal) or nameof(CarrierRowViewModel.DbpskRefusal)
+            or nameof(CarrierRowViewModel.CssRefusal) or nameof(CarrierRowViewModel.IsGaussian)
             or nameof(CarrierRowViewModel.IsFixedBits) or nameof(CarrierRowViewModel.DataChoice)
             || e.PropertyName?.EndsWith("Error", StringComparison.Ordinal) == true
             || e.PropertyName?.EndsWith("Text", StringComparison.Ordinal) == true) return;
@@ -832,9 +976,9 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     public void ShowPreview(ModulatedSignal sig)
     {
         double rate = RateFor(sig, SampleRate);
-        var (ds, text, env) = AnalyseWithEnvelope(sig, rate);
+        var (ds, text, env) = AnalyseWithEnvelope(sig, rate, GateCcdf);
         SampleRateInfo = DescribeRate(sig, rate, SampleRate.Hz <= 0);
-        ShowPlots(ds);
+        ShowPlots(ds, sig);
         _envSig = sig; _envStats = env;
         ShowEnvelope(EnvelopeChunk(sig, env, EnvelopeWindowUs * 1e-6));
         _evmSig = sig;
@@ -963,26 +1107,52 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     }
 
     /// <summary>
-    /// Wireless M-Bus (EN 13757-4) as a metering front end is tested with it: one FSK carrier on PN9 at the mode's chip
-    /// rate and deviation, with Centre Fc moved to the mode's channel — unless Fc is an expression, which stays as typed
+    /// A standard's one carrier, with Centre Fc moved to its channel — unless Fc is an expression, which stays as typed
     /// (a swept source stays swept).
     /// </summary>
-    private void PresetFsk(double fcHz, double rateBps, double devHz, double? bt)
+    private void PresetAt(double fcHz, CarrierSpec c)
     {
         var inv = CultureInfo.InvariantCulture;
         if (string.IsNullOrWhiteSpace(FcText) || double.TryParse(FcText, NumberStyles.Float, inv, out _))
             FcText = (fcHz / UnitScale(FcUnit)).ToString("0.#########", inv);
-        Preset(new CarrierSpec { Standard = CarrierStandard.Fsk, BitRateBps = rateBps, DeviationHz = devHz, GaussianBt = bt, Data = "PN9" });
+        Preset(c);
     }
 
-    /// <summary>C1, meter to other: 868.95 MHz, 100 kchip/s, ±45 kHz, GFSK BT 0.5.</summary>
-    [RelayCommand] private void PresetWmbusC1() => PresetFsk(868.95e6, 100e3, 45e3, 0.5);
+    /// <summary>
+    /// Wireless M-Bus (EN 13757-4) as a metering front end is tested with it: one FSK carrier on PN9 at the mode's chip
+    /// rate and deviation, at the mode's channel.
+    /// </summary>
+    private void PresetFsk(double fcHz, double rateBps, double devHz, double? bt)
+        => PresetAt(fcHz, new CarrierSpec { Standard = CarrierStandard.Fsk, BitRateBps = rateBps, DeviationHz = devHz, GaussianBt = bt, Data = "PN9" });
+
+    /// <summary>C1 / C2, meter to other: 868.95 MHz, 100 kchip/s, ±45 kHz, 2-FSK with no Gaussian filter.</summary>
+    [RelayCommand] private void PresetWmbusC1() => PresetFsk(868.95e6, 100e3, 45e3, null);
     /// <summary>C2, other to meter: 869.525 MHz, 50 kchip/s, ±25 kHz, GFSK BT 0.5.</summary>
     [RelayCommand] private void PresetWmbusC2() => PresetFsk(869.525e6, 50e3, 25e3, 0.5);
     /// <summary>T1, meter to other: 868.95 MHz, 100 kchip/s, ±50 kHz, FSK.</summary>
     [RelayCommand] private void PresetWmbusT1() => PresetFsk(868.95e6, 100e3, 50e3, null);
     /// <summary>T2, other to meter: 868.3 MHz, 32.768 kchip/s, ±50 kHz, FSK.</summary>
     [RelayCommand] private void PresetWmbusT2() => PresetFsk(868.3e6, 32.768e3, 50e3, null);
+
+    /// <summary>Bluetooth LE 1M at 2.44 GHz (mid-band): 1 Msym/s GFSK, h = 0.5 (±250 kHz), BT 0.5. LE Coded (125 and
+    /// 500 kb/s) is the same air interface: its coding is in the bits, not in the RF.</summary>
+    [RelayCommand] private void PresetBle1M() => PresetFsk(2.44e9, 1e6, 250e3, 0.5);
+    /// <summary>Bluetooth LE 2M at 2.44 GHz: 2 Msym/s GFSK, h = 0.5 (±500 kHz), BT 0.5.</summary>
+    [RelayCommand] private void PresetBle2M() => PresetFsk(2.44e9, 2e6, 500e3, 0.5);
+
+    /// <summary>The Sigfox RC1 uplink, an ultra-narrowband (UNB) uplink in the 868 MHz band: 100 b/s DBPSK on PN9 at
+    /// 868.13 MHz.</summary>
+    [RelayCommand]
+    private void PresetSigfox()
+        => PresetAt(868.13e6, new CarrierSpec { Standard = CarrierStandard.Dbpsk, BitRateBps = 100, Data = "PN9" });
+
+    /// <summary>A LoRaWAN packet (LoRa: chirp spread spectrum) on an EU868 channel: 868.1 MHz, 125 kHz, at
+    /// <paramref name="sf"/> (7 is the fastest, 12 the longest reach).</summary>
+    private void PresetLoRaWan(int sf)
+        => PresetAt(868.1e6, new CarrierSpec { Standard = CarrierStandard.Css, SpreadingFactor = sf, BandwidthHz = 125e3 });
+
+    [RelayCommand] private void PresetLoRaWanSf7() => PresetLoRaWan(7);
+    [RelayCommand] private void PresetLoRaWanSf12() => PresetLoRaWan(12);
 
     /// <summary>One pulsed-CW carrier at the card's defaults, for a pulsed-radar amplifier.</summary>
     [RelayCommand] private void PresetPulse() => Preset(new CarrierSpec { Standard = CarrierStandard.Pcw });
@@ -1154,13 +1324,14 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             var sig = await SignalCache.GetAsync(spec, prog, cts.Token);
             var choice = SampleRate;
             double rate = RateFor(sig, choice);
-            var (ds, text, env) = await Task.Run(() => AnalyseWithEnvelope(sig, rate), cts.Token);
+            bool gate = GateCcdf;
+            var (ds, text, env) = await Task.Run(() => AnalyseWithEnvelope(sig, rate, gate), cts.Token);
             double window = EnvelopeWindowUs * 1e-6;
             var chunk = await Task.Run(() => EnvelopeChunk(sig, env, window), cts.Token);
             var evm = await Task.Run(() => AnalyseEvm(sig), cts.Token);
             if (cts.IsCancellationRequested) { live?.Finish(Messages.MessageLevel.Info, "cancelled", keepBar: false); return; }
             SampleRateInfo = DescribeRate(sig, rate, choice.Hz <= 0);
-            ShowPlots(ds);
+            ShowPlots(ds, sig);
             _envSig = sig; _envStats = env;
             ShowEnvelope(chunk);
             _evmSig = sig;
@@ -1200,21 +1371,22 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     }
 
     /// <summary>Composite spectrum, CCDF and per-carrier ideal ACLR of a signal (pure computation, any thread).</summary>
-    public static (DataSet ds, string text) Analyse(ModulatedSignal sig)
+    public static (DataSet ds, string text) Analyse(ModulatedSignal sig, bool gate = true)
     {
-        var (ds, text, _) = AnalyseWithEnvelope(sig);
+        var (ds, text, _) = AnalyseWithEnvelope(sig, 0, gate);
         return (ds, text);
     }
 
-    /// <summary><see cref="Analyse"/>, plus where the record peaks and its mean power for the EVM tab's envelope plot.</summary>
-    public static (DataSet ds, string text, EnvelopeStats env) AnalyseWithEnvelope(ModulatedSignal sig, double rateHz = 0)
+    /// <summary><see cref="Analyse"/>, plus where the record peaks and its mean power for the EVM tab's envelope plot.
+    /// <paramref name="gate"/> takes a pulse's CCDF over its on-time only (<see cref="GateCcdf"/>).</summary>
+    public static (DataSet ds, string text, EnvelopeStats env) AnalyseWithEnvelope(ModulatedSignal sig, double rateHz = 0, bool gate = true)
     {
         double rate = rateHz > 0 ? rateHz : sig.SuggestedCompositeRateHz();
         int n = sig.LengthAt(rate);
         // keep the preview fast: at most ~4 M samples of the record. A pulse's record is one PRI, and a fixed FSK pattern's
         // a few bits, often shorter than one Welch segment: the window runs over several (the record is periodic), so the
         // spectrum is the TRAIN's.
-        bool ownRecord = SignalComposer.PulseOf(sig.Spec) is not null || SignalComposer.FskOf(sig.Spec) is not null;
+        bool ownRecord = SignalComposer.HasOwnRecord(sig.Spec);
         int count = Math.Min(ownRecord ? Math.Max(n, 1 << 16) : n, 1 << 22);
         var x = sig.CompositeWindow(rate, 0, 0, count);
         var (f, p) = SignalMeasure.Welch(x, rate, 8192);
@@ -1224,17 +1396,29 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         // plot instead of being a line on a sample-rate-wide axis; floor at -120 dB re peak.
         double lo = sig.Carriers.Min(c => c.OffsetHz - 0.5 * c.Spec.BandwidthHz);
         double hi = sig.Carriers.Max(c => c.OffsetHz + 0.5 * c.Spec.BandwidthHz);
-        // at least 5 MHz each side for the cellular carriers; an FSK carrier is framed on its own, a few hundred kHz
+        // at least 5 MHz each side for the cellular carriers; an FSK, DBPSK or CSS carrier is framed on its own, a few
+        // hundred kHz (FSK, CSS) or a few hundred Hz (DBPSK) — which reads in Hz rather than in millionths of a MHz
         double margin = 2.5 * sig.Carriers.Max(c => c.Spec.BandwidthHz);
-        if (SignalComposer.FskOf(sig.Spec) is null) margin = Math.Max(margin, 5e6);
+        if (!ownRecord || SignalComposer.PulseOf(sig.Spec) is not null) margin = Math.Max(margin, 5e6);
         var keep = Enumerable.Range(0, f.Length).Where(i => f[i] >= lo - margin && f[i] <= hi + margin).ToArray();
         if (keep.Length < 2) keep = Enumerable.Range(0, f.Length).ToArray();
         var psd = keep.Select(i => Math.Max(10 * Math.Log10(Math.Max(p[i], 1e-300) / pk), -120)).ToArray();
         var ds = new DataSet();
-        ds.Add("PSD", new DataCube([new Axis("offset from Fc", keep.Select(i => f[i] / 1e6).ToArray(), "")], psd));
-        var (db, pr) = SignalMeasure.Ccdf(x, 160, 1e-5);   // the floor the Gaussian reference below runs to
+        double fScale = PsdInHz(sig) ? 1 : 1e6;
+        ds.Add("PSD", new DataCube([new Axis("offset from Fc", keep.Select(i => f[i] / fScale).ToArray(), "")], psd));
+        // A gated pulse is measured over its on-time, 50 % to 50 %, against its own average, as an analyser gates a
+        // burst; ungated, the off-time is in the average and the duty cycle sets the step.
+        var pulseShape = SignalComposer.PulseOf(sig.Spec);
+        Complex[]? onTime = null;
+        if (pulseShape is { } ps && gate)
+        {
+            double t0 = ps.Delay + ps.RiseSpan / 2, t1 = t0 + ps.Width;
+            onTime = [.. x.Where((_, i) => (i % n) / rate is var t && t >= t0 && t < t1)];
+        }
+        var (db, pr) = SignalMeasure.Ccdf(onTime ?? x, 160, 1e-5);   // the floor the Gaussian reference below runs to
         // The standard CCDF: probability (%) that the instantaneous power exceeds the average by more than
-        // x dB, on a log probability axis, from 0 dB — plus the Gaussian-noise (Rayleigh envelope) reference.
+        // x dB, on a log probability axis, from 0 dB — plus, for a noise-like signal, the Gaussian-noise (Rayleigh
+        // envelope) reference.
         var order = Enumerable.Range(0, db.Length).Where(i => db[i] >= 0 && pr[i] > 0).OrderBy(i => db[i]).ToArray();
         var dbAx = order.Select(i => db[i]).ToArray();
         for (int i = 1; i < dbAx.Length; i++) if (dbAx[i] <= dbAx[i - 1]) dbAx[i] = dbAx[i - 1] + 1e-9;
@@ -1244,15 +1428,20 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         // CCDF is measured to (1e-5, ~10.6 dB). On the signal's axis it was cut where the signal ends, so a clipped
         // signal took the reference with it, the autoscale stretched both across the plot, and clipping looked like
         // no change at all.
-        const double ccdfFloor = 1e-5;
-        double gaussTop = 10 * Math.Log10(-Math.Log(ccdfFloor));
-        var gaussDb = Enumerable.Range(0, 213).Select(i => gaussTop * i / 212).ToArray();
-        ds.Add("Gaussian", new DataCube([new Axis("power above average", gaussDb, "dB")],
-                                        gaussDb.Select(d => 100 * Math.Exp(-Math.Pow(10, d / 10))).ToArray()));
+        // Only beside a noise-like signal: OFDM, an I/Q file, several carriers. A pulse, FSK, DBPSK or CSS signal is no
+        // kind of noise, and a reference it can never approach says nothing about it.
+        if (!ownRecord)
+        {
+            const double ccdfFloor = 1e-5;
+            double gaussTop = 10 * Math.Log10(-Math.Log(ccdfFloor));
+            var gaussDb = Enumerable.Range(0, 213).Select(i => gaussTop * i / 212).ToArray();
+            ds.Add("Gaussian", new DataCube([new Axis("power above average", gaussDb, "dB")],
+                                            gaussDb.Select(d => 100 * Math.Exp(-Math.Pow(10, d / 10))).ToArray()));
+        }
 
         var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
-        if (SignalComposer.PulseOf(sig.Spec) is { } pulse)
+        if (pulseShape is { } pulse)
         {
             // The pulse in time over one PRI, from its own native record (exact 0 and 1, no resampling ripple).
             var nat = sig.Carriers[0];
@@ -1264,8 +1453,12 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             sb.AppendLine(string.Format(inv, "rise {0}   fall {1}   delay {2}   bandwidth {3:0.###} MHz   rate {4:0.##} MS/s",
                 PulsedCw.FormatTime(pulse.Rise), PulsedCw.FormatTime(pulse.Fall), PulsedCw.FormatTime(pulse.Delay),
                 nat.Spec.BandwidthHz / 1e6, rate / 1e6));
-            sb.AppendLine(string.Format(inv, "PAPR {0:0.00} dB at 0.01 %   peak {1:0.00} dB   (1 / power duty: {2:0.00} dB)",
-                SignalMeasure.PaprDb(x, 1e-4), SignalMeasure.PaprDb(x, 0), -10 * Math.Log10(pulse.PowerDuty)));
+            if (onTime is not null)
+                sb.AppendLine(string.Format(inv, "on-time PAPR {0:0.00} dB at 0.01 %   peak {1:0.00} dB   whole PRI {2:0.00} dB (1 / power duty)",
+                    SignalMeasure.PaprDb(onTime, 1e-4), SignalMeasure.PaprDb(onTime, 0), -10 * Math.Log10(pulse.PowerDuty)));
+            else
+                sb.AppendLine(string.Format(inv, "PAPR {0:0.00} dB at 0.01 %   peak {1:0.00} dB   (1 / power duty: {2:0.00} dB)",
+                    SignalMeasure.PaprDb(x, 1e-4), SignalMeasure.PaprDb(x, 0), -10 * Math.Log10(pulse.PowerDuty)));
             return (ds, sb.ToString().TrimEnd(), MeasureEnvelope(x, rate));
         }
         if (SignalComposer.FskOf(sig.Spec) is { } fsk)
@@ -1284,8 +1477,37 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
                 fsk.Data is "PN9" or "PN15" ? fsk.Data : "pattern", fsk.Bits, PulsedCw.FormatTime(fsk.RecordSeconds),
                 Fsk.FormatHz(nat.Spec.BandwidthHz)));
         }
-        sb.AppendLine(string.Format(inv, "{0} carrier(s)   IBW {1:0.##} MHz   record {2:0.###e0} s   rate {3:0.##} MS/s",
-            sig.Carriers.Count, sig.InstantaneousBandwidthHz / 1e6, sig.RecordSeconds, rate / 1e6));
+        if (SignalComposer.DbpskOf(sig.Spec) is { } dbpsk)
+        {
+            // I against time over the first 32 bits (DBPSK is real): flat between reversals, through zero at each one
+            var nat = sig.Carriers[0];
+            int shown = Math.Min(nat.Native.Length, 32 * Dbpsk.SamplesPerBit);
+            double ms = 1e3 / nat.NativeRateHz, peak = nat.Native.Max(v => Math.Abs(v.Real));
+            ds.Add("Waveform", new DataCube([new Axis("time", [.. Enumerable.Range(0, shown).Select(i => i * ms)], "ms")],
+                [.. Enumerable.Range(0, shown).Select(i => nat.Native[i].Real / peak)]));
+            sb.AppendLine(string.Format(inv, "DBPSK   Rb {0}   bit {1}   data {2}, {3:N0} bits   record {4}",
+                Fsk.FormatBitRate(dbpsk.BitRate), PulsedCw.FormatTime(1 / dbpsk.BitRate),
+                dbpsk.Data is "PN9" or "PN15" ? dbpsk.Data : "pattern", dbpsk.Bits, PulsedCw.FormatTime(dbpsk.RecordSeconds)));
+            sb.AppendLine(string.Format(inv, "raised-cosine reversals   bandwidth {0} (main lobe)", Fsk.FormatHz(nat.Spec.BandwidthHz)));
+        }
+        if (SignalComposer.CssOf(sig.Spec) is { } css)
+        {
+            // the instantaneous frequency over the preamble, sync, start of frame and the first payload symbols, at most
+            // ~8,000 points however long a symbol is
+            var nat = sig.Carriers[0];
+            int shown = Math.Min(nat.Native.Length, (int)Math.Round((Css.PreambleSymbols + 2 + 2.25 + 4) * css.Chips * Css.SamplesPerChip));
+            int step = Math.Max(1, shown / 8000);
+            double ms = 1e3 / nat.NativeRateHz, toKHz = nat.NativeRateHz / (2 * Math.PI) / 1e3;
+            var idx = Enumerable.Range(0, (shown + step - 1) / step).Select(k => k * step).ToArray();
+            ds.Add("Frequency", new DataCube([new Axis("time", [.. idx.Select(i => i * ms)], "ms")],
+                [.. idx.Select(i => (nat.Native[(i + 1) % nat.Native.Length] * Complex.Conjugate(nat.Native[i])).Phase * toKHz)]));
+            sb.AppendLine(string.Format(inv, "CSS   SF {0}   BW {1}   symbol {2}   raw {3:0.###} kb/s",
+                css.Sf, Fsk.FormatHz(css.BandwidthHz), PulsedCw.FormatTime(css.SymbolSeconds), css.RawBitRate / 1e3));
+            sb.AppendLine(string.Format(inv, "packet: {0} preamble + 2 sync + 2.25 SFD + {1} payload symbols   record {2}",
+                Css.PreambleSymbols, Css.PayloadSymbols, PulsedCw.FormatTime(css.RecordSeconds)));
+        }
+        sb.AppendLine(string.Format(inv, "{0} carrier(s)   IBW {1}   record {2:0.###e0} s   rate {3}",
+            sig.Carriers.Count, Fsk.FormatHz(sig.InstantaneousBandwidthHz), sig.RecordSeconds, FormatRate(rate)));
         sb.AppendLine(string.Format(inv, "PAPR {0:0.00} dB at 0.01 %   peak {1:0.00} dB", SignalMeasure.PaprDb(x, 1e-4), SignalMeasure.PaprDb(x, 0)));
         foreach (var c in sig.Carriers)
         {
@@ -1369,12 +1591,26 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         return rows;
     }
 
-    private void ShowPlots(DataSet ds)
+    /// <summary>A CCDF spanning less than this (dB) is framed 0 to 12 dB rather than autoscaled onto its own width.</summary>
+    public const double CcdfMinSpanDb = 2;
+
+    /// <summary>The spectrum's offset axis reads in Hz for a signal a few hundred Hz wide (a DBPSK uplink), in MHz otherwise.</summary>
+    public static bool PsdInHz(ModulatedSignal sig) => sig.Carriers.Max(c => Math.Abs(c.OffsetHz) + c.Spec.BandwidthHz) < 20e3;
+
+    private void ShowPlots(DataSet ds, ModulatedSignal sig)
     {
-        Fill(PsdPlot, ds, [("PSD", 0)], "Spectrum", "PSD (dB re peak)", "Offset from Fc (MHz)");
+        Fill(PsdPlot, ds, [("PSD", 0)], "Spectrum", "PSD (dB re peak)", PsdInHz(sig) ? "Offset from Fc (Hz)" : "Offset from Fc (MHz)");
         // A pulse train's CCDF is as true as any signal's: a step at its peak-to-average, which is its power duty.
         CcdfPlot.Axes.YScale = AxisScale.Log;
-        Fill(CcdfPlot, ds, [("CCDF", 0), ("Gaussian", 3)], "CCDF", "Probability (%)", "Power above average (dB)");
+        // the legend names the reference when it is drawn; alone, the signal's curve needs none
+        bool gated = SignalComposer.PulseOf(sig.Spec) is not null && GateCcdf;
+        Fill(CcdfPlot, ds, [("CCDF", 0), ("Gaussian", 3)], gated ? "CCDF (pulse on-time)" : "CCDF", "Probability (%)", "Power above average (dB)");
+        CcdfPlot.Legend = ds.Contains("Gaussian") ? LegendPlacement.Inside : LegendPlacement.Off;
+        // A constant envelope (FSK, CSS, a gated pulse) is a step within a hair of 0 dB, and the autoscale framed that
+        // hair: ticks in nano-dB. Without the Gaussian reference to widen it, a span under 2 dB is framed as the
+        // reference would frame it, 0 to ~11 dB, so a step reads as a step. The probability axis keeps its autoscale.
+        var w = CcdfPlot.Axes.Window;
+        if (w.Width < CcdfMinSpanDb) CcdfPlot.Axes.Window = new PlotRect(-0.5, w.Y, 12.5, w.Height);
         Announce(PsdContainer, CcdfContainer);
         if (ds.Contains("Pulse"))
         {
@@ -1384,7 +1620,14 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         }
         else if (ds.Contains("Frequency"))
         {
-            Fill(TimePlot, ds, [("Frequency", 0)], "Instantaneous frequency (first bits)", "Frequency re Fc (kHz)", "Time (µs)");
+            bool css = SignalComposer.CssOf(sig.Spec) is not null;
+            Fill(TimePlot, ds, [("Frequency", 0)], css ? "Instantaneous frequency (packet start)" : "Instantaneous frequency (first bits)",
+                 "Frequency re Fc (kHz)", css ? "Time (ms)" : "Time (µs)");
+            Announce(TimeContainer);
+        }
+        else if (ds.Contains("Waveform"))
+        {
+            Fill(TimePlot, ds, [("Waveform", 0)], "In-phase waveform (first 32 bits)", "I (re peak)", "Time (ms)");
             Announce(TimeContainer);
         }
     }
@@ -1509,7 +1752,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             CarrierStandard.Lte => string.Format(inv, "LTE {0:0.#} MHz, {1}", s.BandwidthHz / 1e6, CarrierSpec.ModName(s.Modulation)),
             CarrierStandard.Nr => string.Format(inv, "NR {0:0.#} MHz, {1:0} kHz SCS, {2}", s.BandwidthHz / 1e6, s.ScsHz / 1e3, CarrierSpec.ModName(s.Modulation)),
             CarrierStandard.Cw => "CW",
-            CarrierStandard.Pcw or CarrierStandard.Fsk => s.Label,
+            CarrierStandard.Pcw or CarrierStandard.Fsk or CarrierStandard.Dbpsk or CarrierStandard.Css => s.Label,
             _ => "I/Q file " + System.IO.Path.GetFileName(s.FilePath ?? ""),
         };
         string clip = sig.Spec.ClipPaprDb is double t ? string.Format(inv, "clipped to {0:0.#} dB PAPR", t) : "unclipped";
@@ -1602,7 +1845,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             {
                 CubeName = name, Slice = slice, Transform = transform, Expression = cube,
             };
-            t.QuantityName = cube switch { "Gaussian" => "Gaussian noise", "CCDF" => "Signal", _ => cube };
+            t.QuantityName = cube switch { "Gaussian" => "Gaussian noise (reference)", "CCDF" => "Signal", _ => cube };
             TraceResolve.SetCubeDataFrom(t, ds, PlotType.Rect, FreqUnit.GHz);
             if (t.Points.Count > 0) plot.Traces.Add(t);
         }
