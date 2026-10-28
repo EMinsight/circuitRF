@@ -47,6 +47,21 @@ public sealed class DockWindowBehaviourTests
         };
     }
 
+    /// <summary>
+    /// Dock's <c>Tool</c> is an <c>IDocument</c> as well as an <c>ITool</c>, so "does this float hold a document" asked
+    /// with <c>is IDocument</c> answers yes for a floating Wire Profile — which is why keeping panels on top skipped it.
+    /// The exact question tells the two apart.
+    /// </summary>
+    [Fact]
+    public void AToolPanel_IsNotADocument_ForKeepingPanelsOnTop()
+    {
+        var profile = new WBondProfileTool();
+        Assert.IsAssignableFrom<IDocument>(profile);                     // the trap, stated
+
+        Assert.False(CrfHostWindow.ContainsNonToolDocument(ToolDockWith(profile)));
+        Assert.True(CrfHostWindow.ContainsNonToolDocument(DocumentDockWith(new FakeDocument())));
+    }
+
     // ── Gate 16 — the macOS menu bar survives a floating tool window ──────────
 
     /// <summary>
@@ -168,7 +183,7 @@ public sealed class DockWindowBehaviourTests
         var src = ReadRepoFile("src/Ui/ViewModels/Dock/CircuitRfDockFactory.cs");
         Assert.Contains("DockWindowOwnerMode.RootWindow", src);          // named in the doc comment…
         Assert.DoesNotContain("= DockWindowOwnerMode.RootWindow", src);  // …but never assigned.
-        Assert.Contains("Topmost", src);                                 // and Topmost is ruled out.
+        Assert.Contains("Topmost", src);                                 // and Topmost alone is ruled out.
     }
 
     /// <summary>
@@ -354,8 +369,11 @@ public sealed class DockWindowBehaviourTests
         var end  = src.IndexOf("window.Activated +=", i);
         var body = src[i..end];
         Assert.Contains("_focusedWindowIsToolOnly = true;", body);
-        // The comment names it; what must not appear is an ASSIGNMENT that would clobber it.
-        Assert.DoesNotContain("_focusedWindowDocument =", body);
+        // The comment names it; what must not appear is an ASSIGNMENT that would clobber it — except the one
+        // exception: a wire panel edits one layout's wires, so that layout is what Save and Undo in it act on.
+        const string wirePanels = "if (LayoutEditedByWirePanels(window) is { } edited) _focusedWindowDocument = edited;";
+        Assert.Contains(wirePanels, body);
+        Assert.DoesNotContain("_focusedWindowDocument =", body.Replace(wirePanels, ""));
     }
 
     /// <summary>

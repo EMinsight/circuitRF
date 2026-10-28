@@ -76,6 +76,11 @@ public sealed record C3dElaborationOptions(double? FMaxHz = null, double TempC =
     /// <summary>brief-em3d-51 — the top document's cell, when the caller holds one the disk does not yet say (the editor's
     /// preview of a drag that writes a parameter's default). Null: read from the document's own cell folder.</summary>
     public C3dCell? Cell { get; init; }
+
+    /// <summary>A picture, never a solve: a placed layout with wires and no conductor artwork, or a wire end over no
+    /// conductor, is drawn (<see cref="Em3dLayoutSolidsOptions.PadsOptional"/>) with what a solve would refuse on as a
+    /// warning. Without it a wBond pushed from a schematic to a layout made its whole instance "not found".</summary>
+    public bool PadsOptional { get; init; }
 }
 
 /// <summary>Where one object of the elaborated problem came from (R-em3d42-3a).</summary>
@@ -215,6 +220,11 @@ public sealed record C3dElaboration(
     /// <summary>brief-em3d-48 R-em3d48-6b — the instances whose cell or view resolved to nothing or could not be read, by
     /// instance path: what the editor draws as a dashed box with the cell's name.</summary>
     public IReadOnlyList<(string InstancePath, string CellRef)> Unresolved { get; init; } = [];
+
+    /// <summary>Why an <see cref="Unresolved"/> instance is not drawn, in a few words, by instance path, for its label: a cell
+    /// that could not be found is the case with no entry. A placed layout that was found and could not be built said
+    /// "not found" as well, which sent the user looking for a file that was there.</summary>
+    public IReadOnlyDictionary<string, string> UnresolvedWhy { get; init; } = new Dictionary<string, string>();
 
     /// <summary>3D editor bugs round 1 — the objects with no material, or one their technology does not define: none reaches a
     /// solver, but each is lowered all the same, under the name it would have had, so the editor can draw it (as a
@@ -550,7 +560,12 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
     {
         /// <summary>brief-em3d-87 — the sub-cells its flatten reads and its paired <c>.wBond</c>.</summary>
         public IReadOnlyList<string> Files { get; init; } = [];
+
+        /// <summary><see cref="Files"/>' stamps when it was built.</summary>
+        public string FilesStamp { get; init; } = "";
     }
+
+    private static string FilesStamp(IReadOnlyList<string> files) => string.Join("|", files.Select(Stamp));
 
     private Child3D Child3DCached(string path, string? fallbackCws)
     {
@@ -609,9 +624,12 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
 
     private ChildLayout ChildLayoutCached(string path, string? fallbackCws, C3dElaborationOptions options)
     {
-        string key = string.Create(CultureInfo.InvariantCulture, $"layout|{path}|{Stamp(path)}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}");
+        // The paired .wBond is in the key: wire edits are saved to it alone, so the .clay's stamp did not move and the
+        // view kept drawing the old wires. The sub-cells the flatten read are checked on a hit, for the same reason.
+        string key = string.Create(CultureInfo.InvariantCulture,
+            $"layout|{path}|{Stamp(path)}|{Stamp(WBondCell.FindFor(path))}|{options.FMaxHz:R}|{options.TempC:R}|{options.RobustMeshing}|{options.PadsOptional}");
         if (_children.TryGetValue(key, out var hit) && hit is ChildLayout c && Stamp(c.Tech.ResolvedPath) == TechStampOf(key)
-            && Current(c.Tech))
+            && Current(c.Tech) && c.FilesStamp == FilesStamp(c.Files))
             return c;
         ChildrenElaborated++;
         LayoutView view;
@@ -632,9 +650,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         {
             var solids = Em3dLayoutSolids.From(new EmLayoutSource(path, view, t, view.DbuPerMicron), t, null,
                                                new Em3dLayoutSolidsOptions(options.FMaxHz, options.TempC, Instance: true)
-                                               { RobustMeshing = options.RobustMeshing });
+                                               { RobustMeshing = options.RobustMeshing, PadsOptional = options.PadsOptional });
             made = new ChildLayout(solids, tech, TechName(tech), solids.Refusal, view.DbuPerMicron) { Files = files };
         }
+        made = made with { FilesStamp = FilesStamp(made.Files) };
         _children[key] = made;
         _children["techstamp|" + key] = Stamp(tech.ResolvedPath);
         return made;
@@ -743,6 +762,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly List<(string Name, string Source)> _builtInWireValues = [];
         private readonly List<C3dWalkStep> _walkInstances = [], _walkUnits = [], _walkLowering = [];
         private readonly List<(string, string)> _unresolved = [];
+        private readonly Dictionary<string, string> _unresolvedWhy = new(StringComparer.Ordinal);
         private readonly List<C3dInstanceFrame> _instances = [];
         private int _order;
         private int _polylines;
@@ -858,6 +878,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             {
                 Warnings = _warnings,
                 Unresolved = _unresolved,
+                UnresolvedWhy = _unresolvedWhy,
                 Instances = _instances,
                 ObjectNets = _nets,
                 ViaNetConflicts = _viaNetConflicts,
@@ -1541,6 +1562,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             if (layout.Refusal is { } refusal || layout.Solids is not { } solids)
             {
                 _unresolved.Add((instPath, inst.CellRef));
+                _unresolvedWhy[instPath] = layout.Solids?.RefusedOnWires == true ? "invalid wBond geometry" : "cannot be drawn in 3D";
                 _refusals.Add($"Instance '{instPath}' places layout '{viewPath}', which cannot be put in 3D: {layout.Refusal}");
                 return;
             }
@@ -1549,6 +1571,8 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 foreach (string n in solids.Notes) _notes.Add($"{instPath}: {n}");
                 foreach (string w in solids.Warnings) _warnings.Add($"{instPath}: {w}");
             }
+            if (solids.PadRefusal is { } padRefusal && !solids.Warnings.Any(w => w.Contains(padRefusal, StringComparison.Ordinal)))
+                _warnings.Add($"{instPath}: {padRefusal}");
             if (LayoutHasPortShapes(viewPath)) _ignored.Add("a layout's port shapes");
             double outerOpacity = _opacity;
             if (inst.Transparency is { } lt) _opacity *= C3dTransparency.Opacity(Math.Clamp(lt, 0, C3dTransparency.Max));

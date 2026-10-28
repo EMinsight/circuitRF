@@ -14,23 +14,31 @@ namespace CircuitRF.Design.Schematic;
 public static class WBondPlacement
 {
     /// <summary>
-    /// The z BOTH feet of a newly created wBond's wires land at, in nm — or <c>null</c> for the
-    /// shipped <see cref="WBondEmbedding.DefaultWire.FootZMils"/>.
+    /// What a newly created wBond's wire is made with — its feet's z, diameter, metal and point count — or
+    /// <c>null</c> for <see cref="WBondEmbedding.NewWireSettings.Shipped"/>.
     ///
-    /// <para><b>The one thing this file could not bring across the UI firewall.</b> The value the
-    /// application uses is a per-INSTALLATION preference (Settings ▸ Wirebonds, read by
-    /// <c>WBondDefaults.FootZNm</c>), and preferences are app state that lives above the wall.
+    /// <para><b>The one thing this file could not bring across the UI firewall.</b> The values the
+    /// application uses are per-INSTALLATION preferences (Settings ▸ Wirebonds, read by
+    /// <c>WBondDefaults.NewWire</c>), and preferences are app state that lives above the wall.
     /// Everything else about placing a wBond is a document decision and is right here, so the type
     /// belongs below the wall and takes this one value from above it —
     /// <c>LayoutTextOutline.TypefaceSource</c> is the existing precedent for the shape
     /// (brief-automation-2 R-aut2-7 resolution 3).</para>
     ///
     /// <para>Unset — which is what a headless <c>circuitrf</c> process gets — means the shipped
-    /// default, exactly as passing <c>null</c> to <see cref="WBondEmbedding.DefaultDesign"/> always
+    /// default, exactly as <see cref="WBondEmbedding.DefaultDesign(long?)"/> with no argument always
     /// has. <c>src/Ui</c> installs the preference-backed one from a module initializer, so all three
     /// of its entry points get it (R-aut2-9).</para>
     /// </summary>
-    public static Func<long?> NewWireFootZNm { get; set; } = static () => null;
+    public static Func<WBondEmbedding.NewWireSettings?> NewWireSettings { get; set; } = static () => null;
+
+    /// <summary>
+    /// The design a NEW wBond starts from: the shipped one array and one wire, made with
+    /// <see cref="NewWireSettings"/>. A schematic palette drop and <see cref="BuildCarrying"/> both start
+    /// here — the registry's <c>DefaultPayload</c> is computed once per process and cannot know a preference.
+    /// </summary>
+    public static WBondDesign NewDefaultDesign() =>
+        WBondEmbedding.DefaultDesign(NewWireSettings() ?? WBondEmbedding.NewWireSettings.Shipped);
 
     /// <summary>The parameter that records the array list an instance's wiring was drawn against.</summary>
     public const string ArraysParameter = "Arrays";
@@ -211,10 +219,10 @@ public static class WBondPlacement
 
     /// <summary>
     /// Builds a wBond component carrying <paramref name="design"/>. With no design supplied it gets
-    /// the shipped one-array, one-wire default — <b>at the user's own Wire z-height</b> (Settings ▸
-    /// Wirebonds), which is why the payload is written here rather than left as the registry's
-    /// cached <c>DefaultPayload</c> string: that one is computed once per process and cannot know a
-    /// preference. At the shipped 4 mil the two are byte-identical.
+    /// <see cref="NewDefaultDesign"/> — <b>the user's own wire</b> (Settings ▸ Wirebonds), which is why
+    /// the payload is written here rather than left as the registry's cached <c>DefaultPayload</c>
+    /// string: that one is computed once per process and cannot know a preference. At the shipped
+    /// settings the two are byte-identical.
     /// </summary>
     public static EditableComponent BuildCarrying(WBondDesign? design, string instanceName)
     {
@@ -235,7 +243,7 @@ public static class WBondPlacement
                 ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension,
             });
 
-        ApplyDesign(comp, design ?? WBondEmbedding.DefaultDesign(NewWireFootZNm()));
+        ApplyDesign(comp, design ?? NewDefaultDesign());
         return comp;
     }
 

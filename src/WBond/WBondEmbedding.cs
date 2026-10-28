@@ -206,9 +206,14 @@ public static class WBondEmbedding
     /// passes <c>WBondDefaults.FootZNm</c>, which is the user's Settings ▸ Wirebonds value; the
     /// no-argument form is what a test, a headless caller and <see cref="DefaultPayload"/> use.</para>
     /// </param>
-    public static WBondDesign DefaultDesign(long? footZNm = null)
+    public static WBondDesign DefaultDesign(long? footZNm = null) =>
+        DefaultDesign(footZNm is { } z ? NewWireSettings.Shipped with { FootZNm = z } : NewWireSettings.Shipped);
+
+    /// <summary>The same design, its wire made with <paramref name="settings"/> — what every UI creation path passes,
+    /// so a new wBond has the user's diameter, metal and point count as well as their z (Settings ▸ Wirebonds).</summary>
+    public static WBondDesign DefaultDesign(NewWireSettings settings)
     {
-        long footZ = footZNm ?? WBondUnits.ToNm(DefaultWire.FootZMils, WBondUnit.Mil);
+        ArgumentNullException.ThrowIfNull(settings);
 
         var design = new WBondDesign();
         design.Arrays.Add(new WireArray
@@ -217,13 +222,32 @@ public static class WBondEmbedding
             Wires =
             {
                 LoopShape.CreateSeedWire(
-                    DefaultWire.StartAt(footZ), DefaultWire.EndAt(footZ),
-                    WBondUnits.ToNm(DefaultWire.DiameterMils, WBondUnit.Mil),
-                    WireMaterials.Default.Name,
-                    WBondUnits.ToNm(DefaultWire.LoopHeightMils, WBondUnit.Mil)),
+                    DefaultWire.StartAt(settings.FootZNm), DefaultWire.EndAt(settings.FootZNm),
+                    settings.DiameterNm, settings.Material,
+                    WBondUnits.ToNm(DefaultWire.LoopHeightMils, WBondUnit.Mil),
+                    settings.Points),
             },
         });
         return design;
+    }
+
+    /// <summary>
+    /// What a newly created wire is made with: the four values of Settings ▸ Wirebonds.
+    ///
+    /// <para>A value rather than a preference read, because this project cannot read one; <c>WBondDefaults.NewWire</c>
+    /// in the UI is what fills it from the user's preferences. <see cref="Shipped"/> is what a test, a headless caller
+    /// and <see cref="DefaultPayload"/> use.</para>
+    /// </summary>
+    public sealed record NewWireSettings(long FootZNm, long DiameterNm, string Material, int Points)
+    {
+        /// <summary>Seven points per wire: the profile's own resolution (wbond.md §6.4).</summary>
+        public const int ShippedPoints = 7;
+
+        public static NewWireSettings Shipped { get; } = new(
+            WBondUnits.ToNm(DefaultWire.FootZMils, WBondUnit.Mil),
+            WBondUnits.ToNm(DefaultWire.DiameterMils, WBondUnit.Mil),
+            WireMaterials.Default.Name,
+            ShippedPoints);
     }
 
     /// <summary>

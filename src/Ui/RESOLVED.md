@@ -40961,3 +40961,61 @@ whitespace. `MenuFlyout FlyoutPresenterClasses="compact"` opts a menu out of bot
 opt-in because a menu that shows shortcuts needs the gesture gap; the Tuning and Optimizer row menus and the
 palette's Type menu use it. A menu whose numeric items are all hidden must also hide the separator that served them,
 or two separators sit together.
+
+## wBond bugs — new-wire settings, the floating Wire Profile, the 3D view of a layout (2026-10-27)
+
+**A wBond placed from the SCHEMATIC PALETTE read none of Settings ▸ Wirebonds.** `SchematicViewModel.BuildPlacedComponent`
+builds every kind from `ComponentTypeRegistry.DefaultParameters`, and a wBond's `Design` there is
+`WBondEmbedding.DefaultPayload`, the shipped wire, computed once per process. `WBondPlacement.BuildCarrying`, which
+did read the foot-z setting, is reached only by import and Layout → Schematic reconcile. Its comment claims the
+palette goes through it as well, and the source-scan test guarded the installer file, so the gap stayed invisible.
+Only the foot z had ever been handed below the firewall. The hook is now `WBondPlacement.NewWireSettings` and carries
+`WBondEmbedding.NewWireSettings` (foot z, diameter, metal, points). `WBondPlacement.NewDefaultDesign()` is the one
+new design, used by the palette drop, `BuildCarrying` and the blank wBond editor. The layout drop and the
+parameter-dialog array add read `WBondDefaults.DiameterNm`/`Material` instead of the shipped constants.
+
+**A floating tool window is `Topmost` while its own workspace is in use (`FloatingPanelsOnTop`).** The Wire Profile
+went behind the layout editor, docked or torn off. The raise that the shell and each torn-off document ran on
+activation (activate every panel, then the window again) undid itself: activating a window brings it to the front,
+so the window landed back on top. **Ownership was tried and did not work:** the panels were made owned by the shell,
+then by whichever workspace window was activated, through Avalonia's protected `Owner` setter (which re-parents a
+shown window, the path `Show(owner)` takes). The panel still went behind the workspace window on the owner's Mac.
+That code is gone; a window level is the one ordering the platform keeps by itself. `Topmost` alone would float the
+panels over every other application and over circuitRF's own dialogs, so it is set only while the ACTIVE window is
+one of the panel's own workspace (the shell, a torn-off document, another of its floats), recomputed once per
+dispatcher pass after any window's `IsActive` changes. The pass matters because switching between two windows
+passes through "none active". A dialog, another workspace's window or another application active drops it.
+**Cause found, fix parked at the owner's request (2026-10-27): Dock's `Tool` implements `IDocument`.**
+`Dock.Model.Mvvm.Controls.Tool : DockableBase, ITool, …, IDocument, IMdiDocument`, so `CrfHostWindow.FloatsAnyDocument()`
+(`dockable is IDocument`) is TRUE for every floating tool panel. A temporary trace showed the floating Wire Profile as
+`tool=True doc=True` on every recompute, so the ownership attempt and `FloatingPanelsOnTop` both skipped it as a
+"document window", and neither ever acted. `FloatingPanelsOnTop` now asks `CrfHostWindow.FloatsAnyNonToolDocument`
+(`IDocument and not ITool`) instead. `FloatsAnyDocument` is deliberately left as it is: `ShouldTearDownOurWay`,
+`ShouldAskBeforeClosing` and `FloatedDocuments` all read it, so every tool float's close has been taking the
+document path (Dock's own close, which the class note says crashes for a tool, with no crash reported), and
+correcting it changes how every tool float closes. That is a separate change, to be made with its own testing.
+
+**⌘Z/⌘S in a floating Wire Profile acted on a different torn-off document.** With a tool float focused, the File/Edit
+commands keep "the last active document" (R-dock-13). That is right for Properties or Messages, but a wire panel
+EDITS one layout, and the last document had been a torn-off `.c3d`, which took the undo and the save of a wire edit.
+A float holding a wire panel now names the layout whose `WireEditor` its panel shows as the focused document
+(`WorkspaceViewModel.LayoutEditedByWirePanels`); the Close item still reads as a tool float's. **And ⌘S there worked
+once:** a float has no Save key binding, so ⌘S reaches only the menu item, whose enabled state was re-asked on a focus
+change, a canvas interaction or a completed save, and never on a wire edit. After the first save the item stayed
+disabled. `OnWireHistoryChanged` now re-asks Save as well as Undo/Redo.
+
+
+## Delete in the Wire Profile view (2026-10-27)
+
+The profile view had no Delete Vertex / Delete Segment and ignored the Delete key: the menu offered only group
+commands, and only the standalone wBond editor's ancestor key handler deleted anything, per wire. Now the canvas
+handles Delete/Backspace and the menu has the layout view's two items, each disabled with its reason. Both go
+through `WBondViewModel.DeleteProfileSelection` in one undo entry.
+
+**The group rule, and why it is not `ProfileGroupSubject`'s.** Every profile edit applies to the same point index on
+every wire of the group, and a drag skips a sibling too short to have it. A delete cannot use index alone: in a
+sibling with a different point count the same index is a different point (with 7 against 5, index 4 is a bend on
+one and the output FOOT of the other, so deleting it would move where that wire lands). So a vertex or segment
+comes off the picked wire and every sibling with the SAME count. The others are left alone and one message says
+how many. Whole wires selected in the profile are deleted as selected and never widened to the group. The
+standalone wBond editor's handler sends Delete to the profile rule when the profile canvas has focus.

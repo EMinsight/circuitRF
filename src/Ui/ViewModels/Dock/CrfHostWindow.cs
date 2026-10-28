@@ -63,6 +63,9 @@ public class CrfHostWindow : HostWindow
     {
         this[!BackgroundProperty] = new DynamicResourceExtension("SystemChromeLowColor");
 
+        // A floating tool panel stays above its workspace's windows while that workspace is in use.
+        FloatingPanelsOnTop.Install();
+
         // P / A must keep working while a floating panel has focus, which it does the moment one is
         // presented — otherwise the toggle dies after two presses and only a click on the shell revives it
         // (owner, 2026-08-17). This is a second TopLevel, so it needs its own registration; the shortcut
@@ -394,7 +397,33 @@ public class CrfHostWindow : HostWindow
     internal static bool ShouldTearDownOurWay(bool closingForLayoutRebuild, bool isTracked, bool floatsAnyDocument)
         => !closingForLayoutRebuild && isTracked && !floatsAnyDocument;
 
-    /// <summary>True when the floated layout contains at least one <see cref="IDocument"/>.</summary>
+    /// <summary>
+    /// True when the floated layout holds a real DOCUMENT — an <see cref="IDocument"/> that is not a tool panel.
+    ///
+    /// <para><b>Not the same question as <see cref="FloatsAnyDocument"/>, which answers true for every tool float:</b>
+    /// Dock's <c>Tool</c> implements <see cref="IDocument"/> as well as <see cref="ITool"/>, so <c>is IDocument</c>
+    /// cannot tell a floating Wire Profile from a torn-off layout. A trace on the owner's Mac showed the Wire Profile
+    /// float reading as a document on every check, which is why keeping panels on top never acted on it.
+    /// <see cref="FloatsAnyDocument"/> is left as it is because the close path reads it (<see cref="OnClosing"/>), and
+    /// correcting it there changes how every tool float closes.</para>
+    /// </summary>
+    internal bool FloatsAnyNonToolDocument()
+    {
+        var layout = Window?.Layout;
+        return layout is not null && ContainsNonToolDocument(layout);
+    }
+
+    internal static bool ContainsNonToolDocument(IDockable dockable)
+    {
+        if (dockable is IDocument and not ITool) return true;
+        if (dockable is IDock { VisibleDockables: { } children })
+            foreach (var child in children)
+                if (child is not null && ContainsNonToolDocument(child)) return true;
+        return false;
+    }
+
+    /// <summary>True when the floated layout contains at least one <see cref="IDocument"/> — which includes every tool
+    /// panel, see <see cref="FloatsAnyNonToolDocument"/>.</summary>
     internal bool FloatsAnyDocument()
     {
         var layout = Window?.Layout;

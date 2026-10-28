@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CircuitRF.WBond;
 
@@ -118,9 +119,10 @@ public sealed partial class WBondViewModel
     /// <para>ONE undo entry for the whole batch, and one structural rebuild at the end.</para>
     /// </summary>
     /// <returns>How many wires were deleted or edited.</returns>
-    public int DeleteSelection()
+    public int DeleteSelection() => DeleteSelection(Selection);
+
+    private int DeleteSelection(WireSelection selection)
     {
-        var selection = Selection;
         if (selection.IsEmpty) return 0;
 
         var wholeWires = new HashSet<int>(selection.Wires);
@@ -202,6 +204,103 @@ public sealed partial class WBondViewModel
             ReportRefusal($"{refusedFor} wire(s) were left alone — a wire needs at least two points.");
 
         return edited + removedWires;
+    }
+
+    /// <summary>
+    /// <b>Delete in the PROFILE view</b>: the selected vertices and segments come off every wire of their group that has
+    /// the same number of points as the wire picked, in one undo entry.
+    ///
+    /// <para>The profile view draws a group as one shape and edits it as one (<see cref="ProfileGroupSubject"/>), so a
+    /// delete there is a group edit too. <b>But not by index alone.</b> A drag skips a sibling too short to have the
+    /// point; a delete cannot stop there, because in a wire with a different point count the same index is a
+    /// different point. With 7 points against 5, index 4 is an interior bend on one and the output FOOT of the other,
+    /// and deleting it would move where that wire lands. Only a sibling with the same count has the same point at the
+    /// same index, feet included. The others are left alone and the message says how many, rather than being
+    /// guessed at.</para>
+    ///
+    /// <para>Whole wires are deleted as selected, never widened to their group: the menu's Delete Group says that
+    /// outright, and a key should not delete wires the user cannot tell apart on screen.</para>
+    /// </summary>
+    /// <returns>How many wires were deleted or edited.</returns>
+    public int DeleteProfileSelection()
+    {
+        var (subject, leftAlone) = ProfileDeleteSubject(Selection);
+        int done = DeleteSelection(subject);
+        if (done > 0 && leftAlone > 0)
+            ReportRefusal(leftAlone == 1
+                ? "1 wire in the group has a different number of points and was left alone."
+                : $"{leftAlone} wires in the group have a different number of points and were left alone.");
+        return done;
+    }
+
+    /// <summary>The profile view's Delete Vertex: <paramref name="pointIndex"/> of <paramref name="wireIndex"/>, on every
+    /// wire of its group with the same point count (<see cref="DeleteProfileSelection"/>'s rule).</summary>
+    public bool DeleteProfilePoint(int wireIndex, int pointIndex)
+    {
+        if (WhyCannotDeletePoint(wireIndex, pointIndex) is not null) return false;
+        var one = new WireSelection();
+        one.Points.Add(new PointRef(wireIndex, pointIndex));
+        return DeleteProfileOne(one);
+    }
+
+    /// <summary>The profile view's Delete Segment, by the same rule.</summary>
+    public bool DeleteProfileSegment(int wireIndex, int segmentIndex)
+    {
+        if (WhyCannotDeleteSegment(wireIndex, segmentIndex) is not null) return false;
+        var one = new WireSelection();
+        one.Segments.Add(new SegmentRef(wireIndex, segmentIndex));
+        return DeleteProfileOne(one);
+    }
+
+    private bool DeleteProfileOne(WireSelection one)
+    {
+        var kept = Selection;
+        Selection = one;
+        int done = DeleteProfileSelection();
+        if (done == 0) Selection = kept;
+        return done > 0;
+    }
+
+    /// <summary>
+    /// What a profile-view delete removes: each selected vertex and segment on its own wire and on every sibling in its
+    /// group with the same point count; selected whole wires as they are. Also how many siblings were left alone for
+    /// having a different count.
+    /// </summary>
+    internal (WireSelection Subject, int LeftAlone) ProfileDeleteSubject(WireSelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        var subject = new WireSelection();
+        if (selection.IsEmpty) return (subject, 0);
+
+        var wires = _design.AllWires().ToList();
+        var leftAlone = new HashSet<int>();
+
+        IEnumerable<int> MatchingSiblings(int wire)
+        {
+            if (wire < 0 || wire >= _mesh.WireCount || wire >= wires.Count) yield break;
+            int array = _mesh.ArrayOfWire[wire];
+            int count = wires[wire].Points.Count;
+            for (int w = 0; w < _mesh.WireCount && w < wires.Count; w++)
+            {
+                if (_mesh.ArrayOfWire[w] != array) continue;
+                if (wires[w].Points.Count == count) yield return w;
+                else leftAlone.Add(w);
+            }
+        }
+
+        foreach (int wire in selection.Wires) subject.Wires.Add(wire);
+        foreach (var point in selection.Points)
+            foreach (int sibling in MatchingSiblings(point.Wire))
+                subject.Points.Add(new PointRef(sibling, point.Point));
+        foreach (var segment in selection.Segments)
+            foreach (int sibling in MatchingSiblings(segment.Wire))
+                subject.Segments.Add(new SegmentRef(sibling, segment.Point));
+
+        // A sibling that is itself picked (a marquee over the group's overlaid shapes) is not "left alone".
+        foreach (var p in subject.Points) leftAlone.Remove(p.Wire);
+        foreach (var g in subject.Segments) leftAlone.Remove(g.Wire);
+        foreach (int w in subject.Wires) leftAlone.Remove(w);
+        return (subject, leftAlone.Count);
     }
 
     /// <summary>

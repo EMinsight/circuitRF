@@ -1774,9 +1774,10 @@ public sealed partial class WBondViewModel : ObservableObject
     /// <summary>
     /// A minimal valid design, so a blank editor has something to draw and validate.
     ///
-    /// <para>Delegates to <see cref="WBondEmbedding.DefaultDesign"/> rather than building its own:
-    /// a freshly-dropped schematic component starts from the same design, and two definitions of
-    /// "what a new wBond is" would drift the first time either changed.</para>
+    /// <para>Delegates to <see cref="WBondPlacement.NewDefaultDesign"/> rather than building its own:
+    /// a freshly-dropped schematic component starts from the same design, with the same Settings ▸
+    /// Wirebonds values, and two definitions of "what a new wBond is" would drift the first time
+    /// either changed.</para>
     /// </summary>
-    private static WBondDesign EmptyDesign() => WBondEmbedding.DefaultDesign();
+    private static WBondDesign EmptyDesign() => WBondPlacement.NewDefaultDesign();
 }

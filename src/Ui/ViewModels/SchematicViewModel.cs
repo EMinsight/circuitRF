@@ -4121,6 +4121,10 @@ public sealed partial class SchematicViewModel : ObservableObject
             comp.Parameters.Add(new EditableParameter
                 { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
 
+        // A wBond's registry payload is the SHIPPED wire, computed once per process; a new one carries the user's own
+        // (Settings ▸ Wirebonds), as every other creation path makes it.
+        if (kind == SymbolKind.WBond) WBondPlacement.ApplyDesign(comp, WBondPlacement.NewDefaultDesign());
+
         // The registry states a part's F/Freq rows in GHz; a new one reads in the preferred unit
         // (Settings ▸ General ▸ Units), the same frequency.
         PreferredUnits.ApplyToNewFrequencyRows(comp.Parameters, PreferredUnits.Frequency);

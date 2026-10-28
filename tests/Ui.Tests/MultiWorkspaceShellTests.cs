@@ -297,4 +297,19 @@ public sealed class MultiWorkspaceShellTests
         }
         throw new InvalidOperationException($"'{signature}' has no closing brace.");
     }
+
+    /// <summary>
+    /// A floating panel floats over the windows of its own workspace only: not over another workspace's
+    /// (it describes a different design), and not while a dialog or another application is active.
+    /// </summary>
+    [Fact]
+    public void AFloatingPanel_FloatsOnlyWhileItsOwnWorkspaceIsActive()
+    {
+        var a = new WorkspaceViewModel();
+        var b = new WorkspaceViewModel();
+
+        Assert.True(FloatingPanelsOnTop.FloatsWhile(a, a));
+        Assert.False(FloatingPanelsOnTop.FloatsWhile(b, a));
+        Assert.False(FloatingPanelsOnTop.FloatsWhile(null, a));
+    }
 }

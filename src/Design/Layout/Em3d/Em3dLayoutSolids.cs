@@ -98,6 +98,13 @@ public sealed record Em3dLayoutSolidsResult(
 
     /// <summary>The bottom of the stackup, metres — what an instance's z places (overview §1i).</summary>
     public double StackBottomM { get; init; }
+
+    /// <summary>With <see cref="Em3dLayoutSolidsOptions.PadsOptional"/>: what a solve would have refused on — no conductor
+    /// artwork, a wire end over no pad, or a wire that could not be built. Null otherwise.</summary>
+    public string? PadRefusal { get; init; }
+
+    /// <summary>The <see cref="Refusal"/> is the bond wires' (their <c>.wBond</c> could not be built), not the artwork's.</summary>
+    public bool RefusedOnWires { get; init; }
 }
 
 public static class Em3dLayoutSolids
@@ -157,8 +164,14 @@ public static class Em3dLayoutSolids
         public Em3dWireBuild? WireBuild { get; private set; }
 
         /// <summary>With <see cref="Em3dLayoutSolidsOptions.PadsOptional"/>: the refusal a solve would have stopped on —
-        /// no conductor artwork, or a wire end over no pad. Null otherwise.</summary>
+        /// no conductor artwork, a wire end over no pad, or a wire that could not be built. Null otherwise.</summary>
         public string? PadRefusal { get; private set; }
+
+        /// <summary>True when the refusal <see cref="Prepare"/> returned is the bond wires' — what a 3D view labels as
+        /// invalid wBond geometry rather than as a cell it cannot find.</summary>
+        public bool RefusedOnWires { get; private set; }
+
+        private string? _wireRefusal;
 
         /// <summary>The content's extent, metres — what an air box pads.</summary>
         public double Cx0 { get; private set; } = double.PositiveInfinity;
@@ -184,6 +197,11 @@ public static class Em3dLayoutSolids
         private readonly SortedSet<string> _noAlpha = new(StringComparer.Ordinal);
         // An instance's plane: the lowest ground-reference conductor a .cem would have made its floor.
         private PlanarExtractor.StackBand? _instancePlane;
+
+        /// <summary>Nothing is drawn on a conductor layer (a picture of wires alone, <see cref="Em3dLayoutSolidsOptions.PadsOptional"/>).
+        /// No slab, body or ground plane is then bounded by anything the user drew, so none is built: a wBond's wires pushed to
+        /// an empty layout came into a 3D view with a substrate and a bottom plane nobody placed.</summary>
+        private bool _noArtwork;
 
         // ── the solids, once built ───────────────────────────────────────────────────────────────
         public readonly List<Em3dSolid> SolidList = [];
@@ -327,6 +345,7 @@ public static class Em3dLayoutSolids
                 "conductor entry in the technology editor's Stackup tab.";
             // A picture of wires alone is still a picture: the refusal waits until the wires are known.
             if (noMetal is not null && !options.PadsOptional) return noMetal;
+            _noArtwork = noMetal is not null;
 
             // ── Vias: spans resolved once, geometry after the floor is known ─────────────────
             int unspanned = 0;
@@ -560,10 +579,25 @@ public static class Em3dLayoutSolids
                                             options.PadsOptional);
                 Notes.AddRange(WireBuild.Notes);
                 WarningList.AddRange(WireBuild.Warnings);
-                if (WireBuild.Refusal is { } wireRefusal) return wireRefusal;
+                if (WireBuild.Refusal is { } wireRefusal)
+                {
+                    RefusedOnWires = true;
+                    if (!options.PadsOptional) return wireRefusal;
+                    // A picture still draws the artwork: the .wBond as a whole could not be built.
+                    WarningList.Add($"The wires are not drawn, invalid wBond geometry: {wireRefusal}");
+                    _wireRefusal = wireRefusal;
+                    WireBuild = null;
+                }
             }
-            if (noMetal is not null && WireBuild is not { Solids.Count: > 0 }) return noMetal;
-            PadRefusal = noMetal ?? WireBuild?.PadRefusal;
+            if (noMetal is not null && WireBuild is not { Solids.Count: > 0 })
+            {
+                // Nothing to draw. When there were wires and none could be built, they are the reason.
+                if (_wireRefusal is null && WireBuild?.PadRefusal is null) return noMetal;
+                RefusedOnWires = true;
+                return _wireRefusal ?? WireBuild!.PadRefusal!;
+            }
+            RefusedOnWires = false;
+            PadRefusal = noMetal ?? _wireRefusal ?? WireBuild?.PadRefusal;
 
             Extent();
             return null;
@@ -609,7 +643,7 @@ public static class Em3dLayoutSolids
                 cx0 = Math.Min(cx0, x0); cy0 = Math.Min(cy0, y0); cx1 = Math.Max(cx1, x1); cy1 = Math.Max(cy1, y1);
                 zLow = Math.Min(zLow, z0); zHigh = Math.Max(zHigh, z1);
             }
-            if (_instancePlane is { } plane)
+            if (_instancePlane is { } plane && !_noArtwork)
             {
                 zLow = Math.Min(zLow, plane.BottomM);
                 zHigh = Math.Max(zHigh, plane.TopM);
@@ -677,7 +711,7 @@ public static class Em3dLayoutSolids
             {
                 string material = BodyMaterial(tech.FindMaterial(body.Material)!, out var role);
                 IReadOnlyList<PlanarPolygon> polys = drawnPolys.Count == 0 && bound ? Bounded(z0, z1, body.Name) : drawnPolys;
-                if (polys.Count == 0 && options.DisplaySlabs) continue;   // nothing drawn bounds it: not in the picture
+                if (polys.Count == 0 && (options.DisplaySlabs || (bound && _noArtwork))) continue;   // nothing drawn bounds it: not in the picture
                 order++;
                 if (polys.Count == 0)
                     solids.Add(Origin(new Em3dSolid(body.Name, material, role, FullExtent(z0, z1), order),
@@ -904,8 +938,9 @@ public static class Em3dLayoutSolids
                 }
             }
             // A planar preview draws no slab that nothing drawn bounds: a box around whatever else is in the picture —
-            // wires alone, on a layout with no artwork — showed a substrate nobody placed.
-            if (options.DisplaySlabs) return [];
+            // wires alone, on a layout with no artwork — showed a substrate nobody placed. Nor does a placed layout with no
+            // artwork, for the same reason (its ground plane comes through here too).
+            if (options.DisplaySlabs || _noArtwork) return [];
             _slabBounds.Add((slab, SlabBoundKind.BoundingBox, null));
             return [new PlanarPolygon([new(Cx0, Cy0), new(Cx1, Cy0), new(Cx1, Cy1), new(Cx0, Cy1)])];
         }
@@ -974,7 +1009,11 @@ public static class Em3dLayoutSolids
         public IReadOnlyList<string> NoAlphaList => [.. _noAlpha.Union(WireBuild?.NoAlpha ?? []).Order(StringComparer.Ordinal)];
         public IReadOnlyList<string> UnknownTemperatureList => _unknownTemperature;
 
-        public Em3dLayoutSolidsResult Failed(string refusal) => new([], [], [], refusal, Notes) { Warnings = WarningList };
+        public Em3dLayoutSolidsResult Failed(string refusal) => new([], [], [], refusal, Notes)
+        {
+            Warnings = WarningList,
+            RefusedOnWires = RefusedOnWires,
+        };
 
         public Em3dLayoutSolidsResult Result() => new(SolidList, SheetList, _materials, null, Notes)
         {
@@ -988,6 +1027,7 @@ public static class Em3dLayoutSolids
             NoAlpha = NoAlphaList,
             UnknownTemperature = _unknownTemperature,
             StackBottomM = Bands.Count > 0 ? Bands.Min(b => b.BottomM) : 0,
+            PadRefusal = PadRefusal,
         };
 
         // ── Materials resolved at T (R-em3d3-4) ──────────────────────────────────────────────────

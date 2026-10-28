@@ -407,6 +407,118 @@ public sealed class WireGateTests : IDisposable
                     Assert.True(Math.Abs(x - y) <= 1e-12 * Math.Max(Math.Abs(x), Math.Abs(y)) + 1e-18, $"ring {i} corner {k}: {x} vs {y}");
     }
 
+    // ── New 3D View from Layout over a schematic-pushed wBond ───────────────────────────────────
+
+    /// <summary>A wBond pushed from a schematic lands its wires where no pad is drawn. The editor's picture draws the layout
+    /// and its wires with the reason a solve would refuse as a warning; a solve still refuses. It used to draw only a box
+    /// saying the instance was "not found".</summary>
+    [Fact]
+    public void ALayoutWhoseWiresLandOnNoPad_IsDrawnInItsNew3DView_AndASolveStillRefuses()
+    {
+        string ws = CopyExample(withWBond: true);
+        string cell = Path.Combine(ws, "Bond wire");
+        string wbondPath = Path.Combine(cell, "layout", "Bond wire.wBond");
+        var design = WBondIo.ReadFile(wbondPath);
+        foreach (var w in design.AllWires())
+            for (int i = 0; i < w.Points.Count; i++)
+                w.Points[i] = w.Points[i] with { X = w.Points[i].X + 50_000_000 };     // 50 mm off the artwork
+        WBondIo.WriteFile(wbondPath, design);
+        string c3d = Path.Combine(cell, "3d", "Bond wire.c3d");
+        string cws = Path.Combine(ws, ".cws");
+        var doc = C3dHierarchy.NewFromLayout(cell, c3d, cws).Document!;
+
+        var solve = new C3dElaborator().Elaborate(doc, c3d, cws);
+        Assert.Contains(solve.Unresolved, u => u.InstancePath == "U1");
+
+        var picture = new C3dElaborator().Elaborate(doc, c3d, cws, new C3dElaborationOptions { PadsOptional = true });
+        Assert.Empty(picture.Unresolved);
+        Assert.Contains(picture.Solids, s => s.Name.StartsWith("U1/wire/", StringComparison.Ordinal));
+        Assert.Contains(picture.Warnings, w => w.StartsWith("U1: ", StringComparison.Ordinal));
+    }
+
+    /// <summary>A layout with wires and no conductor artwork — what Update Layout from Schematic leaves for a wBond — is its
+    /// wires and nothing else in a 3D view: no substrate or ground plane nobody drew, sized to the wires' box.</summary>
+    [Fact]
+    public void ALayoutOfWiresAlone_PlacesOnlyItsWires()
+    {
+        string ws = CopyExample(withWBond: true);
+        string cell = Path.Combine(ws, "Bond wire");
+        string clay = Path.Combine(cell, "layout", "Bond wire.clay");
+        var view = LayoutPersistence.LoadFromFile(clay);
+        view.Shapes.Clear();
+        view.Instances.Clear();
+        LayoutPersistence.SaveToFile(clay, view);
+        string c3d = Path.Combine(cell, "3d", "Bond wire.c3d");
+        string cws = Path.Combine(ws, ".cws");
+        var doc = C3dHierarchy.NewFromLayout(cell, c3d, cws).Document!;
+
+        var picture = new C3dElaborator().Elaborate(doc, c3d, cws, new C3dElaborationOptions { PadsOptional = true });
+
+        Assert.Empty(picture.Unresolved);
+        Assert.Contains(picture.Solids, s => s.Name.StartsWith("U1/wire/", StringComparison.Ordinal));
+        Assert.All(picture.Solids, s => Assert.StartsWith("U1/wire/", s.Name, StringComparison.Ordinal));
+        Assert.Empty(picture.Sheets);
+    }
+
+    /// <summary>A wire whose shape cannot be built leaves the layout's artwork drawn in the 3D view with a warning naming it;
+    /// with no artwork either, the instance's label says invalid wBond geometry, never "not found" for a cell that is there.</summary>
+    [Fact]
+    public void AnUnbuildableWire_IsNamed_NotReportedAsAMissingCell()
+    {
+        string ws = CopyExample(withWBond: true);
+        string cell = Path.Combine(ws, "Bond wire");
+        string wbondPath = Path.Combine(cell, "layout", "Bond wire.wBond");
+        var design = WBondIo.ReadFile(wbondPath);
+        var wire = design.AllWires().Single();
+        var foot = wire.Points[0];
+        for (int i = 0; i < wire.Points.Count; i++) wire.Points[i] = foot with { Z = foot.Z + i * 10_000 };   // straight up
+        WBondIo.WriteFile(wbondPath, design);
+        string c3d = Path.Combine(cell, "3d", "Bond wire.c3d");
+        string cws = Path.Combine(ws, ".cws");
+        var doc = C3dHierarchy.NewFromLayout(cell, c3d, cws).Document!;
+        var options = new C3dElaborationOptions { PadsOptional = true };
+
+        var withArtwork = new C3dElaborator().Elaborate(doc, c3d, cws, options);
+        Assert.Empty(withArtwork.Unresolved);
+        Assert.DoesNotContain(withArtwork.Solids, s => s.Name.StartsWith("U1/wire/", StringComparison.Ordinal));
+        Assert.Contains(withArtwork.Warnings, w => w.Contains("invalid wBond geometry", StringComparison.Ordinal));
+
+        string clay = Path.Combine(cell, "layout", "Bond wire.clay");
+        var view = LayoutPersistence.LoadFromFile(clay);
+        view.Shapes.Clear();
+        view.Instances.Clear();
+        LayoutPersistence.SaveToFile(clay, view);
+        var wiresAlone = new C3dElaborator().Elaborate(doc, c3d, cws, options);
+        Assert.Equal("invalid wBond geometry", wiresAlone.UnresolvedWhy["U1"]);
+    }
+
+    /// <summary>Wire edits in the layout editor are saved to the .wBond alone. A re-elaboration with the same elaborator — what
+    /// the 3D editor does when the file changes — draws the wire where it now is, not where the cache last had it.</summary>
+    [Fact]
+    public void ResavingOnlyTheWBond_RedrawsThePlacedLayoutsWires()
+    {
+        string ws = CopyExample(withWBond: true);
+        string cell = Path.Combine(ws, "Bond wire");
+        string wbondPath = Path.Combine(cell, "layout", "Bond wire.wBond");
+        string c3d = Path.Combine(cell, "3d", "Bond wire.c3d");
+        string cws = Path.Combine(ws, ".cws");
+        var doc = C3dHierarchy.NewFromLayout(cell, c3d, cws).Document!;
+        var elaborator = new C3dElaborator();
+        var options = new C3dElaborationOptions { PadsOptional = true };
+        double StartX(C3dElaboration e) =>
+            Assert.IsType<Em3dSweep>(e.Solids.First(s => s.Name.StartsWith("U1/wire/", StringComparison.Ordinal)).Primitive).Path[0].X;
+
+        double before = StartX(elaborator.Elaborate(doc, c3d, cws, options));
+        var design = WBondIo.ReadFile(wbondPath);
+        foreach (var w in design.AllWires())
+            for (int i = 0; i < w.Points.Count; i++)
+                w.Points[i] = w.Points[i] with { X = w.Points[i].X + 100_000 };        // 100 µm
+        WBondIo.WriteFile(wbondPath, design);
+        File.SetLastWriteTimeUtc(wbondPath, DateTime.UtcNow.AddSeconds(5));
+
+        Assert.Equal(before + 100e-6, StartX(elaborator.Elaborate(doc, c3d, cws, options)), 9);
+    }
+
     /// <summary>A refused wire has no solid to pick, so Re-Seat takes the wire selected in the tree: one undo entry, and
     /// the flag goes.</summary>
     [Fact]

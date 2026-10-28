@@ -3591,6 +3591,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         UndoCommand.NotifyCanExecuteChanged();
         RedoCommand.NotifyCanExecuteChanged();
+        // …and made the layout dirty or clean. Save's enabled state is otherwise re-asked only on a focus change, a
+        // canvas interaction or a completed save, and none happens while the user edits in a floating Wire Profile —
+        // whose ⌘S reaches only the menu item, so after the first save it stayed disabled over every later wire edit.
+        SaveAllDocumentsCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(UndoDescription));
         OnPropertyChanged(nameof(RedoDescription));
         RefreshKeepAffordances();
@@ -16725,6 +16729,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     // left alone and Save keeps targeting the last active document. Only the Close
                     // item changes: a tool panel belongs to the workspace, so it reads
                     // "Close Workspace".
+                    //
+                    // Except a wire panel: it EDITS one layout's wires, so that layout is what ⌘Z and ⌘S
+                    // in it mean. "The last active document" was a torn-off .c3d the user had been in
+                    // before, which took the undo and the save of a wire edit made here.
+                    if (LayoutEditedByWirePanels(window) is { } edited) _focusedWindowDocument = edited;
                     _focusedWindowIsToolOnly = true;
                     RaiseFileMenuEnablementChanged();
                 }
@@ -16837,6 +16846,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     internal static bool WindowFloatsATool(Window window) =>
         window.DataContext is IDockable d && Dock.CircuitRfDockFactory.ContainsTool(d);
+
+    /// <summary>The open layout whose wires a floating window's Wire Profile or Array Inductance panel is showing, or null.</summary>
+    private LayoutDocument? LayoutEditedByWirePanels(Window window)
+    {
+        if (window.DataContext is not IDockable root) return null;
+        var editors = new List<WBond.WBondViewModel>();
+        void Walk(IDockable d)
+        {
+            if (d is Dock.WBondToolBase { Editor: { } e }) editors.Add(e);
+            if (d is IDock { VisibleDockables: { } children })
+                foreach (var c in children) if (c is not null) Walk(c);
+        }
+        Walk(root);
+        return editors.Count == 0 ? null
+            : _scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>())
+                             .FirstOrDefault(d => d.ActiveViewModel.WireEditor is { } w && editors.Contains(w));
+    }
 
     internal static IDockable? FindAnyDocumentInWindow(Window window)
     {

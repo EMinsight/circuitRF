@@ -1284,8 +1284,10 @@ public class CircuitRfDockFactory : Factory
     /// R-dock-14: a floating <b>tool</b> window belongs to the workspace window — it stays above its
     /// owner and raises with it on every platform, with no <c>Activated</c> hook to maintain and no
     /// risk of the raise stealing focus (R-dock-15). A torn-off <b>document</b> window is a peer and
-    /// is explicitly left unowned. <c>Topmost</c> would be the wrong tool: it would float the panel
-    /// above every other application, permanently.
+    /// is explicitly left unowned. <c>Topmost</c> on its own would be the wrong tool: it would float the
+    /// panel above every other application, permanently — which is why <see cref="FloatingPanelsOnTop"/>
+    /// sets it only while a window of the panel's own workspace is active. The owner relationship
+    /// below did not keep a panel above anything on macOS; that class is what does.
     ///
     /// <para><b>Which owner mode actually does that here — decompiled, not assumed.</b>
     /// <c>HostWindow.ResolveOwnerWindow</c> handles <see cref="DockWindowOwnerMode.RootWindow"/> by

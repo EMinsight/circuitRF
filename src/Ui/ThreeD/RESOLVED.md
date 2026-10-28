@@ -373,3 +373,36 @@ vanish, including the wire the mistake was on. The owner's rule is now a best at
   edit itself caused measured nothing and the dimension never appeared.
 - **Fix:** anything `OnSceneAdopted` reads for the edit being pushed is set BEFORE `Push`. Gate:
   `PhoneSarEditorTests.PlaceAgainstPhantom_IsOneEntry_AndDrawsTheSeparation`.
+
+## A layout instance with wires and nowhere to land them — "U1 not found" (2026-10-27)
+
+A wBond pushed from a schematic by Update Layout from Schematic lands its wires where no pad is drawn (often on a
+layout with no conductor artwork at all). New 3D View from Layout places that layout as `U1`, and the elaborator
+refused the instance on the wire build. Every refusal of a placed cell is drawn as the same tiny "not found" box,
+so the user saw a missing cell rather than the reason. `Em3dLayoutSolidsOptions.PadsOptional` already existed for
+exactly this case, but only the `.cem` preview passed it. `C3dElaborationOptions.PadsOptional` now carries it to
+every placed layout. The 3D editor's picture sets it, and what a solve would refuse on
+(`Em3dLayoutSolidsResult.PadRefusal`) is a warning on the instance. Runs leave it off and still refuse.
+
+**And a layout with no conductor artwork contributes its wires and nothing else.** A placed layout's laterally
+unbounded slabs and its undrawn ground plane fall back to the bounding box of whatever else was built; with wires
+alone that drew a substrate and a bottom-copper plane nobody placed (`U1/<dielectric>`, `U1/Bottom copper`), which
+got in the way of objects drawn in the `.c3d` around them. `Em3dLayoutSolids` now builds none of them when nothing is
+drawn on a conductor layer (a board outline still bounds them, since that IS drawn), matching the `.cem` planar
+preview's rule.
+
+**The placed layout's cache key had only the `.clay`'s stamp.** Wire edits in the layout editor are saved to the
+paired `.wBond`, so the file watcher's re-elaboration got a cache hit and kept drawing the old wires. The key now
+includes the `.wBond`'s stamp, and a hit is also checked against the stamps of every file the flatten read (its
+sub-cells), which had the same flaw. The 3D view follows a wire edit when the layout is SAVED. Following it as
+soon as a drag ends, without a save, would mean handing the open layout editor's in-memory design to the
+elaborator. That is not done.
+
+**A wire that cannot be built no longer makes its layout "not found".** One wire whose shape the build refuses (a
+turn it cannot sweep, a wire with no plan direction) refused the whole wire build, the whole placed layout with it,
+and the 3D view labelled every refused instance `'<cell>' not found`, so the user went looking for a file that was
+there. In a picture (`PadsOptional`) the wire is now left out with a warning that says "invalid wBond geometry" and
+why, and the rest of the layout and its other wires are drawn. A `.wBond` that cannot be built at all leaves the
+artwork drawn without wires. A run is unchanged and still refuses. `C3dElaboration.UnresolvedWhy` carries the reason
+for each instance that is still not drawn: "invalid wBond geometry" when the layout has nothing else to draw, and
+"cannot be drawn in 3D" for any other refusal. The label says "not found" only when the cell really did not resolve.

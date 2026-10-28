@@ -75,7 +75,7 @@ public sealed partial class LayoutEditorViewModel
     /// <summary>The first drop: build the design, move it under the cursor, attach it.</summary>
     private bool AttachDroppedWBond(long xNm, long yNm)
     {
-        var design = WBondEmbedding.DefaultDesign(WBondDefaults.FootZNm);
+        var design = WBondEmbedding.DefaultDesign(WBondDefaults.NewWire);
         TranslateInPlace(design, xNm, yNm);
 
         // Empty rather than guessed when the layout has never been saved. WireDesignPath is what
@@ -116,8 +116,8 @@ public sealed partial class LayoutEditorViewModel
         int index = editor.AddWire(
             new Point3(start.X + xNm, start.Y + yNm, start.Z),
             new Point3(end.X + xNm, end.Y + yNm, end.Z),
-            WBondUnits.ToNm(WBondEmbedding.DefaultWire.DiameterMils, WBondUnit.Mil),
-            WireMaterials.Default.Name,
+            WBondDefaults.DiameterNm,
+            WBondDefaults.Material,
             arrayName: editor.NextArrayName(),
             points: WBondDefaults.Points,
             loopHeightNm: WBondUnits.ToNm(WBondEmbedding.DefaultWire.LoopHeightMils, WBondUnit.Mil));

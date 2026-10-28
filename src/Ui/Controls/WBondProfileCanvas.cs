@@ -290,6 +290,18 @@ public sealed class WBondProfileCanvas : Control
             : -1;
 
         _contextMenuInsertion = hit.Found ? ResolveInsertion(hit, p) : null;
+        _contextMenuHit = hit;
+    }
+
+    /// <summary>The vertex or segment a right-click landed on, for Delete Vertex / Delete Segment.</summary>
+    private WireHitTest.Hit _contextMenuHit = WireHitTest.Hit.None;
+
+    /// <summary>Reads and CLEARS the recorded hit, alongside the array.</summary>
+    public WireHitTest.Hit ConsumeContextMenuHit()
+    {
+        var h = _contextMenuHit;
+        _contextMenuHit = WireHitTest.Hit.None;
+        return h;
     }
 
     /// <summary>
@@ -1073,6 +1085,16 @@ public sealed class WBondProfileCanvas : Control
         }
 
         if (e.Key == Key.F) { ZoomToFit(); e.Handled = true; return; }
+
+        // Delete removes the selected vertices and segments from every wire of their group with the same point count,
+        // as one undo entry (WBondViewModel.DeleteProfileSelection) — the group rule every edit in this view follows.
+        if (e.Key is Key.Delete or Key.Back && e.KeyModifiers == KeyModifiers.None)
+        {
+            if (_viewModel.Selection.IsEmpty) return;
+            if (_viewModel.DeleteProfileSelection() > 0) InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
 
         // Ctrl/Cmd+A selects every wire — the same key that does it on the layout canvas beside this
         // one (owner, 2026-08-19). There is no layout geometry in this view, so here the gesture is

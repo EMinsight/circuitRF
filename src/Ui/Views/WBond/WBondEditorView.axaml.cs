@@ -178,7 +178,11 @@ public partial class WBondEditorView : UserControl
                 case Key.Delete:
                 case Key.Back:
                     if (_bound.Editor.Selection.IsEmpty) return;
-                    if (_bound.Editor.DeleteSelection() > 0) RepaintBoth();
+                    // In the profile view a delete is a group edit, as every edit there is (DeleteProfileSelection).
+                    int deleted = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is WBondProfileCanvas
+                        ? _bound.Editor.DeleteProfileSelection()
+                        : _bound.Editor.DeleteSelection();
+                    if (deleted > 0) RepaintBoth();
                     e.Handled = true;
                     return;
 

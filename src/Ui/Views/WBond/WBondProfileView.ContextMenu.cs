@@ -29,12 +29,16 @@ public partial class WBondProfileView
     /// </summary>
     private (int Wire, int Segment, double T)? _menuInsertion;
 
+    /// <summary>The vertex or segment the right-click landed on — what Delete Vertex and Delete Segment act on.</summary>
+    private WireHitTest.Hit _menuHit = WireHitTest.Hit.None;
+
     private async void OnProfileContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         if (sender is not ContextMenu menu || Editor is not { } editor) { e.Cancel = true; return; }
 
         _menuArray = ProfileCanvas.ConsumeContextMenuTargetArray();
         _menuInsertion = ProfileCanvas.ConsumeContextMenuInsertion();
+        _menuHit = ProfileCanvas.ConsumeContextMenuHit();
 
         // Right-clicking empty space offers nothing rather than a menu of disabled items — there is
         // no group to act on, and an all-grey menu reads as the feature being broken.
@@ -93,6 +97,7 @@ public partial class WBondProfileView
         // nothing about the shape and only gives this view a handle to drag.
         items.Add(new Separator());
         items.Add(AddVertexItem(editor));
+        items.AddRange(DeleteVertexItems(editor));
 
         items.Add(new Separator());
         items.Add(Item($"Delete Group \"{groupName}\"",
@@ -120,6 +125,35 @@ public partial class WBondProfileView
             if (editor.AddWirePoint(insert.Wire, insert.Segment, insert.T)) Repaint();
         };
         return item;
+    }
+
+    /// <summary>
+    /// Delete Vertex and Delete Segment, on what the right-click landed on — the layout view's two items, with the
+    /// profile view's group rule: the same point comes off every wire of the group with the same point count
+    /// (<see cref="WBondViewModel.DeleteProfileSelection"/>). Each is disabled with its reason when it does not apply.
+    /// </summary>
+    private IEnumerable<MenuItem> DeleteVertexItems(WBondViewModel editor)
+    {
+        var hit = _menuHit;
+        string? vertexWhy =
+            !hit.Found      ? "Right-click a wire vertex."
+            : hit.IsSegment ? "That is a segment, not a vertex."
+            : editor.WhyCannotDeletePoint(hit.Wire, hit.Point);
+        string? segmentWhy =
+            !hit.Found       ? "Right-click a wire segment."
+            : !hit.IsSegment ? "That is a vertex, not a segment."
+            : editor.WhyCannotDeleteSegment(hit.Wire, hit.Point);
+
+        MenuItem Delete(string header, string? why, Func<bool> action)
+        {
+            var mi = new MenuItem { Header = header, IsEnabled = why is null };
+            if (why is not null) ToolTip.SetTip(mi, why);
+            else mi.Click += (_, _) => { if (action()) Repaint(); };
+            return mi;
+        }
+
+        yield return Delete("Delete Vertex",  vertexWhy,  () => editor.DeleteProfilePoint(hit.Wire, hit.Point));
+        yield return Delete("Delete Segment", segmentWhy, () => editor.DeleteProfileSegment(hit.Wire, hit.Point));
     }
 
     /// <summary>A fresh <see cref="MenuItem"/> per opening — never a reused instance with a re-subscribed

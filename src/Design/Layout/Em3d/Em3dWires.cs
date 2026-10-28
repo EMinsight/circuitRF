@@ -147,8 +147,8 @@ internal sealed class Em3dWireBuild
     public List<string> Warnings { get; } = [];
     public string? Refusal { get; set; }
 
-    /// <summary>Built with <c>padsOptional</c>: the first wire end over no conductor — the refusal a solve would have
-    /// stopped on. Null when every end found a pad.</summary>
+    /// <summary>Built with <c>padsOptional</c>: the first wire end over no conductor, or the first wire whose shape could
+    /// not be built — the refusal a solve would have stopped on. Null when every wire was built on a pad.</summary>
     public string? PadRefusal { get; set; }
 
     /// <summary>Wire metals stating σ₂₀ but no α₂₀ (brief-em3d-5's temperature rows).</summary>
@@ -200,7 +200,8 @@ public static class Em3dWires
 
     /// <param name="padsOptional">True for a picture, never for a solve: an end over no conductor lands on an UNDRAWN
     /// pad at the height the <c>.wBond</c> states (its axis less half a diameter, kernel W's convention) instead of
-    /// refusing, and the refusal is kept in <see cref="Em3dWireBuild.PadRefusal"/>.</param>
+    /// refusing, a wire whose shape cannot be built is left out with a warning, and the first refusal is kept in
+    /// <see cref="Em3dWireBuild.PadRefusal"/>.</param>
     internal static Em3dWireBuild Build(Em3dWireSource source, IReadOnlyList<Em3dWirePad> pads, double zOriginM,
                                         Technology tech, double tempC, Func<Em3dMaterial, bool, string> addMaterial,
                                         bool padsOptional = false)
@@ -271,7 +272,15 @@ public static class Em3dWires
                                                      process.FootLength.Nm, process, wire.LoopHeightNm * 1e-9),
                                    startPad!, endPad!);
                 build.Warnings.AddRange(made.Warnings);
-                if (made.Refusal is { } why) { build.Refusal = why; return build; }
+                if (made.Refusal is { } why)
+                {
+                    if (!padsOptional) { build.Refusal = why; return build; }
+                    // A picture draws the wires that can be built and names the one that cannot: one bad wire made
+                    // the whole layout instance a "not found" box in its 3D view.
+                    build.Warnings.Add($"Not drawn, invalid wBond geometry: {why}");
+                    build.PadRefusal ??= why;
+                    continue;
+                }
                 if (made.MovedEnds > 0) { moved.Count += made.MovedEnds; moved.Max = Math.Max(moved.Max, made.MaxMoveM); }
 
                 var (sweep, balls, report) = (made.Sweep!, made.Balls, made.Report!);

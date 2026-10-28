@@ -565,9 +565,10 @@ public partial class ParameterEditorViewModel
                 LoopShape.CreateSeedWire(
                     new Point3(start.X + offset, start.Y, start.Z),
                     new Point3(end.X + offset, end.Y, end.Z),
-                    WBondUnits.ToNm(WBondEmbedding.DefaultWire.DiameterMils, WBondUnit.Mil),
-                    WireMaterials.Default.Name,
-                    WBondUnits.ToNm(WBondEmbedding.DefaultWire.LoopHeightMils, WBondUnit.Mil)),
+                    WBondDefaults.DiameterNm,
+                    WBondDefaults.Material,
+                    WBondUnits.ToNm(WBondEmbedding.DefaultWire.LoopHeightMils, WBondUnit.Mil),
+                    WBondDefaults.Points),
             },
         });
 

@@ -242,7 +242,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         {
             ct.ThrowIfCancellationRequested();
             Interlocked.Increment(ref _elaborations_);
-            var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell });
+            var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell, PadsOptional = true });
             _elaborations[generation] = e;
             _frameKeys[generation] = inputs.Path;
             // brief-em3d-84 — the origin rule `render --field` places its slice by (FieldPlotResolver.SceneOrigin).

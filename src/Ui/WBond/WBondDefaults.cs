@@ -68,6 +68,13 @@ public static class WBondDefaults
 
     public static int Points => Clamp(AppPreferencesIo.Load().WBondWirePoints);
 
+    /// <summary>
+    /// All four creation values together — what a NEW wBond's first wire is made with, wherever it is created
+    /// (a schematic palette drop, a layout drop, the blank wBond editor). Handed below the UI firewall through
+    /// <c>WBondPlacement.NewWireSettings</c>.
+    /// </summary>
+    public static WBondEmbedding.NewWireSettings NewWire => new(FootZNm, DiameterNm, Material, Points);
+
     public static long DiameterNm
     {
         get

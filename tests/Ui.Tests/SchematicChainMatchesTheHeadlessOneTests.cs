@@ -67,13 +67,13 @@ public class SchematicChainMatchesTheHeadlessOneTests
     /// loading <c>CircuitRF.Ui</c> at all is enough.</para>
     ///
     /// <para>The failure this guards is silent by construction. Unset, both hooks fall back to
-    /// something reasonable — the shipped 4 mil foot z, and no label cache — so a lost installer costs
+    /// something reasonable — the shipped wire, and no label cache — so a lost installer costs
     /// a user their setting and their cache with nothing said anywhere.</para>
     /// </summary>
     [Fact]
     public void TheHooksSrcUiInstallsIntoTheMovedCode_AreActuallyInstalled()
     {
-        Assert.Equal(WBondDefaults.FootZNm, WBondPlacement.NewWireFootZNm());
+        Assert.Equal(WBondDefaults.NewWire, WBondPlacement.NewWireSettings());
         Assert.Equal(AppDataRoot.SubDir("cache"), VerilogAModelIntrospection.CacheDirectory());
     }
 }

@@ -705,7 +705,8 @@ public sealed partial class C3dEditorViewModel
             var b = _lastBounds.TryGetValue(name, out var last) ? last
                 : (o.X * per, o.Y * per, o.Z * per, o.X * per + side, o.Y * per + side, o.Z * per + side);
             Box(overlay.Missing, b);
-            overlay.Labels.Add((new Point3(b.Item1, b.Item2, b.Item6), $"{name}: '{cellRef}' not found"));
+            overlay.Labels.Add((new Point3(b.Item1, b.Item2, b.Item6),
+                                e.UnresolvedWhy.TryGetValue(path, out var why) ? $"{name}: {why}" : $"{name}: '{cellRef}' not found"));
         }
         foreach (var inst in Document.Instances)
         {

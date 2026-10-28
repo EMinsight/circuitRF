@@ -2179,6 +2179,27 @@ public class WBondRound6Tests
     }
 
     /// <summary>
+    /// A new design takes all four Settings ▸ Wirebonds values, not just the z — a wBond placed from the
+    /// schematic palette kept the shipped 1 mil diameter whatever the setting said.
+    /// </summary>
+    [Fact]
+    public void ANewDesign_TakesEveryNewWireSetting()
+    {
+        var settings = new WBondEmbedding.NewWireSettings(
+            WBondUnits.ToNm(6.0, WBondUnit.Mil), WBondUnits.ToNm(0.7, WBondUnit.Mil), "Aluminum", 11);
+
+        var wire = WBondEmbedding.DefaultDesign(settings).AllWires().Single();
+
+        Assert.Equal(settings.FootZNm, wire.Points[0].Z);
+        Assert.Equal(settings.DiameterNm, wire.DiameterNm);
+        Assert.Equal("Aluminum", wire.Material);
+        Assert.Equal(11, wire.Points.Count);
+        // …and the shipped settings are the shipped design, byte for byte, so a default payload is unchanged.
+        Assert.Equal(WBondEmbedding.DefaultPayload,
+                     WBondEmbedding.Encode(WBondEmbedding.DefaultDesign(WBondEmbedding.NewWireSettings.Shipped)));
+    }
+
+    /// <summary>
     /// <b>A wire DRAWN in the layout view lands on the setting</b> — the report this started from
     /// (drawn feet were at z = 0 while a new component's were at 4 mil). The layout view has no z axis
     /// for the user to have meant anything by, so the setting is the only answer available.
@@ -2209,22 +2230,29 @@ public class WBondRound6Tests
     {
         // A new component placed on a schematic, a wBond dropped into a layout, an array added from
         // the parameter dialog, and the two overlays whose layout-view draw tool needs a z.
-        foreach (var (file, parts) in new (string, string[])[]
+        foreach (var (file, parts, reads) in new (string, string[], string)[]
         {
             // WBondPlacement moved below the UI firewall with the schematic document model
-            // (brief-automation-2), where AppPreferencesIo is unreachable. It takes the z from
-            // WBondPlacement.NewWireFootZNm instead, and THIS is the file that points that hook at
-            // the setting — so this is still the schematic-placement path reading it, one indirection
-            // further along. If this installer is ever deleted, a placed wBond silently reverts to
-            // the shipped 4 mil, which is exactly the drift this test exists to catch.
-            ("schematic placement", ["src", "Ui", "WBond", "UiWBondDefaultsInstaller.cs"]),
-            ("palette drop",        ["src", "Ui", "Layout", "LayoutEditorViewModel.WBondDrop.cs"]),
-            ("array editor",        ["src", "Ui", "ViewModels", "ParameterEditorViewModel.WBond.cs"]),
-            ("layout host overlay", ["src", "Ui", "Layout", "LayoutEditorViewModel.Wires.cs"]),
-            ("wBond editor overlay",["src", "Ui", "WBond", "WBondDocument.cs"]),
+            // (brief-automation-2), where AppPreferencesIo is unreachable. It takes the new wire's
+            // values from WBondPlacement.NewWireSettings instead, and THIS is the file that points that
+            // hook at the settings — so this is still the schematic-placement path reading them, one
+            // indirection further along. If this installer is ever deleted, a placed wBond silently
+            // reverts to the shipped wire, which is exactly the drift this test exists to catch.
+            ("schematic placement", ["src", "Ui", "WBond", "UiWBondDefaultsInstaller.cs"], "WBondDefaults.NewWire"),
+            // The schematic PALETTE drop builds from the registry's defaults, whose payload is the
+            // shipped wire computed once per process; it reached none of the settings until it was
+            // pointed at the placement's own new design.
+            ("schematic palette",   ["src", "Ui", "ViewModels", "SchematicViewModel.cs"], "WBondPlacement.NewDefaultDesign()"),
+            ("blank wBond editor",  ["src", "Ui", "WBond", "WBondViewModel.cs"],          "WBondPlacement.NewDefaultDesign()"),
+            ("palette drop",        ["src", "Ui", "Layout", "LayoutEditorViewModel.WBondDrop.cs"], "WBondDefaults.NewWire"),
+            ("palette drop array",  ["src", "Ui", "Layout", "LayoutEditorViewModel.WBondDrop.cs"], "WBondDefaults.DiameterNm"),
+            ("array editor",        ["src", "Ui", "ViewModels", "ParameterEditorViewModel.WBond.cs"], "WBondDefaults.FootZNm"),
+            ("array editor",        ["src", "Ui", "ViewModels", "ParameterEditorViewModel.WBond.cs"], "WBondDefaults.DiameterNm"),
+            ("layout host overlay", ["src", "Ui", "Layout", "LayoutEditorViewModel.Wires.cs"], "WBondDefaults.FootZNm"),
+            ("wBond editor overlay",["src", "Ui", "WBond", "WBondDocument.cs"], "WBondDefaults.FootZNm"),
         })
         {
-            Assert.Contains("WBondDefaults.FootZNm", Read(parts), StringComparison.Ordinal);
+            Assert.True(Read(parts).Contains(reads, StringComparison.Ordinal), $"{file} does not read {reads}");
         }
 
         // The PROFILE view deliberately does not: there the user clicks a z, which is the whole point
