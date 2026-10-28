@@ -4397,6 +4397,14 @@ internal static class CliDiagnostics
         "review.refused", DiagnosticSeverity.Error,
         "review: '{path}' was not reviewed: {why}", ("path", path), ("why", why));
 
+    public static Diagnostic ReviewOutputNotPdf(string path) => Diagnostic.Create(
+        "review.args.output-not-pdf", DiagnosticSeverity.Error,
+        "review: the report is a PDF — give -o a path ending in .pdf, got '{path}'.", ("path", path));
+
+    public static Diagnostic ReviewOutputFailed(string path, string why) => Diagnostic.Create(
+        "review.output.write-failed", DiagnosticSeverity.Error,
+        "review: '{path}' was not written: {why}", ("path", path), ("why", why));
+
     public static Diagnostic ReviewCancelled(int done, int asked) => Diagnostic.Create(
         "review.cancelled", DiagnosticSeverity.Warning,
         "review: cancelled after {done} of {asked} checks; the findings are those of the checks that finished.",

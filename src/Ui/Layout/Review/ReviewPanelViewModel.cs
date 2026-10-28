@@ -310,6 +310,7 @@ public sealed partial class ReviewPanelViewModel : ObservableObject
         OnPropertyChanged(nameof(ResultTargetText));
         OnPropertyChanged(nameof(HasResultTargetText));
         RefreshCommands();
+        CountExportPages();
     }
 
     private void ApplyRows()
@@ -486,6 +487,41 @@ public sealed partial class ReviewPanelViewModel : ObservableObject
     {
         RunCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanExport));
+    }
+
+    // ── export (brief-review-7) ──────────────────────────────────────────────────────────────
+
+    /// <summary>Disabled with no results or while running; allowed on stale ones, which the PDF says are.</summary>
+    public bool CanExport => HasResults && !IsRunning;
+
+    /// <summary>The file name the save picker suggests.</summary>
+    public string SuggestedPdfName => Editor?.CurrentLayoutPath is { Length: > 0 } p
+        ? CircuitRF.Design.Layout.Em.TraceImpedanceAnalysis.CellTitle(p) + " review.pdf" : "review.pdf";
+
+    /// <summary>Writes the held result to <paramref name="pdfPath"/> — the view asks where.</summary>
+    public Task<bool> ExportPdfAsync(string pdfPath) =>
+        Editor is { } vm ? vm.ExportReviewPdfAsync(pdfPath) : Task.FromResult(false);
+
+    /// <summary>The report's length, laid out from the result rather than written (R-rev7-4) — null while it is
+    /// being counted or with no results.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ExportText))]
+    private int? _exportPageCount;
+
+    /// <summary>"Export PDF (14 pages)…".</summary>
+    public string ExportText => ExportPageCount is { } n ? $"Export PDF ({n:N0} page{(n == 1 ? "" : "s")})…" : "Export PDF…";
+
+    private int _countVersion;
+
+    /// <summary>Counts the report's pages in the background whenever the result changes.</summary>
+    private async void CountExportPages()
+    {
+        int version = ++_countVersion;
+        ExportPageCount = null;
+        if (Result is not { } result) return;
+        int pages = await Task.Run(() => CircuitRF.Render.LayoutReviewReportDocument.PageCount(result));
+        if (version == _countVersion) ExportPageCount = pages;
     }
 }
 

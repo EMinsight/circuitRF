@@ -95,6 +95,24 @@ public sealed record LayoutReviewResult(
     /// <summary>What was reviewed: a board or a die — which checks the result's rows are.</summary>
     public ReviewTarget Target { get; init; } = ReviewTarget.Pcb;
 
+    /// <summary>The settings the run used — which checks, and every threshold (brief-review-7 R-rev7-1) — or null
+    /// for a result no run made.</summary>
+    public ReviewSettings? Settings { get; init; }
+
+    /// <summary>The <c>.clay</c> reviewed, or null when it has no file yet.</summary>
+    public string? SourcePath { get; init; }
+
+    /// <summary>The layout was edited after the run — set by the editor on the result it exports, so a stale
+    /// report says so on its first page.</summary>
+    public bool Stale { get; init; }
+
+    /// <summary>When the run was made — the report's date.</summary>
+    public DateTime CreatedUtc { get; init; }
+
+    /// <summary>The copper and the board outline, for the report's maps (brief-review-7 R-rev7-2), built on
+    /// request; null for a result no run made.</summary>
+    public ReviewArtwork? Artwork { get; init; }
+
     /// <summary>Why nothing was reviewed — no technology — or null.</summary>
     public string? Refusal { get; init; }
 

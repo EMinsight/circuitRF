@@ -196,6 +196,10 @@ public static class LayoutReview
             DbuPerMicron = source.View.DbuPerMicron,
             Impedance = ctx.Impedance,
             Target = target,
+            Settings = settings.Clone(),
+            SourcePath = source.Path,
+            CreatedUtc = DateTime.UtcNow,
+            Artwork = ReviewArtwork.From(ctx),
         };
     }
 }
@@ -257,6 +261,9 @@ internal sealed class ReviewContext
         _eval ??= new DrcRegionEval(Regions, Tech.Layers.Select(l => l.Key).ToHashSet(), Partition);
 
     public ReviewBoard Board => _board ??= ReviewBoard.Build(Source.Shapes, Tech, Layers, Unit, DbuPerMicron);
+
+    /// <summary>The board, when a check has built it, else null.</summary>
+    public ReviewBoard? BoardBuilt => _board;
 
     /// <summary>The pads, vias and ground the four pad checks share (brief-review-3).</summary>
     public ReviewPads Pads => _pads ??= ReviewPads.Build(this);

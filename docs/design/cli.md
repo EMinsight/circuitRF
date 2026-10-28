@@ -4310,7 +4310,7 @@ stdout: per check its count (accepted separately) and its findings grouped by la
 carries every finding (`result.review`), and `--list-checks` answers `result.reviewChecks` without running.
 The findings are the report, not diagnostics: every `review.` id is a refusal of the verb's own. Exit **0** when
 it ran, **1** on a refusal or with `--severity warning` while an unaccepted warning remains, **130** cancelled
-(the checks that finished are reported). Never 2. It writes nothing; brief-review-7 adds `-o`.
+(the checks that finished are reported). Never 2. It writes nothing but `-o`'s PDF (§32.9).
 
 ### 32.4 The protocol and the gate
 
@@ -4389,3 +4389,26 @@ eye and DRC does not: a die-edge metal check was built and removed because the f
   within 0.5 µm), ground pads on ground, and a clear approach on the pads' metal and above.
 
 Gates: `tests/Ui.Tests/Review/MmicReviewTests.cs`, `RfReviewChecksTests.cs`.
+
+### 32.9 The report (brief-review-7)
+
+`-o report.pdf` writes `LayoutReviewReportDocument.Pdf` (`src/Render/Renderers`) of the result the run printed —
+the call the Review panel's Export PDF makes on the result it holds, so the two cannot compose different documents.
+A path not ending in `.pdf` is refused before anything is read (`review.args.output-not-pdf`); a write failure is
+`review.output.write-failed`. A cancelled run still writes, its first page saying so, and exits 130.
+
+The PDF has one style and it is the summary: page 1, then per check with findings one map page — a panel per layer
+it found something on, up to `PanelsPerPage` (12) — and one findings page listing at most 20
+(`LayoutReviewReportDocument.Listed`), so its length is `1 + Σ (⌈layers / 12⌉ + 1)` whatever the finding counts, and
+`PageCount` lays it out without drawing a map. A page per layer was built first and made a 10-layer board's
+edge-copper (two findings on each layer) eleven pages and the whole review 39; panels make it 19. Copper is drawn at
+the page's resolution (a vertex within 0.2 pt of the last, or a ring under a third of a point, is skipped), which took
+that board's PDF from 198 MB to 26 MB. What the maps
+draw comes from the result too: `LayoutReviewResult.Artwork` (`ReviewArtwork`, `src/Design/Layout/Review`), built
+on request from the run's own unions where the run made them. The page furniture — header, footer, tables,
+markers, badges, scale bar — is `ReportFurniture`, shared with the Impedance report; the clustering is
+`MarkerSeats`, shared with the Impedance report's maps and the canvas.
+
+Gate: `tests/Ui.Tests/Review/ReviewReportTests.cs` — page counts on seeded results (two checks with findings, a
+clean one and a not-run one is 1 + 2 + 2; 500 findings in one check is still two pages, "… and 480 more"), page 1's
+TEXT read back from the PDF, and the verb as a process writing the in-process call's bytes but the PDF's dates.

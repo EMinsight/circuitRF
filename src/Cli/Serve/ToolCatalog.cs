@@ -1412,7 +1412,7 @@ internal static class ToolCatalog
           + "thresholds) applies unless an argument overrides it, and so do the findings accepted there. To accept "
           + "one headlessly, add it to the .clay's ReviewAcceptances with the finding's key (reference topic layout). "
           + "Exit 0 when it ran, whatever it found; 1 on a refusal, or with severity warning when an unaccepted "
-          + "warning remains. Writes nothing.",
+          + "warning remains. Writes nothing unless output is given.",
             null, null,
             [
                 new("", [ "review" ],
@@ -1438,6 +1438,9 @@ internal static class ToolCatalog
                             "What decides the exit code: warning (an unaccepted warning exits 1) or none (the default)."),
                         new("listChecks", "--list-checks", OptKind.Flag,
                             "List every check with its thresholds, defaults and the layout's saved values, and run nothing."),
+                        new("output", "-o", OptKind.Path,
+                            "Write the review as a PDF here (the one the Review panel exports): a summary page, then per "
+                          + "check with findings a map per layer and one page of findings. Must end in .pdf."),
                         Summary,
                     ],
                     ""),

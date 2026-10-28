@@ -143,6 +143,15 @@
                           IsChecked="{Binding Panel.ShowAccepted, Mode=TwoWay}"
                           ToolTip.Tip="List the accepted findings. Hidden, they are still counted on their check's row."/>
             </StackPanel>
+            <!-- brief-review-7: the review as a PDF, from the result held — no second run. -->
+            <Button Click="OnExportPdfClick" IsEnabled="{Binding Panel.CanExport}" IsVisible="{Binding Panel.HasResults}"
+                    Padding="10,3" FontSize="12" HorizontalAlignment="Left"
+                    ToolTip.Tip="Write this review as a PDF: a summary page, then per check with findings a map per layer and one page of findings">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <mi:MaterialIcon Kind="FilePdfBox" Width="14" Height="14"/>
+                    <TextBlock Text="{Binding Panel.ExportText}" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
             <StackPanel Spacing="2" IsVisible="{Binding Panel.IsRunning}">
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0" Text="{Binding Panel.RunCheckText}" FontSize="11" FontWeight="SemiBold"

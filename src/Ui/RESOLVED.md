@@ -41058,3 +41058,11 @@ run's sentences use, not `vm.DisplayUnit`, which a view-local unit can make diff
 (DocGen's own call, so the same bytes; DocGen has no per-symbol `--figure` id, and `--figures` would recapture
 every figure on each edited page), and `--place <code>` for `--clay`, which drops a part through the layout
 palette's own `CommitPaletteDrop`.
+
+## Export PDF in the Review panel (brief-review-7, 2026-10-28)
+
+The panel's **Export PDF (N pages)…** writes `LayoutReviewReportDocument.Pdf` of the result the editor holds
+(`LayoutEditorViewModel.ExportReviewPdfAsync`) — no second run — through `ReviewResultForExport`, which marks the
+result `Stale` when the layout was edited since, so the PDF says so on its first page. The page count is
+`LayoutReviewReportDocument.PageCount`, counted in the background whenever the result changes (an accept included),
+a version counter dropping a count that finished after a newer one started. One Messages line with a link to the file.

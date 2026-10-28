@@ -134,7 +134,7 @@ convention behind both.</p>
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
 | `recognize` | a `.clay`, a cell folder, or a workspace with `--cell` | Reads the board's copper as a circuit — ground, vias, ports, parts and lines as native components | **Nothing** — the report and the parts table to stdout; `-o circuit.cnl`, `--into new:<name>` for a schematic, `--parts-out parts.csv` |
 | `impedance` | a `.clay` or a cell folder | The same analysis the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis) runs | The per-trace report to stdout; `-o report.pdf` |
-| `review` | a `.clay`, a cell folder, or a workspace with `--cell` | The [Layout Review](layout-editor.html#layout-review)'s built-in checks | **Nothing** — the findings, grouped per check and layer, to stdout |
+| `review` | a `.clay`, a cell folder, or a workspace with `--cell` | The [Layout Review](layout-editor.html#layout-review)'s built-in checks | **Nothing** — the findings, grouped per check and layer, to stdout; `-o` writes the review as a PDF |
 | `convert` | any layout format | The same importer and exporter **File ▸ Import/Export** runs | The layout in the format you asked for |
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
@@ -1310,7 +1310,7 @@ A column that cannot answer one row is a warning.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf review &lt;layout&gt; [--cell &lt;name&gt;] [--checks id,id] [--skip id,id]
 <span class="prompt">  </span>[--set &lt;check&gt;.&lt;threshold&gt;=&lt;value&gt;]… [--defaults] [--ignore-accepted] [--as pcb|mmic] [--all]
-<span class="prompt">  </span>[--severity warning|none]
+<span class="prompt">  </span>[--severity warning|none] [-o report.pdf]
 <span class="prompt">$ </span>circuitrf review [&lt;layout&gt;] [--as pcb|mmic] --list-checks</code></pre>
 
 `review` runs the [Layout Review](layout-editor.html#layout-review): the built-in checks a person
@@ -1358,6 +1358,19 @@ was changed from its default. `--set` overrides one for this run; `--defaults` i
 | `--all` | List every finding. By default at most 20 per check per layer are listed, followed by *… and N more*. |
 | `--severity warning\|none` | What decides the exit code. Default `none`: findings are advice. `warning` makes an unaccepted finding exit 1. |
 | `--list-checks` | List the checks of this kind of review with their thresholds, their defaults and the layout's saved values, and run nothing. With no path it lists the defaults. |
+| `-o report.pdf` | Also write the review as a PDF &mdash; the report the Review panel's **Export PDF** writes. The path must end in `.pdf`. |
+
+**The PDF** is short whatever the board: a summary page, then for each check with findings one map page and
+one page of findings. The summary page names the layout, its technology and
+the date, and has one row per check: the thresholds it ran with (a threshold changed from its default is
+starred and says the default), its findings and accepted counts, and what it came to &mdash; *No findings*, the
+layers its findings are on, or *Not run* with the sentence that fixes it. The map page has a map of each layer the check found
+something on &mdash; the whole page for one layer, side by side for several &mdash; each drawing the board outline
+and that layer's copper, faded, in the technology's colour, with each finding outlined and numbered; findings too
+close to draw apart are one badge carrying their count. A `stacked-traces` map is of the upper layer, with the
+lower layer's copper outlined. A findings page lists the first 20 findings with where each is and its sentence, then
+*… and N more*, and after them the accepted findings with their reasons; `--all` or `--json` has every one. A
+cancelled run's PDF holds the checks that finished and says on its first page that the run was cancelled.
 
 stdout gives, per check, a line with its count &mdash; accepted findings counted separately &mdash; and the
 findings grouped by layer under it, each with where it is in the layout's own unit. Lengths and areas are said in
@@ -1385,7 +1398,7 @@ and `date`), then `staleAcceptances`. With `--list-checks` the result is `review
 
 **Exit codes:** **0** when it ran, whatever it found; **1** on a refusal, or with `--severity warning` when
 an unaccepted finding remains; **130** on a cancellation, reporting the checks that finished. `review`
-writes nothing.
+writes nothing but `-o`'s PDF.
 
 ## `smith` — a matching network, headless {#smith}
 

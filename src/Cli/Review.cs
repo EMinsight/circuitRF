@@ -6,6 +6,7 @@ using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Review;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Engine;
+using CircuitRF.Render;
 using RfCore.Export;
 
 namespace CircuitRF.Cli;
@@ -26,7 +27,8 @@ namespace CircuitRF.Cli;
 /// with its reason and does not count. There is no <c>--accept</c>, on <c>impedance</c>'s terms: a
 /// headless caller edits the <c>.clay</c>, whose key the file-format reference documents.</para>
 ///
-/// <para><b>Read-only, and findings are advice.</b> It writes nothing. Exit 0 when it ran, whatever it
+/// <para><b>Read-only, and findings are advice.</b> It writes nothing but <c>-o</c>'s PDF (brief-review-7),
+/// which <see cref="LayoutReviewReportDocument.Pdf"/> composes from the same result the panel exports. Exit 0 when it ran, whatever it
 /// found; 1 on a refusal, or with <c>--severity warning</c> when an unaccepted warning remains; 130 on
 /// cancellation. Never 2 — nothing here solves.</para>
 /// </summary>
@@ -48,6 +50,7 @@ internal static class Review
         public bool All;
         public bool WarningsFail;
         public ReviewTarget? Target;
+        public string? Output;
     }
 
     public static int Run(string[] args)
@@ -59,6 +62,9 @@ internal static class Review
         foreach (string id in (o.Checks ?? []).Concat(o.Skip))
             if (LayoutReview.FindCheck(id) is null)
                 return JsonRun.Fail(CliDiagnostics.ReviewUnknownCheck(id, KnownChecks()));
+
+        if (o.Output is { } output && !output.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            return JsonRun.Fail(CliDiagnostics.ReviewOutputNotPdf(output));
 
         if (o.Path is null)
         {
@@ -105,6 +111,24 @@ internal static class Review
         Console.Write(Text(result, clay!, o.All));
         JsonRun.Review = Project(result, clay!, settings);
 
+        // R-rev7-5: the report the Review panel's Export PDF writes, from this one result — a cancelled run's too,
+        // which says so on its first page. Nothing else is written.
+        if (o.Output is { } path)
+        {
+            byte[] pdf = LayoutReviewReportDocument.Pdf(result);
+            try
+            {
+                if (Path.GetDirectoryName(Path.GetFullPath(path)) is { Length: > 0 } dir) Directory.CreateDirectory(dir);
+                File.WriteAllBytes(path, pdf);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return JsonRun.Fail(CliDiagnostics.ReviewOutputFailed(path, ex.Message));
+            }
+            JsonRun.AddOutput("report", path);
+            Console.Error.WriteLine($"[circuitRF] Wrote {path}");
+        }
+
         if (result.Cancelled)
         {
             JsonRun.Report(CliDiagnostics.ReviewCancelled(
@@ -124,14 +148,16 @@ internal static class Review
         Console.Error.WriteLine(
             "Usage: circuitrf review <layout> [--cell <name>] [--checks id,id] [--skip id,id]\n" +
             "                        [--set <check>.<threshold>=<value>]... [--defaults] [--ignore-accepted]\n" +
-            "                        [--as pcb|mmic] [--all] [--severity warning|none]\n" +
+            "                        [--as pcb|mmic] [--all] [--severity warning|none] [-o report.pdf]\n" +
             "       circuitrf review [<layout>] [--as pcb|mmic] --list-checks\n" +
             "  <layout> is a .clay, a cell folder holding one, or a workspace with --cell. The review saved on\n" +
             "  the layout applies unless --defaults; each --set overrides it for this run, a length WITH its unit\n" +
             "  (0.3mm, 12mil). --as reviews the layout as a board or a die; the layout's saved choice applies\n" +
             "  otherwise, a board when it has none. Findings are advice: exit 0 unless --severity warning and one\n" +
             "  is unaccepted.\n" +
-            "  At most " + ListedPerLayer + " findings per check per layer are listed; --all lists every one.");
+            "  At most " + ListedPerLayer + " findings per check per layer are listed; --all lists every one.\n" +
+            "  -o writes the review as a PDF: a summary page, then per check with findings a map per layer and\n" +
+            "  one page of findings — the report the Review panel's Export PDF writes.");
         return 1;
     }
 
@@ -152,6 +178,7 @@ internal static class Review
                 case "--defaults": o.Defaults = true; continue;
                 case "--ignore-accepted": o.IgnoreAccepted = true; continue;
                 case "--all": o.All = true; continue;
+                case "-o" or "--output" when i + 1 < args.Length: o.Output = args[++i]; continue;
                 case "--as" when i + 1 < args.Length:
                     switch (args[++i].ToLowerInvariant())
                     {

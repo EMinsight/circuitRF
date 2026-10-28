@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using CircuitRF.Ui.Layout.Review;
 using CircuitRF.Ui.ViewModels.Dock;
@@ -50,6 +52,22 @@ public partial class ReviewToolView : UserControl
             tool.Panel.IsShown = true;
             tool.Panel.SelectRowsRequested += OnSelectRowsRequested;
         }
+    }
+
+    private async void OnExportPdfClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ReviewTool { Panel: { CanExport: true } panel }) return;
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+
+        var file = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export Layout Review",
+            SuggestedFileName = panel.SuggestedPdfName,
+            DefaultExtension = "pdf",
+            FileTypeChoices = [new FilePickerFileType("PDF report") { Patterns = ["*.pdf"] }],
+        });
+        if (file?.TryGetLocalPath() is not { } path) return;
+        await panel.ExportPdfAsync(path);
     }
 
     /// <summary>The list selects several rows so one reason can accept several findings; the panel is handed them all.</summary>

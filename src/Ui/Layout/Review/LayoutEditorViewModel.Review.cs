@@ -94,6 +94,33 @@ public sealed partial class LayoutEditorViewModel
         return ReviewResult;
     }
 
+    /// <summary>The held result as the report exports it: marked stale when the layout has been edited since.</summary>
+    public LayoutReviewResult? ReviewResultForExport => ReviewResult is { } r ? r with { Stale = IsReviewStale } : null;
+
+    /// <summary>
+    /// Writes the PDF of the result already held — no second run (brief-review-7 R-rev7-5): the document
+    /// <c>circuitrf review -o</c> writes, from the same kind of result. Posts one Messages line with a link to the
+    /// file. Returns whether the file was written.
+    /// </summary>
+    public async Task<bool> ExportReviewPdfAsync(string pdfPath)
+    {
+        if (ReviewResultForExport is not { } result) return false;
+        try
+        {
+            byte[] pdf = await Task.Run(() => LayoutReviewReportDocument.Pdf(result));
+            await File.WriteAllBytesAsync(pdfPath, pdf);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ReportError($"Review: '{pdfPath}' was not written: {ex.Message}");
+            return false;
+        }
+        string verdict = ReviewRunReport.Verdict(result).Replace(" — see the Review panel.", ".");
+        ReportMessage($"Review exported: {(verdict.StartsWith("Review: ", StringComparison.Ordinal) ? verdict["Review: ".Length..] : verdict)}",
+                      pdfPath);
+        return true;
+    }
+
     /// <summary>Both acceptance lists applied to <paramref name="result"/> — the Impedance review's first, then the review's.</summary>
     private LayoutReviewResult Reapply(LayoutReviewResult result) =>
         ReviewAcceptance.Apply(LayoutReview.ReapplyImpedance(result, Model.ImpedanceAcceptances), Model.ReviewAcceptances);

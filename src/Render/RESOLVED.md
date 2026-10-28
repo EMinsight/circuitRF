@@ -5593,3 +5593,34 @@ markers separate as you zoom in. A marker at least 24 px each way on screen is d
 and the selected marker is never folded into a badge. Badges are drawn in device pixels (`canvas.Scale(1/scaleUm)` at
 the anchor) because a font sized in path units is a tiny float at board zoom. A two-point marker ring is a line (a pad
 to its nearest via): `DrawFindingMarkers` skips rings under three points, so the review draws those lines itself.
+
+## The Layout Review report (brief-review-7, 2026-10-28)
+
+`LayoutReviewReportDocument` (`src/Render/Renderers`) is the one composition the Review panel's Export PDF and
+`circuitrf review -o` both call. **Page furniture is `ReportFurniture`**, factored out of
+`TraceImpedanceReportDocument` with the code moved verbatim (page, colours, fonts, header/footer, wrap/clip/paragraph,
+table header and row, marker, check, badge, scale bar, the orange notice); the impedance writer's private methods now
+delegate to it, so the two reports cannot drift apart. Clustering is `MarkerSeats.Group`, as on the canvas.
+
+- **One map PAGE per check, a panel per layer — not a page per layer.** The brief asked for both one map page per
+  layer and at most about two pages per check; on board C those disagree: edge-copper has two findings on each of ten
+  copper layers, which was eleven pages, and the whole review 39 against the gate's 19. A check's layers now share its
+  map page (1 = the whole page, 2 side by side, up to 12 on a 4 × 3 grid, `PanelsPerPage`), so every check is two
+  pages and board C is 1 + 9 × 2 = 19. Past 12 layers a check gets a second map page.
+- **The length is planned, not discovered.** `CheckPlan.ListedOpen` decides how many findings the findings page lists
+  (20, or fewer when sentences are long) before any map is drawn, measuring with the list's own font from a fixed list
+  top; the map numbers exactly those. Without it, a page that ran out of room would have left map numbers pointing at
+  nothing. The page never continues, so `PageCount` is `1 + Σ (⌈layers / 12⌉ + 1)`.
+- **Copper is decimated to the page.** Every map drew its layer's full union; board C's PDF was 198 MB. A vertex
+  within 0.2 pt of the last drawn one, or a ring under a third of a point both ways, is skipped (copper and the lower
+  layer's outline only — never a finding's own ring): 25 MB, and the maps look the same at any reasonable zoom.
+- **A marker sits ON its region.** At the bounding box's centre a band round the board's edge (edge-stitching) put
+  its marker in the middle of the board; when the centre is not inside the region, the marker goes to the region's
+  vertex nearest it. A two-point ring (a pad to its via) is a line and keeps its midpoint.
+- **IBM Plex has no ⌀.** The via-in-pad sentence writes a drill as ⌀300 µm, which drew a box; the report writes Ø
+  (`Printable`). The canvas and the CLI keep ⌀.
+- **The visible date is the day, not the minute.** The PDF's metadata carries the run's time; the page text carries
+  only the date, so the process-vs-in-process gate differs only in the metadata dates it strips.
+
+Board C, every check, Release: 53.8 s and 2.04 GB for the run with `-o`, of which laying out and writing the
+19-page, 25 MB PDF is 2.2 s; the run without `-o` measured the same within run-to-run noise.

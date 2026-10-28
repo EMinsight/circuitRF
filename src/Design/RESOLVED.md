@@ -24244,3 +24244,18 @@ reads it.
 which says nothing about whether the lab's probe lands on them; a pad off the probe's pitch is now the finding, which
 also covers pads of two pitches on one die, so the comparison between pads was dropped rather than reported twice.
 Matched within half a micrometre, so a pitch typed in another unit is the same probe.
+
+## The review result carries what its report draws (brief-review-7, 2026-10-28)
+
+`LayoutReviewResult` gained `Settings` (the run's, cloned: the report states every threshold the run used and stars
+those changed), `SourcePath`, `CreatedUtc`, `Stale` (set by the editor on the result it exports) and `Artwork`
+(`ReviewArtwork`): the copper and board outline the report's maps draw, so the PDF is drawn from the result and
+nothing else. It is built ON REQUEST: a run that is never exported never unions anything. When the run already built
+the regions, the artwork keeps the copper layers' unions (not every layer's — a panel holds the result) and the board
+if a check built it; otherwise it unions the one layer asked for, with the shapes on that layer and vias landing on
+it, by `DrcLayerGeometry.Build`. It holds the run's flattened shape list, so a result held across an edit draws the
+artwork as it was reviewed.
+
+`ReviewCheckDef.SpansAdjacentCopper` marks a check whose finding is between a conductor and the next one below
+(stacked-traces); the report outlines that lower layer's copper under the upper one, found by
+`ReviewArtwork.LowerNeighbour` from the stackup's adjacent pairs.

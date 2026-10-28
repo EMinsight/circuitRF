@@ -1490,7 +1490,16 @@ Impedance panel, so the two panels agree. **Show accepted** hides or shows accep
 are still counted on their check's row. Acceptances that matched nothing in this run are listed under
 their own heading, each with a **Remove**.
 
-Run a review with [`circuitrf review`](cli.html#review).
+**Export PDF** writes the result on screen as a PDF to send to the designer &mdash; there is no second run.
+The button says how many pages it will be. The report is short whatever the board: a summary page with
+one row per check (the thresholds it ran with, a changed one starred, its counts, or why it did not run),
+then for each check with findings a page of maps, one for each layer it found something on, and one page
+listing the first 20 findings and, after them, the accepted ones with their reasons. On a map the layer's copper is drawn
+faded in its colour under the board outline, with each finding outlined and numbered as the list numbers
+it; findings too close to draw apart are one badge carrying their count. A result marked out of date says
+so on the PDF's first page.
+
+Run a review with [`circuitrf review`](cli.html#review); its `-o report.pdf` writes the same report.
 
 ## The toolbar {#toolbar}
 

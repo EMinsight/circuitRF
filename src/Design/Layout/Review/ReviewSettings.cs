@@ -50,6 +50,10 @@ public sealed record ReviewCheckDef(string Id, string Title, string Description,
 
     public bool AppliesTo(ReviewTarget target) => Targets.Contains(target);
 
+    /// <summary>A finding is between a conductor and the next one below it, and names the upper one — the report
+    /// draws it on the upper layer with the lower one's copper outlined (brief-review-7 R-rev7-2).</summary>
+    public bool SpansAdjacentCopper { get; init; }
+
     public ReviewThresholdDef? Threshold(string id) =>
         Thresholds.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.Ordinal));
 }

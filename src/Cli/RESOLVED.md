@@ -3327,3 +3327,8 @@ every new diagnostic id to `CliStructuredOutputTests.ExpectedIds`; both gates na
 `--skip` or `--set` is refused (`review.args.check-not-for-target`): with a target the registry is filtered, and a
 named check outside it would otherwise not run with nothing said. `--list-checks` lists the target's checks, and
 `--json` carries `target`.
+
+`review -o report.pdf` (brief-review-7) writes `LayoutReviewReportDocument.Pdf` of the result it printed, after the
+text and the JSON projection. A path not ending in `.pdf` is refused before the layout is read
+(`review.args.output-not-pdf`), a failed write is `review.output.write-failed`, and a cancelled run still writes its
+PDF (the first page says it was cancelled) before exiting 130. The MCP `review` tool gained `output`.

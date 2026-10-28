@@ -55,28 +55,28 @@ public enum TraceImpedanceReportStyle
 
 public static class TraceImpedanceReportDocument
 {
-    // A4 landscape, in points.
-    public const int PageW = 842;
-    public const int PageH = 595;
-    private const float Margin = 32f;
+    // A4 landscape, in points — the page every review report shares (ReportFurniture).
+    public const int PageW = ReportFurniture.PageW;
+    public const int PageH = ReportFurniture.PageH;
+    private const float Margin = ReportFurniture.Margin;
 
-    private static readonly SKColor Ink        = new(0x1d, 0x23, 0x2b);
-    private static readonly SKColor Muted      = new(0x5f, 0x6b, 0x78);
-    private static readonly SKColor Rule       = new(0xd5, 0xdb, 0xe1);
-    private static readonly SKColor Band       = new(0xf3, 0xf5, 0xf7);
-    private static readonly SKColor Accent     = new(0x1f, 0x5f, 0xa8);
-    private static readonly SKColor CopperFill = new(0xdc, 0xdf, 0xe3);
-    private static readonly SKColor CopperEdge = new(0xb9, 0xbf, 0xc6);
-    private static readonly SKColor PassInk    = new(0x1e, 0x7b, 0x3c);
-    private static readonly SKColor FailInk    = new(0xb4, 0x23, 0x18);
-    private static readonly SKColor WarnInk    = new(0xb0, 0x6a, 0x00);
+    private static readonly SKColor Ink        = ReportFurniture.Ink;
+    private static readonly SKColor Muted      = ReportFurniture.Muted;
+    private static readonly SKColor Rule       = ReportFurniture.Rule;
+    private static readonly SKColor Band       = ReportFurniture.Band;
+    private static readonly SKColor Accent     = ReportFurniture.Accent;
+    private static readonly SKColor CopperFill = ReportFurniture.CopperFill;
+    private static readonly SKColor CopperEdge = ReportFurniture.CopperEdge;
+    private static readonly SKColor PassInk    = ReportFurniture.PassInk;
+    private static readonly SKColor FailInk    = ReportFurniture.FailInk;
+    private static readonly SKColor WarnInk    = ReportFurniture.WarnInk;
     // The layout canvas's results overlay draws in these too (LayoutRenderer.Impedance.cs), so a marker
     // on screen and the same marker on the map page are one colour.
     internal static readonly SKColor Unsolved   = new(0x9a, 0xa0, 0xa6);
     internal static readonly SKColor GroundMark = new(0x7b, 0x2c, 0xbf);
     internal static readonly SKColor ZMark      = new(0xd9, 0x6c, 0x06);
     /// <summary>An accepted finding's marker (brief-impedance-5): grey, with a check — kept, not removed.</summary>
-    internal static readonly SKColor AcceptedMark = new(0x8a, 0x91, 0x99);
+    internal static readonly SKColor AcceptedMark = ReportFurniture.AcceptedMark;
 
     /// <summary>A Full report longer than this many pages is too long to read: the panel pre-selects the Summary
     /// and the CLI, which keeps Full, warns (owner decision D1 (a), brief-impedance-9).</summary>
@@ -198,8 +198,7 @@ public static class TraceImpedanceReportDocument
                            (byte)(a.Blue + (b.Blue - a.Blue) * t));
     }
 
-    private static SKFont Font(SKTypeface face, float size) =>
-        new(face, size) { Edging = SKFontEdging.Antialias, Subpixel = false };
+    private static SKFont Font(SKTypeface face, float size) => ReportFurniture.Font(face, size);
 
     private static string Ohms(double? z) => TraceImpedanceReport.OhmsText(z);
 
@@ -234,7 +233,7 @@ public static class TraceImpedanceReportDocument
         private readonly SKFont _big = Font(SkiaFonts.PlexSemiBold, 22);
 
         private SKCanvas C => _canvas!;
-        private static float Bottom => PageH - Margin - 14;
+        private static float Bottom => ReportFurniture.Bottom;
         private bool Counting => document is null;
         private bool IsSummary => style == TraceImpedanceReportStyle.Summary;
 
@@ -260,9 +259,8 @@ public static class TraceImpedanceReportDocument
             _noDraw?.Dispose();
         }
 
-        private static SKPaint Fill(SKColor c) => new() { IsAntialias = true, Style = SKPaintStyle.Fill, Color = c };
-        private static SKPaint Stroke(SKColor c, float w) =>
-            new() { IsAntialias = true, Style = SKPaintStyle.Stroke, Color = c, StrokeWidth = w };
+        private static SKPaint Fill(SKColor c) => ReportFurniture.Fill(c);
+        private static SKPaint Stroke(SKColor c, float w) => ReportFurniture.Stroke(c, w);
 
         private void NewPage(string section)
         {
@@ -270,31 +268,18 @@ public static class TraceImpedanceReportDocument
             _section = section;
             _canvas = document?.BeginPage(PageW, PageH) ?? (_noDraw ??= new SKNoDrawCanvas(PageW, PageH));
             _page++;
-            using (var bg = Fill(SKColors.White)) C.DrawRect(0, 0, PageW, PageH, bg);
-
-            // Running header.
-            using var muted = Fill(Muted);
-            using var accent = Fill(Accent);
-            C.DrawRect(Margin, Margin - 10, 26, 3, accent);
-            C.DrawText($"Trace Impedance Analysis — {report.Title}", Margin + 32, Margin - 5, SKTextAlign.Left, _small, muted);
-            C.DrawText(section, PageW - Margin, Margin - 5, SKTextAlign.Right, _small, muted);
-            _y = Margin + 12;
+            _y = ReportFurniture.BeginPage(C, $"Trace Impedance Analysis — {report.Title}", section, _small);
         }
 
         private void EndPage()
         {
             if (_canvas is null) return;
-            using var muted = Fill(Muted);
-            using var rule = Stroke(Rule, 0.6f);
-            C.DrawLine(Margin, PageH - Margin + 2, PageW - Margin, PageH - Margin + 2, rule);
             // The units on EVERY page (owner, 2026-09-25): a page pulled out of the report and
             // filed on its own still says what its numbers are in.
-            C.DrawText($"Target {report.TargetOhms:0.##} Ω ± {report.TolerancePercent:0.##} % " +
-                       $"(warning ± {report.WarningPercent:0.##} %)  ·  " +
-                       $"Units: coordinates, lengths and widths in {report.Unit}; Z0 in Ω  ·  " +
-                       $"{report.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}  ·  circuitRF",
-                       Margin, PageH - Margin + 13, SKTextAlign.Left, _small, muted);
-            C.DrawText($"Page {_page}", PageW - Margin, PageH - Margin + 13, SKTextAlign.Right, _small, muted);
+            ReportFurniture.Footer(C, $"Target {report.TargetOhms:0.##} Ω ± {report.TolerancePercent:0.##} % " +
+                                      $"(warning ± {report.WarningPercent:0.##} %)  ·  " +
+                                      $"Units: coordinates, lengths and widths in {report.Unit}; Z0 in Ω  ·  " +
+                                      $"{report.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}  ·  circuitRF", _page, _small);
             document?.EndPage();
             _canvas = null;
         }
@@ -303,50 +288,15 @@ public static class TraceImpedanceReportDocument
 
         // ── text helpers ────────────────────────────────────────────────────────────────────────
 
-        private List<string> Wrap(string text, SKFont font, float width)
-        {
-            var lines = new List<string>();
-            foreach (var para in text.Split('\n'))
-            {
-                var line = "";
-                foreach (var word in para.Split(' '))
-                {
-                    string candidate = line.Length == 0 ? word : line + " " + word;
-                    if (font.MeasureText(candidate) <= width || line.Length == 0) line = candidate;
-                    else { lines.Add(line); line = word; }
-                }
-                lines.Add(line);
-            }
-            return lines;
-        }
+        private static List<string> Wrap(string text, SKFont font, float width) => ReportFurniture.Wrap(text, font, width);
 
         /// <summary>Wrapped text from <paramref name="y"/> down; a line that would pass
         /// <paramref name="maxY"/> is not drawn, and the last one drawn ends in an ellipsis.</summary>
         private float Paragraph(string text, float x, float y, float width, SKFont font, SKColor color,
-                                float lead = 1.4f, float maxY = float.MaxValue)
-        {
-            using var ink = Fill(color);
-            var lines = Wrap(text, font, width);
-            for (int i = 0; i < lines.Count; i++)
-            {
-                if (y + font.Size * lead > maxY) break;
-                y += font.Size * lead;
-                bool last = i + 1 < lines.Count && y + font.Size * lead > maxY;
-                C.DrawText(last ? Clip(lines[i] + " …", font, width) : lines[i], x, y, SKTextAlign.Left, font, ink);
-            }
-            return y;
-        }
+                                float lead = 1.4f, float maxY = float.MaxValue) =>
+            ReportFurniture.Paragraph(C, text, x, y, width, font, color, lead, maxY);
 
-        private static string Clip(string text, SKFont font, float width)
-        {
-            if (font.MeasureText(text) <= width) return text;
-            for (int n = text.Length - 1; n > 1; n--)
-            {
-                string c = text[..n] + "…";
-                if (font.MeasureText(c) <= width) return c;
-            }
-            return "…";
-        }
+        private static string Clip(string text, SKFont font, float width) => ReportFurniture.Clip(text, font, width);
 
         // ── the summary page ────────────────────────────────────────────────────────────────────
 
@@ -419,26 +369,12 @@ public static class TraceImpedanceReportDocument
             // A report exported after the layout was edited (brief-impedance-3 R-imp3-4a) says so first:
             // a stale PDF must not pass as a review of the artwork as it is now.
             if (report.Stale)
-            {
-                using var warn = Fill(new SKColor(0xfd, 0xf1, 0xe6));
-                using var warnInk = Fill(new SKColor(0x9a, 0x4a, 0x00));
-                C.DrawRoundRect(new SKRect(x0, _y, x0 + leftW, _y + 20), 3, 3, warn);
-                C.DrawText(Clip($"{TraceImpedanceReport.StaleText}: these results are of the artwork as it was.",
-                                _bold, leftW - 16),
-                           x0 + 8, _y + 13.5f, SKTextAlign.Left, _bold, warnInk);
-                _y += 28;
-            }
+                _y = ReportFurniture.Notice(C, $"{TraceImpedanceReport.StaleText}: these results are of the artwork as it was.",
+                                            x0, _y, leftW, _bold);
 
             if (report.Cancelled)
-            {
-                using var warn = Fill(new SKColor(0xfd, 0xf1, 0xe6));
-                using var warnInk = Fill(new SKColor(0x9a, 0x4a, 0x00));
-                C.DrawRoundRect(new SKRect(x0, _y, x0 + leftW, _y + 20), 3, 3, warn);
-                C.DrawText(Clip($"Cancelled — the {report.Layers.Count} of {report.LayersRequested.Count} layers that " +
-                                "finished before the run was stopped.", _bold, leftW - 16),
-                           x0 + 8, _y + 13.5f, SKTextAlign.Left, _bold, warnInk);
-                _y += 28;
-            }
+                _y = ReportFurniture.Notice(C, $"Cancelled — the {report.Layers.Count} of {report.LayersRequested.Count} layers that " +
+                                               "finished before the run was stopped.", x0, _y, leftW, _bold);
 
             // Tiles.
             var tiles = new (string Label, string Value, SKColor Color)[]
@@ -589,31 +525,12 @@ public static class TraceImpedanceReportDocument
             C.Restore();
         }
 
-        private void Header(float[] cols, string[] heads, float right = PageW - Margin)
-        {
-            using var band = Fill(Band);
-            using var muted = Fill(Muted);
-            C.DrawRect(cols[0], _y, right - cols[0], 15, band);
-            using var headFont = Font(SkiaFonts.PlexSemiBold, 7.5f);
-            for (int i = 0; i < heads.Length; i++)
-                C.DrawText(heads[i], cols[i] + 3, _y + 10.5f, SKTextAlign.Left, headFont, muted);
-            _y += 15;
-        }
+        private void Header(float[] cols, string[] heads, float right = PageW - Margin) =>
+            _y = ReportFurniture.TableHeader(C, cols, heads, _y, right);
 
         private void Row(float[] cols, string[] cells, SKColor[] colors, SKColor? background = null,
-                         float right = PageW - Margin)
-        {
-            if (background is { } bg) using (var p = Fill(bg)) C.DrawRect(cols[0], _y, right - cols[0], 13, p);
-            for (int i = 0; i < cells.Length; i++)
-            {
-                float width = (i + 1 < cols.Length ? cols[i + 1] : right) - cols[i] - 6;
-                using var ink = Fill(colors[Math.Min(i, colors.Length - 1)]);
-                C.DrawText(Clip(cells[i], _body, width), cols[i] + 3, _y + 9.5f, SKTextAlign.Left, _body, ink);
-            }
-            _y += 13;
-            using var rule = Stroke(Rule, 0.4f);
-            C.DrawLine(cols[0], _y, right, _y, rule);
-        }
+                         float right = PageW - Margin) =>
+            _y = ReportFurniture.TableRow(C, cols, cells, colors, _body, _y, background, right);
 
         // ── the map page ────────────────────────────────────────────────────────────────────────
 
@@ -811,15 +728,7 @@ public static class TraceImpedanceReportDocument
 
             // Scale bar.
             var (barW, nice) = ScaleBar(v.ExtW, s);
-            float bx = box.Left + 10, by = box.Bottom - 10;
-            using (var bar = Stroke(Ink, 1.2f))
-            {
-                C.DrawLine(bx, by, bx + barW, by, bar);
-                C.DrawLine(bx, by - 3, bx, by + 1, bar);
-                C.DrawLine(bx + barW, by - 3, bx + barW, by + 1, bar);
-            }
-            using var inkS = Fill(Ink);
-            C.DrawText(report.Len(nice), bx + barW + 5, by + 2.5f, SKTextAlign.Left, _small, inkS);
+            ReportFurniture.DrawScaleBar(C, box, barW, report.Len(nice), _small);
             return marks.Any(k => k.Mark.Badge);
         }
 
@@ -908,10 +817,7 @@ public static class TraceImpedanceReportDocument
         internal List<(MapMark Mark, MapLabelPlacer.Placement At)> PlaceMarks(TraceLayerResult layer, MapView? v) =>
             v is null ? [] : PlaceMarks(layer, v, out _);
 
-        private float MarkWidth(MapMark m) =>
-            m.Badge ? Math.Max(8.6f, BadgeFont.MeasureText(m.Label(style)) + 4.4f) : 8.6f;
-
-        private static readonly SKFont BadgeFont = Font(SkiaFonts.PlexSemiBold, 4.6f);
+        private float MarkWidth(MapMark m) => m.Badge ? ReportFurniture.BadgeWidth(m.Label(style)) : 8.6f;
 
         /// <summary>The placed boxes that overlap, as groups of indices joined through any overlap — each
         /// group in order, the groups in the order of their first member.</summary>
@@ -956,31 +862,9 @@ public static class TraceImpedanceReportDocument
                                accepted ? AcceptedMark : worst.Color, accepted, Badge: true);
         }
 
-        /// <summary>A badge: a pill in place of markers that would overlap, FILLED when one of them fails and
-        /// HOLLOW when they only warn, like a marker; grey when every one is accepted.</summary>
-        private void Badge(SKRect box, string label, SKColor color, bool fails, bool accepted)
-        {
-            var r = new SKRect(box.Left + 0.2f, box.Top + 0.2f, box.Right - 0.2f, box.Bottom - 0.2f);
-            float rad = 0.5f * r.Height;
-            if (fails || accepted)
-            {
-                using var fill = Fill(color);
-                using var ring = Stroke(SKColors.White, 0.7f);
-                C.DrawRoundRect(r, rad, rad, fill);
-                C.DrawRoundRect(r, rad, rad, ring);
-                using var white = Fill(SKColors.White);
-                C.DrawText(label, r.MidX, r.MidY + 0.35f * BadgeFont.Size, SKTextAlign.Center, BadgeFont, white);
-            }
-            else
-            {
-                using var inside = Fill(SKColors.White);
-                using var ring = Stroke(color, 0.95f);
-                C.DrawRoundRect(r, rad, rad, inside);
-                C.DrawRoundRect(new SKRect(r.Left + 0.4f, r.Top + 0.4f, r.Right - 0.4f, r.Bottom - 0.4f), rad - 0.4f, rad - 0.4f, ring);
-                using var ink = Fill(color);
-                C.DrawText(label, r.MidX, r.MidY + 0.35f * BadgeFont.Size, SKTextAlign.Center, BadgeFont, ink);
-            }
-        }
+        /// <summary>A badge: a pill in place of markers that would overlap (<see cref="ReportFurniture.Badge"/>).</summary>
+        private void Badge(SKRect box, string label, SKColor color, bool fails, bool accepted) =>
+            ReportFurniture.Badge(C, box, label, color, fails, accepted);
 
         /// <summary>Findings worst first: failing ones first, then by Z0 excursion, then by the length of trace
         /// they cover; otherwise in their order on the layer.</summary>
@@ -1020,14 +904,7 @@ public static class TraceImpedanceReportDocument
                             Math.Min(framed.MaxX, board.MaxX), Math.Min(framed.MaxY, board.MaxY));
         }
 
-        /// <summary>The scale bar's length on the page and the round length it stands for.</summary>
-        private static (float Width, double Length) ScaleBar(double extW, double s)
-        {
-            double target = extW * 0.2;
-            double nice = Math.Pow(10, Math.Floor(Math.Log10(target)));
-            foreach (double m in (ReadOnlySpan<double>)[5, 2, 1]) if (m * nice <= target) { nice *= m; break; }
-            return ((float)(nice * s), nice);
-        }
+        private static (float Width, double Length) ScaleBar(double extW, double s) => ReportFurniture.ScaleBar(extW, s);
 
         /// <summary>The trace's direction at the station nearest a point, in page space (Y down).</summary>
         private static SKPoint NearestAlong(TraceRun trace, long x, long y)
@@ -1036,45 +913,13 @@ public static class TraceImpedanceReportDocument
             return st is null ? new SKPoint(1, 0) : new SKPoint((float)st.Uy, (float)st.Ux);
         }
 
-        /// <summary>A numbered finding marker: FILLED in the kind colour with a white number for a fail,
-        /// HOLLOW — white inside a ring of the kind colour, the number in that colour — for a warning.</summary>
-        private void Marker(SKPoint c, float radius, string n, SKColor color, bool fails, float textSize)
-        {
-            using var f = Font(SkiaFonts.PlexSemiBold, textSize);
-            if (fails)
-            {
-                using var disc = Fill(color);
-                using var ring = Stroke(SKColors.White, 0.7f);
-                C.DrawCircle(c, radius, disc);
-                C.DrawCircle(c, radius, ring);
-                using var white = Fill(SKColors.White);
-                C.DrawText(n, c.X, c.Y + 0.35f * textSize, SKTextAlign.Center, f, white);
-            }
-            else
-            {
-                using var inside = Fill(SKColors.White);
-                using var ring = Stroke(color, Math.Max(0.8f, radius * 0.22f));
-                C.DrawCircle(c, radius, inside);
-                C.DrawCircle(c, radius - 0.4f, ring);
-                using var ink = Fill(color);
-                C.DrawText(n, c.X, c.Y + 0.35f * textSize, SKTextAlign.Center, f, ink);
-            }
-        }
+        /// <summary>A numbered finding marker (<see cref="ReportFurniture.Marker"/>).</summary>
+        private void Marker(SKPoint c, float radius, string n, SKColor color, bool fails, float textSize) =>
+            ReportFurniture.Marker(C, c, radius, n, color, fails, textSize);
 
-        /// <summary>An accepted finding's marker: a grey disc with a white check, where its number was —
-        /// kept on the map, not removed (R-imp5-4a).</summary>
-        private void Check(SKPoint c, float radius)
-        {
-            using var disc = Fill(AcceptedMark);
-            C.DrawCircle(c, radius, disc);
-            using var tick = Stroke(SKColors.White, Math.Max(0.8f, radius * 0.28f));
-            tick.StrokeCap = SKStrokeCap.Round;
-            using var path = new SKPath();
-            path.MoveTo(c.X - 0.45f * radius, c.Y);
-            path.LineTo(c.X - 0.1f * radius, c.Y + 0.4f * radius);
-            path.LineTo(c.X + 0.5f * radius, c.Y - 0.4f * radius);
-            C.DrawPath(path, tick);
-        }
+        /// <summary>An accepted finding's marker (<see cref="ReportFurniture.Check"/>) — kept on the map, not removed
+        /// (R-imp5-4a).</summary>
+        private void Check(SKPoint c, float radius) => ReportFurniture.Check(C, c, radius);
 
         private void DrawLegend(SKRect r, TraceLayerResult layer, bool badges)
         {
@@ -1158,7 +1003,7 @@ public static class TraceImpedanceReportDocument
             {
                 float top = y;
                 string sample = IsSummary ? "12" : "4–9";
-                float w = Math.Max(8.6f, BadgeFont.MeasureText(sample) + 4.4f);
+                float w = ReportFurniture.BadgeWidth(sample);
                 Badge(new SKRect(r.Left + 0.7f, top + 1.2f, r.Left + 0.7f + w, top + 9.8f), sample, Muted, true, false);
                 y = Paragraph(IsSummary
                                   ? "a badge: the markers of traces too close to draw apart, with their findings counted"

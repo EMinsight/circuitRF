@@ -26,7 +26,7 @@ internal sealed class StackedTracesCheck : ReviewCheck
         [
             new("lateral-margin", "Lateral margin", ReviewThresholdKind.Length, 0),
             new("min-length", "Minimum length", ReviewThresholdKind.Length, 1.0e-3),
-        ]);
+        ]) { SpansAdjacentCopper = true };
 
     public override void Run(ReviewContext ctx, ReviewCheckRun run)
     {
