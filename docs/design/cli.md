@@ -4326,3 +4326,22 @@ an undrawn one keeps the partition's via walk. The per-pad via lists are `near`'
 (`DrcRegionEval.WithinEach`), asked once per distance and shared by the two ground-via checks. `thermal-pad-area` is a
 new threshold kind, `ReviewThresholdKind.Area` (mm²), beside `Density` (per mm²): both plain numbers on `--set`. Gate:
 `tests/Ui.Tests/Review/PadViaChecksTests.cs`.
+
+### 32.6 Copper and the board edge (brief-review-4)
+
+`stacked-traces` and `edge-trace` read their traces from ONE internal entry point,
+`TraceImpedanceAnalysis.FindTraces`: the analysis's own `Prepare` and `FindLayer`, pours, short chains and
+declared pads excluded as a run with no scope excludes them, nothing cut or solved. A trace's region is its
+pieces' strips, each lengthened by half its width at a joint so a bend is covered and never at the trace's two
+ends. It is found once per run (`ReviewContext.Traces`) and shared. `stacked-traces` compares consecutive
+conductors only, reads nets through the partition (`DrcRegionEval.NetsOf`, the routine `same_net` asks), counts
+only the overlap of pieces running the same way (a wide trace's crossing is otherwise a millimetre "run"), and
+measures it as its area over the narrower width plus twice the lateral margin. `edge-stitching` measures
+along the band's MIDDLE LINE (`ReviewBoard.MidLine`), not by area over width — a pour pulled back by the pullback
+would otherwise leave a strip of "no ground" round the whole board — and sizes each via's disc so it covers
+max-gap / 2 of that line either side of the via at any depth; a gap between two vias is then the uncovered stretch
+plus max-gap. Its stitching gaps carry no layer. The vias are the pad checks' (`ReviewContext.Vias`, factored out
+of `ReviewPads`), so a through-hole pin's hole stitches nothing. Its ground copper is the partition's ground pieces on the layer, not `on_ground(layer)`, which touch-tests a pour
+against every piece on its layer. An outline whose strokes do not close is refused
+with the largest gap's location: `BoardRegions` keeps a hole-less strip as a region, and the review drops one as
+thin as a line. Gate: `tests/Ui.Tests/Review/CopperEdgeChecksTests.cs`.

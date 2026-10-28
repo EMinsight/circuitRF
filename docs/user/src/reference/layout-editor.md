@@ -1410,7 +1410,14 @@ technology, an imported board's and one you built. A check whose layer the techn
 | Ground via distance | A ground pad with no ground via within the distance, pad edge to barrel edge, saying how far the nearest one is. A pad in a ground pour is judged the same way: the pour's stitching vias count when they are close enough. | Maximum distance (0.5 mm) |
 | Shared ground via | A ground via that is the only one within the maximum distance of two or more ground pads. | The maximum distance above |
 | Thermal vias | A thermal pad &mdash; a ground pad of at least the thermal pad area, such as the exposed paddle under a power stage &mdash; with fewer ground vias under it than the density asks for, or none. A via counts when its barrel lies at least half inside the pad. | Minimum via density (1 per mm²) |
+| Stacked traces | Two traces on adjacent copper layers, on different nets, running on top of each other for at least the minimum length &mdash; broadside coupling between two signals. Layers with another copper layer between them are not compared, because that layer shields them; two traces of one net (a doubled supply trace) are not marked, and only stretches where the two run the same way count, so a crossing is never a finding however wide either trace is. | Lateral margin (0: directly on top of each other), minimum length (1.0 mm) |
 | Copper at the board edge | Copper on any copper layer closer to the board edge than the pullback, marked where it lies inside that strip. The edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board, whose centre line is the edge &mdash; and cut-outs in the board (slots, milled openings) are edges too. | Pullback (0.25 mm) |
+| Traces at the board edge | A trace on any copper layer closer to the board edge than the distance, marked where it is. A pour pulled to the edge is not a trace and is left to the pullback check. A trace that runs to an edge-launch connector on purpose is a finding to accept. | Minimum distance (1.0 mm) |
+| Edge stitching | A stretch of board edge with no ground copper along it, on the top and bottom copper; and a stretch with no ground via along it, between two vias further apart than the gap. Both are measured along the middle of a band along the edge, so a pour pulled back by the pullback still covers the edge. | Band width (1.0 mm), maximum gap (2.0 mm) |
+
+**Traces.** A trace is what [Impedance Analysis](#impedance-traces) reads as one: copper with
+two long parallel edges facing each other, outside a pour, with its nominal width. The two trace checks
+find traces exactly as that review does.
 
 **Pads, vias and ground.** A pad is copper exposed by a soldermask opening, on the top and bottom
 copper; parts placed in the layout name a pad in a finding ("C209 pad 2") but do not decide which pads
@@ -1418,7 +1425,7 @@ there are, so the checks run the same on an imported board with no parts. A via 
 the stackup's via entries draw on, provided its holes are plated. Ground is the net of the copper on the
 conductor flagged as the ground reference: where that conductor is drawn, the net of its largest copper
 (the plane), and everything joined to it; where it is not drawn, the copper vias carry down to it. With
-no ground reference flagged, the four pad checks are not run.
+no ground reference flagged, the four pad checks and edge stitching are not run.
 
 Findings are counted per check and grouped by layer. Which checks run, the thresholds you changed and
 the findings you accepted are saved in the layout, so the next review reviews what the last one did; an

@@ -1373,7 +1373,7 @@ public static class Em3dLayoutSolids
             => [.. ring.Select(q => new Point2(q.X, q.Y))];
 
         /// <summary>2·Area / Perimeter: a strip's width, however long it is drawn.</summary>
-        private static double CharacteristicWidth(PlanarPolygon poly)
+        internal static double CharacteristicWidth(PlanarPolygon poly)
         {
             double perimeter = RingLength(poly.Outer);
             foreach (var h in poly.HoleRings) perimeter += RingLength(h);

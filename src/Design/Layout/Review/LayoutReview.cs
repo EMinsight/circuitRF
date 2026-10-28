@@ -24,7 +24,10 @@ public static class LayoutReview
         new GroundViaDistanceCheck(),
         new SharedGroundViaCheck(),
         new ThermalViasCheck(),
+        new StackedTracesCheck(),
         new EdgeCopperCheck(),
+        new EdgeTraceCheck(),
+        new EdgeStitchingCheck(),
     ];
 
     /// <summary>The checks' definitions — the one table the panel, the CLI and MCP list.</summary>
@@ -58,7 +61,7 @@ public static class LayoutReview
                 $"'{Path.GetFileName(source.Path)}' resolves no technology, so the review cannot tell copper from "
               + "the board outline. Give the layout a technology, or open it in a workspace that has one.");
 
-        var ctx = new ReviewContext(source, tech, settings);
+        var ctx = new ReviewContext(source, tech, settings, control?.Token ?? CancellationToken.None);
         var enabled = Registry.Where(c => settings.IsEnabled(c.Def.Id)).ToList();
         var rows = new List<ReviewCheckRow>();
         var findings = new List<(int Check, ReviewFinding Finding)>();
@@ -146,6 +149,7 @@ internal sealed class ReviewContext
     public ReviewLayers Layers { get; }
     public int DbuPerMicron => Source.View.DbuPerMicron;
     public LayoutUnit Unit => Source.View.DisplayUnit;
+    public CancellationToken Token { get; }
     public List<string> Diagnostics { get; } = [];
 
     private Dictionary<LayerKey, Paths64>? _regions;
@@ -153,12 +157,16 @@ internal sealed class ReviewContext
     private DrcRegionEval? _eval;
     private ReviewBoard? _board;
     private ReviewPads? _pads;
+    private List<ReviewPads.Via>? _vias;
+    private (IReadOnlyDictionary<LayerKey, IReadOnlyList<TraceImpedanceAnalysis.FoundTrace>>, string?)? _traces;
 
-    public ReviewContext(TraceImpedanceAnalysis.LayoutSource source, Technology tech, ReviewSettings settings)
+    public ReviewContext(TraceImpedanceAnalysis.LayoutSource source, Technology tech, ReviewSettings settings,
+                         CancellationToken token = default)
     {
         Source = source;
         Tech = tech;
         Settings = settings;
+        Token = token;
         Layers = ReviewLayers.For(tech);
     }
 
@@ -180,6 +188,21 @@ internal sealed class ReviewContext
 
     /// <summary>The pads, vias and ground the four pad checks share (brief-review-3).</summary>
     public ReviewPads Pads => _pads ??= ReviewPads.Build(this);
+
+    /// <summary>Whether any via entry's drawing layer is a plated drill — what a via needs (R-rev3-2).</summary>
+    public bool HasPlatedDrills => Layers.Drills.Any(d => d.Entry.Plated != false);
+
+    /// <summary>Every plated drill, ground marked — the pad checks' vias and edge-stitching's.</summary>
+    public List<ReviewPads.Via> Vias => _vias ??= ReviewPads.BuildVias(this);
+
+    /// <summary>The trace finder's traces on every copper layer, or why it found none (brief-review-4
+    /// R-rev4-1) — found once and shared by stacked-traces and edge-trace.</summary>
+    public (IReadOnlyDictionary<LayerKey, IReadOnlyList<TraceImpedanceAnalysis.FoundTrace>> Traces, string? Refusal) Traces =>
+        _traces ??= TraceImpedanceAnalysis.FindTraces(Source.Shapes, Tech, DbuPerMicron, Token);
+
+    /// <summary>The traces found on one conductor, whichever of its drawing layers the finder keyed them by.</summary>
+    public IEnumerable<(LayerKey Layer, TraceImpedanceAnalysis.FoundTrace Trace)> TracesOn(ReviewCopperLayer copper) =>
+        Traces.Traces.Where(kv => copper.DrawingLayers.Contains(kv.Key)).SelectMany(kv => kv.Value.Select(t => (kv.Key, t)));
 
     /// <summary>A threshold of ANY check as this run sees it, stored units — for a threshold one check
     /// declares and others read (<c>thermal-vias.thermal-pad-area</c>, <c>ground-via-distance.max-distance</c>).</summary>

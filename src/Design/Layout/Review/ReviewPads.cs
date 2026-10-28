@@ -126,8 +126,7 @@ internal sealed class ReviewPads
     {
         var layers = ctx.Layers;
         if (layers.GroundReference is null)
-            return new("No ground reference is flagged in this technology's stackup — flag the ground plane in "
-                     + "the Technology Editor.");
+            return new(NoGroundReference);
 
         var sides = new List<(PlacementSide Side, LayerKey Copper, LayerKey Mask)>();
         foreach (var (side, copper, mask) in new[]
@@ -146,49 +145,20 @@ internal sealed class ReviewPads
                      + "from copper — name the mask layers \"Soldermask Top\" / \"Soldermask Bottom\", or give them the "
                      + "interchange names F.Mask / B.Mask, in the Technology Editor.");
 
-        var drills = layers.Drills.Where(d => d.Entry.Plated != false).ToList();
-        if (drills.Count == 0)
-            return new("No via entry of this technology's stackup is a plated drill layer, so the review cannot tell a via "
-                     + "from a hole — add the via entries, with their drawing layers, in the Technology Editor.");
+        if (!ctx.HasPlatedDrills)
+            return new(NoPlatedDrill);
 
         var eval = ctx.Eval;
         var ground = eval.GroundNets(out string? said);
         if (ground.Count == 0)
-            return new($"No copper on this board is ground: {said}");
+            return new(NoGroundCopper(said));
         if (eval.GroundPlanePiece is >= 0 and var plane)
         {
             double mm2 = DrcRegionEval.AreaOfComponent(ctx.Partition.Pieces[plane].Paths) / Dbu2PerMm2(ctx.DbuPerMicron);
             ctx.Diagnostics.Add($"Ground is the net of the largest copper on the ground reference "
                               + $"\"{layers.GroundReference.Name}\" ({mm2:0.#} mm²), and everything joined to it.");
         }
-
-        // ── vias ─────────────────────────────────────────────────────────────────────────────────
-        // One via per drill polygon, however many entries claim its layer: an imported technology can
-        // bind two entries to one drill layer, and the connectivity walk then reads that layer's barrels
-        // under BOTH spans — so here a via spans their union.
-        var vias = new List<Via>();
-        foreach (var claimed in drills.GroupBy(d => d.Layer))
-        {
-            var layer = claimed.Key;
-            if (!ctx.Regions.TryGetValue(layer, out var region) || region.Count == 0) continue;
-            var groundBoxes = Boxes(eval.Evaluate(new DrcLayerExpr.OnGround(new DrcLayerExpr.Layer(layer))));
-            int lo = int.MaxValue, hi = int.MinValue;
-            bool unresolved = false;
-            foreach (var d in claimed)
-            {
-                int t = d.Top is { } top ? IndexOf(layers, top) : -1;
-                int b = d.Bottom is { } bottom ? IndexOf(layers, bottom) : -1;
-                if (t < 0 || b < 0) { unresolved = true; break; }
-                lo = Math.Min(lo, Math.Min(t, b));
-                hi = Math.Max(hi, Math.Max(t, b));
-            }
-            (int, int)? span = unresolved ? null : (lo, hi);
-            foreach (var c in DrcRegions.Components(region))
-            {
-                var bounds = DrcRegions.BoundsOf(c);
-                vias.Add(new Via { Layer = layer, Region = c, Bounds = bounds, Ground = groundBoxes.Contains(bounds), Span = span });
-            }
-        }
+        var vias = ctx.Vias;
 
         // ── pads, side by side ───────────────────────────────────────────────────────────────────
         var result = new ReviewPads(ctx, [], vias);
@@ -229,6 +199,59 @@ internal sealed class ReviewPads
 
         Name(ctx, pads);
         return result;
+    }
+
+    /// <summary>The ONE sentence for no plated drill layer — shared with edge-stitching.</summary>
+    internal const string NoPlatedDrill =
+        "No via entry of this technology's stackup is a plated drill layer, so the review cannot tell a via "
+      + "from a hole — add the via entries, with their drawing layers, in the Technology Editor.";
+
+    /// <summary>The ONE sentence for no ground reference flagged — every ground-reading check reports it.</summary>
+    internal const string NoGroundReference =
+        "No ground reference is flagged in this technology's stackup — flag the ground plane in the Technology Editor.";
+
+    internal static string NoGroundCopper(string? said) => $"No copper on this board is ground: {said}";
+
+    /// <summary>
+    /// Every plated drill as a via, ground marked by on_ground (R-rev3-2) — built once per run and shared by
+    /// the pad checks and edge-stitching; building the pads marks a through-hole pin's hole on these same
+    /// objects. Ground needs a flagged reference; with none, no via is ground.
+    /// </summary>
+    internal static List<Via> BuildVias(ReviewContext ctx)
+    {
+        var layers = ctx.Layers;
+        var eval = ctx.Eval;
+        bool anyGround = layers.GroundReference is not null && eval.GroundNets(out _).Count > 0;
+        var drills = layers.Drills.Where(d => d.Entry.Plated != false).ToList();
+
+        // ── vias ─────────────────────────────────────────────────────────────────────────────────
+        // One via per drill polygon, however many entries claim its layer: an imported technology can
+        // bind two entries to one drill layer, and the connectivity walk then reads that layer's barrels
+        // under BOTH spans — so here a via spans their union.
+        var vias = new List<Via>();
+        foreach (var claimed in drills.GroupBy(d => d.Layer))
+        {
+            var layer = claimed.Key;
+            if (!ctx.Regions.TryGetValue(layer, out var region) || region.Count == 0) continue;
+            var groundBoxes = anyGround ? Boxes(eval.Evaluate(new DrcLayerExpr.OnGround(new DrcLayerExpr.Layer(layer)))) : [];
+            int lo = int.MaxValue, hi = int.MinValue;
+            bool unresolved = false;
+            foreach (var d in claimed)
+            {
+                int t = d.Top is { } top ? IndexOf(layers, top) : -1;
+                int b = d.Bottom is { } bottom ? IndexOf(layers, bottom) : -1;
+                if (t < 0 || b < 0) { unresolved = true; break; }
+                lo = Math.Min(lo, Math.Min(t, b));
+                hi = Math.Max(hi, Math.Max(t, b));
+            }
+            (int, int)? span = unresolved ? null : (lo, hi);
+            foreach (var c in DrcRegions.Components(region))
+            {
+                var bounds = DrcRegions.BoundsOf(c);
+                vias.Add(new Via { Layer = layer, Region = c, Bounds = bounds, Ground = groundBoxes.Contains(bounds), Span = span });
+            }
+        }
+        return vias;
     }
 
     internal static double Dbu2PerMm2(int dbuPerMicron) => (1000.0 * dbuPerMicron) * (1000.0 * dbuPerMicron);

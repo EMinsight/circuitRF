@@ -11,6 +11,11 @@ internal sealed class EdgeCopperCheck : ReviewCheck
 {
     public const string Id = "edge-copper";
 
+    /// <summary>The ONE sentence for a stackup with no conductor bound to a layer — every copper check reports it.</summary>
+    internal const string NoCopper =
+        "No conductor of this technology's stackup draws on a layer, so the review cannot tell which layers are "
+      + "copper — bind the copper layers to the stackup's conductors in the Technology Editor.";
+
     public override ReviewCheckDef Def { get; } = new(
         Id, "Copper at the board edge",
         "Copper on any copper layer closer to the board edge than the pullback.",
@@ -20,8 +25,7 @@ internal sealed class EdgeCopperCheck : ReviewCheck
     {
         if (ctx.Layers.Copper.Count == 0)
         {
-            run.NotRun("No conductor of this technology's stackup draws on a layer, so the review cannot tell which "
-                     + "layers are copper — bind the copper layers to the stackup's conductors in the Technology Editor.");
+            run.NotRun(NoCopper);
             return;
         }
         var board = ctx.Board;

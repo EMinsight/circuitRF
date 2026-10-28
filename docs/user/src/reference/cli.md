@@ -1327,7 +1327,10 @@ The board is read once and every check shares that one copy.
 | `ground-via-distance` | A ground pad with no ground via within the distance, pad edge to barrel edge; the nearest one's distance is stated, looked for out to ten times the threshold. Thermal pads and through-hole pins are not judged. | `max-distance` (0.5 mm) |
 | `shared-ground-via` | A ground via that is the only one within `ground-via-distance.max-distance` of two or more ground pads. | &mdash; |
 | `thermal-vias` | A thermal pad &mdash; a ground pad of at least `thermal-pad-area` &mdash; with fewer ground vias per mm² under it than `min-via-density`, or none. A via counts when at least half its barrel is inside the pad. `thermal-pad-area` is the thermal-pad size all four pad checks use. | `thermal-pad-area` (2 mm²), `min-via-density` (1 per mm²) |
+| `stacked-traces` | Two traces on adjacent copper layers, on different nets, running the same way on top of each other for at least `min-length`, each grown by `lateral-margin` first; a crossing is not a run. Layers with another copper layer between are not compared. A trace is what [`impedance`](#impedance) finds. | `lateral-margin` (0), `min-length` (1.0 mm) |
 | `edge-copper` | Copper on any copper layer closer to the board edge than the pullback. The board edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board &mdash; and cut-outs in the board are edges too. | `pullback` (0.25 mm) |
+| `edge-trace` | A trace on any copper layer closer to the board edge than `min-distance`. Copper that is not a trace is `edge-copper`'s alone. | `min-distance` (1.0 mm) |
+| `edge-stitching` | Within `band-width` of the edge: a stretch at least `max-gap` long with no ground copper on the top or bottom copper (one finding per layer), and a gap of at least `max-gap` between ground vias (a finding on no layer). Measured along the middle of the band. | `band-width` (1.0 mm), `max-gap` (2.0 mm) |
 
 **The review saved in the layout applies by default** &mdash; which checks run, and each threshold that
 was changed from its default. `--set` overrides one for this run; `--defaults` ignores what was saved.

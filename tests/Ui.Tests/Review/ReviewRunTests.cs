@@ -135,14 +135,14 @@ public sealed class ReviewRunTests
 
         view.Review = new ReviewSettings();
         view.Review.Set(check, pullback, 400_000, view.DbuPerMicron);
-        view.Review.Thresholds!["edge-trace.min-distance"] = 2 * Mm;   // a later build's check
+        view.Review.Thresholds!["a-later-check.reach"] = 2 * Mm;   // a later build's check
         view.Review.SetEnabled("via-in-pad", false);
 
         string json = LayoutPersistence.Serialize(view);
         var back = LayoutPersistence.Deserialize(json);
 
         Assert.Equal(400_000, back.Review!.Value(check, pullback, back.DbuPerMicron));
-        Assert.Equal(2 * Mm, back.Review.Thresholds!["edge-trace.min-distance"]);
+        Assert.Equal(2 * Mm, back.Review.Thresholds!["a-later-check.reach"]);
         Assert.False(back.Review.IsEnabled("via-in-pad"));
         Assert.Equal(json, LayoutPersistence.Serialize(back));
 

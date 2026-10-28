@@ -349,11 +349,12 @@ internal sealed class DrcRegionEval(
     }
 
     /// <summary>The nets of one polygon: those of every piece on <paramref name="layers"/> it
-    /// overlaps or touches. See <see cref="DrcLayerExpr.OnGround"/>.</summary>
+    /// overlaps or touches. See <see cref="DrcLayerExpr.OnGround"/>; the Layout Review's stacked-traces asks it
+    /// per trace. Needs the partition.</summary>
     /// <remarks>Asked through the connectivity walk's own <see cref="DrcConnectivity.LocalTouch"/>, so
     /// a pad beside a pour is tested against the pour's edges near it rather than all of them: a pour's
     /// or a plane's box is the board, so every pad on it would clip its whole outline (brief-review-3).</remarks>
-    private HashSet<int> NetsOf(Paths64 component, IReadOnlyCollection<LayerKey> layers)
+    internal HashSet<int> NetsOf(Paths64 component, IReadOnlyCollection<LayerKey> layers)
     {
         var nets = new HashSet<int>();
         var touch = Clipper.InflatePaths(component, TouchDilationDbu, JoinType.Miter, EndType.Polygon, MiterLimit);

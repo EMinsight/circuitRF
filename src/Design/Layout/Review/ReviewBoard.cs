@@ -60,6 +60,15 @@ internal sealed class ReviewBoard
         var merged = LayoutBooleans.Union(outline, tech).Shapes;
         var drawn = merged.SelectMany(s => PlanarExtractor.ToPolygons(s, tech, 1.0)).ToList();
         var boards = Em3dLayoutSolids.Builder.BoardRegions(drawn, out int lines);
+        // A line that does not close has no hole, so BoardRegions keeps it as a region — the strokes
+        // themselves. A board is never a strip: one as thin as a line is an outline with a gap in it.
+        boards.RemoveAll(b =>
+        {
+            if (b.HoleRings.Count > 0) return false;
+            var (x0, y0, x1, y1) = b.Bounds();
+            return Em3dLayoutSolids.Builder.CharacteristicWidth(b)
+                 < Em3dLayoutSolids.Builder.OutlineLineFraction * Math.Min(x1 - x0, y1 - y0);
+        });
 
         var paths = new Paths64();
         foreach (var b in boards)
@@ -132,6 +141,12 @@ internal sealed class ReviewBoard
         _bands[width] = band;
         return band;
     }
+
+    /// <summary>The line through the middle of the band of <paramref name="width"/>: the edge moved in by half
+    /// of it with ROUND joins, one closed loop per edge (the outer edge and each cut-out). Empty where the board
+    /// is narrower than the band.</summary>
+    public Paths64 MidLine(long width) =>
+        Region.Count == 0 || width <= 0 ? [] : Clipper.InflatePaths(Region, -width / 2.0, JoinType.Round, EndType.Polygon);
 
     /// <summary>The closest approach of <paramref name="piece"/> to the board edge, DBU — searched only
     /// among the edges within <paramref name="within"/> of it, which is all an edge check asks about.</summary>

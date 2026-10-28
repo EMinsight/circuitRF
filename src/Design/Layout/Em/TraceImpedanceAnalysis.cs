@@ -1027,6 +1027,78 @@ public static partial class TraceImpedanceAnalysis
         };
     }
 
+    /// <summary>One trace as the finder found it, for the Layout Review (brief-review-4 R-rev4-1).</summary>
+    /// <param name="Region">Its copper: each of its pieces' strips (centre line ± half the width), a piece
+    /// lengthened by half its width at a joint with the next so a bend's corner is covered — and never at
+    /// the trace's own two ends, which stop where the finder stopped them.</param>
+    /// <param name="Width">Its nominal width, DBU — the width over the largest share of its length.</param>
+    /// <param name="Strips">The strips <paramref name="Region"/> is the union of, each with its piece's direction.</param>
+    internal sealed record FoundTrace(Paths64 Region, double Width, Bbox Bounds, IReadOnlyList<FoundStrip> Strips);
+
+    /// <summary>One piece's strip of a <see cref="FoundTrace"/>, with the piece's unit direction.</summary>
+    internal sealed record FoundStrip(Path64 Strip, double Dx, double Dy, Bbox Bounds);
+
+    /// <summary>
+    /// Every trace on every copper layer, keyed by the layer the analysis keys it by (a conductor's first
+    /// drawing layer with copper) — found by <see cref="Survey(IReadOnlyList{LayoutShape}, Technology, int,
+    /// TraceImpedanceOptions, RunControl?)"/>'s own preparation and <see cref="FindLayer"/>, pours excluded,
+    /// copper wholly inside a declared pad excluded as <see cref="Analyze(IReadOnlyList{LayoutShape},
+    /// Technology, int, TraceImpedanceOptions, RunControl?)"/> excludes it, and a short chain a pad as it is
+    /// in a run nothing points with. Nothing is cut or solved. Refused, with the analysis's own sentence,
+    /// where the stackup is.
+    /// </summary>
+    internal static (IReadOnlyDictionary<LayerKey, IReadOnlyList<FoundTrace>> Traces, string? Refusal) FindTraces(
+        IReadOnlyList<LayoutShape> shapes, Technology tech, int dbuPerMicron, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(shapes);
+        ArgumentNullException.ThrowIfNull(tech);
+        if (dbuPerMicron <= 0) dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
+        var options = new TraceImpedanceOptions();
+        var (prep, refusal) = Prepare(shapes, tech, dbuPerMicron, options, null, ct);
+        var result = new Dictionary<LayerKey, IReadOnlyList<FoundTrace>>();
+        if (prep is null) return (result, refusal);
+
+        foreach (var (key, band) in prep.Analysed)
+        {
+            ct.ThrowIfCancellationRequested();
+            var lw = prep.FindLayer(key, prep.LayerName(key), band, options, ct);
+            var declaredPads = DeclaredPads(key, shapes, tech);
+            var traces = new List<FoundTrace>();
+            foreach (var chain in lw.Chains)
+            {
+                if (chain.Short || (declaredPads.Count > 0 && InsideDeclaredPad(chain, declaredPads))) continue;
+                var strips = new List<FoundStrip>(chain.Pieces.Count);
+                for (int i = 0; i < chain.Pieces.Count; i++)
+                {
+                    var (p, reversed) = chain.Pieces[i];
+                    double len = p.Length;
+                    if (len <= 0) continue;
+                    double dx = (p.Bx - p.Ax) / len, dy = (p.By - p.Ay) / len;
+                    double h = 0.5 * p.Width;
+                    // Lengthened at a joint only: the chain's first piece keeps its start, its last its end.
+                    bool atA = reversed ? i < chain.Pieces.Count - 1 : i > 0;
+                    bool atB = reversed ? i > 0 : i < chain.Pieces.Count - 1;
+                    double ax = p.Ax - (atA ? h * dx : 0), ay = p.Ay - (atA ? h * dy : 0);
+                    double bx = p.Bx + (atB ? h * dx : 0), by = p.By + (atB ? h * dy : 0);
+                    var strip = new Path64(4)
+                    {
+                        new((long)Math.Round(ax - h * dy), (long)Math.Round(ay + h * dx)),
+                        new((long)Math.Round(bx - h * dy), (long)Math.Round(by + h * dx)),
+                        new((long)Math.Round(bx + h * dy), (long)Math.Round(by - h * dx)),
+                        new((long)Math.Round(ax + h * dy), (long)Math.Round(ay - h * dx)),
+                    };
+                    if (!Clipper.IsPositive(strip)) strip.Reverse();
+                    strips.Add(new FoundStrip(strip, dx, dy, DrcRegions.BoundsOf([strip])));
+                }
+                if (strips.Count == 0) continue;
+                var region = Clipper.Union([.. strips.Select(t => t.Strip)], LayoutClipper.Rule);
+                traces.Add(new FoundTrace(region, DominantWidth(chain, dbuPerMicron), DrcRegions.BoundsOf(region), strips));
+            }
+            result[key] = traces;
+        }
+        return (result, null);
+    }
+
     /// <summary>One cut at the middle of the one chain in <paramref name="lw"/> — the nearest station to
     /// the middle whose cut is solvable — solved. Cutting the chain is <see cref="Cut"/>'s own work.</summary>
     private static (double? Z0, string? Refusal) TypicalZ0(LayerWork lw, TraceStack ctx, int dbuPerMicron,

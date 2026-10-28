@@ -24072,3 +24072,67 @@ an import whose mechanical holes share a layer with its laser vias.
 **Thresholds read across checks.** `thermal-pad-area` is declared once, on `thermal-vias`, and read by all four
 through `ReviewContext.Threshold`; `shared-ground-via` reads `ground-via-distance.max-distance` the same way. The
 area is a new threshold kind, `ReviewThresholdKind.Area` (mm²), shown with its unit beside `Density` (per mm²).
+
+## brief review-4 — stacked traces and the board-edge checks (2026-10-27)
+
+`Checks/StackedTracesCheck` and `Checks/EdgeChecks` (`edge-trace`, `edge-stitching`); `edge-copper` keeps its
+file from brief review-2. Registry order follows the overview's table: the pad checks, `stacked-traces`, then the
+three edge checks.
+
+**Traces come from ONE new internal entry point, `TraceImpedanceAnalysis.FindTraces`.** It is `Prepare` +
+`FindLayer` with default options, dropping what a scope-less run drops (short chains, chains inside a declared
+pad); nothing is cut or solved. A `FoundTrace` is the chain's pieces' strips (centre line ± half the width) with
+its dominant width. A strip is lengthened by half its width only at a JOINT with the next piece, which covers a
+bend's corner; the trace's own two ends are not lengthened, since that would push a trace that stops 0.1 mm short
+of the edge onto it. `ReviewContext.Traces` finds them once and both trace checks share them.
+
+**`stacked-traces`' nets are the partition's**, asked per trace through `DrcRegionEval.NetsOf` (made internal for
+this) — the routine `same_net` uses. Only traces whose grown regions overlap get asked. The overlap's length is
+its area over (the narrower width + 2 × lateral margin). Dividing by the narrower width alone, as the brief
+words it, is the same at the default margin of 0, but with any margin it lengthens an overlap the margin only
+widened.
+
+**`edge-stitching` measures along the band's middle line, not area over band width.** The brief's
+`band − ground` with length = area / width overcounts badly: a ground pour pulled back from the edge by
+`edge-copper`'s 0.25 mm leaves a 0.25 mm strip of band uncovered all the way round the board, and on a 20 mm
+board that strip alone reads as ~20 mm of edge with no ground. On the middle line (`ReviewBoard.MidLine`, the
+board eroded by half the band with round joins) a pour counts wherever it reaches half way across the band.
+For the vias the band-minus-discs construction has a second artefact: a via near one side of the band leaves
+slivers on the other side between vias that are closer than `max-gap`. So each via's disc is sized for the
+middle line, radius √((max-gap/2)² + δ²) where δ is the via's offset from that line. That covers exactly
+max-gap/2 of the line either side of the via, so the stretch between two vias is their spacing minus max-gap,
+and the gap reported is the stretch plus max-gap/2 for each end a via bounds. A loop with no via on it is
+reported at its own length. Clipper's open-path difference splits a stretch where it crosses the loop's start
+vertex, and the pieces are joined back at shared endpoints. Stitching gaps carry no layer (they are the
+board's, not a copper layer's); the no-ground-copper findings carry the outer layer's.
+
+**Vias are shared with the pad checks.** `ReviewPads.BuildVias` was factored out and `ReviewContext.Vias` builds
+it once. `edge-stitching` touches `ctx.Pads` first, so pad building can mark a through-hole pin's hole on those
+same objects, and the result does not depend on whether the pad checks are enabled. The sentences for no ground
+reference, no ground copper and no plated drill layer are constants in `ReviewPads`, and the no-copper sentence
+is one in `EdgeCopperCheck`, so a fix that stops several checks gives ONE note (R-rev2-5).
+
+**Brief review-2's board region accepted an outline with a gap.** Strokes that do not close leave a strip with
+no hole. `BoardRegions` treats only a shape WITH a hole as a line, so it kept the strip itself as a board region,
+and every edge check ran against a 0.1 mm-wide "board". `ReviewBoard` now drops a hole-less region as thin as a
+line (`CharacteristicWidth < OutlineLineFraction × its smaller extent`, the same test `BoardRegions` applies to
+lines), and the not-run sentence with the largest gap's location is reached. `CharacteristicWidth` was made
+internal for it. `BoardRegions` itself is unchanged, because the 3D view and the crop call it too.
+
+**`stacked-traces` counts only parallel overlap.** Area over the narrower width (R-rev4-4) turns a CROSSING into
+a run whenever one trace is wide: a 1 mm trace crossed at 45° by a 0.1 mm one measures 1.41 mm, at 90° 1.0 mm,
+and both pass the 1 mm minimum. On a large 10-layer board six of ten findings were crossings like that. So
+`FoundTrace` carries its strips with each piece's direction, and only the overlap of an upper and a lower piece
+running the same way (within `CornerMinDeg`, the finder's own threshold for "still straight") is counted. The
+crossing test uses a 1.2 mm trace, which measured 1.2 mm under the old rule.
+
+**`on_ground` of a whole outer layer is the wrong way to ask for its ground copper.** `OnGroundOf` re-derives each
+component's nets by touch-testing it against every partition piece its box meets. A ground pour's box is the
+board, so the pour was clipped against every piece on its layer: 270 s of a 295 s `edge-stitching` run on a
+large board. The partition already labels every piece with its net, so `edge-stitching` takes the pieces on the
+layer whose net is ground (`GroundNets`). That is the same selection, and the findings were identical, in 22 s.
+
+**On the large board the default 1 mm band finds the WHOLE edge** (three findings: no ground copper on top,
+none on bottom, no stitching via, each one 540 mm loop). Its ground pours and stitching vias start between 1 and
+2 mm in from the edge. A 2 mm band gives 59 findings and a 4 mm one 106, mostly stitching gaps of about 3 mm.
+That is the board as drawn, not a defect of the check, so the default was not moved.

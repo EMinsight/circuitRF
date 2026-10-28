@@ -15,8 +15,9 @@ public enum ReviewCheckState { Ran, NotRun, Cancelled }
 /// One place on the board a reviewer would want to look at.
 /// </summary>
 /// <param name="CheckId">The check that marked it — a <see cref="ReviewCheckDef.Id"/>.</param>
-/// <param name="Layer">The drawing layer it is on, or null for a Note. A finding between two layers
-/// names the upper one and says both in its sentence.</param>
+/// <param name="Layer">The drawing layer it is on, or null for a Note and for a finding of the board
+/// rather than of a layer (an edge-stitching gap). A finding between two layers names the upper one and
+/// says both in its sentence.</param>
 /// <param name="Sentence">What a reviewer reads, lengths in the layout's display unit.</param>
 /// <param name="MeasuredText">The measured value alone, formatted, or null.</param>
 /// <param name="MarkerRings">The marked region, flat DBU vertex lists, as <c>DrcViolation.MarkerRings</c>.</param>
