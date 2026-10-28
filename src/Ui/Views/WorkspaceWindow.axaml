@@ -214,7 +214,7 @@
                             <NativeMenuItem.Menu>
                                 <NativeMenu>
                                     <NativeMenuItem Header="Schematic from Artwork…" Command="{Binding CreateSchematicFromArtworkCommand}" ToolTip="Recognise the layout's copper — ground, vias, ports, parts and lines — and write it as a schematic of native components, reviewed first in a parts table. Requires an active layout document saved to a cell."/>
-                                    <NativeMenuItem Header="Schematic from Image…"   Command="{Binding CreateSchematicFromImageCommand}" ToolTip="Read a picture of a schematic — dropped, pasted or browsed to — and write it as a schematic of native components in a new cell, reviewed first in a parts table. Requires an open workspace."/>
+                                    <NativeMenuItem Header="Schematic from Image…"   Command="{Binding CreateSchematicFromImageCommand}" ToolTip="Not available yet: the schematic reader is being improved. Pictures are read as layouts or plots."/>
                                     <NativeMenuItem Header="Layout from Image…"      Command="{Binding CreateLayoutFromImageCommand}" ToolTip="Trace a picture of a layout — dropped, pasted or browsed to — into the copper, vias and outline of a new layout cell. Requires an open workspace."/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
@@ -1221,8 +1221,8 @@
                         <MenuItem.Icon><mi:MaterialIcon Kind="FileChart" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="Schematic from _Image…"
-                              Command="{Binding CreateSchematicFromImageCommand}"
-                              ToolTip.Tip="Read a picture of a schematic — dropped, pasted or browsed to — and write it as a schematic of native components in a new cell, reviewed first in a parts table. Requires an open workspace.">
+                              Command="{Binding CreateSchematicFromImageCommand}" ToolTip.ShowOnDisabled="True"
+                              ToolTip.Tip="Not available yet: the schematic reader is being improved. Pictures are read as layouts or plots.">
                         <MenuItem.Icon><mi:MaterialIcon Kind="ImageSearchOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="La_yout from Image…"

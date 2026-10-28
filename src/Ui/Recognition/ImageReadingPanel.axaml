@@ -93,6 +93,41 @@
                             ToolTip.Tip="Zoom to Fit  (F)">
                         <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
                     </Button>
+                    <!-- A layout picture's drawing tools (brief-dfr29-1 R-dfr29-1-3), each armed until Escape. On every layout picture,
+                         with or without a scale; Fill first, beside Fit (owner, 2026-10-28). -->
+                    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" IsVisible="{Binding DrawToolsShown}">
+                        <!-- Fill: a paint bucket, for a line drawing whose copper is only outlined. -->
+                        <ToggleButton Click="OnBoxTool" Padding="6,3" IsChecked="{Binding FillArmed}"
+                                      ToolTip.Tip="Fill: click inside an outline to paint the area it encloses as copper on the layer chosen beside it — for a drawing that outlines its copper. The holes inside it are read as vias. Escape stops.">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <mi:MaterialIcon Kind="FormatColorFill" Width="14" Height="14"/>
+                                <TextBlock Text="Fill" FontSize="12" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </ToggleButton>
+                        <ComboBox ItemsSource="{Binding ConductorChoices}" SelectedItem="{Binding DrawLayer}" IsVisible="{Binding DrawLayerShown}"
+                                  FontSize="12" MinHeight="0" Height="26" VerticalAlignment="Center"
+                                  ToolTip.Tip="The conductor the Copper and Fill tools put copper on."/>
+                        <ToggleButton Click="OnBoxTool" Content="Via" Padding="6,3" FontSize="12" IsChecked="{Binding ViaArmed}"
+                                      ToolTip.Tip="Via: click to place one; a click on a hole places it at the hole's centre. Escape stops."/>
+                        <!-- The via's drill (brief-dfr30-1 R-dfr30-1-2): with the Via tool armed, or a hand via selected. -->
+                        <ComboBox ItemsSource="{Binding ViaDrillChoices}" SelectedItem="{Binding ViaDrill}" IsVisible="{Binding DrillPickerShown}"
+                                  FontSize="12" MinHeight="0" Height="26" VerticalAlignment="Center"
+                                  ToolTip.Tip="The drill of the vias placed next — or of the via selected. From the hole takes the size of the hole clicked."/>
+                        <TextBox x:Name="OtherDrillInput" Text="{Binding OtherDrillText}" IsVisible="{Binding OtherDrillShown}" Width="80"
+                                 FontSize="12" MinHeight="0" Height="26" PlaceholderText="0.3 mm" KeyDown="OnOtherDrillKey"
+                                 ToolTip.Tip="The drill, with its unit. Enter gives it to the via selected."/>
+                        <ToggleButton Click="OnBoxTool" Content="Copper" Padding="6,3" FontSize="12" IsChecked="{Binding CopperArmed}"
+                                      ToolTip.Tip="Copper: drag a rectangle, or click corners and double-click to close, to fill copper on the layer chosen beside it. Escape stops."/>
+                        <ToggleButton Click="OnBoxTool" Content="Outline" Padding="6,3" FontSize="12" IsChecked="{Binding OutlineArmed}"
+                                      ToolTip.Tip="Outline: drag a rectangle, or click corners and double-click to close — the board's outline, written on the technology's outline layer. Drawing another replaces it."/>
+                        <!-- Remove one kind at once (R-dfr30-1-4): built as it opens, each item saying how many it removes. -->
+                        <Button x:Name="RemoveButton" Content="Remove ▾" Padding="6,3" FontSize="12"
+                                ToolTip.Tip="Remove one kind of thing at once — the vias read, the vias placed, what was drawn, or the copper read on one layer. Each is one undo step.">
+                            <Button.Flyout>
+                                <MenuFlyout Opening="OnRemoveOpening"/>
+                            </Button.Flyout>
+                        </Button>
+                    </StackPanel>
                     <ToggleButton Click="OnBoxTool" Padding="6,3" VerticalAlignment="Center" IsVisible="{Binding IsAutomaticPlotPicture}"
                                   IsChecked="{Binding ReadOnlyHereArmed}"
                                   ToolTip.Tip="Read only here: drag a box around one plot, and the picture is cropped to it and read as if only that part had been given.">
@@ -108,18 +143,6 @@
                                   ToolTip.Tip="Point: click on a traced curve to pin a point there; it snaps to the curve and is listed under Points with its values. Escape stops.">
                         <mi:MaterialIcon Kind="Crosshairs" Width="16" Height="16"/>
                     </ToggleButton>
-                    <!-- A layout picture's drawing tools (brief-dfr29-1 R-dfr29-1-3), each armed until Escape. -->
-                    <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" IsVisible="{Binding DrawToolsShown}">
-                        <ToggleButton Click="OnBoxTool" Content="Via" Padding="6,3" FontSize="12" IsChecked="{Binding ViaArmed}"
-                                      ToolTip.Tip="Via: click to place one; a click on a hole places it at the hole's centre. Escape stops."/>
-                        <ToggleButton Click="OnBoxTool" Content="Copper" Padding="6,3" FontSize="12" IsChecked="{Binding CopperArmed}"
-                                      ToolTip.Tip="Copper: drag a rectangle, or click corners and double-click to close, to fill copper on the layer chosen beside it. Escape stops."/>
-                        <ComboBox ItemsSource="{Binding ConductorChoices}" SelectedItem="{Binding DrawLayer}" IsVisible="{Binding CopperArmed}"
-                                  FontSize="12" MinHeight="0" Height="26" VerticalAlignment="Center"
-                                  ToolTip.Tip="The conductor the Copper tool fills."/>
-                        <ToggleButton Click="OnBoxTool" Content="Outline" Padding="6,3" FontSize="12" IsChecked="{Binding OutlineArmed}"
-                                      ToolTip.Tip="Outline: drag a rectangle, or click corners and double-click to close — the board's outline, written on the technology's outline layer. Drawing another replaces it."/>
-                    </StackPanel>
                     <Border Classes="pill" Margin="0,4" IsVisible="{Binding LegendShown}">
                         <StackPanel Orientation="Horizontal">
                             <ToggleButton Classes="legend" IsChecked="{Binding ShowCopper}" IsVisible="{Binding IsLayoutPicture}" ToolTip.Tip="Traced copper, outlined in each layer's colour.">
@@ -271,13 +294,18 @@
                         </Border>
                         <!-- A copper region clicked: copper on a chosen conductor, or not copper at all (a part's body). -->
                         <Border x:Name="CopperBox" Classes="pill" IsVisible="{Binding CopperPickerShown}" Padding="8,6">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Button Content="Copper on" Command="{Binding RegionIsCopperCommand}" FontSize="12"
-                                        ToolTip.Tip="This region is copper on the conductor chosen beside it."/>
-                                <ComboBox ItemsSource="{Binding ConductorChoices}" SelectedItem="{Binding PickerLayer}" FontSize="12"
-                                          MinHeight="0" Height="26" VerticalAlignment="Center"/>
-                                <Button Content="Not copper" Command="{Binding RegionIsNotCopperCommand}" FontSize="12"
-                                        ToolTip.Tip="This region is not copper — a part's body the colours read as copper: nothing is written inside it, on any layer."/>
+                            <StackPanel Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Content="Copper on" Command="{Binding RegionIsCopperCommand}" FontSize="12"
+                                            ToolTip.Tip="This region is copper on the conductor chosen beside it."/>
+                                    <ComboBox ItemsSource="{Binding ConductorChoices}" SelectedItem="{Binding PickerLayer}" FontSize="12"
+                                              MinHeight="0" Height="26" VerticalAlignment="Center"/>
+                                    <Button Content="Not copper" Command="{Binding RegionIsNotCopperCommand}" FontSize="12"
+                                            ToolTip.Tip="This region is not copper — a part's body the colours read as copper: nothing is written inside it, on any layer."/>
+                                </StackPanel>
+                                <!-- A traced region is not reshaped here (brief-dfr30-1 R-dfr30-1-5, D1 (a)). -->
+                                <TextBlock Text="{x:Static rec:ImageSourceViewModel.ReshapeHint}" FontSize="11" Opacity="0.75"
+                                           TextWrapping="Wrap" MaxWidth="340"/>
                             </StackPanel>
                         </Border>
                         <Border x:Name="Z0Box" Classes="pill" IsVisible="{Binding Scale.AskingZ0}" Padding="8,6">
@@ -300,9 +328,9 @@
 
             <!-- The right column: layers, advanced, parts. -->
             <Grid Grid.Column="2" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="8" IsVisible="{Binding HasSideColumn}">
+                <StackPanel Grid.Row="0" Spacing="8" IsVisible="{Binding IsLayoutPicture}">
                 <!-- Layers (R-im5-5): swatch, share, layer. -->
-                <Border Grid.Row="0" Classes="slot" Classes.wants="{Binding HighlightLayers}" Padding="0"
-                        IsVisible="{Binding IsLayoutPicture}">
+                <Border Classes="slot" Classes.wants="{Binding HighlightLayers}" Padding="0">
                     <StackPanel Spacing="4">
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Text="Layers" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" Margin="2,0,0,0"/>
@@ -341,8 +369,35 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+                        <!-- A line drawing says so once (brief-dfr30-1 R-dfr30-1-7). -->
+                        <TextBlock Text="{Binding LineArtNote}" FontSize="12" TextWrapping="Wrap" Margin="2,2,2,0" Opacity="0.85"
+                                   IsVisible="{Binding LineArtNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     </StackPanel>
                 </Border>
+
+                <!-- The corrections, one row each (brief-dfr30-1 R-dfr30-1-3): a click selects it on the canvas, × deletes it. -->
+                <StackPanel Spacing="2" IsVisible="{Binding HasCorrectionRows}">
+                    <TextBlock Text="Corrections" FontWeight="SemiBold" FontSize="12" Margin="2,0,0,0"/>
+                    <ListBox ItemsSource="{Binding CorrectionRows}" SelectedIndex="{Binding SelectedCorrection}" MaxHeight="180"
+                             KeyDown="OnCorrectionsKey">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="rec:PictureCorrectionRow">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                                    <TextBlock Text="{Binding Text}" FontSize="12" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                                        <ComboBox ItemsSource="{Binding Layers}" SelectedItem="{Binding Layer}" IsVisible="{Binding IsCopper}"
+                                                  FontSize="12" MinHeight="0" Height="24" Padding="6,0,0,0" VerticalContentAlignment="Center"
+                                                  ToolTip.Tip="The conductor the fill is on."/>
+                                        <TextBlock Text="{Binding Detail}" FontSize="12" Opacity="0.75" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="2" Classes="link" Content="✕" Command="{Binding DeleteCommand}" Padding="4,0"
+                                            ToolTip.Tip="Delete this correction."/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+                </StackPanel>
 
                 <!-- Advanced (R-im5-7): collapsed, remembered per user. Layout and schematic options only, so not in plot mode,
                      where the plot panel below has the whole column (R-ptu1-1). -->

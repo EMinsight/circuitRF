@@ -21,6 +21,7 @@ public partial class ImageReadingPanel : UserControl
     public ImageReadingPanel()
     {
         InitializeComponent();
+        BuildRemoveMenu();
         Canvas.ViewChanged += PlaceInline;
         // A box asked for before the canvas has a size is clamped into its corner; it moves beside its point once it does.
         Canvas.SizeChanged += (_, _) => PlaceInline();
@@ -138,6 +139,63 @@ public partial class ImageReadingPanel : UserControl
         if (box.Bounds.Width > 0) return box.Bounds.Size;
         box.Measure(Size.Infinity);
         return box.DesiredSize.Width > 0 ? box.DesiredSize : new Size(320, 80);
+    }
+
+    /// <summary>Other…'s size, Enter: given to the hand via selected (brief-dfr30-1 R-dfr30-1-2).</summary>
+    private void OnOtherDrillKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || _vm is null) return;
+        _vm.ApplyOtherDrillCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    /// <summary>Delete on the Corrections list removes the row selected.</summary>
+    private void OnCorrectionsKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Delete or Key.Back) || _vm is null) return;
+        _vm.DeleteSelectedCorrectionCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    /// <summary>Remove ▾ (R-dfr30-1-4): its items made once, so the menu has them as it opens, and each one's count and
+    /// whether it is enabled — never hidden — brought up to date as it opens.</summary>
+    private void OnRemoveOpening(object? sender, EventArgs e)
+    {
+        if (sender is not MenuFlyout menu || _vm is not { } vm) return;
+        var items = menu.Items.OfType<MenuItem>().ToList();
+        void Say(MenuItem item, string what, int n) { item.Header = $"{what} ({n})"; item.IsEnabled = n > 0; }
+        Say(items[0], "Vias read from the picture", vm.AutoViaCount);
+        Say(items[1], "Vias placed by hand", vm.HandViaCount);
+        Say(items[2], "Copper fills drawn", vm.CopperFillCount);
+        Say(items[3], "Areas painted", vm.PaintedCount);
+        Say(items[4], "Clears drawn", vm.ClearCount);
+        Say(items[5], "The outline drawn", vm.OutlineCount);
+        var read = items[6];
+        read.Items.Clear();
+        foreach (string layer in vm.ConductorChoices)
+        {
+            var one = new MenuItem { Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => _vm?.RemoveCopperRead(layer)) };
+            Say(one, layer, vm.CopperReadCount(layer));
+            read.Items.Add(one);
+        }
+        read.IsEnabled = read.Items.OfType<MenuItem>().Any(m => m.IsEnabled);
+    }
+
+    /// <summary>Remove ▾'s items, made with the panel: a menu whose items arrive as it opens is laid out empty.</summary>
+    private void BuildRemoveMenu()
+    {
+        if (RemoveButton.Flyout is not MenuFlyout menu) return;
+        MenuItem Item(Action<ImageSourceViewModel> act) =>
+            new() { Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => { if (_vm is { } v) act(v); }) };
+        menu.Items.Add(Item(v => v.RemoveAutoVias()));
+        menu.Items.Add(Item(v => v.RemoveHandVias()));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item(v => v.RemoveCopperFills()));
+        menu.Items.Add(Item(v => v.RemovePainted()));
+        menu.Items.Add(Item(v => v.RemoveClears()));
+        menu.Items.Add(Item(v => v.RemoveOutline()));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem { Header = "Copper read on" });
     }
 
     private void OnLabelKey(object? sender, KeyEventArgs e)

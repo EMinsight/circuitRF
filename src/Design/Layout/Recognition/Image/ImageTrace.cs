@@ -202,6 +202,9 @@ public sealed record ImageTraceResult
 
     /// <summary>Every round hole read, pixels, and what it became — what the dialog's hole picker offers.</summary>
     public IReadOnlyList<ImageTracedHole> Holes { get; init; } = [];
+
+    /// <summary>The picture draws its copper as outlines (brief-dfr30-1 R-dfr30-1-7): what the reading panel says once.</summary>
+    public bool LineArt { get; init; }
 }
 
 public static partial class ImageTrace
@@ -213,6 +216,12 @@ public static partial class ImageTrace
     public const string NoCopperRefusal =
         "The picture has no copper-coloured regions at the mapped colours: map a colour to a copper layer, or check " +
         "that the picture is a layout.";
+
+    /// <summary>The one note for a line drawing (brief-dfr30-1 R-dfr30-1-7). The reading is not changed for it: which of a
+    /// drawing's closed outlines are copper — and not a hole, a part's body or a letter — is not in the picture.</summary>
+    public const string LineArtNote =
+        "This picture draws copper as outlines, so little copper is read from it. A coloured or filled picture of the same " +
+        "board reads better.";
 
     public const string NoTechnologyRefusal =
         "There is no technology, so there are no layers to trace onto. Choose one — the workspace's default — and try again.";
@@ -254,6 +263,18 @@ public static partial class ImageTrace
         var prep = Prepare(input);
         token.ThrowIfCancellationRequested();
 
+        // The copper corrections — Clear, Copper, Fill — act in pixels, so they act before the scale: copper painted into
+        // a line drawing is a line the impedance scale can be measured on (owner, 2026-10-28). A correction never
+        // changes what is read, only what is written, so the line-drawing test is made on what was read.
+        var read = prep.Layers;
+        var fixOutcomes = new ImageCorrectionOutcome?[input.Corrections.Count];
+        var edited = EditCopper(read, input.Corrections, tech, fixOutcomes, prep.Clusters, input.Options);
+        prep = prep with
+        {
+            Layers = edited,
+            Painted = edited.Where(l => !read.Any(r => ReferenceEquals(r, l))).Select(l => l.Name).ToHashSet(StringComparer.Ordinal),
+        };
+
         var copperNames = ImageLayerMap.CopperLayers(tech).Select(k => ImageLayerMap.NameOf(tech, k)).ToHashSet(StringComparer.Ordinal);
         bool anyCopper = prep.Layers.Any(l => copperNames.Contains(l.Name) && l.Regions.Count > 0);
 
@@ -272,6 +293,9 @@ public static partial class ImageTrace
             Layers = [.. prep.Layers.Select(l => new ImageTracedLayer(l.Name, l.Key, l.Role, l.Regions, []))],
         };
         ReportColours(prep, report);
+        bool lineArt = IsLineArt(read.Where(l => copperNames.Contains(l.Name)));
+        if (lineArt) report.Add(RecognitionFindingClass.ImageLineArt, 1, LineArtNote);
+        result = result with { LineArt = lineArt };
         if (input.Photo is { } photoRead) BoardPhoto.Report(photoRead, report);
         if (scaleRefusal is not null) return result with { Refusal = scaleRefusal };
         // With nothing traced, the picture under the result is still a layout worth having — one to trace by hand.
@@ -290,7 +314,7 @@ public static partial class ImageTrace
         }
 
         control?.BeginStage("Tracing");
-        var built = Build(input, prep, chosen, report);
+        var built = Build(input, prep, chosen, report, fixOutcomes);
         token.ThrowIfCancellationRequested();
         return result with
         {
@@ -313,6 +337,9 @@ public static partial class ImageTrace
                                     Dictionary<string, CoverageMap> Coverage, List<PixelPad> Pads, List<CircleFit> Drills,
                                     double NarrowestPx, bool Photograph = false)
     {
+        /// <summary>The layers a copper correction changed — measured, by the impedance scale, as they will be written.</summary>
+        public IReadOnlySet<string> Painted { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
         /// <summary>The clusters traced onto each layer.</summary>
         public IReadOnlyDictionary<string, List<int>> ClustersByLayer { get; init; } = new Dictionary<string, List<int>>();
 
@@ -418,6 +445,29 @@ public static partial class ImageTrace
         {
             ClustersByLayer = byLayer.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal),
         };
+    }
+
+    /// <summary>The copper read is under this share of the box it spans, and drawn in lines no wider on average than
+    /// <see cref="LineArtWidthShare"/> of that box's narrower side (or <see cref="LineArtWidthPx"/>): a line drawing.</summary>
+    internal const double LineArtFilledShare = 0.2, LineArtWidthShare = 0.01, LineArtWidthPx = 3;
+
+    /// <summary>Whether the copper read is a line drawing's (brief-dfr30-1 R-dfr30-1-7): thin strokes — the mean width of
+    /// everything read, twice its area over its edge length — covering a small share of the box they span. Measured on
+    /// the strokes alone, not on whether they close: a picture's anti-aliasing breaks a drawn outline into pieces, and an
+    /// outline broken into pieces encloses nothing.</summary>
+    internal static bool IsLineArt(IEnumerable<PixelLayer> copper)
+    {
+        double ink = 0, edge = 0, left = double.MaxValue, top = double.MaxValue, right = double.MinValue, bottom = double.MinValue;
+        foreach (var r in copper.SelectMany(l => l.Regions))
+        {
+            ink += Math.Abs(r.Area);
+            edge += Perimeter(r.Outer) + r.Holes.Sum(Perimeter);
+            var b = Clipper.GetBounds(r.Outer);
+            (left, top, right, bottom) = (Math.Min(left, b.left), Math.Min(top, b.top), Math.Max(right, b.right), Math.Max(bottom, b.bottom));
+        }
+        if (ink <= 0 || edge <= 0) return false;
+        double box = (right - left) * (bottom - top), width = 2 * ink / edge;
+        return ink < LineArtFilledShare * box && width <= Math.Max(LineArtWidthPx, LineArtWidthShare * Math.Min(right - left, bottom - top));
     }
 
     private static void ClipToScope(float[] v, int w, int h, PixelRect s)
@@ -619,6 +669,9 @@ public static partial class ImageTrace
     /// hole's clearance and stays an opening.</summary>
     internal const double MaxHoleViaMetres = 1.0e-3;
 
+    /// <summary>Wider than this a round hole is no hole of the board's — a mounting hole is a few millimetres.</summary>
+    internal const double MaxHoleMetres = 10e-3;
+
     /// <summary>Narrower than this a round hole is a speck, not a drill.</summary>
     internal const double MinHoleViaMetres = 0.1e-3;
 
@@ -689,7 +742,8 @@ public static partial class ImageTrace
                                 BitmapShape? Underlay, List<long[]> Strokes, string Resolution, List<CircleFit> Drills,
                                 List<ImageTracedHole> Holes, List<ImageCorrectionOutcome> Outcomes, bool NonPlatedAdded);
 
-    private static Built Build(ImageTraceInput input, Prepared prep, ImageScaleCandidate scale, RecognitionReport report)
+    private static Built Build(ImageTraceInput input, Prepared prep, ImageScaleCandidate scale, RecognitionReport report,
+                               ImageCorrectionOutcome?[] outcomes)
     {
         var tech = input.Technology!;
         var raster = input.Source.Raster;
@@ -726,11 +780,11 @@ public static partial class ImageTrace
 
         // ── the copper corrections (R-dfr29-1-1): applied to what was read, never to the reading ─────────
         var fixes = input.Corrections;
-        var outcomes = new ImageCorrectionOutcome?[fixes.Count];
-        var layers = EditCopper(prep.Layers, fixes, tech, outcomes);
+        var layers = prep.Layers;   // the copper corrections applied already, before the scale
         var copperLayers = layers.Where(l => l.Role == ImageLayerRole.Layer && l.Key is { } k && copperOrder.Contains(k))
                                  .OrderBy(l => copperOrder.IndexOf(l.Key!.Value)).ToList();
         long Px(double px) => (long)Math.Round(px * scaleDbu);
+        long Metres(double m) => (long)Math.Round(m * 1e6 * dbuPerMicron);
         long fallbackPad = (long)Math.Round(tech.DefaultViaPadDbu * techToLayout);
         var holes = new List<ImageTracedHole>();
         var nonPlated = new List<CircleFit>();
@@ -776,7 +830,7 @@ public static partial class ImageTrace
                     consumed.Add(holder);
                 }
             }
-            long drill = Tidy(fix >= 0 && fixes[fix].DrillPx is { } stated ? Px(stated) : (long)Math.Round(2 * d.R * scaleDbu),
+            long drill = Tidy(fix >= 0 && fixes[fix].DrillMetres is { } stated ? Metres(stated) : (long)Math.Round(2 * d.R * scaleDbu),
                               tech.DefaultDisplayUnit, dbuPerMicron);
             if (pad > drill) pad = Tidy(pad, tech.DefaultDisplayUnit, dbuPerMicron);
             if (pad <= drill) pad = fallbackPad > drill ? fallbackPad : 2 * drill;
@@ -793,6 +847,11 @@ public static partial class ImageTrace
         // copper is written whole under it and the via opens it. A larger one (a mounting hole's clearance) stays an
         // opening — whether it is plated is not in the picture. A correction on a hole says what it is, drill colour or
         // not (R-dfr29-1-1).
+        //
+        // A ring around a round hole is not copper to make whole (brief-dfr30-1 R-dfr30-1-8): a datasheet draws a hole
+        // with a dark rim, and a ring read on its own layer is either that rim — sitting in the pour's hole on another
+        // layer, so the hole is the one drawn, its drill the rim's centre line — or the hole's pad, which is the via's
+        // as a drill circle's ring is. Made whole, either one was a solid copper disc on a layer no one drew one on.
         var holeVias = new HashSet<PathD>(ReferenceEqualityComparer.Instance);
         var holeDrills = new List<CircleFit>();
         int openings = 0, autoPlaced = 0;
@@ -800,11 +859,15 @@ public static partial class ImageTrace
         {
             long maxDrill = (long)Math.Round(MaxHoleViaMetres * 1e6 * dbuPerMicron), minDrill = (long)Math.Round(MinHoleViaMetres * 1e6 * dbuPerMicron);
             var placed = new List<(double X, double Y, double R)>();
+            var (rings, rimmed) = Rings(copperLayers);
             foreach (var l in copperLayers)
                 foreach (var region in l.Regions)
                     foreach (var hole in region.Holes)
                     {
                         if (RoundHole(hole) is not { } c) continue;
+                        var ring = rings.GetValueOrDefault(region);
+                        if (ring is { Rim: true }) continue;   // drawn as its pour's hole, settled there
+                        if (rimmed.TryGetValue(hole, out var drawn)) c = drawn;
                         if (prep.Drills.Any(d => Within(hole, d))) continue;   // a drill circle's own hole, settled above
                         int fix = LastOn(fixes, outcomes, c.Cx, c.Cy, c.R);
                         var said = fix >= 0 ? fixes[fix].Kind : (ImageCorrectionKind?)null;
@@ -818,10 +881,14 @@ public static partial class ImageTrace
                         if (said == ImageCorrectionKind.Via)
                         {
                             outcomes[fix] = new(fixes[fix], barrel is null ? $"{tech.Name} has no via layer to place it on." : null);
-                            if (fixes[fix].DrillPx is { } stated) drill = Px(stated);
+                            if (fixes[fix].DrillMetres is { } stated) drill = Metres(stated);
                         }
                         else if (!auto) { Open(c, plated: true); continue; }
-                        else if (drill > maxDrill) { openings++; Open(c, plated: true); continue; }
+                        // Wider than any drilled hole, a "round" hole is the board inside a drawn outline (a rounded
+                        // square passes RoundHole): the copper's hole as read, never a hole of the board's.
+                        else if (drill > MaxHoleMetres / MaxHoleViaMetres * maxDrill) continue;
+                        // Compared as stated: a 1 mm hole read a few microns over is a 1 mm via, not a mounting hole.
+                        else if (Tidy(drill, tech.DefaultDisplayUnit, dbuPerMicron) > maxDrill) { openings++; Open(c, plated: true); continue; }
                         else if (drill < minDrill) continue;
                         holeVias.Add(hole);
                         if (barrel is null || placed.Any(p => Math.Abs(p.X - c.Cx) <= p.R && Math.Abs(p.Y - c.Cy) <= p.R)) continue;
@@ -829,11 +896,19 @@ public static partial class ImageTrace
                         placed.Add((c.Cx, c.Cy, c.R));
                         holeDrills.Add(c);
                         if (said is null) autoPlaced++;
+                        long pad = 0;
+                        if (ring is { } pr)
+                        {
+                            consumed.Add(region);   // the via's pad, not a disc of copper as well
+                            pad = Tidy((long)Math.Round(2 * pr.Outer.R * scaleDbu), tech.DefaultDisplayUnit, dbuPerMicron);
+                        }
+                        foreach (var rim in rings.Where(kv => kv.Value.Rim && kv.Value.In == hole)) consumed.Add(rim.Key);
+                        if (pad <= drill) pad = fallbackPad > drill ? fallbackPad : 2 * drill;
                         var (cx, cy) = frame.ToTarget(c.Cx, c.Cy);
                         vias.Add(new ViaShape
                         {
                             X = (long)Math.Round(cx), Y = (long)Math.Round(cy), DrillSize = drill,
-                            PadSize = fallbackPad > drill ? fallbackPad : 2 * drill, Layer = barrel.Value, LandingLayer = l.Key,
+                            PadSize = pad, Layer = barrel.Value, LandingLayer = l.Key,
                         });
                     }
             if (barrel is null) holeVias.Clear();
@@ -875,7 +950,7 @@ public static partial class ImageTrace
             var landing = copperLayers.FirstOrDefault(l => l.Regions.Any(r => Clipper.PointInPolygon(pt, r.Outer) != PointInPolygonResult.IsOutside
                                                                                && r.Holes.All(hp => Clipper.PointInPolygon(pt, hp) != PointInPolygonResult.IsInside)));
             if (landing is null) { outcomes[i] = new(fixes[i], $"There is no copper at {at} for a via to land on."); continue; }
-            long drill = fixes[i].DrillPx is { } stated ? Tidy(Px(stated), tech.DefaultDisplayUnit, dbuPerMicron)
+            long drill = fixes[i].DrillMetres is { } stated ? Tidy(Metres(stated), tech.DefaultDisplayUnit, dbuPerMicron)
                        : tech.DefaultViaDrillDbu > 0 ? (long)Math.Round(tech.DefaultViaDrillDbu * techToLayout)
                        : Tidy((long)Math.Round(3 * MinHoleViaMetres * 1e6 * dbuPerMicron), tech.DefaultDisplayUnit, dbuPerMicron);
             var (cx, cy) = frame.ToTarget(p.X, p.Y);
@@ -1025,6 +1100,40 @@ public static partial class ImageTrace
 
         return new Built(frame, dbuPerMicron, traced, shapes, underlay, strokes, resolution, [.. viaDrills, .. holeDrills], holes,
                          outcomeList, nonPlatedAdded);
+    }
+
+    /// <summary>A region that is one ring round one round hole.</summary>
+    /// <param name="Outer">The ring's outer circle.</param>
+    /// <param name="Rim">It fills <paramref name="In"/>, a round hole in another layer's copper: a hole's drawn rim.</param>
+    private sealed record Ring(CircleFit Outer, bool Rim, PathD? In);
+
+    /// <summary>Every ring round a round hole on <paramref name="copper"/> (R-dfr30-1-8), and each pour hole a rim fills,
+    /// with the circle drawn: the rim's centre line, half-way between its outer and inner edges.</summary>
+    private static (Dictionary<ContourRegion, Ring> Rings, Dictionary<PathD, CircleFit> Rimmed) Rings(List<PixelLayer> copper)
+    {
+        var rings = new Dictionary<ContourRegion, Ring>(ReferenceEqualityComparer.Instance);
+        var rimmed = new Dictionary<PathD, CircleFit>(ReferenceEqualityComparer.Instance);
+        var found = new List<(PixelLayer Layer, ContourRegion Region, CircleFit Inner, CircleFit Outer)>();
+        foreach (var l in copper)
+            foreach (var r in l.Regions)
+                if (r.Holes.Count == 1 && RoundHole(r.Holes[0]) is { } inner && RoundHole(r.Outer) is { } outer
+                    && outer.R > inner.R && Math.Abs(outer.Cx - inner.Cx) <= 0.5 * inner.R && Math.Abs(outer.Cy - inner.Cy) <= 0.5 * inner.R)
+                    found.Add((l, r, inner, outer));
+        foreach (var (layer, region, inner, outer) in found)
+        {
+            PathD? hole = null;
+            foreach (var l in copper.Where(l => l != layer))
+                foreach (var r in l.Regions)
+                    foreach (var h in r.Holes)
+                        if (hole is null && RoundHole(h) is { } c && Math.Abs(c.Cx - outer.Cx) <= 0.5 * inner.R
+                            && Math.Abs(c.Cy - outer.Cy) <= 0.5 * inner.R && Math.Abs(c.R - outer.R) <= Math.Max(1.5, 0.15 * outer.R))
+                        {
+                            hole = h;
+                            rimmed[h] = new CircleFit(c.Cx, c.Cy, 0.5 * (c.R + inner.R), 0);
+                        }
+            rings[region] = new Ring(outer, hole is not null, hole);
+        }
+        return (rings, rimmed);
     }
 
     private static bool Within(PathD hole, CircleFit d)

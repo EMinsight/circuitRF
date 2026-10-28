@@ -446,7 +446,7 @@
                         <Separator x:Name="CtxImageSep" IsVisible="False"/>
                         <MenuItem x:Name="CtxImageSchematic"
                                   Header="Create Schematic from Image…"
-                                  IsVisible="False"
+                                  IsVisible="False" ToolTip.ShowOnDisabled="True"
                                   Click="OnCtxImageSchematic">
                             <MenuItem.Icon>
                                 <mi:MaterialIcon Kind="ImageSearchOutline" Width="14" Height="14"/>

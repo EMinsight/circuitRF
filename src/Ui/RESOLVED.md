@@ -41074,3 +41074,46 @@ when only one is, before the "one layer analysed" fallback. Field report: with e
 and Top Copper still the current drawing layer (an imported Gerber opens on it), Add region ▸ Rectangle made a Top
 region — which is drawn only while Top is shown, so it vanished as it was drawn and the reviewer had to change its
 layer in the list afterwards. Gate: `ImpedancePanelTests.ARectangle_WithOnlyBottomShown_IsABottomRegion`.
+
+## Create Layout from Image: corrections as objects, a via's drill, Remove ▾ (brief DFR30-1, 2026-10-28)
+
+- `ImageSourceViewModel.CorrectionEdits.cs` holds the Corrections list (`CorrectionRows`, one `PictureCorrectionRow`
+  per record), selection by index (`SelectedCorrection`), the edits (delete, move, add or remove a corner, move a hand
+  via, change a fill's conductor), the Drill picker and Remove ▾. **Every edit replaces a record in `Corrections`
+  through `Correct`.** So it is one undo step, and the CLI still builds the same list.
+- **The rows are rebuilt in `CorrectionsChanged`, called by `Correct`, `UndoCorrection` and `ForgetCorrections`.**
+  They are not rebuilt on `Corrections.CollectionChanged`, which fires once per item of each Clear-and-refill. The
+  ListBox clears its selection while its rows are replaced and pushes -1 back through `SelectedIndex`, so the setter
+  ignores writes while rebuilding and the selection is re-raised afterwards. The Drill picker and a row's conductor
+  picker ignore a pushed `null` for the same reason (`src/Ui/CLAUDE.md`'s ComboBox rule).
+- **The canvas hit-tests corrections through the view model** (`CorrectionAt`, `VertexAt`, `EdgeAt`), so the tests
+  drive the same code a click does. Points are checked first (a hand via inside a fill is the via), then shapes, the
+  last made first. A via on a hole selects both its row and the hole, so the hole picker still opens. A drag is held on
+  the canvas and committed on release as one step. The corner clicked survives the edits made to it, so Delete after a
+  double-click on an edge removes that corner, not the whole fill.
+- **The board outline is drawn by the canvas from `OutlinePx`** (the last applied Outline correction, else the outline
+  layer's paths read, back through the frame), above everything else, with the picture outside it dimmed. The overlay's
+  own `fix:` Line item for it is skipped.
+- **Remove ▾'s menu items are made when the panel is built**, and `Opening` only sets their counts and whether they
+  are enabled. Items added in `Opening` arrive after the presenter is laid out, and the menu opened as a near-zero box
+  (seen in a UiSnapshot render).
+- *Vias read from the picture* are the trace's `Via` holes not under a hand Via correction. Each gets a `NotVia`, so
+  its hole stays an opening.
+- `ChooseHole` keeps a hand via's drill when the hole is said to be a via again. Before this it re-added the via with
+  no drill.
+
+## Schematic from Image greyed everywhere (owner decision, 2026-10-28)
+
+`ImageEntryPoints.SchematicFromImageOffered` is `false`. Every way in is greyed, never hidden, with a tooltip saying
+why: Design ▸ Create ▸ Schematic from Image… (both menus), the Project Tree's row and a placed schematic picture's
+row, and the dialog's Read as Schematic and Make Schematic. Round 29 had greyed Make Schematic only for a picture read
+as a board. A picture Auto read as a schematic drawing still made a schematic (a datasheet's black-and-white line
+drawing of a board is the usual case), so `EffectiveKind` now traces it as a layout. Paste Image as Schematic was
+already hidden, and its command is gated too. The reader is kept and `circuitrf recognize` still runs it. The window
+(`WorkspaceViewModel.SchematicFromImageOffered`) and the dialog (`ImageSourceViewModel.SchematicOffered`) each carry
+the switch as an instance property, so the tests of the withheld reader turn it on for themselves alone, never through
+a static that parallel tests would share.
+
+**The picture dialog's tool strip is on every layout picture, scale or none, Fill first beside Zoom to Fit (owner,
+2026-10-28).** It used to appear only once the picture had a scale, and the owner found no tools at all on a pasted
+picture. Every correction is in pixels, and the copper ones now act before the scale, so there is nothing to grey.

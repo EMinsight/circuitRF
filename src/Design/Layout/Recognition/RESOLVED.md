@@ -618,3 +618,64 @@ refusal in `ImageTraceResult.Corrections`, and the report names it.
 - **R-dfr29-1-4's stackup form was built and then withdrawn** at the owner's decision: the picture is read with the
   chosen technology as it is, and no flag states a stackup. The owner wants the picker to offer every existing
   technology instead, for its layers (see `src/Ui/RESOLVED.md`).
+
+## Create Layout from Image, round 2 (brief DFR30-1, 2026-10-28)
+
+**What got worse from 1.5.6 to 1.5.7 was a dark hole rim made into copper discs.** A datasheet board drawing draws each
+hole white inside a dark rim, and the automatic map reads the rim's colour as a second copper layer. Each rim is then a
+ring region, one round hole in it. Round 29's rule (a round hole in copper becomes a via, the copper written whole under
+it) applied to the ring too, so 1.5.7 wrote a solid copper disc on the rim's layer under every via. The pour itself read
+the same in both versions, region for region. The drill was also read at the rim's outer edge (the pour's hole), so on
+a synthetic board with 0.3, 0.6 and 1.0 mm rimmed holes the drills came out one to three rounding steps large, and the
+1.0 mm holes were both an opening in the pour and a via from the rim's own hole.
+
+- **`Rings` (ImageTrace.cs) finds every region that is one ring round one round hole.** A ring whose outer edge fills a
+  round hole of another copper layer, concentric and within 1.5 px or 15 % of its radius, is that hole's RIM. The via is
+  made once, from the pour's hole, drilled on the rim's centre line (half-way between the rim's outer and inner radii,
+  each the radius of its area), and the rim is consumed. Any other ring is the hole's PAD and becomes the via's pad, as a
+  drill circle's ring already did. Neither is made whole. Measured on the synthetic board, the three sizes now read
+  exactly at 20 µm a pixel and within one rounding step at 40 µm.
+- **The ring's outer edge is tested with `RoundHole`, not `CircleOf`.** On a compressed picture at a coarse scale most
+  rims fail `CircleOf`'s residual, and only a few of them were found.
+- **The 1 mm via/opening cut-off compares the ROUNDED drill.** A 1.0 mm hole measured a few microns over was an
+  opening. Stated as a designer states it, it is a 1 mm via.
+- **A "round hole" wider than 10 mm is not a hole** (`MaxHoleMetres`). `RoundHole` accepts a rounded square, so the
+  board inside a dark outline drawn round its edge passed as one and was drawn as a board-sized hole circle. It is now
+  left as the copper's hole as read.
+
+**A via's stated drill is a LENGTH (`ImageCorrection.DrillMetres`), not pixels.** The brief named `DrillPx`. A drill
+chosen as 0.3 mm has to stay 0.3 mm when the scale is changed, while the point it sits on moves with the picture. The
+CLI's `--via x,y,0.6mm` and the dialog's Drill picker build the same record. `DrillPx` had no other reader.
+
+**`Clear` can name a conductor** (`--clear "…=<conductor>"`), and then clears that conductor alone. Remove ▸ Copper read
+on writes one covering the whole picture, and Clear runs before Copper, so a fill drawn on that conductor afterwards is
+all that is written there. The overlay draws no box for it: a box round the whole picture says nothing.
+
+**A line drawing is said to be one (`ImageTraceResult.LineArt`, finding `ImageLineArt`); the reading is unchanged.**
+The brief's test ("most of the copper colour in thin closed outlines, little of what they enclose read") failed on a
+real picture. Anti-aliasing splits the black core of each drawn line from its grey edge into two colours, so no outline
+closes and nothing is enclosed. The test now uses the strokes alone. The copper read covers under 20 % of its own
+bounding box, and its mean width (twice its area over its edge length) is no more than 3 px, or 1 % of that box's
+narrower side.
+
+## Painting copper into a line drawing: Fill / `--fill` (2026-10-28)
+
+`ImageCorrectionKind.Fill` (`ImageTraceFill.cs`) is a paint bucket. It floods the clicked pixel's colour cluster
+(`ColourClusterSet.Label`, 4-connected) and adds the near half of the line drawn round that area. A line pixel within
+`FillEdgePx` belongs to the area when the area is nearer it than the clicked colour beyond the line is. A pixel exactly
+in the middle counts half, so the contour crosses it half way. When every tie went to the area, each drawn hole
+shrank by about half a pixel, and a 0.4 mm drawn via read 15 mil instead of 16. The area is unioned onto the conductor
+like a Copper fill, after the Clears. Its round holes are then read as any round hole in copper, which makes the vias.
+A flood reaching all four picture edges is the background and is refused (`FillBackgroundRefusal`). It is a correction,
+not an edit to the picture's pixels, so a pasted picture with no file is painted the same way, and the CLI's `--fill`
+builds the same record. On a picture with one board, a few clicks give the pours and pads with the drawn vias as vias.
+A click on a letter inside a pad paints the letter: the pad's white is what is meant.
+
+**The copper corrections act before the scale (owner, 2026-10-28).** On a line drawing the scale has to come from
+**Line impedance…** clicked on a line painted in first. The impedance scale read the colour under the click, which is
+the white inside a drawn line and no layer. And Fill was applied only in `Build`, which needs a scale. So `Trace` now
+runs `EditCopper` (Clear, Copper, Fill) straight after `Prepare`, and `Build` takes those outcomes. The line-drawing
+test is still made on the layers as read. `Prepared.Painted` names the layers a correction changed. `FromImpedance`
+measures a click inside painted copper on that copper with `PaintedWidth`, from the row and column runs through the
+outline geometry. It was first measured on a whole-pixel raster, and that lost the half pixel at each edge: a line
+drawn 12 px between its centre lines read 11 px, an 8 % scale error.

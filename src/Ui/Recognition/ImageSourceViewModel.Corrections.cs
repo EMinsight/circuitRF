@@ -22,7 +22,7 @@ using CircuitRF.Design.Layout.Recognition.Image;
 namespace CircuitRF.Ui.Recognition;
 
 /// <summary>The canvas's drawing tools on a layout picture (R-dfr29-1-3).</summary>
-public enum PictureDrawTool { None, Via, Copper, Outline }
+public enum PictureDrawTool { None, Via, Copper, Outline, Fill }
 
 public sealed partial class ImageSourceViewModel
 {
@@ -47,6 +47,7 @@ public sealed partial class ImageSourceViewModel
         _correctionUndo.Add(before);
         Corrections.Clear();
         foreach (var c in list) Corrections.Add(c);
+        CorrectionsChanged();
         Status = said ?? "";
         ScheduleRecognition();
         return true;
@@ -60,6 +61,7 @@ public sealed partial class ImageSourceViewModel
         _correctionUndo.RemoveAt(_correctionUndo.Count - 1);
         Corrections.Clear();
         foreach (var c in back) Corrections.Add(c);
+        CorrectionsChanged();
         ScheduleRecognition();
         return true;
     }
@@ -68,6 +70,8 @@ public sealed partial class ImageSourceViewModel
     {
         Corrections.Clear();
         _correctionUndo.Clear();
+        _selectedCorrection = -1;
+        CorrectionsChanged();
         DrawPoints.Clear();
         DrawTool = PictureDrawTool.None;
     }
@@ -138,9 +142,13 @@ public sealed partial class ImageSourceViewModel
             int changed = 0;
             foreach (var (x, y, r) in targets)
             {
+                // A via placed by hand keeps its drill when it is said to be a via again (R-dfr30-1-2).
+                double? drill = kind == ImageCorrectionKind.Via
+                    ? list.LastOrDefault(c => c.Kind == ImageCorrectionKind.Via && Math.Abs(c.At.X - x) <= r && Math.Abs(c.At.Y - y) <= r)?.DrillMetres
+                    : null;
                 int had = list.RemoveAll(c => c.IsPoint && Math.Abs(c.At.X - x) <= r && Math.Abs(c.At.Y - y) <= r);
                 if (had == 0 && KindOf((x, y, r)) == want) continue;
-                list.Add(new ImageCorrection(kind, [new PixelPoint(Math.Round(x, 2), Math.Round(y, 2))]));
+                list.Add(new ImageCorrection(kind, [new PixelPoint(Math.Round(x, 2), Math.Round(y, 2))], null, drill));
                 changed++;
             }
             string what = want switch { ImageHoleKind.Via => "vias", ImageHoleKind.NonPlated => "non-plated holes", _ => "openings" };
@@ -188,6 +196,16 @@ public sealed partial class ImageSourceViewModel
         set => DrawTool = value ? PictureDrawTool.Copper : DrawTool == PictureDrawTool.Copper ? PictureDrawTool.None : DrawTool;
     }
 
+    /// <summary>The Fill tool: a paint bucket — a click paints the area enclosed there as copper on <see cref="DrawLayer"/>.</summary>
+    public bool FillArmed
+    {
+        get => DrawTool == PictureDrawTool.Fill;
+        set => DrawTool = value ? PictureDrawTool.Fill : DrawTool == PictureDrawTool.Fill ? PictureDrawTool.None : DrawTool;
+    }
+
+    /// <summary>The conductor picker beside the Copper and Fill tools.</summary>
+    public bool DrawLayerShown => DrawTool is PictureDrawTool.Copper or PictureDrawTool.Fill;
+
     public bool OutlineArmed
     {
         get => DrawTool == PictureDrawTool.Outline;
@@ -195,15 +213,24 @@ public sealed partial class ImageSourceViewModel
     }
 
     /// <summary>The tool strip is offered once the picture is read as a layout with a scale.</summary>
-    public bool DrawToolsShown => IsLayoutPicture && !HasFailure && Overlay.Frame is not null;
+    /// <summary>The tool strip is offered on every layout picture, scale or none: every correction is in the picture's
+    /// pixels, and the copper ones act before the scale — copper painted into a line drawing is the line Line impedance…
+    /// measures. A strip that appeared only once the scale was set was not found (owner, 2026-10-28).</summary>
+    public bool DrawToolsShown => IsLayoutPicture && !HasFailure;
+
+    private void RaiseDrawTools() => OnPropertyChanged(nameof(DrawToolsShown));
 
     partial void OnDrawToolChanged(PictureDrawTool value)
     {
         DrawPoints.Clear();
         OnPropertyChanged(nameof(ViaArmed));
         OnPropertyChanged(nameof(CopperArmed));
+        OnPropertyChanged(nameof(FillArmed));
+        OnPropertyChanged(nameof(DrawLayerShown));
         OnPropertyChanged(nameof(OutlineArmed));
-        if (value == PictureDrawTool.Copper && (DrawLayer is null || !ConductorChoices.Contains(DrawLayer))) DrawLayer = ConductorChoices.FirstOrDefault();
+        OnPropertyChanged(nameof(DrillPickerShown));
+        OnPropertyChanged(nameof(OtherDrillShown));
+        if (value is PictureDrawTool.Copper or PictureDrawTool.Fill && (DrawLayer is null || !ConductorChoices.Contains(DrawLayer))) DrawLayer = ConductorChoices.FirstOrDefault();
         RaiseCanvasPrompt();
     }
 
@@ -212,15 +239,22 @@ public sealed partial class ImageSourceViewModel
     /// <summary>The tool's instruction on the canvas, or null.</summary>
     private string? DrawPrompt => DrawTool switch
     {
-        PictureDrawTool.Via => "Click to place a via; a click on a hole places it at the hole's centre. Escape stops.",
+        PictureDrawTool.Via => $"Click to place a via, drilled {DrillPromptText}; a click on a hole places it at the hole's centre. Escape stops.",
         PictureDrawTool.Copper => $"Drag a rectangle, or click corners and double-click to close, to fill copper on {DrawLayer}. Escape stops.",
         PictureDrawTool.Outline => "Drag a rectangle, or click corners and double-click to close: the board's outline. Escape stops.",
+        PictureDrawTool.Fill => $"Click inside an outline to paint it as copper on {DrawLayer}. Escape stops.",
         _ => null,
     };
 
-    /// <summary>A click with the Via tool armed: a via there, at the centre of the hole under it when there is one.</summary>
+    private string DrillPromptText => ChosenDrillMetres is { } m ? FormatDrill(m)
+                                      : ViaDrill?.Source == ViaDrillSource.Other ? "at the size typed" : "as the hole under it";
+
+    /// <summary>A click with the Via tool armed: a via there, at the centre of the hole under it when there is one, drilled
+    /// as the Drill picker says (R-dfr30-1-2) — From the hole takes the hole's size.</summary>
     public void PlaceVia(PixelPoint p)
     {
+        double? drill = ChosenDrillMetres;
+        if (ViaDrill?.Source == ViaDrillSource.Other && drill is null) { Status = OtherDrillRefusal; return; }
         var hole = _trace?.Holes.Select(h => h.Circle)
                          .Where(c => (c.Cx - p.X) * (c.Cx - p.X) + (c.Cy - p.Y) * (c.Cy - p.Y) <= c.R * c.R)
                          .OrderBy(c => c.R).Cast<CircleFit?>().FirstOrDefault();
@@ -229,9 +263,17 @@ public sealed partial class ImageSourceViewModel
         Correct(list =>
         {
             list.RemoveAll(c => c.IsPoint && Math.Abs(c.At.X - at.X) <= reach && Math.Abs(c.At.Y - at.Y) <= reach);
-            list.Add(ImageCorrection.Via(at.X, at.Y));
+            list.Add(ImageCorrection.Via(at.X, at.Y, drill));
             return null;
         });
+    }
+
+    /// <summary>A click with the Fill tool armed: the area enclosed there painted as copper on <see cref="DrawLayer"/>.
+    /// Whether there is an area to paint is ImageTrace.Build's to say, in the report, as for every correction.</summary>
+    public void PaintAt(PixelPoint p)
+    {
+        if (DrawLayer is not { } layer) return;
+        Correct(list => { list.Add(ImageCorrection.Fill(Math.Round(p.X, 2), Math.Round(p.Y, 2), layer)); return null; });
     }
 
     /// <summary>A click with the Copper or Outline tool armed: one more corner of the polygon being drawn.</summary>

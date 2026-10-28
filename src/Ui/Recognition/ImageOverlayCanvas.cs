@@ -24,6 +24,12 @@
 // On a layout picture with a scale (brief-dfr29-1 R-dfr29-1-3), the Via tool takes a click, and the Copper and Outline
 // tools take a dragged rectangle or clicked corners that a double-click closes. A click on a hole or a copper region
 // selects it for its picker. Cmd/Ctrl+Z undoes the last correction. Corrections are drawn dashed.
+//
+// A correction is an object (brief-dfr30-1 R-dfr30-1-3): a click on one selects it and its row. A selected fill, clear or
+// outline shows its corners as handles — a drag moves one, a double-click on an edge adds one, Delete removes the one
+// clicked (never below three) — and a selected hand via is dragged to a new place; Delete with no corner chosen deletes
+// the correction. Each drag is one undo step, made on release. The board outline is drawn above the copper, 2 px in the
+// accent with a halo, the picture outside it dimmed, whether it was drawn, set by the corners or read (R-dfr30-1-6).
 
 using System;
 using System.Collections.Generic;
@@ -78,6 +84,9 @@ public sealed class ImageOverlayCanvas : Control
     private int _dragCorner = -1;
     private int _manualHandle = -1;
     private (ManualCurveViewModel Curve, int Index)? _manualPoint, _rightPress;
+    private int _dragVertex = -1, _selectedVertex = -1, _vertexOf = -1;
+    private bool _dragVia;
+    private PixelPoint? _dragTo;
     private string? _manualReadout;
     private Point _pressPosition;
 
@@ -140,6 +149,8 @@ public sealed class ImageOverlayCanvas : Control
         }
         if (e.PropertyName == nameof(ImageSourceViewModel.SelectedItem) && _vm?.SelectedItem is { } item) BringIntoView(item);
         if (e.PropertyName is nameof(ImageSourceViewModel.Overlay) or nameof(ImageSourceViewModel.Raster)) _probe = null;
+        if (e.PropertyName == nameof(ImageSourceViewModel.SelectedCorrection) && _vm?.SelectedCorrection != _vertexOf) _selectedVertex = -1;
+        _vertexOf = _vm?.SelectedCorrection ?? -1;
         InvalidateVisual();
     }
 
@@ -257,6 +268,8 @@ public sealed class ImageOverlayCanvas : Control
                 DrawTrace(context, item, PlotTraceLink.TraceName(item) is { } traceName && litTraces.Contains(traceName), px);
                 continue;
             }
+            // The outline drawn is drawn below as THE outline, above everything else (R-dfr30-1-6).
+            if (item.Class == ImageOverlayClass.Line && !item.Unknown && item.Id.StartsWith(ImageOverlay.CorrectionPrefix, StringComparison.Ordinal)) continue;
             bool unknownShown = item.Unknown && vm.ShowUnknowns;
             if (!vm.Shows(item.Class) && !unknownShown) continue;
             bool selected = ReferenceEquals(item, vm.SelectedItem);
@@ -314,6 +327,8 @@ public sealed class ImageOverlayCanvas : Control
                 DrawLabel(context, item, label, selected ? Accent : colour, px);
         }
 
+        if (vm.IsLayoutPicture && vm.OutlinePx is { Count: >= 3 } outline) DrawOutline(context, pictureRect, outline, px);
+
         if (vm.IsPlotPicture)
             foreach (var b in vm.Plots.IgnoreBoxes)
                 if (b.Picture == vm.Plots.ShownPicture) DrawIgnoreBox(context, b.Box, Equals(b, vm.Plots.SelectedIgnoreBox), px);
@@ -321,6 +336,23 @@ public sealed class ImageOverlayCanvas : Control
         if (vm.ScopeRect is { } s)
             context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Accent), 1.5 * px, new ImmutableDashStyle([4, 3], 0)),
                                   new Rect(s.Left, s.Top, s.Right - s.Left, s.Bottom - s.Top));
+    }
+
+    /// <summary>The board outline (R-dfr30-1-6): the picture outside it dimmed, then a 2 px line in the accent over a halo,
+    /// above the copper — seen after the tool is put down, on a picture of any colour.</summary>
+    private static void DrawOutline(DrawingContext context, Rect pictureRect, IReadOnlyList<PixelPoint> outline, double px)
+    {
+        var ring = new StreamGeometry();
+        using (var g = ring.Open())
+        {
+            g.BeginFigure(new Point(outline[0].X, outline[0].Y), true);
+            for (int k = 1; k < outline.Count; k++) g.LineTo(new Point(outline[k].X, outline[k].Y));
+            g.EndFigure(true);
+        }
+        var outside = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(pictureRect), ring);
+        context.DrawGeometry(new ImmutableSolidColorBrush(Colors.Black, 0.3), null, outside);
+        context.DrawGeometry(null, new Pen(new ImmutableSolidColorBrush(Colors.White, 0.85), 5 * px), ring);
+        context.DrawGeometry(null, new Pen(new ImmutableSolidColorBrush(Accent), 2 * px), ring);
     }
 
     /// <summary>
@@ -466,8 +498,36 @@ public sealed class ImageOverlayCanvas : Control
             foreach (var corner in _vm.DrawPoints) Mark(corner);
         }
 
+        DrawSelectedCorrection(context);
         if (_vm.IsManualPlotPicture) DrawManual(context);
         else if (_vm.IsPlotPicture && !_vm.HasFailure) DrawProbes(context);
+    }
+
+    /// <summary>The selected correction (R-dfr30-1-3): a shape's corners as handles — the one clicked filled — and its edges
+    /// as they will be while a corner is dragged; a hand via ringed, at the pointer while it is dragged. Screen pixels.</summary>
+    private void DrawSelectedCorrection(DrawingContext context)
+    {
+        if (_vm is not { IsLayoutPicture: true, SelectedCorrectionRecord: { } fix } vm) return;
+        var accent = new ImmutableSolidColorBrush(Accent);
+        if (fix.IsPoint || fix.Kind == ImageCorrectionKind.Fill)
+        {
+            var at = _dragVia && _dragTo is { } to ? to : fix.At;
+            double r = fix.IsPoint ? Math.Max(6, vm.HoleRadiusAt(fix.At) * _zoom + 3) : 8;
+            context.DrawEllipse(null, new Pen(new ImmutableSolidColorBrush(Colors.White, 0.85), 4), ToView(at.X, at.Y), r, r);
+            context.DrawEllipse(null, new Pen(accent, 2), ToView(at.X, at.Y), r, r);
+            return;
+        }
+        if (fix.Points.Count < 3 || fix is { Kind: ImageCorrectionKind.Clear, Layer: not null }) return;
+        var pts = fix.Points.ToList();
+        if (_dragVertex >= 0 && _dragVertex < pts.Count && _dragTo is { } moved) pts[_dragVertex] = moved;
+        var edge = new Pen(accent, 1.5, new ImmutableDashStyle([4, 2], 0));
+        for (int k = 0; k < pts.Count; k++)
+            context.DrawLine(edge, ToView(pts[k].X, pts[k].Y), ToView(pts[(k + 1) % pts.Count].X, pts[(k + 1) % pts.Count].Y));
+        for (int k = 0; k < pts.Count; k++)
+        {
+            var v = ToView(pts[k].X, pts[k].Y);
+            context.DrawRectangle(k == _selectedVertex ? accent : Brushes.White, new Pen(accent, 1.5), new Rect(v.X - 4, v.Y - 4, 8, 8));
+        }
     }
 
     // ── a plot read by hand (R-pdg4-5) ─────────────────────────────────────────────────────────────────
@@ -760,6 +820,15 @@ public sealed class ImageOverlayCanvas : Control
             InvalidateVisual();
             e.Handled = true;
         }
+        else if (e.Key is Key.Delete or Key.Back && _vm is { IsLayoutPicture: true, SelectedCorrection: >= 0 } fixing)
+        {
+            // The corner clicked, else the correction selected (R-dfr30-1-3).
+            if (_selectedVertex >= 0) fixing.RemoveCorrectionVertex(fixing.SelectedCorrection, _selectedVertex);
+            else fixing.DeleteCorrection(fixing.SelectedCorrection);
+            _selectedVertex = -1;
+            InvalidateVisual();
+            e.Handled = true;
+        }
         else if (e.Key is Key.Delete or Key.Back && _vm is { IsPlotPicture: true } && _vm.Plots.SelectedProbePoint is { } point)
         {
             _vm.Plots.RemoveProbePoint(point);
@@ -822,6 +891,17 @@ public sealed class ImageOverlayCanvas : Control
             e.Handled = true;
             return;
         }
+        // A double-click on the selected shape's edge adds a corner there (R-dfr30-1-3).
+        if (e.ClickCount == 2 && point.Properties.IsLeftButtonPressed && _vm is { DrawTool: PictureDrawTool.None, SelectedCorrection: >= 0 } shaping
+            && ToPicture(point.Position) is var onEdge && shaping.EdgeAt(shaping.SelectedCorrection, onEdge, 5 / _zoom) is >= 0 and var edgeAt)
+        {
+            shaping.InsertCorrectionVertex(shaping.SelectedCorrection, edgeAt, onEdge);
+            _selectedVertex = edgeAt + 1;
+            _dragVertex = -1;
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
         if (e.ClickCount == 2 && point.Properties.IsLeftButtonPressed && _vm?.Scale.Tool == ImageMeasureTool.None)
         {
             Fit();
@@ -836,6 +916,17 @@ public sealed class ImageOverlayCanvas : Control
         _manualHandle = -1;
         _manualPoint = null;
         _rightPress = null;
+        _dragVertex = -1;
+        _dragVia = false;
+        _dragTo = null;
+        if (_pressAt is { } held && _vm is { IsLayoutPicture: true, DrawTool: PictureDrawTool.None, SelectedCorrectionRecord: { } chosen } editing
+            && editing.Scale.Tool == ImageMeasureTool.None)
+        {
+            var on = ToPicture(held);
+            if (!chosen.IsPoint && chosen.Kind != ImageCorrectionKind.Fill) _dragVertex = editing.VertexAt(editing.SelectedCorrection, on, 6 / _zoom);
+            else if (chosen.Kind is ImageCorrectionKind.Via or ImageCorrectionKind.Fill && editing.CorrectionAt(on, 4 / _zoom) == editing.SelectedCorrection) _dragVia = true;
+            if (_dragVertex >= 0) _selectedVertex = _dragVertex;
+        }
         if (Manual is { } m)
         {
             var pressed = ToPicture(point.Position);
@@ -881,6 +972,10 @@ public sealed class ImageOverlayCanvas : Control
             _vm.Scale.MoveCorner(_dragCorner, ToPicture(p));
             ViewChanged?.Invoke();
         }
+        else if ((_dragVertex >= 0 || _dragVia) && _pressAt is { } grabbed)
+        {
+            if (Math.Abs(p.X - grabbed.X) > 3 || Math.Abs(p.Y - grabbed.Y) > 3) _dragTo = _hover;
+        }
         else if (_manualHandle >= 0 && Manual is { } boxed) boxed.DragHandle(_manualHandle, _hover.Value.X, _hover.Value.Y);
         else if (_manualPoint is { } dragged && Manual is { } placed) placed.DragPoint(dragged.Curve, dragged.Index, _hover.Value.X, _hover.Value.Y);
         else if (_pressAt is { } from && _dragEnd is null
@@ -913,6 +1008,22 @@ public sealed class ImageOverlayCanvas : Control
         if (_pressAt is not { } from || _vm is not { } vm) return;
         _pressAt = null;
         if (_dragCorner >= 0) { _dragCorner = -1; return; }
+        // A corner or a hand via dragged: one undo step, made on release (R-dfr30-1-3). A corner only clicked stays chosen.
+        if (_dragVertex >= 0 || _dragVia)
+        {
+            int index = vm.SelectedCorrection, vertex = _dragVertex;
+            bool via = _dragVia;
+            var to = _dragTo;
+            (_dragVertex, _dragVia, _dragTo) = (-1, false, null);
+            if (to is { } dropped)
+            {
+                if (via) vm.MoveCorrection(index, dropped);
+                else vm.MoveCorrectionVertex(index, vertex, dropped);
+                InvalidateVisual();
+                return;
+            }
+            if (!via) { InvalidateVisual(); return; }
+        }
         if (Manual is { } manual)
         {
             if (_manualHandle >= 0 || _manualPoint is not null)
@@ -955,7 +1066,7 @@ public sealed class ImageOverlayCanvas : Control
                 InvalidateVisual();
                 return;
             }
-            if (vm.DrawTool == PictureDrawTool.Via) { InvalidateVisual(); return; }
+            if (vm.DrawTool is PictureDrawTool.Via or PictureDrawTool.Fill) { InvalidateVisual(); return; }
             if (vm.BoxTool != PlotBoxTool.None)
             {
                 // Read only here crops and Ignore here excludes (R-ptu6-2, R-ptu6-3); either way the tool is done.
@@ -996,9 +1107,20 @@ public sealed class ImageOverlayCanvas : Control
         }
         if (vm.Scale.Click(at)) { ViewChanged?.Invoke(); InvalidateVisual(); return; }
         if (vm.DrawTool == PictureDrawTool.Via) { vm.PlaceVia(at); InvalidateVisual(); return; }
+        if (vm.DrawTool == PictureDrawTool.Fill) { vm.PaintAt(at); InvalidateVisual(); return; }
         if (vm.DrawTool is PictureDrawTool.Copper or PictureDrawTool.Outline) { vm.AddDrawPoint(at); InvalidateVisual(); return; }
         var picked = vm.Overlay.HitTest(at.X, at.Y, 4 / _zoom, vm.Shows);
         if (picked is { Class: ImageOverlayClass.Crossing }) { vm.ToggleCrossing(picked); return; }
+        // A correction clicked is selected with its row (R-dfr30-1-3); a via on a hole keeps the hole's picker too.
+        _selectedVertex = -1;
+        if (vm.IsLayoutPicture && vm.CorrectionAt(at, 4 / _zoom) is >= 0 and var fix)
+        {
+            vm.SelectedCorrection = fix;
+            vm.SelectedItem = vm.Corrections[fix].IsPoint ? picked : null;
+            InvalidateVisual();
+            return;
+        }
+        if (vm.IsLayoutPicture) vm.SelectedCorrection = -1;
         vm.SelectedItem = picked;
     }
 }

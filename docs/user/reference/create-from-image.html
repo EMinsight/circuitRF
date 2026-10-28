@@ -620,9 +620,10 @@ highlight its part on the picture.</p>
 </tbody>
 </table>
 <h2 id="picture-by-hand">Correcting a layout picture by hand</h2>
-<p>The colours say where the copper is, not what every piece of it is. Once a layout picture has a scale, its pieces can
-be settled by hand before <strong>Create</strong>. Each choice is drawn dashed over the picture, is kept through every re-read, and
-is undone with <strong>Cmd/Ctrl+Z</strong> on the picture; <strong>Clear corrections</strong> forgets them all.</p>
+<p>The colours say where the copper is, not what every piece of it is. Its pieces can be settled by hand before
+<strong>Create</strong>, with or without a scale. Each choice is drawn dashed over the picture, is kept through every re-read, and
+is undone with <strong>Cmd/Ctrl+Z</strong> on the picture; <strong>Clear corrections</strong> forgets them all. Every choice is also a row of the
+<strong>Corrections</strong> list under <strong>Layers</strong>.</p>
 <p><strong>Click a hole</strong> to say what it is:</p>
 <table>
 <thead>
@@ -650,8 +651,10 @@ is undone with <strong>Cmd/Ctrl+Z</strong> on the picture; <strong>Clear correct
 one click. A technology with no non-plated hole layer is never changed: the new cell gets a copy of it with one added,
 <strong>Non-plated hole</strong>, spanning the board, written beside the cell as <code>&lt;cell&gt;.ctech</code>, and the report says so.</p>
 <p><strong>Click a copper region</strong>: <strong>Copper on</strong> a conductor chosen beside it, or <strong>Not copper</strong> — a part's body the colours
-read as copper; nothing is written inside it, on any layer.</p>
-<p><strong>Draw</strong> with the tools beside the legend, each armed until Escape:</p>
+read as copper; nothing is written inside it, on any layer. A traced region's shape is not changed here: to reshape one,
+make it <strong>Not copper</strong> and draw a <strong>Copper</strong> fill in its place, or reshape it after <strong>Create</strong> in the layout editor, with
+<strong>Keep the source picture under the result</strong> putting the picture under it.</p>
+<p><strong>Draw</strong> with the tools beside the <strong>Zoom to Fit</strong> button, each armed until Escape:</p>
 <table>
 <thead>
 <tr>
@@ -662,11 +665,15 @@ read as copper; nothing is written inside it, on any layer.</p>
 <tbody>
 <tr>
 <td><strong>Via</strong></td>
-<td>Click to place a via; a click on a hole places it at the hole's centre.</td>
+<td>Click to place a via; a click on a hole places it at the hole's centre. The <strong>Drill</strong> picker beside it sets its size, and is kept for the following clicks.</td>
 </tr>
 <tr>
 <td><strong>Copper</strong></td>
 <td>Drag a rectangle, or click corners and double-click to close, to fill copper on the conductor chosen beside the tool.</td>
+</tr>
+<tr>
+<td><strong>Fill</strong></td>
+<td>A paint bucket: click inside an outline and the area it encloses is copper on the conductor chosen beside the tool, its edge on the middle of the drawn line. The round holes drawn inside it are vias.</td>
 </tr>
 <tr>
 <td><strong>Outline</strong></td>
@@ -674,10 +681,51 @@ read as copper; nothing is written inside it, on any layer.</p>
 </tr>
 </tbody>
 </table>
+<p>The <strong>Drill</strong> picker offers:</p>
+<table>
+<thead>
+<tr>
+<th>Choice</th>
+<th>The via's drill</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>From the hole</strong></td>
+<td>The hole clicked, else the technology's via.</td>
+</tr>
+<tr>
+<td>A size read, as <em>24 mil · 14</em></td>
+<td>Every drill the picture's vias were read at, rounded as they are written, with how many.</td>
+</tr>
+<tr>
+<td><em>Technology</em>'s via</td>
+<td>The technology's own via drill.</td>
+</tr>
+<tr>
+<td><strong>Other…</strong></td>
+<td>A size typed with its unit — <em>0.3 mm</em>, <em>12 mil</em> — rounded the same way.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Edit a correction.</strong> Click one on the picture, or its row in the list, to select it. <strong>Delete</strong>, or the row's <strong>✕</strong>,
+removes it. A selected copper fill, area cleared or outline shows its corners: drag one to move it, double-click an
+edge to add one, click one and press <strong>Delete</strong> to remove it (a shape keeps at least three). A selected via placed by
+hand is dragged to a new place, and the <strong>Drill</strong> picker gives it another size — with <strong>And every one like it</strong>
+on, every via placed by hand at its size. A copper fill's conductor is chosen on its row. Each edit is one undo step.</p>
+<p><strong>Remove ▾</strong> clears one kind at once, each one undo step, each item saying how many it removes (a kind with none is
+greyed): <strong>Vias read from the picture</strong> (their holes stay openings), <strong>Vias placed by hand</strong>, <strong>Copper fills drawn</strong>,
+<strong>Areas painted</strong>, <strong>Clears drawn</strong>, <strong>The outline drawn</strong>, and <strong>Copper read on</strong> a conductor — everything traced on it, so only the
+copper you draw there is written.</p>
+<p><strong>The board outline</strong> — drawn, set by <strong>Board corners… ▸ Use as the board outline</strong>, or read from the picture
+— stays drawn above the copper in the accent colour after the tool is put down, the picture outside it dimmed.</p>
 <p>A choice that lands on nothing — a via off the copper, a hole where there is none — is named in the report
 and not applied. The report counts the rest: <em>4 corrections: 2 vias added, 1 hole not plated, 1 copper fill on Top
 Copper.</em></p>
 <h2 id="schematic">Schematic pictures</h2>
+<p><strong>Not available in this version.</strong> <strong>Design ▸ Create ▸ Schematic from Image…</strong> and the dialog's <strong>Schematic</strong> buttons
+are greyed while the schematic reader is improved, and a picture read as a schematic drawing is traced as a layout.
+What follows describes the reader for when it returns.</p>
 <p>A picture of a schematic is read as its wires, its symbols and its words, and drawn as a schematic of native
 components.</p>
 <p><strong>What is recognised.</strong> Resistors, inductors and capacitors in both the US and the IEC drawings — variable
@@ -1989,7 +2037,13 @@ exported at 3× and above.</li>
 <li><strong>One colour per layer</strong> on a layout, distinct from the background and from each other; drill holes drawn as filled
 circles. A drawing that shows its holes in the background's colour is read too: a round hole in the copper up to 1 mm
 across becomes a via, with the copper whole under it, and a wider one — a mounting hole — stays an
-opening. Drills and pads are rounded to a whole mil, or to 0.05 mm, in the technology's unit.</li>
+opening. A hole drawn with a dark rim is one hole, drilled on the rim's centre line, and the rim is not copper.
+Drills and pads are rounded to a whole mil, or to 0.05 mm, in the technology's unit.</li>
+<li><strong>Filled copper, not outlines.</strong> Copper is read as an area of its colour, so a line drawing that draws copper as its
+outline reads little of it, and says so. A coloured or filled picture of the same board reads better, or paint the
+copper in with <strong>Fill</strong>: <strong>Remove ▾ Copper read on</strong> each layer first, so the drawing's lines are not copper too,
+then click inside each pour and pad. A pasted picture needs no file for this. Painting needs no scale, and a line
+painted in is one <strong>Line impedance…</strong> can set the scale on: its width is measured between the drawn line's centres.</li>
 <li><strong>Something of known size</strong> on a layout picture — a scale bar, a dimension, a part whose size you know, a line
 of known impedance — so the scale can be set. A picture of ordinary chip parts often sets its own.</li>
 <li><strong>If you have the original file</strong> — the PDF, the SVG, the board's Gerber — it is the better source. A

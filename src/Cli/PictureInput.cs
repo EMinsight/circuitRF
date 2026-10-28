@@ -148,10 +148,22 @@ internal sealed class PictureFlags
                 { LayoutFlags.Add(a); i++; return 0; }
             case "--via" or "--hole" or "--not-via":
             {
-                if (PointPx(verb, a, v) is not { } p) return _pxRefusal;
+                // A via's third number is its drill, a length with its unit (brief-dfr30-1 R-dfr30-1-2): --via 120px,80px,0.6mm.
+                string at = v;
+                double? drill = null;
+                if (a == "--via" && v.Split(',') is { Length: 3 } three)
+                {
+                    at = three[0] + "," + three[1];
+                    string d = three[2].Trim();
+                    if (d.Length == 0 || !char.IsLetter(d[^1]) || d.EndsWith("px", StringComparison.OrdinalIgnoreCase)
+                        || !LayoutUnits.TryParse(d, LayoutUnit.Um, 1000, out long drillNm) || drillNm <= 0)
+                        return Bad("x,y[,drill]: the point in pixels with px, the drill a length with its unit (120px,80px,0.6mm)");
+                    drill = drillNm * 1e-9;
+                }
+                if (PointPx(verb, a, at) is not { } p) return _pxRefusal;
                 Corrections.Add(a switch
                 {
-                    "--via" => ImageCorrection.Via(p.X, p.Y), "--hole" => ImageCorrection.Hole(p.X, p.Y), _ => ImageCorrection.NotVia(p.X, p.Y),
+                    "--via" => ImageCorrection.Via(p.X, p.Y, drill), "--hole" => ImageCorrection.Hole(p.X, p.Y), _ => ImageCorrection.NotVia(p.X, p.Y),
                 });
                 { LayoutFlags.Add(a); i++; return 0; }
             }
@@ -164,10 +176,24 @@ internal sealed class PictureFlags
                 Corrections.Add(ImageCorrection.Copper(poly, v[(eq + 1)..].Trim()));
                 { LayoutFlags.Add(a); i++; return 0; }
             }
+            case "--fill":
+            {
+                // A paint bucket (the dialog's Fill tool): the area enclosed at the point is copper on the conductor.
+                int eq = v.LastIndexOf('=');
+                if (eq < 0 || v[(eq + 1)..].Trim().Length == 0)
+                    return Bad("\"x,y=<conductor>\": a point in pixels with px inside the area, then the conductor");
+                if (PointPx(verb, a, v[..eq]) is not { } p) return _pxRefusal;
+                Corrections.Add(ImageCorrection.Fill(p.X, p.Y, v[(eq + 1)..].Trim()));
+                { LayoutFlags.Add(a); i++; return 0; }
+            }
             case "--clear":
             {
-                if (PolygonPx(verb, a, v) is not { } poly) return _pxRefusal;
-                Corrections.Add(ImageCorrection.Clear(poly));
+                // "x,y;...=<conductor>" clears that conductor only (brief-dfr30-1 R-dfr30-1-4); without it, every layer.
+                int eq = v.LastIndexOf('=');
+                string? layer = eq < 0 ? null : v[(eq + 1)..].Trim();
+                if (layer is { Length: 0 }) return Bad("\"x,y;x,y;x,y\" or \"x,y;x,y;x,y=<conductor>\": three or more corners in pixels with px");
+                if (PolygonPx(verb, a, eq < 0 ? v : v[..eq]) is not { } poly) return _pxRefusal;
+                Corrections.Add(ImageCorrection.Clear(poly, layer));
                 { LayoutFlags.Add(a); i++; return 0; }
             }
             case "--outline":
@@ -369,9 +395,12 @@ internal sealed class PictureFlags
         // The corrections in the picture TRACED: the file's pixels carried onto a reduced reading, or the rectified picture's
         // own with --corners (whose pixels --overlay draws), as the dialog holds them.
         var conductors = ImageTrace.ConductorLayerNames(tech);
-        foreach (var c in Corrections.Where(c => c.Kind == ImageCorrectionKind.Copper))
+        foreach (var c in Corrections.Where(c => c.Kind is ImageCorrectionKind.Copper or ImageCorrectionKind.Fill || c is { Kind: ImageCorrectionKind.Clear, Layer: not null }))
             if (!conductors.Contains(c.Layer ?? "", StringComparer.Ordinal))
-                return (null, JsonRun.Fail(CliDiagnostics.PictureBadValue(verb, "--copper", c.Layer ?? "",
+                return (null, JsonRun.Fail(CliDiagnostics.PictureBadValue(verb, c.Kind switch
+                {
+                    ImageCorrectionKind.Copper => "--copper", ImageCorrectionKind.Fill => "--fill", _ => "--clear",
+                }, c.Layer ?? "",
                     $"one of {tech.Name}'s conductors: {string.Join(", ", conductors)}")));
         if (OutlineCorners && _corners is null)
             return (null, JsonRun.Fail(CliDiagnostics.PictureBadValue(verb, "--outline", "corners", "a polygon in pixels, or corners beside --corners")));

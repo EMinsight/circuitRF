@@ -4076,9 +4076,13 @@ reduced reading as the file's own dpi is. `--json` carries `result.convert`: `im
 objects `recognize` reports.
 
 **Corrections by hand** (brief-dfr29-1 R-dfr29-1-6), each the `ImageCorrection` record the dialog's hand tools build,
-repeatable, `px` on every number: `--via x,y`, `--hole x,y` (a non-plated hole; a technology with none gains a
+repeatable, `px` on every point: `--via x,y[,drill]` (the drill a LENGTH with its unit, `--via 120px,80px,0.6mm`, refused
+without one — a size chosen stays that size when the scale changes, brief-dfr30-1 R-dfr30-1-2), `--hole x,y` (a
+non-plated hole; a technology with none gains a
 `Non-plated hole` via layer in a copy written beside the cell as `<cell>.ctech`, D2), `--not-via x,y` (the hole stays an
-opening), `--copper "x,y;x,y;x,y=<conductor>"`, `--clear "x,y;…"`, `--outline "x,y;…"` or `--outline corners` (the
+opening), `--copper "x,y;x,y;x,y=<conductor>"`, `--fill "x,y=<conductor>"` (the dialog's Fill tool: the area enclosed at
+the point, its edge on the drawn line's centre, `ImageTraceFill.cs`), `--clear "x,y;…"` (every layer) or `--clear "x,y;…=<conductor>"` (that
+conductor only: the dialog's Remove ▸ Copper read on, R-dfr30-1-4), `--outline "x,y;…"` or `--outline corners` (the
 rectangle `--corners` names). In the FILE's pixels — the rectified picture's with `--corners`, the pixels `--overlay`
 draws. They are applied after the colour trace; one that lands on nothing is reported, not dropped. `result.convert`
 gains `corrections`: each one's kind, its flag spelling, and whether it was applied (else its one sentence). There is

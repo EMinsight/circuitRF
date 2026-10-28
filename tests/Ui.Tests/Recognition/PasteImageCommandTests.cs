@@ -67,7 +67,7 @@ public sealed class PasteImageCommandTests : IDisposable
     public async Task AsSchematicAndAsLayout_FollowTheDocumentInFocus()
     {
         // No workspace, so New Schematic opens a scratch schematic rather than asking for a cell name.
-        var vm = new WorkspaceViewModel { PictureClipboard = () => _clipboard };
+        var vm = new WorkspaceViewModel { PictureClipboard = () => _clipboard, SchematicFromImageOffered = true };
         _clipboard.Contents = new PictureClipboardContents(true, []);
         await vm.RefreshPasteImage();
         Assert.False(vm.PasteImageAsSchematicCommand.CanExecute(null));   // a picture, but nothing to paste it into

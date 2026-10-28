@@ -93,9 +93,20 @@ public sealed class ImageConvertCliVerbTests(ITestOutputHelper output) : IDispos
         vm.DrawRectangle(new PixelPoint(40.5, 60), new PixelPoint(140, 110.5));
         vm.DrawTool = CircuitRF.Ui.Recognition.PictureDrawTool.Outline;
         vm.DrawRectangle(new PixelPoint(5, 5), new PixelPoint(395, 295));
+        // A hand via with a drill typed (brief-dfr30-1 gate 2): spelled --via x,y,0.6mm.
+        vm.DrawTool = CircuitRF.Ui.Recognition.PictureDrawTool.Via;
+        vm.ViaDrill = vm.ViaDrillChoices.Single(c => c.Source == CircuitRF.Ui.Recognition.ViaDrillSource.Other);
+        vm.OtherDrillText = "0.6 mm";
+        vm.PlaceVia(new PixelPoint(300, 60));
+        // An area painted with the Fill tool: spelled --fill "x,y=<conductor>".
+        vm.DrawTool = CircuitRF.Ui.Recognition.PictureDrawTool.Fill;
+        vm.DrawLayer = "Bottom Copper";
+        vm.PaintAt(new PixelPoint(100, 150));
         await vm.Recognition;
         var input = vm.BuildTraceInput(TechPersistence.LoadFromFile(tech), null);
-        Assert.Equal(3, input.Corrections.Count);
+        Assert.Equal(5, input.Corrections.Count);
+        Assert.Equal("--via 300px,60px,0.6mm", input.Corrections[^2].Spelling);
+        Assert.Equal("--fill \"100px,150px=Bottom Copper\"", input.Corrections[^1].Spelling);
         var run = ImageTrace.Run(input, ImageTraceTarget.NewCell(Path.Combine(_root, "b", "out"), "board"));
         Assert.True(run.Ok, run.Refusal);
 

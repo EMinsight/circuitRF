@@ -43,6 +43,7 @@ public sealed class SchematicImageOverridesTests : IDisposable
     {
         var runner = new RecordingImageRunner(DrawingKind.Schematic);
         var vm = ImageDialog.Open(_ws, runner, Picture(), makeSchematic: true);
+        vm.SchematicOffered = true;   // the reader is withheld from the application, not from its tests
         await vm.Recognition;
         Assert.True(vm.IsSchematicPicture);
         Assert.StartsWith("connected", Crossing(vm).Label);

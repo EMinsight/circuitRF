@@ -30,6 +30,18 @@ public sealed record ImageContextRow(string Header, string Tip, bool MakeSchemat
 /// </summary>
 public static class ImageEntryPoints
 {
+    /// <summary>
+    /// Whether the application offers a schematic made from a picture. Off (owner decision, 2026-10-28): the schematic
+    /// reader is not good enough yet. Every way in is GREYED, never hidden — Design ▸ Create ▸ Schematic from Image…, the
+    /// Project Tree's and a placed picture's row, the dialog's Read as Schematic and Make Schematic — and a picture the
+    /// dialog reads as a schematic drawing is traced as a layout. The reader itself is kept, and <c>circuitrf
+    /// recognize</c> still runs it.
+    /// </summary>
+    public const bool SchematicFromImageOffered = false;
+
+    /// <summary>The greyed rows' tooltip while <see cref="SchematicFromImageOffered"/> is off.</summary>
+    public const string SchematicNotOfferedTip = "Not available yet: the schematic reader is being improved. Pictures are read as layouts or plots.";
+
     public const string CreateSchematicHeader = "Create Schematic from Image…";
     public const string CreateLayoutHeader = "Create Layout from Image…";
     public const string TraceIntoLayoutHeader = "Trace Image into This Layout…";

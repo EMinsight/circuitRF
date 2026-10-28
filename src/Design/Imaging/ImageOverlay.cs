@@ -231,6 +231,18 @@ public sealed partial class ImageOverlay
                                                new PixelBounds(x - r, y - r, x + r, y + r), (x, y, r)));
                 continue;
             }
+            // A painted area is its copper, drawn with the layer it is on; the point clicked is marked.
+            if (fix.Kind == ImageCorrectionKind.Fill)
+            {
+                var (fx, fy) = (fix.At.X, fix.At.Y);
+                int? layerRgb = technology?.Layers.FirstOrDefault(l => string.Equals(l.Name, fix.Layer, StringComparison.Ordinal)) is { } fd
+                    ? (fd.Color.R << 16) | (fd.Color.G << 8) | fd.Color.B : null;
+                items.Add(new ImageOverlayItem(id, ImageOverlayClass.Marker, [], true, o.Refusal, layerRgb, !o.Applied, null,
+                                               new PixelBounds(fx - 4, fy - 4, fx + 4, fy + 4), (fx, fy, 4)));
+                continue;
+            }
+            // The copper read on one conductor removed covers the whole picture: its row says so, a box round it would not.
+            if (fix is { Kind: ImageCorrectionKind.Clear, Layer: not null }) continue;
             IReadOnlyList<(double X, double Y)> ring = [.. fix.Points.Select(p => (p.X, p.Y))];
             int? rgb = fix.Kind == ImageCorrectionKind.Copper
                        && technology?.Layers.FirstOrDefault(l => string.Equals(l.Name, fix.Layer, StringComparison.Ordinal)) is { } def

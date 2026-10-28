@@ -593,9 +593,11 @@ public partial class SchematicView : UserControl
     private void ShowImageRows(IReadOnlyList<Recognition.ImageContextRow> rows)
     {
         CtxImageSchematic.IsVisible = rows.Any(r => r.MakeSchematic);
+        CtxImageSchematic.IsEnabled = Recognition.ImageEntryPoints.SchematicFromImageOffered;
         CtxImageLayout.IsVisible = rows.Any(r => !r.MakeSchematic);
         CtxImageSep.IsVisible = rows.Count > 0;
-        if (rows.FirstOrDefault(r => r.MakeSchematic) is { } s) ToolTip.SetTip(CtxImageSchematic, s.Tip);
+        if (rows.FirstOrDefault(r => r.MakeSchematic) is { } s)
+            ToolTip.SetTip(CtxImageSchematic, Recognition.ImageEntryPoints.SchematicFromImageOffered ? s.Tip : Recognition.ImageEntryPoints.SchematicNotOfferedTip);
         if (rows.FirstOrDefault(r => !r.MakeSchematic) is { } l) ToolTip.SetTip(CtxImageLayout, l.Tip);
     }
 

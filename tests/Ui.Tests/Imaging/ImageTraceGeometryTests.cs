@@ -2,7 +2,9 @@
 // (R-im3-4, R-im3-5).
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using CircuitRF.Design.Imaging;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Recognition.Image;
 using SkiaSharp;
@@ -132,5 +134,115 @@ public sealed class ImageTraceGeometryTests
         var pour = Assert.Single(r.Layers.Single(l => l.Name == "Top Copper").Shapes.OfType<PolygonShape>());
         var opening = Assert.Single(pour.Holes!);
         Assert.InRange(opening.Where((_, i) => i % 2 == 0).Max() - opening.Where((_, i) => i % 2 == 0).Min(), 120 * Dbu - 2 * Half, 120 * Dbu + 2 * Half);
+    }
+
+    /// <summary>A datasheet drawing's board: a green pour with ten holes each of three drills, every hole white inside a dark
+    /// rim drawn on the hole's circle — <paramref name="mmPerPx"/> a pixel, the rim <paramref name="rimPx"/> wide.</summary>
+    internal static RasterImage RimmedHoles(double[] drillsMm, double mmPerPx, float rimPx = 2) => Pictures.Draw(620, 120 * drillsMm.Length + 40, c =>
+    {
+        using var copper = Pictures.Fill(new SKColor(0xb8, 0xe0, 0x1e));
+        using var hole = Pictures.Fill(SKColors.White);
+        using var rim = Pictures.Stroke(new SKColor(0x10, 0x10, 0x10), rimPx);
+        c.DrawRect(SKRect.Create(20, 20, 580, 120 * drillsMm.Length), copper);
+        for (int row = 0; row < drillsMm.Length; row++)
+            for (int k = 0; k < 10; k++)
+            {
+                float x = 60 + 55 * k, y = 80 + 120 * row, r = (float)(drillsMm[row] / mmPerPx / 2);
+                c.DrawCircle(x, y, r, hole);
+                c.DrawCircle(x, y, r, rim);
+            }
+    });
+
+    /// <summary>brief-dfr30-1 R-dfr30-1-1 / R-dfr30-1-8 — a datasheet draws a hole white inside a dark rim, and the rim's
+    /// colour is read as a second copper layer. Each hole is one via drilled on the rim's centre line (what was drawn), and
+    /// no rim is written as copper: 1.5.7 made each ring whole, a solid disc on the rim's layer, and drilled the hole at
+    /// the rim's outer edge — a 1.0 mm hole was then an opening AND a via.</summary>
+    [Fact]
+    public void ADarkRimmedHole_IsOneVia_DrilledOnTheRimsCentreLine_AndTheRimIsNoCopper()
+    {
+        var r = ImageTrace.Trace(new ImageTraceInput
+        {
+            Source = TracePictures.Source(RimmedHoles([0.3, 0.6, 1.0], 0.02)), Technology = TracePictures.Tech(),
+            Scale = ImageScaleStatement.Stated(20e-6),
+        });
+        Assert.True(r.Ok, r.Refusal);
+        Assert.Contains(r.LayerMap!.Rows, row => row.Layers.Contains("Bottom Copper"));   // the rims are read as copper
+
+        // 0.3, 0.6 and 1.0 mm on this inch-unit technology: 12, 24 and 39 mil, ten of each.
+        var drills = r.Shapes.OfType<ViaShape>().GroupBy(v => v.DrillSize).OrderBy(g => g.Key).Select(g => (g.Key, g.Count()));
+        Assert.Equal([(12 * 25_400L, 10), (24 * 25_400L, 10), (39 * 25_400L, 10)], drills);
+        Assert.DoesNotContain(r.Holes, h => h.Kind != ImageHoleKind.Via);
+        Assert.Empty(r.Layers.Single(l => l.Name == "Bottom Copper").Shapes);
+    }
+
+    /// <summary>brief-dfr30-1 R-dfr30-1-7 / gate 6 — a board drawn as outlines alone is said to be a line drawing, and the
+    /// same board filled is not.</summary>
+    [Fact]
+    public void ALineDrawing_IsSaidToBeOne_AndAFilledBoardIsNot()
+    {
+        static ImageTraceResult Read(bool filled) => ImageTrace.Trace(new ImageTraceInput
+        {
+            Source = TracePictures.Source(Pictures.Draw(400, 300, c =>
+            {
+                using var paint = filled ? Pictures.Fill(new SKColor(0x20, 0x20, 0x20)) : Pictures.Stroke(new SKColor(0x20, 0x20, 0x20), 2);
+                c.DrawRect(SKRect.Create(20, 20, 160, 110), paint);
+                c.DrawRect(SKRect.Create(220, 20, 160, 110), paint);
+                c.DrawRect(SKRect.Create(20, 170, 360, 16), paint);
+                c.DrawRect(SKRect.Create(20, 210, 360, 70), paint);
+            })),
+            Technology = TracePictures.Tech(), Scale = ImageScaleStatement.Stated(20e-6),
+        });
+        var outlines = Read(filled: false);
+        Assert.True(outlines.LineArt);
+        Assert.Equal(ImageTrace.LineArtNote, outlines.Report.Of(CircuitRF.Design.Layout.Recognition.RecognitionFindingClass.ImageLineArt)?.Sentence);
+        Assert.False(Read(filled: true).LineArt);
+    }
+
+    /// <summary>A line drawing's board: a pour drawn as a 2 px outline round (20,20)–(380,280), with two vias drawn as 2 px
+    /// circles 20 px across (0.4 mm at 20 µm a pixel) inside it. The lines read as copper are removed first.</summary>
+    private static ImageTraceInput OutlinedPour(params ImageCorrection[] fills) => new()
+    {
+        Source = TracePictures.Source(Pictures.Draw(400, 300, c =>
+        {
+            using var line = Pictures.Stroke(SKColors.Black, 2);
+            c.DrawRect(SKRect.Create(20, 20, 360, 260), line);
+            c.DrawCircle(100, 150, 10, line);
+            c.DrawCircle(300, 150, 10, line);
+        })),
+        Technology = TracePictures.Tech(), Scale = ImageScaleStatement.Stated(20e-6),
+        Corrections = [ImageCorrection.Clear(ImageCorrection.Rectangle(0, 0, 400, 300)), .. fills],
+    };
+
+    /// <summary>The Fill tool: a click inside a drawn outline paints what it encloses as copper, its edge on the line's
+    /// centre line, and the round holes drawn inside it are vias drilled on their circles (16 mil for 0.4 mm).</summary>
+    [Fact]
+    public void AFill_PaintsTheOutlinedArea_OnTheLinesCentre_AndItsDrawnHolesAreVias()
+    {
+        var r = ImageTrace.Trace(OutlinedPour(ImageCorrection.Fill(60, 60, "Top Copper")));
+        Assert.True(r.Ok, r.Refusal);
+        Assert.All(r.Corrections, o => Assert.True(o.Applied, o.Refusal));
+
+        // The vias' holes made whole, the pour is the rectangle the outline was drawn on.
+        long[] xy = Assert.Single(r.Layers.Single(l => l.Name == "Top Copper").Shapes) switch
+        {
+            RectShape rect => [rect.X1, rect.Y1, rect.X2, rect.Y2],
+            PolygonShape poly => poly.Xy,
+            var other => throw new InvalidOperationException(other.GetType().Name),
+        };
+        const double px = 20_000;   // DBU a pixel at 20 µm
+        double X(Func<IEnumerable<long>, long> f) => f(xy.Where((_, i) => i % 2 == 0)) / px;
+        double Y(Func<IEnumerable<long>, long> f) => -f(xy.Where((_, i) => i % 2 == 1)) / px;
+        Assert.Equal((20, 20, 380, 280), ((int)Math.Round(X(Enumerable.Min)), (int)Math.Round(Y(Enumerable.Max)), (int)Math.Round(X(Enumerable.Max)), (int)Math.Round(Y(Enumerable.Min))));
+        var vias = r.Shapes.OfType<ViaShape>().ToList();
+        Assert.Equal(2, vias.Count);
+        Assert.All(vias, v => Assert.Equal(16 * 25_400, v.DrillSize));
+    }
+
+    /// <summary>A Fill on the picture's background — the flood reaching all four edges — is refused with its sentence.</summary>
+    [Fact]
+    public void AFillOnTheBackground_IsRefused()
+    {
+        var r = ImageTrace.Trace(OutlinedPour(ImageCorrection.Fill(5, 5, "Top Copper")));
+        Assert.Equal(ImageTrace.FillBackgroundRefusal, r.Corrections[^1].Refusal);
     }
 }

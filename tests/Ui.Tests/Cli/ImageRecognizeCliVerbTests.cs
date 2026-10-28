@@ -140,6 +140,9 @@ public sealed class ImageRecognizeCliVerbTests(ITestOutputHelper output) : IDisp
             "PictureProfileOptions",
             // IMF-9's candidate readings, by name: what --profile takes.
             "SchematicImageReadings",
+            // brief-dfr29-1's corrections by hand (--via, --hole, --not-via, --copper, --clear, --outline): records the trace
+            // takes, built from flags, as the dialog builds them.
+            "ImageCorrection", "ImageCorrectionKind",
         ];
         // Names these namespaces share with types elsewhere that src/Cli rightly uses (a component, a fit, a 3D view's
         // Perspective projection), and with an option's member (SchematicImageOptions.LineArt, set in an initializer).

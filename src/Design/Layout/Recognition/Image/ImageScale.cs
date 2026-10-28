@@ -187,17 +187,24 @@ public static class ImageScale
         var raster = input.Source.Raster;
         if ((uint)x >= (uint)raster.Width || (uint)y >= (uint)raster.Height) { refusal = "The picked point is outside the picture."; return null; }
         string? layer = st.Layer;
-        if (layer is null)
+        // Copper painted or drawn by hand is measured as it will be written: a line drawing's line is white inside its
+        // outline, which no colour reads as copper until it is painted (owner, 2026-10-28).
+        var at = new Clipper2Lib.PointD(x + 0.5, y + 0.5);
+        var painted = prepared.Layers.FirstOrDefault(l => l.Role == ImageLayerRole.Layer && prepared.Painted.Contains(l.Name)
+                                                          && (layer is null || l.Name == layer) && l.Regions.Any(r => ImageTrace.Covers(r, at)));
+        if (painted is not null) layer = painted.Name;
+        else if (layer is null)
         {
             var row = prepared.Map.Of(prepared.Clusters.Label(x, y));
             layer = row is { Role: ImageLayerRole.Layer, Layers.Count: > 0 } ? row.Layers[0] : null;
         }
-        if (layer is null || prepared.WholeCoverage(layer, input.Scope) is not { } cov)
+        CoverageMap? cov = null;
+        if (layer is null || (painted is null && (cov = prepared.WholeCoverage(layer, input.Scope)) is null))
         {
             refusal = "The picked point is not on a traced layer; click on the trace itself.";
             return null;
         }
-        double widthPx = LocalWidth(cov, x, y);
+        double widthPx = painted is not null ? ImageTrace.PaintedWidth(painted.Regions, at) : LocalWidth(cov!, x, y);
         if (!(widthPx > 0.5)) { refusal = "The picked point is not on a trace; click on the trace itself."; return null; }
 
         var calc = LineCalculator.Calculate(tech, new LineCalcRequest(layer, [], [st.Z0]));

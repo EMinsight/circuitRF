@@ -841,7 +841,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
         CreateSchematicFromImageCommand = new RelayCommand(
             () => _actions?.CreateFromImageFile(this, makeSchematic: true),
-            () => _actions is not null && IsImageFile);
+            () => Recognition.ImageEntryPoints.SchematicFromImageOffered && _actions is not null && IsImageFile);
 
         CreateLayoutFromImageCommand = new RelayCommand(
             () => _actions?.CreateFromImageFile(this, makeSchematic: false),

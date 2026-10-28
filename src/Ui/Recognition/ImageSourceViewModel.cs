@@ -429,11 +429,30 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     /// <summary>The kind the dialog reads the picture as: the user's, else what was read; null while unread.</summary>
     public DrawingKind? EffectiveKind => KindIndex switch
     {
-        1 => DrawingKind.Schematic,
+        1 => SchematicOffered ? DrawingKind.Schematic : DrawingKind.Layout,
         2 => DrawingKind.Layout,
         3 => DrawingKind.Plot,
-        _ => ReadKind?.Kind,
+        // No schematic is made from a picture while the reader is withheld (owner, 2026-10-28): a picture Auto reads as a
+        // schematic drawing is traced as a layout — a datasheet's line drawing of a board is the usual one.
+        _ => ReadKind?.Kind == DrawingKind.Schematic && !SchematicOffered ? DrawingKind.Layout : ReadKind?.Kind,
     };
+
+    /// <summary>Whether this dialog offers a schematic made from the picture — <see cref="ImageEntryPoints.SchematicFromImageOffered"/>;
+    /// a test of the withheld reader turns it on.</summary>
+    public bool SchematicOffered
+    {
+        get => _schematicOffered;
+        set
+        {
+            if (value == _schematicOffered) return;
+            _schematicOffered = value;
+            OnPropertyChanged();
+            RefreshMode();
+            ScheduleRecognition();
+        }
+    }
+
+    private bool _schematicOffered = ImageEntryPoints.SchematicFromImageOffered;
 
     /// <summary>The Auto segment's label says what Auto decided.</summary>
     public string AutoLabel => ReadKind is not { } k ? "Auto"
@@ -465,11 +484,15 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     public bool MakeLayoutEnabled => EffectiveKind != DrawingKind.Schematic;
 
     /// <summary>Make Schematic is not offered for a board picture: it makes a layout only.</summary>
-    public bool MakeSchematicEnabled => EffectiveKind is not (DrawingKind.Layout or DrawingKind.BoardPhoto);
+    public bool MakeSchematicEnabled => SchematicOffered && EffectiveKind is not (DrawingKind.Layout or DrawingKind.BoardPhoto);
 
-    public string MakeSchematicTip => MakeSchematicEnabled
-        ? "Schematic — a new cell with the schematic recognised from the picture."
+    public string MakeSchematicTip => !SchematicOffered ? "Schematic — " + ImageEntryPoints.SchematicNotOfferedTip
+        : MakeSchematicEnabled ? "Schematic — a new cell with the schematic recognised from the picture."
         : "Schematic — not made from a picture of a board: it is traced into a layout.";
+
+    public string ReadAsSchematicTip => SchematicOffered
+        ? "Schematic — read the picture as a schematic drawing, whatever it looks like."
+        : "Schematic — " + ImageEntryPoints.SchematicNotOfferedTip;
 
     public string? MakeLayoutTip => MakeLayoutEnabled ? "Trace the picture's copper into a layout." : MakeLayoutFromSchematicTip;
 
@@ -558,6 +581,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         OnPropertyChanged(nameof(PictureOptionsApply));
         OnPropertyChanged(nameof(PartsApply));
         OnPropertyChanged(nameof(IsLayoutPicture));
+        RaiseDrawTools();
         OnPropertyChanged(nameof(IsSchematicPicture));
         OnPropertyChanged(nameof(HasSideColumn));
         OnPropertyChanged(nameof(ShowsLineLegend));
@@ -1199,6 +1223,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     partial void OnFailureTextChanged(string value)
     {
         OnPropertyChanged(nameof(HasFailure));
+        RaiseDrawTools();
         OnPropertyChanged(nameof(LegendShown));
         RaiseCanvasPrompt();
     }
@@ -1214,7 +1239,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     }
 
     /// <summary>The override links: each reads the picture as a kind it is not being read as.</summary>
-    public bool FailureOffersSchematic => FailureOffersKind && EffectiveKind != DrawingKind.Schematic;
+    public bool FailureOffersSchematic => SchematicOffered && FailureOffersKind && EffectiveKind != DrawingKind.Schematic;
 
     public bool FailureOffersLayout => FailureOffersKind && EffectiveKind != DrawingKind.Layout;
 
@@ -1470,8 +1495,9 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
 
         Overlay = d.Overlay;
         SelectedItem = SelectedRow is { } sel ? Overlay.ItemForPart(sel.BoardRefdes) : null;
-        OnPropertyChanged(nameof(DrawToolsShown));
+        RaiseDrawTools();
         OnPropertyChanged(nameof(ConductorChoices));
+        OnTraceLandedForCorrections();
 
         // A preset is offered, never applied (R-im5-5).
         OfferedPreset = _editedMap is null

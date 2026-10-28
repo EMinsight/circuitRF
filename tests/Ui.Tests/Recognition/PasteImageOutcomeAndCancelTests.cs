@@ -98,7 +98,7 @@ public sealed class PasteOutcomeTests : IDisposable
 
         // The dialog the line opens: the same picture, the paste's reading shown as it is.
         var dialog = new ImageSourceViewModel(_dir, [], 0, null, makeSchematic: true, ImageRecognitionRunner.Instance,
-                                              debounce: TimeSpan.Zero, presetDirectory: Path.Combine(_dir, "presets"));
+                                              debounce: TimeSpan.Zero, presetDirectory: Path.Combine(_dir, "presets")) { SchematicOffered = true };
         dialog.SeedSchematic(source, reading);
         await dialog.Recognition;
         Assert.Same(reading, dialog.SchematicReading);

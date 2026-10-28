@@ -51,7 +51,7 @@ public sealed class PasteDatasheetEndToEndTests(ITestOutputHelper output) : IDis
         string png = Path.Combine(FixturePaths.Require(StylePictures.Folder), picture, "picture.png");
         var clipboard = new FakePictureClipboard { Contents = new PictureClipboardContents(false, [png]), PictureFile = png };
         var messages = new RecordingMessages();
-        var vm = new WorkspaceViewModel { MessagesOverride = messages, PictureClipboard = () => clipboard };
+        var vm = new WorkspaceViewModel { MessagesOverride = messages, PictureClipboard = () => clipboard, SchematicFromImageOffered = true };
         Assert.True(vm.OpenDocumentByPath(csch));
         var doc = Assert.IsType<SchematicDocument>(vm.FindOpenDocument(Path.GetFullPath(csch)));
         var model = doc.ActiveViewModel.EditModel;

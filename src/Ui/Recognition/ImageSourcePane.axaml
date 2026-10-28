@@ -50,8 +50,8 @@
                     </StackPanel>
                 </RadioButton>
                 <RadioButton Classes="tool" Theme="{StaticResource {x:Type ToggleButton}}"
-                             IsChecked="{Binding IsSchematicKind}"
-                             ToolTip.Tip="Schematic — read the picture as a schematic drawing, whatever it looks like.">
+                             IsChecked="{Binding IsSchematicKind}" IsEnabled="{Binding SchematicOffered}"
+                             ToolTip.Tip="{Binding ReadAsSchematicTip}" ToolTip.ShowOnDisabled="True">
                     <mi:MaterialIcon Kind="ResistorNodes" Width="16" Height="16"/>
                 </RadioButton>
                 <RadioButton Classes="tool" Theme="{StaticResource {x:Type ToggleButton}}"

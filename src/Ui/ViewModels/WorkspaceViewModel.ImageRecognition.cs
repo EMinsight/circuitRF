@@ -44,7 +44,19 @@ public partial class WorkspaceViewModel : IImageDialogHost
 
     private bool IsWorkspaceOpenForImage() => CurrentWorkspaceRoot is not null;
 
-    [RelayCommand(CanExecute = nameof(IsWorkspaceOpenForImage))]
+    /// <summary>Whether a schematic is made from a picture here — <see cref="ImageEntryPoints.SchematicFromImageOffered"/>,
+    /// greyed while it is off; a test of the withheld reader turns it on. The dialog this window opens follows it.</summary>
+    public bool SchematicFromImageOffered
+    {
+        get => _schematicFromImageOffered;
+        set { _schematicFromImageOffered = value; RaiseImageCommandsChanged(); }
+    }
+
+    private bool _schematicFromImageOffered = ImageEntryPoints.SchematicFromImageOffered;
+
+    private bool CanCreateSchematicFromImage() => SchematicFromImageOffered && IsWorkspaceOpenForImage();
+
+    [RelayCommand(CanExecute = nameof(CanCreateSchematicFromImage))]
     private void CreateSchematicFromImage(Window? owner) => ShowImageDialog(null, makeSchematic: true, owner);
 
     [RelayCommand(CanExecute = nameof(IsWorkspaceOpenForImage))]
@@ -77,7 +89,7 @@ public partial class WorkspaceViewModel : IImageDialogHost
     // Paste Image as Schematic / as Layout paste INTO the document in focus, so each is enabled only while a document of
     // its own kind is — and asks nothing: every setting is chosen per picture (IMF-9). Design ▸ Create ▸ is where the
     // options are. Neither is enabled while a paste is still reading (R-imf9-6).
-    private bool CanPasteImageAsSchematic() => _paste is null && PasteImage.Available && IsSchematicDocumentActive();
+    private bool CanPasteImageAsSchematic() => SchematicFromImageOffered && _paste is null && PasteImage.Available && IsSchematicDocumentActive();
 
     private bool CanPasteImageAsLayout() => _paste is null && PasteImage.Available && IsLayoutDocumentActive();
 
@@ -430,6 +442,7 @@ public partial class WorkspaceViewModel : IImageDialogHost
                                           post: a => Dispatcher.UIThread.Post(a),
                                           options: new ImageTraceOptions { KeepUnderlay = prefs.KeepSourcePictureUnderResult ?? true })
         {
+            SchematicOffered = SchematicFromImageOffered,
             ArtworkSides = prefs.LinkSchematicLayoutOrientation ?? true,
             AdvancedExpanded = prefs.ImageDialogAdvancedExpanded ?? false,
         };
