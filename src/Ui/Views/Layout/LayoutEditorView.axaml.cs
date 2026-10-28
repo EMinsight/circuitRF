@@ -1861,6 +1861,19 @@ public partial class LayoutEditorView : UserControl
         vm.ReportWarning("Open the Impedance panel from the main window — a torn-off layout window has no panels.");
     }
 
+    // brief-review-6 R-rev6-1: the toolbar's Review Layout — the Review panel on THIS layout, through the
+    // workspace as OnImpedanceAnalysis is; a torn-off window with no shell in reach says so.
+    private void OnReviewLayout(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        if (ResolveWorkspace() is { } workspace)
+        {
+            workspace.ShowReviewPanel(vm);
+            return;
+        }
+        vm.ReportWarning("Open the Review panel from the main window — a torn-off layout window has no panels.");
+    }
+
     // The toolbar button is circuitRF's own GDSII writer, always (brief-oasis-gdstk.md §7a): the (gdstk)
     // routes are reached from File ▸ Export only.
     private async void OnExportGdsii(object? sender, RoutedEventArgs e) => await OnExportGdsiiAsync(StreamRoute.Gdsii);

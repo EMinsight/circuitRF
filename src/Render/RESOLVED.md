@@ -5578,3 +5578,18 @@ build for three synthetic reports, and by the panel's and the CLI's existing gat
   29 before the two page fixes above; they remove the plane layers' six pages and the three continuation pages
   re-measured on the small layers, so it is at most 20. Every layer's groups summed to its findings exactly. The
   PDF was 57.8 MB, almost all of it the maps' copper, which Full draws too.
+
+
+## Review markers on the canvas, and one clustering (brief-review-6, 2026-10-28)
+
+`LayoutOverlay.ReviewMarkers` draws through `DrawFindingMarkers`, the DRC and LVS routine, in a role of its own,
+`Layout.ReviewFinding` (purple), because both panels' markers can be on screen together and a review finding is not
+an error. Accepted findings use `Layout.DrcWaived`. `Default.ccolor` carries no `Layout.*` roles, so the new role
+lives only in `ColorTheme.BuiltIn` (both variants), as the DRC roles do.
+
+The impedance report's seat clustering (brief-impedance-9) is now `MarkerSeats.Group`, and the report calls it, so
+the canvas and the PDF share one. On the canvas the anchors are marker centres in DEVICE pixels (reach 14 px), so
+markers separate as you zoom in. A marker at least 24 px each way on screen is drawn as its region and never seated,
+and the selected marker is never folded into a badge. Badges are drawn in device pixels (`canvas.Scale(1/scaleUm)` at
+the anchor) because a font sized in path units is a tiny float at board zoom. A two-point marker ring is a line (a pad
+to its nearest via): `DrawFindingMarkers` skips rings under three points, so the review draws those lines itself.

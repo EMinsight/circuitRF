@@ -4276,8 +4276,8 @@ output) and `ModelMcpToolTests` (the tool's export is the CLI's bytes; `referenc
 
 ## 32. `review` — the Layout Review, headless (brief-review-2)
 
-`circuitrf review <layout> [--cell <name>] [--checks id,id] [--skip id,id] [--set <check>.<threshold>=<value>]… [--defaults] [--ignore-accepted] [--all] [--severity warning|none]`
-· `circuitrf review [<layout>] --list-checks`
+`circuitrf review <layout> [--cell <name>] [--checks id,id] [--skip id,id] [--set <check>.<threshold>=<value>]… [--defaults] [--ignore-accepted] [--as pcb|mmic] [--all] [--severity warning|none]`
+· `circuitrf review [<layout>] [--as pcb|mmic] --list-checks`
 
 ### 32.1 It owns no check
 
@@ -4297,6 +4297,11 @@ person's aid whose findings are advice, and the two stay two runs.
 - **A length `--set` carries its unit**; a bare number is `review.args.set-needs-unit`, `render --window`'s rule.
   It is parsed against the layout's own `DbuPerMicron`, which is why `--set` is applied after the read.
 - **Units.** Sentences and stdout speak the layout's `DisplayUnit`; `--json` markers are µm.
+- **A board or a die** (brief-review-6). `ReviewSettings.Target` (saved; null is PCB) picks the checks: each
+  `ReviewCheckDef.Targets` says which it belongs to, and `LayoutReview.Run` runs only those. `--as pcb|mmic`
+  overrides the saved target for this run. A check of the other target named in `--checks`, `--skip` or `--set`
+  is `review.args.check-not-for-target` — it would otherwise silently not run. `--list-checks` lists the
+  target's checks; `--json` carries `target`.
 
 ### 32.3 Output and exit codes
 
@@ -4324,7 +4329,9 @@ union), ground is `on_ground`'s. On a DRAWN ground reference `on_ground` reads t
 reference conductor (`DrcRegionEval.GroundNets`) — the artwork reader's `ReferenceConductor` rule — and states it;
 an undrawn one keeps the partition's via walk. The per-pad via lists are `near`'s own routine with identities kept
 (`DrcRegionEval.WithinEach`), asked once per distance and shared by the two ground-via checks. `thermal-pad-area` is a
-new threshold kind, `ReviewThresholdKind.Area` (mm²), beside `Density` (per mm²): both plain numbers on `--set`. Gate:
+new threshold kind, `ReviewThresholdKind.Area`: stored in mm², shown, edited and said in the layout's unit squared
+(`ReviewText.Area`/`TryParseArea`), and on `--set` with its unit squared, a bare number refused as for a length. How
+dense a via farm is, is a PITCH (`max-via-pitch`, a length): a density has no readable spelling in µm or mil. Gate:
 `tests/Ui.Tests/Review/PadViaChecksTests.cs`.
 
 ### 32.6 Copper and the board edge (brief-review-4)
@@ -4363,3 +4370,22 @@ scope (`ScopeText`) and how many traces passed. The analysis gets its own `RunCo
 stages are forwarded, prefixed, as the review's progress; a cancelled analysis keeps its finished layers, so the
 row is `cancelled` WITH those findings. `LayoutReviewResult.Impedance` keeps the report for the Review panel's
 Accept, which writes a `TraceImpedanceAcceptance`. Gate: `tests/Ui.Tests/Review/ImpedanceCheckTests.cs`.
+
+### 32.8 A die: the MMIC review, and the RF checks (brief-review-6)
+
+A PCB check asked of a die says nothing useful, and its not-run sentence (add a soldermask, a board outline) is
+wrong advice there, so a review has a target and runs only its checks. A review check is one a person checks by
+eye and DRC does not: a die-edge metal check was built and removed because the foundry's DRC already has it.
+
+- `ground-pin-via` (MMIC): ground-via-distance's question on a die, whose terminals are placed parts' PINS
+  (`PlacedPins.Of`) since a die has no soldermask. A pin is judged when its copper is ground (on_ground); distance
+  pin to via edge, the vias `ReviewContext.Vias` (a backside via is a plated drill reaching the flagged reference).
+- `coupled-lines` (PCB and MMIC): same-layer, different nets, parallel pieces measured exactly in the first
+  piece's frame (overlap along, edge gap across), summed per trace pair. Thresholds are `ReviewThresholdKind.Heights`,
+  h being the dielectric to the nearest flagged ground reference (`CoupledLinesCheck.HeightOf`), so one default
+  suits a die and a board.
+- `probe-pads` (MMIC): placed GSGPADs found by `LayoutView.PCellSnapshots` (generator `GSGPAD`) and read through
+  `GsgPadPCell.Resolve`, the geometry the cell draws: the probe's pitch (`probe-pitch`, the lab's on-wafer probe,
+  within 0.5 µm), ground pads on ground, and a clear approach on the pads' metal and above.
+
+Gates: `tests/Ui.Tests/Review/MmicReviewTests.cs`, `RfReviewChecksTests.cs`.

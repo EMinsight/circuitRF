@@ -568,6 +568,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             // be stale, because the reviewer is usually mid-fix and still reading the rows.
             MarkImpedanceStaleOnEdit();
 
+            // brief-review-6: and a Layout Review result, on the same terms.
+            MarkReviewStaleOnEdit();
+
             bool shapesChanged = _selectedIndices.RemoveAll(i => i < 0 || i >= Model.Shapes.Count) > 0;
             bool instancesChanged = _selectedInstanceIndices.RemoveAll(i => i < 0 || i >= Model.Instances.Count) > 0;
             bool rulersChanged = PruneRulerSelection();
@@ -4630,6 +4633,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             DrcMarkers = BuildDrcMarkers(),
             LvsMarkers = BuildLvsMarkers(),
             Impedance = BuildImpedanceOverlay(),
+            ReviewMarkers = BuildReviewMarkers(),
             ImpedanceScope = BuildImpedanceScopeOverlay(),
             ArtworkProbe = _artworkProbe,
             Ratsnest = RatsnestLines(),

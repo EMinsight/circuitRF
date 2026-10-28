@@ -411,6 +411,14 @@ public static class DockPanelIds
     public const string Impedance = "Impedance";
 
     /// <summary>
+    /// brief-review-6's Review panel — the Layout Review's checks and thresholds, its run, its findings and
+    /// their acceptances, following the active layout as the DRC and Impedance panels do. Absent from both
+    /// shipped default layouts, like Impedance: Design ▸ Review Layout… puts it on screen beside a side-column
+    /// panel, and it is then captured and restored with every other panel.
+    /// </summary>
+    public const string Review = "Review";
+
+    /// <summary>
     /// brief-tuneopt-4's Tuning panel — sliders over the focused schematic's tune-enabled values, with
     /// the Data Display following them live.
     ///
@@ -456,7 +464,7 @@ public static class DockPanelIds
     public static readonly string[] All =
     [
         ProjectTree, Palette, Properties, Analyses, Messages, Drc, Lvs, WBondProfile,
-        WBondInductance, History, Instances, Impedance, Tuning, Optimizer, Yield,
+        WBondInductance, History, Instances, Impedance, Tuning, Optimizer, Yield, Review,
     ];
 
     /// <summary>

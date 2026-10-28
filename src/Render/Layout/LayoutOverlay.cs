@@ -202,6 +202,15 @@ public sealed record class LayoutOverlay
     public IReadOnlyList<LvsFindingMarker> LvsMarkers { get; init; } = [];
 
     /// <summary>
+    /// brief-review-6 R-rev6-5: the Layout Review's findings over the artwork, drawn while the Review panel is
+    /// open. The same system layer and the same drawing as <see cref="DrcMarkers"/> — never a <c>LayerKey</c>,
+    /// never in <c>LayoutView.Shapes</c>, never reachable by an exporter — in a colour of its own, and markers
+    /// that would land on one another at the current zoom drawn as one counted badge (<c>MarkerSeats</c>, the
+    /// Impedance report's clustering). A separate list for <see cref="LvsMarkers"/>' reason: each panel clears its own.
+    /// </summary>
+    public IReadOnlyList<ReviewFindingMarker> ReviewMarkers { get; init; } = [];
+
+    /// <summary>
     /// brief-impedance-3 R-imp3-3a: the Impedance panel's results over the artwork — each reviewed
     /// trace's centre line coloured by its Z0, and a marker at each finding. The same system layer as
     /// <see cref="DrcMarkers"/>: never a <c>LayerKey</c>, never in <c>LayoutView.Shapes</c>, never
@@ -352,6 +361,17 @@ public readonly record struct DrcMarker(
     IReadOnlyList<long[]> Rings,
     DrcSeverity           Severity,
     bool                  Waived,
+    bool                  Selected);
+
+/// <summary>One Layout Review finding's region, ready to draw — <see cref="DrcMarker"/>'s shape. A review
+/// finding has one severity (a Warning), so there is none to carry.</summary>
+/// <param name="Rings">Flat, implicitly-closed DBU vertex lists, in world coordinates. A two-point ring is a
+/// LINE (a pad to its nearest via) and is stroked rather than filled.</param>
+/// <param name="Accepted">An accepted finding still draws, muted — acceptances stay VISIBLE.</param>
+/// <param name="Selected">The row the Review panel has selected: drawn heavier, and never in a badge.</param>
+public readonly record struct ReviewFindingMarker(
+    IReadOnlyList<long[]> Rings,
+    bool                  Accepted,
     bool                  Selected);
 
 /// <summary>

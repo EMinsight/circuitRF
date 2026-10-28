@@ -268,6 +268,8 @@ public partial class LayoutEditorViewModel
     private void ReapplyImpedanceAcceptances()
     {
         if (ImpedanceReport is { } r) ImpedanceReport = TraceImpedanceAcceptance.Apply(r, Model.ImpedanceAcceptances);
+        // brief-review-6 R-rev6-6: the Review panel's impedance findings are accepted by the same list.
+        ReapplyReviewAcceptances();
     }
 
     /// <summary>The held report as Export PDF writes it: stale when the layout has changed since.</summary>

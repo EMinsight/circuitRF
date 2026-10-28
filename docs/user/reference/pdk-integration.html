@@ -55,6 +55,7 @@ run time.</p>
 <li><a href="#models">How a kit's models are evaluated</a></li>
 <li><a href="#failures">When something goes wrong</a></li>
 <li><a href="#managing">Managing kits</a></li>
+<li><a href="#vendor">Vendor part libraries</a></li>
 </ol>
 </nav>
 <h2 id="what">What a kit contributes</h2>
@@ -109,7 +110,7 @@ you are building a kit yourself, or normalising a supplied one, that is the layo
 open standard, it is what circuitRF's importer expects to find, and it keeps a kit portable between
 tools. <a href="pdk-authoring.html">PDK Authoring</a> covers producing one.</p>
 <h2 id="importing">Importing one</h2>
-<p><strong>File ▸ Manage PDKs… ▸ Add…</strong> (<kbd>Ctrl/⌘ P</kbd>), then pick the kit's folder.</p>
+<p><strong>File ▸ Manage Libraries… ▸ Add…</strong> (<kbd>Ctrl/⌘ P</kbd>), then pick the kit's folder.</p>
 <div class="callout note">
 <span class="label">An import writes nothing into your workspace</span>
 <p>No symbols are copied in, no parameter interfaces, no icons. The workspace records a
@@ -315,7 +316,7 @@ warnings. The details go to a log file in the workspace, and the Messages pane c
 clickable path to it.</p>
 <p>What to check first, in order:</p>
 <ol>
-<li><strong>Is the kit still where the workspace thinks it is?</strong> Manage PDKs… shows the stored path and whether
+<li><strong>Is the kit still where the workspace thinks it is?</strong> Manage Libraries… shows the stored path and whether
 it resolved. A kit is normally <em>outside</em> the workspace, so an absolute path is the common case and a
 moved kit is the common failure.</li>
 <li><strong>Was the model library found?</strong> The resolved library path per platform is recorded per kit. If the
@@ -376,9 +377,10 @@ worth reporting with the kit's details rather than tuning tolerances against.</p
 						</text></g></g><clipPath id="manage-pdks-dark_cl_15"><rect x="564" y="449" width="76" height="25" /></clipPath><g clip-path="url(#manage-pdks-dark_cl_15)"><use xlink:href="#manage-pdks-dark_d1" fill="white" fill-opacity="0.2" transform="translate(564 449)" /><clipPath id="manage-pdks-dark_cl_16"><rect x="586" y="454" width="32" height="15" /></clipPath><g clip-path="url(#manage-pdks-dark_cl_16)"><text fill="white" transform="translate(586 454)" font-size="12" font-family="Inter" x="0, 8.73, 11.57, 18.73, 25.01" y="11.63">
 								Close
 						</text></g></g></g></svg></span>
-</span><figcaption>Manage PDKs: the workspace&#39;s kit references, what each one resolved to, how many parts it loaded, and the Add / Remove / Reveal / Validate actions.</figcaption></figure>
-<p><strong>File ▸ Manage PDKs…</strong> (<kbd>Ctrl/⌘ P</kbd>) lists every referenced kit with its name, stored path,
-whether it resolved, its part count and its translation version.</p>
+</span><figcaption>Manage Libraries: the workspace&#39;s kit and vendor-library references, what each one resolved to, how many parts it loaded, and the Add / Remove / Reveal / Validate actions.</figcaption></figure>
+<p><strong>File ▸ Manage Libraries…</strong> (<kbd>Ctrl/⌘ P</kbd>) lists every library the workspace references — each
+kit, and each <a href="#vendor">vendor part library</a> — with its kind, its name, stored path, whether it resolved
+and its part count.</p>
 <table>
 <thead>
 <tr>
@@ -389,7 +391,7 @@ whether it resolved, its part count and its translation version.</p>
 <tbody>
 <tr>
 <td><strong>Add…</strong></td>
-<td>Folder picker; imports and adds the reference through the ordinary import path</td>
+<td>Folder picker. The folder is classified by what it holds — readable SPICE subcircuits and no kit structure is a vendor library, anything else is imported as a kit — so you are never asked which it is</td>
 </tr>
 <tr>
 <td><strong>Remove</strong></td>
@@ -427,6 +429,115 @@ ever changes — a scale fix, a snap fix, anything touching pin placement — re
 translation version is what catches that: a mismatch is reported rather than re-derived underneath your
 wiring.</p>
 </div>
+<h2 id="vendor">Vendor part libraries</h2>
+<p>A component manufacturer's simulation library — a folder of plain-text SPICE files, one small
+subcircuit per capacitor or inductor — can be referenced from a workspace and searched by value, size
+and description.</p>
+<p><strong>File ▸ Add Vendor Library…</strong> asks for the library's folder, reads it, and shows what it found before
+anything is added: the number of parts, the folders that group them, and any files it could not read.
+The name it offers is the folder's own; placed parts reach the library by that name. The Messages pane
+gets one line saying what was added.</p>
+<div class="callout note">
+<span class="label">Referenced where it is, never copied</span>
+<p>A vendor library stays in the folder you downloaded it to. The workspace records its name and path,
+nothing else. To move it, add the folder again under the same name: every placed part resolves again
+and no schematic changes.</p>
+</div>
+<p><strong>Only the static, plain-text edition can be read.</strong> Manufacturers publish their libraries in several
+editions. The ones with bias- and temperature-dependent models are encrypted for one simulator each, and
+circuitRF does not read them. A file like that is counted, not read, and the library says once how many
+it found. A folder holding nothing readable is refused with the same sentence. If you need one bias or
+temperature condition, export that condition from the manufacturer as a plain static model and place it
+as an ordinary SpiceModel.</p>
+<p>Each part is listed from the comment header above its subcircuit (description, value, frequency range,
+temperature and bias). The circuit itself is read only when a run needs it. Indexing happens in the
+background each time the workspace opens, so opening never waits for it.</p>
+<p><strong>In the palette</strong>, each library is a sub-menu of the <a href="schematic-editor.html#palette">Type menu</a>
+following its own folders, and choosing it lists its parts with value-aware search; see
+<a href="schematic-editor.html#palette-vendor">A vendor library's parts</a>. <strong>Add Vendor Library…</strong> is at the
+bottom of that menu too.</p>
+<p><strong>Use in new workspaces.</strong> Every library you add is remembered for you, and <strong>File ▸ New Workspace</strong>
+references the ones ticked <em>New workspaces</em> in Manage Libraries. They are ticked by default. If a
+workspace opens and one of its libraries is missing, the Messages pane says so once per library. When you
+have that library somewhere else under the same name, the message offers <strong>Repair</strong>.</p>
+<p><strong>Validate</strong> on a vendor library re-reads it and reports parts indexed, files it could not read, placed
+parts checked, and any placed part the library no longer holds.</p>
+<h3 id="vendor-placed">A placed part</h3>
+<p>Selecting a placed vendor part shows its library and file, a <strong>Part</strong> field and the part's value,
+frequency range and description in the Parameter Editor. The editor's title is the part number.</p>
+<ul>
+<li><p><strong>Choose another part</strong> by typing in the Part field: it searches that file's parts with the
+palette's search, and <kbd>↓</kbd>/<kbd>↑</kbd> move through the matches while you type.
+<kbd>Enter</kbd> takes the highlighted one and <kbd>Esc</kbd> puts the placed part back. The
+<span class="ui">▾</span> button lists the whole file with the placed part highlighted.</p>
+</li>
+<li><p><strong>Value ▼ / ▲</strong> step to the next lower or higher value of the same kind: the same file and the same
+description except the value, so the size, dielectric and voltage stay as they are.</p>
+</li>
+<li><p><strong>On the schematic</strong>, double-click the value line (<code>C = 10 pF</code>). The value opens for editing with
+the parts of the same kind listed under it, in value order, and the placed part highlighted:
+<kbd>↓</kbd>/<kbd>↑</kbd> and <kbd>Enter</kbd> step the value, or type to search the whole file — a
+value, a part number or words of the description (<code>22p 100V</code>) — and take a match with
+<kbd>Enter</kbd> or a click. A plain number is in the value's own unit: <code>22</code> typed over <code>10 pF</code>
+finds 22 pF. <kbd>Esc</kbd> changes nothing.
+Double-clicking the part number does the same over the whole file.</p>
+</li>
+</ul>
+<p>Either way the instance keeps its place, wires and labels. The footprint follows the part only when it
+came from the part: a footprint you chose yourself stays. One Undo puts both back. Selecting a part reads
+nothing from the library file.</p>
+<p><strong>The <span class="ui">?</span> button</strong> opens the documents the library came with, if any, each in
+your system's own viewer. Some editions ship nothing but model files, and publish their notes beside
+the download instead. The menu then says the library came with no documents.</p>
+<p><strong>A run reads only the placed parts.</strong> Each part's circuit is read from its own few lines of its file,
+so a run placing three parts from a 15 MB file reads three small blocks. A part whose library is
+missing, or that the library no longer holds, is reported by name and left out of the run.</p>
+<p><strong>Frequency range.</strong> A part's model is valid over the range its library states. When a run's analyses
+go outside it, the run says so once per part number: <em>&quot;… is characterised from 100 MHz to 30 GHz; this
+run reaches 1 MHz.&quot;</em> It is a warning in the Messages pane (on stderr from the command line); the run
+still completes. A DC operating point never warns.</p>
+<p><strong>Sharing.</strong> <strong>Archive Workspace</strong> lists each referenced vendor library unticked, because a library is
+usually licensed for your own use. The recipient adds their own copy. Ticked, the library is copied into
+the archive and the archived workspace points at the copy.</p>
+<h3 id="vendor-optimize">Letting the optimizer choose the part</h3>
+<p>A placed vendor part can be an optimizer variable. What varies is the <strong>part</strong> itself, so each candidate
+is simulated with its own model, parasitics and self-resonance included. A real 10 pF part is not an
+ideal 10 pF capacitor, and the difference between the two is often why you placed a real part.</p>
+<p>Beside Value ▼ / ▲ in the Parameter Editor are the toggles every parameter row has.
+<span class="ui">Tune</span> adds the part to the Tuning panel and <span class="ui">Optimize</span> adds it
+to the Optimizer, each with the parts of the same kind as its candidates. Click a toggle again to remove
+the part. It appears in those panels as <code>C1.Part</code>, showing its part number and value:</p>
+<ul>
+<li><strong>Candidates.</strong> By default these are the parts of the same kind: the same file and the same
+description except the value. Size, dielectric, voltage and series stay as they are and only the value
+moves. <strong>⋮ ▸ Search the library…</strong> chooses them with the palette's search instead (<code>0603 C0G 50V</code>),
+which can cross series but keeps whatever the search names. The <strong>min</strong> and <strong>max</strong> under the slider
+bound the candidates' stated value (<code>1 pF</code> to <code>47 pF</code>), and the line below says how many candidates
+there are, their value span and the series they come from.</li>
+<li><strong>The Tuning slider</strong> steps through the candidates in value order. The box takes a part number, or a
+value, which picks the nearest candidate.</li>
+<li><strong>An entry chooses among at most 200 parts.</strong> More is an error naming the count. Narrow it with
+min/max or a longer search.</li>
+</ul>
+<p>When every optimized value is a vendor part, <strong>Auto</strong> searches the candidates directly with
+<strong>Discrete</strong>, and the methods that move values continuously are greyed in the algorithm menu. With other
+variables too, the optimizer first puts an <strong>ideal</strong> capacitor or inductor in the part's place and moves
+its value continuously. It then tries the real candidates either side of that value, keeps the better
+one, and polishes the other variables with it. The status line shows both costs, the cost with ideal
+components and the cost with the real parts; the gap is what the parts' own parasitics do. A part with
+no C or L glyph has no ideal stand-in and is always searched on its candidates.</p>
+<p><strong>Push</strong> writes the chosen part to the instance as choosing it in the Part field would. The footprint
+follows only when it came from the part, and the whole Push is one Undo. A part is chosen, never given a
+tolerance: a static model states none, so a Monte Carlo or yield run leaves it as placed. The
+frequency-range warning is given once, for each chosen part whose range the analyses leave.</p>
+<p>Headless, the same line is written <code>tune C1.Part kind=same min=1 pF max=47 pF opt=1</code>, or
+<code>tune C1.Part parts=&quot;0603 C0G 50V&quot; opt=1</code>. <code>circuitrf explain --tunables</code> lists each part with its
+candidates, <code>circuitrf check</code> reports an entry with no candidate or too many, and <code>circuitrf opt</code>
+reports the chosen part for each entry.</p>
+<p>Headless, <code>circuitrf import library &lt;folder&gt; --into &lt;workspace&gt;</code> adds one,
+<code>circuitrf find &lt;workspace&gt; --parts &quot;&lt;query&gt;&quot;</code> searches them, <code>circuitrf check &lt;workspace&gt;</code> reports a
+missing library or a vanished part as an error, and <code>circuitrf explain &lt;file&gt; --ref vendorlib://…</code>
+shows which workspace, library entry and folder a reference resolves through; see <a href="cli.html">CLI</a>.</p>
 <h2 id="authoring">Authoring a kit</h2>
 <p>PCells can be authored in <strong>Python</strong> — the generator, its parameters, its pins and its
 <a href="pcells.html#handles">parameter handles</a> all in one function in one file. That, the OpenPDK layout, and a

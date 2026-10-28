@@ -279,6 +279,12 @@ convention behind both.</p>
 <td>The per-trace report to stdout; <code>-o report.pdf</code></td>
 </tr>
 <tr>
+<td><code>review</code></td>
+<td>a <code>.clay</code>, a cell folder, or a workspace with <code>--cell</code></td>
+<td>The <a href="layout-editor.html#layout-review">Layout Review</a>'s built-in checks</td>
+<td><strong>Nothing</strong> — the findings, grouped per check and layer, to stdout</td>
+</tr>
+<tr>
 <td><code>convert</code></td>
 <td>any layout format</td>
 <td>The same importer and exporter <strong>File ▸ Import/Export</strong> runs</td>
@@ -1059,6 +1065,13 @@ Goals:
 <p>Each best value is the text the schematic would hold, at full precision; a part of a complex value is
 followed by the whole value, in the form the schematic writes it. A met goal reports its tightest
 point and the margin there; an unmet one its worst point, with a negative margin.</p>
+<p>A <a href="pdk-integration.html#vendor-optimize">vendor part</a> (<code>tune C1.Part … opt=1</code>) is reported by part:
+its row's best is the chosen part number and its min and max are the candidates' value span, and a
+<strong>Parts</strong> table lists each entry's start, the chosen part, its value and description. With other
+variables, the snap line gives the cost with ideal components in the parts' place and the cost with the
+real parts, the difference the parts' parasitics make. The <code>--json</code> document carries the same as <code>parts</code>
+(the chosen <code>part</code> and the <code>vendorlib://</code> reference of its <code>file</code>, which is what the instance's Name and
+File are written as) and <code>snap.idealParts</code>.</p>
 <table>
 <thead>
 <tr>
@@ -1930,6 +1943,170 @@ layout can hold. A <em>Z0 at the model's W</em> row shows what a line drawn at t
 <code>z0DifferencePercent</code> and, on a <code>--z0</code> row, <code>crossSectionAtModelWidth</code> and <code>widthDifferencePercent</code>.
 Exit <strong>0</strong> when every row is answered, and <strong>1</strong> when the calculator is refused or a row has no answer.
 A column that cannot answer one row is a warning.</p>
+<h2 id="review"><code>review</code> — a reviewer's checklist over the board</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf review &lt;layout&gt; [--cell &lt;name&gt;] [--checks id,id] [--skip id,id]
+<span class="prompt">  </span>[--set &lt;check&gt;.&lt;threshold&gt;=&lt;value&gt;]… [--defaults] [--ignore-accepted] [--as pcb|mmic] [--all]
+<span class="prompt">  </span>[--severity warning|none]
+<span class="prompt">$ </span>circuitrf review [&lt;layout&gt;] [--as pcb|mmic] --list-checks</code></pre>
+<p><code>review</code> runs the <a href="layout-editor.html#layout-review">Layout Review</a>: the built-in checks a person
+reviewing a board runs by eye, each marking the places worth a look with a sentence saying why. It is
+not a design-rule check and does not replace one: a finding is <strong>advice</strong>, and the reviewer either changes
+the artwork or accepts the finding with a reason.</p>
+<p>The path is a <strong><code>.clay</code></strong>, a <strong>cell folder</strong> holding one, or a <strong>workspace</strong> with <code>--cell</code>. The technology
+resolves as the editor resolves it, and placed cells are flattened as a design-rule check flattens them.
+The board is read once and every check shares that one copy.</p>
+<p><strong>A review is of a board or of a die.</strong> A PCB review runs the checks below marked neither <em>MMIC only</em>; a MMIC
+review runs <code>ground-pin-via</code>, <code>coupled-lines</code>, <code>probe-pads</code> and <code>impedance</code>. The layout's saved choice applies — a board when it has
+none — and <code>--as</code> overrides it for this run.</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>What it marks</th>
+<th>Threshold (default)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>via-in-pad</code></td>
+<td>A via inside an SMD pad's soldermask opening. Vias in a thermal pad are left to <code>thermal-vias</code>, and a pad centred on its one plated drill is a through-hole pin, whose drill is not a via.</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>ground-via-distance</code></td>
+<td>A ground pad with no ground via within the distance, pad edge to barrel edge; the nearest one's distance is stated, looked for out to ten times the threshold. Thermal pads and through-hole pins are not judged.</td>
+<td><code>max-distance</code> (0.5 mm)</td>
+</tr>
+<tr>
+<td><code>shared-ground-via</code></td>
+<td>A ground via that is the only one within <code>ground-via-distance.max-distance</code> of two or more ground pads.</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>thermal-vias</code></td>
+<td>A thermal pad — a ground pad of at least <code>thermal-pad-area</code> — with fewer ground vias under it than one per <code>max-via-pitch</code> squared, or none; a finding states the pad's average pitch. A via counts when at least half its barrel is inside the pad. <code>thermal-pad-area</code> is the thermal-pad size all four pad checks use.</td>
+<td><code>thermal-pad-area</code> (2 mm²), <code>max-via-pitch</code> (1 mm)</td>
+</tr>
+<tr>
+<td><code>stacked-traces</code></td>
+<td>Two traces on adjacent copper layers, on different nets, running the same way on top of each other for at least <code>min-length</code>, each grown by <code>lateral-margin</code> first; a crossing is not a run. Layers with another copper layer between are not compared. A trace is what <a href="#impedance"><code>impedance</code></a> finds.</td>
+<td><code>lateral-margin</code> (0), <code>min-length</code> (1.0 mm)</td>
+</tr>
+<tr>
+<td><code>coupled-lines</code></td>
+<td>Two traces of different nets on one copper layer running the same way, closer than <code>spacing</code> for at least <code>min-length</code>, both in substrate heights (h: the dielectric between the layer and its ground reference). Reported with the run's length and the closest gap. PCB and MMIC.</td>
+<td><code>spacing</code> (2 h), <code>min-length</code> (5 h)</td>
+</tr>
+<tr>
+<td><code>edge-copper</code></td>
+<td>Copper on any copper layer closer to the board edge than the pullback. The board edge is read off the board-outline layer — a closed outline, or a line drawn round the board — and cut-outs in the board are edges too.</td>
+<td><code>pullback</code> (0.25 mm)</td>
+</tr>
+<tr>
+<td><code>edge-trace</code></td>
+<td>A trace on any copper layer closer to the board edge than <code>min-distance</code>. Copper that is not a trace is <code>edge-copper</code>'s alone.</td>
+<td><code>min-distance</code> (1.0 mm)</td>
+</tr>
+<tr>
+<td><code>edge-stitching</code></td>
+<td>Within <code>band-width</code> of the edge: a stretch at least <code>max-gap</code> long with no ground copper on the top or bottom copper (one finding per layer), and a gap of at least <code>max-gap</code> between ground vias (a finding on no layer). Measured along the middle of the band.</td>
+<td><code>band-width</code> (1.0 mm), <code>max-gap</code> (2.0 mm)</td>
+</tr>
+<tr>
+<td><code>ground-pin-via</code></td>
+<td>MMIC only. A placed part's terminal whose copper is ground with no via to the ground plane within <code>max-distance</code>, terminal to the via's edge; the nearest one's distance is stated, looked for out to ten times the threshold.</td>
+<td><code>max-distance</code> (100 µm)</td>
+</tr>
+<tr>
+<td><code>probe-pads</code></td>
+<td>MMIC only. The placed GSGPADs: one whose pitch is not <code>probe-pitch</code> (the lab's probe, within 0.5 µm), a ground pad not on ground, and metal within <code>approach</code> in front of the pads on their metal or any above it. A pad inside another cell or in an array is not judged.</td>
+<td><code>probe-pitch</code> (150 µm), <code>approach</code> (100 µm)</td>
+</tr>
+<tr>
+<td><code>impedance</code></td>
+<td>Each trace in the layout's saved <a href="layout-editor.html#impedance-analysis">Impedance review</a> scope that does not pass it — FAIL, WARN or unsolved — with its verdict, worst Z0 against the target band, line type and finding kinds, marked where its findings are. Its line also says the scope and how many traces passed. With no scope saved it is <strong>not run</strong>: the review never analyses every trace on the board.</td>
+<td>None of its own: target, bands, layers and scope are the Impedance review's</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The review saved in the layout applies by default</strong> — which checks run, and each threshold that
+was changed from its default. <code>--set</code> overrides one for this run; <code>--defaults</code> ignores what was saved.
+<code>impedance</code> has no thresholds here: its settings are changed in the Impedance panel or with
+<a href="#impedance"><code>impedance</code></a>, and <code>--list-checks</code> shows them read-only.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--cell &lt;name&gt;</code></td>
+<td>With a workspace: the cell whose layout to review.</td>
+</tr>
+<tr>
+<td><code>--checks id,id</code></td>
+<td>Run only these checks.</td>
+</tr>
+<tr>
+<td><code>--skip id,id</code></td>
+<td>Do not run these checks.</td>
+</tr>
+<tr>
+<td><code>--set &lt;check&gt;.&lt;threshold&gt;=&lt;value&gt;</code></td>
+<td>A threshold for this run, e.g. <code>edge-copper.pullback=0.3mm</code>. <strong>A length carries its unit</strong> (<code>0.3mm</code>, <code>300um</code>, <code>12mil</code>), and a bare number is refused, as for <a href="#render"><code>render --window</code></a>. <strong>An area carries its unit squared</strong> (<code>thermal-vias.thermal-pad-area=4mm2</code>, <code>4e6um2</code>, <code>6200mil2</code>), and a bare number is refused for the same reason. A height is a number of substrate heights (<code>coupled-lines.spacing=3</code>). Repeatable.</td>
+</tr>
+<tr>
+<td><code>--defaults</code></td>
+<td>Ignore the review saved in the layout.</td>
+</tr>
+<tr>
+<td><code>--ignore-accepted</code></td>
+<td>Report as if nothing had been accepted: every finding counts.</td>
+</tr>
+<tr>
+<td><code>--as pcb\|mmic</code></td>
+<td>Review as a board or as a die: which checks run. Naming a check the other kind runs, in <code>--checks</code>, <code>--skip</code> or <code>--set</code>, is refused.</td>
+</tr>
+<tr>
+<td><code>--all</code></td>
+<td>List every finding. By default at most 20 per check per layer are listed, followed by <em>… and N more</em>.</td>
+</tr>
+<tr>
+<td><code>--severity warning\|none</code></td>
+<td>What decides the exit code. Default <code>none</code>: findings are advice. <code>warning</code> makes an unaccepted finding exit 1.</td>
+</tr>
+<tr>
+<td><code>--list-checks</code></td>
+<td>List the checks of this kind of review with their thresholds, their defaults and the layout's saved values, and run nothing. With no path it lists the defaults.</td>
+</tr>
+</tbody>
+</table>
+<p>stdout gives, per check, a line with its count — accepted findings counted separately — and the
+findings grouped by layer under it, each with where it is in the layout's own unit. Lengths and areas are said in
+that unit too (an area in it squared), in the sentences and in <code>--list-checks</code>. A check that cannot
+run on this technology says <strong>not run</strong> and the one change that would let it, and the run carries on with
+the others: a technology with no board-outline layer, for one, cannot say where the board edge is. stderr
+says which check is running.</p>
+<p><strong>Accepted findings apply by default.</strong> An accepted finding is reported <code>ACCEPTED</code> with its reason and
+does not count. A saved acceptance that matched nothing is listed as stale. There is no <code>--accept</code>: a
+script that must accept a finding headlessly adds it to the <code>.clay</code>'s <code>ReviewAcceptances</code> with the
+finding's <code>key</code>; <a href="#reference"><code>reference layout</code></a> documents the fields. An <code>impedance</code> finding is the
+exception: it is accepted in the Impedance review (the <code>.clay</code>'s <code>ImpedanceAcceptances</code>), and is reported
+<code>ACCEPTED</code> when every finding on its trace is; a <code>ReviewAcceptances</code> entry never covers it. Its <code>key</code> is the
+Impedance review's trace key, <code>layer|x,y|x,y</code> with the trace's end points in whole µm.</p>
+<p>With <code>--json</code> the result is <code>review</code>: <code>target</code> (<code>pcb</code> or <code>mmic</code>), <code>technology</code>, <code>displayUnit</code>, <code>warnings</code> (unaccepted), <code>accepted</code>,
+<code>notes</code> (checks not run), <code>checks</code> (each <code>id</code>, <code>title</code>, <code>state</code> — <code>ran</code>, <code>not-run</code> or <code>cancelled</code>
+— <code>reason</code>, <code>findings</code>, <code>accepted</code>, its <code>thresholds</code> with <code>value</code>, <code>default</code> and <code>text</code>, and a
+<code>summary</code> where the check states one), and
+<code>findings</code> (each <code>check</code>, <code>layer</code>, <code>severity</code> — <code>warning</code>, or <code>note</code> for a check not run —
+<code>sentence</code>, <code>measured</code>, <code>key</code>, <code>marker</code> as a bounding box in <strong>µm</strong>, and <code>accepted</code> with its <code>reason</code>
+and <code>date</code>), then <code>staleAcceptances</code>. With <code>--list-checks</code> the result is <code>reviewChecks</code> instead, where
+<code>impedance</code> carries its Impedance review settings as <code>settings</code>.</p>
+<p><strong>Exit codes:</strong> <strong>0</strong> when it ran, whatever it found; <strong>1</strong> on a refusal, or with <code>--severity warning</code> when
+an unaccepted finding remains; <strong>130</strong> on a cancellation, reporting the checks that finished. <code>review</code>
+writes nothing.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>
 <p><code>smith</code> evaluates a <strong><code>.csmith</code></strong> — the document the Smith Chart window edits. It
@@ -2324,6 +2501,7 @@ per line, so a script can consume them directly:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o fab/ --to gerber 2&gt; convert.log | zip -j fab.zip -@</code></pre>
 <h2 id="new"><code>new</code> — a workspace or a cell</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf new workspace &lt;dir&gt; [--name N] [--tech &lt;id&gt;|none] [--length-unit um|mm|mil]
+                        [--vendor-library &lt;name&gt;=&lt;folder&gt;]...
 <span class="prompt">$ </span>circuitrf new cell &lt;workspace&gt; &lt;cellName&gt; [--views schematic,symbol,layout]</code></pre>
 <p>These create the <strong>first correct document</strong> — the thing that is awkward to write by hand because the
 folder structure and the primacy files have to be right before anything will open it.</p>
@@ -2341,6 +2519,9 @@ the application created.</p>
 /home/you/designs/Amp/Stage1/symbol/Stage1.csym</span></code></pre>
 <p><code>--length-unit</code> writes the copied technology's display unit — what a preferred length unit in <strong>Settings ▸ General
 ▸ Units</strong> does for <strong>File ▸ New Workspace</strong>. Left out, the technology keeps its own.</p>
+<p><code>--vendor-library</code> references a <a href="pdk-integration.html#vendor">vendor part library</a> from the start, and
+may be given more than once. <strong>File ▸ New Workspace</strong> references the libraries you have ticked for new
+workspaces; headless there is no such list, so nothing is referenced unless you name it here.</p>
 <p><strong>The paths it creates are the result</strong>, on stdout, because what you do next is almost always read or
 rewrite one of them.</p>
 <div class="callout note">
@@ -2376,6 +2557,24 @@ SOT-23-5</span>
 <p><strong>Layers the technology does not have are reported, and nothing is written</strong>, unless you pass
 <code>--add-layers</code>. The GUI's own install is session-only and writes nothing to disk either, so this is
 the same behaviour and not a headless restriction.</p>
+<hr />
+<h2 id="import-library"><code>import library</code> — a vendor part library, referenced in place</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf import library &lt;folder&gt; --into &lt;workspace&gt; [--name N]</code></pre>
+<p>The same code <strong>File ▸ Add Vendor Library…</strong> runs: the folder is indexed, and the workspace's <code>.cws</code>
+gains a reference to it under <code>--name</code> (the folder's own name when left out). Nothing is copied.
+Adding a name that is already referenced repairs it to the new folder.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf import library ~/libraries/caps --into ~/designs/Amp --name Caps
+<span class="output">Caps	/home/you/libraries/caps
+12,410 parts in 31 files.
+Folders: general (8,902), automotive (3,508).
+2 files are encrypted for another simulator and cannot be read. The plain-text (static) edition of this library can be.</span></code></pre>
+<p>A folder with no readable part is refused (exit 1) with that sentence. <code>--json</code> carries the counts and
+the folder groups as <code>result.library</code>.</p>
+<p>A run verb given a <code>.csch</code> that places vendor parts says two things on stderr, each a warning that leaves
+the exit code alone: a placed part that could not be read (<code>run.vendor-part.unreadable</code>, naming the part
+and the library; the run goes without it), and a part the run's analyses take outside its stated
+frequency range (<code>run.vendor-part.out-of-range</code>, once per part number). A DC operating point never
+warns about range.</p>
 <hr />
 <h2 id="import-schematic"><code>import schematic</code> — another editor's schematic, as a cell</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf import schematic &lt;file&gt; --into &lt;workspace-or-dir&gt; [--cell N] [--port &lt;ref-or-net&gt;]...
@@ -2868,6 +3067,11 @@ Amp/Stage1/layout/Stage1.clay
 same primacy rule, the same technology walk-up, the same net extractor, the same elaborator, the same
 DRC engine. A rule that lived only in <code>check</code> would be a rule the application does not enforce, and a
 design would pass here and be refused the moment somebody opened it.</p>
+<p>On a workspace, every referenced <a href="pdk-integration.html#vendor">vendor library</a> is re-read through the
+same Validate the Manage Libraries dialog runs. A library that is missing or holds nothing readable is
+an error (<code>check.workspace.vendor-library.missing</code>), and so is a part placed in one of the workspace's
+schematics that the library no longer holds (<code>check.workspace.vendor-library.part-missing</code>). Files in
+the library that could not be read are a warning (<code>check.workspace.vendor-library.unreadable</code>).</p>
 <div class="callout note">
 <span class="label">Warnings are reported and still exit 0</span>
 <p><code>--severity</code> decides the exit code, and it defaults to <code>error</code>. Warnings are
@@ -3057,6 +3261,15 @@ on the <a href="derived-metrics.html#fixture">Derived Metrics</a> page.</p>
                      outside this workspace: no</span></code></pre>
 <p>Where resolution fails, <strong>that is the answer</strong> — a sentence naming what was looked for and where it
 was looked. You are usually running this verb precisely because something did not resolve.</p>
+<p>A <a href="pdk-integration.html#vendor-placed">vendor part</a> reference reports its walk a step at a time: which
+<code>.cws</code>, which library entry and what it stores, and the folder that resolved. A library the workspace
+does not name and a library whose folder is missing say different things.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Stage1.csch --ref vendorlib://Caps/capacitors/series-a.lib
+<span class="output">  reference    'vendorlib://Caps/capacitors/series-a.lib' from /home/you/designs/Amp/Stage1/schematic
+               resolved → /home/you/libraries/caps/capacitors/series-a.lib  (outside its workspace)
+               via workspace /home/you/designs/Amp/.cws
+               via library 'Caps' → '/home/you/libraries/caps'
+               via folder /home/you/libraries/caps</span></code></pre>
 <h3 id="explain-cells"><code>--cells</code> — what cells are in here?</h3>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain ~/designs/Amp --cells
 <span class="output">Amp  (workspace)
@@ -3188,6 +3401,10 @@ many share it. A sub-circuit instance's own parameters are listed once per insta
 when the instance is using the cell's default. A complex value written with numbers only is listed as
 its four parts — <code>real(Zsrc)</code>, <code>imag(Zsrc)</code>, <code>mag(Zsrc)</code> and <code>phase(Zsrc)</code>, the phase in degrees — each
 tuned on its own; a preset still holds the whole value under its own key (<code>Zsrc=45+10j Ohm</code>).</p>
+<p>A placed <a href="pdk-integration.html#vendor-optimize">vendor part</a> is one key, <code>C1.Part</code>, shown as its part
+number, value and description, with a second line giving how its candidates are chosen (<code>kind=same</code>, or
+<code>parts=&quot;…&quot;</code> and any value bounds) and how many there are, their value span and series. The <code>--json</code>
+row carries the same as <code>part</code>. Its own subcircuit's values are not listed: the part is chosen whole.</p>
 <p>The range is the one the schematic's tuning setup gives the value, or the range it would get when you
 first tune it. A value Push cannot write — in a library cell, or another workspace — says why; it can
 still be tuned and optimized. Keys the setup names that match nothing in the design are listed last,
@@ -3475,7 +3692,8 @@ they are the same code.</p>
 cleanly and looks exactly like a measurement that came back empty.</p>
 <hr />
 <h2 id="find"><code>find</code> — what is in this folder?</h2>
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf find &lt;root&gt; [--depth n] [--no-analyses]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf find &lt;root&gt; [--depth n] [--no-analyses]
+<span class="prompt">$ </span>circuitrf find &lt;workspace&gt; --parts "&lt;query&gt;" [--library &lt;name&gt;] [--limit 50]</code></pre>
 <p>The workspaces under a directory, their cells, each cell's views, and the analyses each cell declares.</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf find ./projects
 <span class="output">/home/you/projects  (1 workspace(s), 2 cell(s), depth 4)
@@ -3507,6 +3725,21 @@ workspace the application has open.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="find-parts">Searching vendor libraries: <code>--parts</code></h3>
+<p>With <code>--parts</code>, <code>find</code> searches the workspace's <a href="pdk-integration.html#vendor">vendor part libraries</a>
+instead of listing documents. Words are separated by spaces and every word must match. A word matches a
+part when it appears in the part's name, its description (its unit brackets dropped, so <code>50V</code> finds
+<code>50[V]</code>), its file or its folder. A word that reads as a value (<code>10p</code>, <code>10pF</code>, <code>10 pF</code>, <code>2.2n</code>, <code>4n7</code>) matches
+the part's stated value within 0.5 % instead, and a unit, when given, must be the part's (<code>10nH</code>
+finds inductors only). A case size matches the stated size exactly: <code>0603</code> the imperial code, <code>1608M</code>
+the metric one. The palette's search box and the Parameter Editor's Part field use the same rules.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf find ~/designs/Amp --parts "10p C0G"
+<span class="output">Caps	TSTC0402A0018	10 pF	1005M(0402)/C0G(-55~125degC)/10[pF]/50[V]	100 MHz – 30 GHz	File=vendorlib://Caps/capacitors/series-a.lib Name=TSTC0402A0018 Glyph=C Footprint=smt:0402@N</span></code></pre>
+<p>Each row ends with <strong>the instance parameters to write</strong> for a SpiceModel component in a <code>.csch</code>, so a
+part found here can be placed without another question. They are the parameters the palette writes
+when the part is dropped, <code>Footprint</code> included when the workspace's technology is a board and the part
+states its case size in both systems. Rows are sorted by library, then by value.
+At most <code>--limit</code> rows are printed (50 by default), and a note says how many matched in all.</p>
 <div class="callout">
 <span class="label">The walk is bounded, and it says when it stopped</span>
 <p>A listing that quietly gave up reads as "the workspace is not here". So when the walk hits
@@ -3876,6 +4109,10 @@ the same documents.</p>
 <tr>
 <td><code>impedance</code></td>
 <td><a href="#impedance"><code>impedance</code></a> — every trace on a layout against a target Z0, and its return path</td>
+</tr>
+<tr>
+<td><code>review</code></td>
+<td><a href="#review"><code>review</code></a> — the Layout Review's checks over a board</td>
 </tr>
 <tr>
 <td><code>model</code></td>

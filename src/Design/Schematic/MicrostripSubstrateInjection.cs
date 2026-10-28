@@ -32,7 +32,7 @@ public static class MicrostripSubstrateInjection
 {
     private static readonly HashSet<SymbolKind> MicrostripKinds =
         [SymbolKind.Mlin, SymbolKind.MCLine, SymbolKind.MBend, SymbolKind.MCurve, SymbolKind.MMiter, SymbolKind.MTee, SymbolKind.MCross,
-         SymbolKind.Mtaper, SymbolKind.Mklopf];
+         SymbolKind.Mtaper, SymbolKind.Mklopf, SymbolKind.GsgPad];
 
     public static bool IsMicrostripKind(SymbolKind kind) => MicrostripKinds.Contains(kind);
 
@@ -291,6 +291,34 @@ public static class MicrostripSubstrateInjection
     /// resolves at all the millimetre defaults stand untouched. Both still get unit rounding, so the
     /// long-decimal number cannot come back.</para>
     /// </summary>
+    /// <summary>The probe pitches a GSG probe is commonly made in, µm.</summary>
+    private static readonly int[] ProbePitchesUm = [100, 125, 150, 200, 250, 300, 400, 500, 650, 800, 1000, 1250, 1500];
+
+    /// <summary>
+    /// A GSGPAD's probe numbers on the placing technology: pads at least as wide as the technology's via pad
+    /// (each ground pad has to hold one), the pitch the smallest common probe pitch from 150 µm up that leaves
+    /// half a pad between pads, and the line at least one pad long. 80 µm pads at 150 µm on a die; on a board, whose via
+    /// pad is far larger, a pitch a board probe comes in. The probe is the user's: these are starting values.
+    /// </summary>
+    private static void ApplyProbePadDefaults(IEnumerable<EditableParameter> parameters, Technology technology)
+    {
+        var (span, _, _) = SubstrateResolver.ResolveViaSpan(technology, null, null, toGround: true);
+        double viaPadUm = (span?.PadMeters is > 0 and var p ? p : CircuitRF.Core.Devices.ComponentModelFactory.DefaultViaPadMeters) * 1e6;
+        double padUm = Math.Ceiling(Math.Max(80, viaPadUm) / 10) * 10;
+        double minPitchUm = Math.Max(150, 1.5 * padUm);   // 150 µm, the registry's own, unless the pads need more
+        int pitchUm = ProbePitchesUm.FirstOrDefault(pp => pp >= minPitchUm, (int)Math.Ceiling(minPitchUm / 50) * 50);
+        double lineUm = Math.Max(100, padUm);
+        string Um(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+        foreach (var prm in parameters)
+            (prm.Expression, prm.Unit) = prm.Name switch
+            {
+                "PadW" or "PadL" => (Um(padUm), "µm"),
+                "Pitch"          => (Um(pitchUm), "µm"),
+                "L"              => (Um(lineUm), "µm"),
+                _                => (prm.Expression, prm.Unit),
+            };
+    }
+
     public static void ApplyTechnologyDefaults(
         IEnumerable<EditableParameter> parameters, string? schematicDirectory, SymbolKind kind)
         => ApplyTechnologyDefaultsCore(parameters, ResolveWorkspaceTechnology(schematicDirectory), kind);
@@ -305,6 +333,7 @@ public static class MicrostripSubstrateInjection
         IEnumerable<EditableParameter> parameters, Technology? technology, SymbolKind kind)
     {
         if (technology is null) return;   // registry mm defaults stand — nothing to resolve against
+        if (kind == SymbolKind.GsgPad) ApplyProbePadDefaults(parameters, technology);
         string targetUnit = SchematicLengthUnit(technology.DefaultDisplayUnit);
         double step = RoundStepFor(targetUnit);
 

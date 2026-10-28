@@ -10,13 +10,24 @@ using System.Globalization;
 
 namespace CircuitRF.Design.Layout.Review;
 
-/// <summary>What a threshold measures: a length (stored in DBU, stated in SI), a count, a density
-/// (per mm²) or an area (mm²). Only a length is converted; the others are stored as stated.</summary>
-public enum ReviewThresholdKind { Length, Count, Density, Area }
+/// <summary>
+/// What is being reviewed: a printed circuit board or a MMIC die. Each check belongs to one or both
+/// (<see cref="ReviewCheckDef.Targets"/>), and a review runs only the checks of its target — a PCB check asked of
+/// a die reports nothing useful and its fix sentence (add a soldermask, a board outline) is wrong advice there.
+/// Saved on the layout; absent is <see cref="Pcb"/>, what every review was before MMIC checks existed.
+/// </summary>
+public enum ReviewTarget { Pcb, Mmic }
+
+/// <summary>What a threshold measures: a length (stored in DBU, stated in SI), a count, an area (stored in mm², said
+/// in the layout's unit squared), or a number of substrate heights — a length that scales with the stackup, so one
+/// default suits a 100 µm die and a 1.6 mm board. Only a length is converted on storing; the others are stored as
+/// stated. There is no density: one has no readable spelling in a small unit, so a check that needs one asks for a
+/// pitch (a length) instead.</summary>
+public enum ReviewThresholdKind { Length, Count, Area, Heights }
 
 /// <summary>One threshold of one check.</summary>
 /// <param name="Default">In SI: metres for a <see cref="ReviewThresholdKind.Length"/>; mm² for an
-/// area, per mm² for a density, a plain number for a count. Converted to DBU through the layout's <c>DbuPerMicron</c>, so a threshold never silently
+/// area, a number of heights, a plain number for a count. Converted to DBU through the layout's <c>DbuPerMicron</c>, so a threshold never silently
 /// takes a different value on a board of a different resolution.</param>
 public sealed record ReviewThresholdDef(string Id, string Title, ReviewThresholdKind Kind, double Default)
 {
@@ -33,6 +44,11 @@ public sealed record ReviewCheckDef(string Id, string Title, string Description,
     /// thresholds of its own, only the enable flag is the review's, and its findings are accepted there:
     /// <see cref="ReviewAcceptance.Apply"/> never matches a review acceptance against them.</summary>
     public string? SettingsOwner { get; init; }
+
+    /// <summary>What this check reviews: a board, a die, or both. A review runs only its target's checks.</summary>
+    public IReadOnlyList<ReviewTarget> Targets { get; init; } = [ReviewTarget.Pcb];
+
+    public bool AppliesTo(ReviewTarget target) => Targets.Contains(target);
 
     public ReviewThresholdDef? Threshold(string id) =>
         Thresholds.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.Ordinal));
@@ -51,6 +67,12 @@ public sealed class ReviewSettings
     /// <summary>Thresholds that differ from their default, keyed <c>check-id.threshold-id</c>: DBU for a
     /// length, the number itself for a count or density. A key this build does not know is kept.</summary>
     public Dictionary<string, double>? Thresholds { get; set; }
+
+    /// <summary>What is reviewed. Null is <see cref="ReviewTarget.Pcb"/>, and is what a PCB review saves, so a
+    /// layout reviewed as a board before this existed reads the same.</summary>
+    public ReviewTarget? Target { get; set; }
+
+    public ReviewTarget TargetOrDefault => Target ?? ReviewTarget.Pcb;
 
     public static string KeyOf(string checkId, string thresholdId) => $"{checkId}.{thresholdId}";
 
@@ -82,6 +104,7 @@ public sealed class ReviewSettings
     {
         Disabled   = Disabled is null ? null : [.. Disabled],
         Thresholds = Thresholds is null ? null : new Dictionary<string, double>(Thresholds),
+        Target     = Target,
     };
 
     /// <summary>
@@ -100,7 +123,9 @@ public sealed class ReviewSettings
                 (thresholds ??= [])[key] = value;
             }
         List<string>? disabled = Disabled is { Count: > 0 } d ? [.. d.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)] : null;
-        return thresholds is null && disabled is null ? null : new ReviewSettings { Disabled = disabled, Thresholds = thresholds };
+        ReviewTarget? target = TargetOrDefault == ReviewTarget.Pcb ? null : TargetOrDefault;
+        return thresholds is null && disabled is null && target is null
+            ? null : new ReviewSettings { Disabled = disabled, Thresholds = thresholds, Target = target };
     }
 
     /// <summary>A stored value as a reviewer reads it: a length in <paramref name="unit"/>, else the number.</summary>
@@ -108,8 +133,8 @@ public sealed class ReviewSettings
         threshold.Kind switch
         {
             ReviewThresholdKind.Length  => ReviewText.Length((long)Math.Round(stored), unit, dbuPerMicron),
-            ReviewThresholdKind.Area    => $"{stored.ToString("0.###", CultureInfo.InvariantCulture)} mm²",
-            ReviewThresholdKind.Density => $"{stored.ToString("0.###", CultureInfo.InvariantCulture)} per mm²",
+            ReviewThresholdKind.Area    => ReviewText.Area(stored, unit),
+            ReviewThresholdKind.Heights => $"{stored.ToString("0.###", CultureInfo.InvariantCulture)} × h",
             _                           => stored.ToString("0.###", CultureInfo.InvariantCulture),
         };
 }

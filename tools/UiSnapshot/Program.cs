@@ -34,6 +34,8 @@ using CircuitRF.Design.Layout;
 //            [--rclick x,y] [--menu <header>] [--type <text>] [--button <label>]
 //            [--impedance <freq|none>] [--impedance-layer <name>]... [--finding <kind>] [--impedance-panel]
 // UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]
+// UiSnapshot --review-panel checks|result|many|mmic -o <out.png> [--size WxH]
+// UiSnapshot --symbol <stem> [-o <dir>]
 // UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--marker]... [--size WxH] [steps]
 //
 // Opens the display through DisplayWindowViewModel.LoadAllAsync — the GUI's own Open — and photographs one
@@ -64,6 +66,17 @@ using CircuitRF.Design.Layout;
 // named copper layers. --impedance-panel then shows the real Impedance panel on the editor, waits for its export
 // page counts, prints the export choice and its note, and writes <out>.impedance.png scrolled to the Export button.
 //
+// --review-panel shows the real Review panel (brief-review-6) on a layout seeded with no artwork: "checks" is the checks
+// list with one threshold edited through its row; "mmic" the switch set to MMIC and the checks of a die; "result" a seeded result with a not-run check, an accepted finding
+// and a check with no findings; "many" a seeded result of 5,000 findings in one check, its layers opened, and prints
+// how many rows the list holds against how many row containers it realised — the proof that it virtualises.
+//
+// --place <code> (with --clay) drops one component at the origin through the layout palette's own drop, so the
+// picture is what placing it draws.
+//
+// --review (with --clay) runs the editor's own Layout Review and draws its markers on the canvas, as the open Review
+// panel does; each finding prints.
+//
 // --cem opens the EM Setup editor on a .cem, as the workspace opens one: the file's setup, its own view model, the real
 // EmSetupEditorView. Every named CheckBox's state and tooltip is printed, so a setting is read as well as seen.
 //
@@ -85,12 +98,28 @@ using CircuitRF.Design.Layout;
 // A list drop-down, a context menu and a button's menu flyout are drawn in the window's own frame; a popup that opens
 // as a top level of its own instead is written to <out>.popup.png.
 
+// --symbol <stem> writes a component's documentation symbol (both variants) through the generator DocGen uses,
+// into -o's directory — the same bytes a full DocGen run writes for it. No window is opened.
+if (Array.IndexOf(args, "--symbol") is >= 0 and var si && si + 1 < args.Length)
+{
+    string stem = args[si + 1];
+    int oi = Array.IndexOf(args, "-o");
+    string dir = oi >= 0 && oi + 1 < args.Length ? Path.GetFullPath(args[oi + 1]) : Path.GetFullPath("docs/user/assets/symbols");
+    var written = CircuitRF.Ui.Diagnostics.SymbolArtworkGenerator.GenerateAll(dir, f => f == stem);
+    if (written.Count == 0) { Console.Error.WriteLine($"--symbol: no symbol figure '{stem}'"); return 2; }
+    foreach (var f in written) Console.WriteLine($"wrote {f}");
+    return 0;
+}
+
 // --c3d is the 3D editor's picture: no Avalonia window, so it branches off before the headless platform starts (Snapshot3D.cs).
 if (args.Contains("--c3d")) return Snapshot3D.Run(args);
 
 string? impedance = null, finding = null;
 var impedanceLayers = new List<string>();
 bool impedancePanel = false;
+string? reviewPanel = null;
+bool reviewRun = false;
+string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
 string? optimizer = null;
 bool optimize = false;
@@ -138,6 +167,9 @@ for (int i = 0; i < args.Length; i++)
         case "--finding" when i + 1 < args.Length: finding = args[++i]; break;
         case "--impedance-layer" when i + 1 < args.Length: impedanceLayers.Add(args[++i]); break;
         case "--impedance-panel": impedancePanel = true; break;
+        case "--review-panel" when i + 1 < args.Length: reviewPanel = args[++i]; break;
+        case "--review": reviewRun = true; break;
+        case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--palette" when i + 1 < args.Length: palette = Path.GetFullPath(args[++i]); break;
@@ -159,6 +191,12 @@ for (int i = 0; i < args.Length; i++)
             break;
         default: cdd = args[i]; break;
     }
+}
+if (reviewPanel is not null && output is not null)
+{
+    AppBuilder.Configure<SnapshotApp>().UseSkia()
+        .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+    return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
 bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null;
 if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && optimizer is null && clay is null && cem is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
@@ -223,9 +261,28 @@ else if (clay is not null)
     host.Show();
     Pump();
     layoutCanvas = host.GetVisualDescendants().OfType<LayoutCanvas>().First();
+    if (place is not null)
+    {
+        // The layout palette's own drop, at the origin: what a user placing the part gets.
+        if (!CircuitRF.Design.Schematic.ComponentTypeRegistry.TryParseCode(place, out var placeKind, out int placePorts))
+        { Console.Error.WriteLine($"--place: '{place}' is not a component code"); return 2; }
+        if (!layoutVm.CommitPaletteDrop(placeKind, placePorts is > 0 ? placePorts : 2, 0, 0))
+        { Console.Error.WriteLine($"--place: the layout refused {place}"); return 2; }
+        Pump();
+        Console.WriteLine($"placed {place}: {layoutVm.Model.Instances.Count} instance(s), {layoutVm.SelectionStatusText}");
+    }
     layoutCanvas.ZoomToFit();
     if (impedance is not null && !RunImpedance(layoutVm, impedance, finding, impedanceLayers)) return 2;
     if (impedancePanel && output is not null) ShowImpedancePanel(layoutVm, Path.ChangeExtension(output, ".impedance.png"));
+    if (reviewRun)
+    {
+        // The editor's own review run, its markers on as the open Review panel turns them on.
+        layoutVm.ShowReviewMarkers = true;
+        var run = layoutVm.RunReviewAsync(new CircuitRF.Engine.RunControl());
+        Await(run);
+        if (run.Result is { } review)
+            foreach (var f in review.Findings) Console.WriteLine($"{f.CheckId} {f.LayerName}: {f.Sentence}");
+    }
 }
 else if (image is not null)
 {
@@ -821,6 +878,89 @@ static void ShowImpedancePanel(LayoutEditorViewModel vm, string path)
     for (int k = 0; k < 4; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); }
     window.CaptureRenderedFrame()!.Save(path);
     Console.WriteLine($"wrote {path}");
+}
+
+// --review-panel: the real Review panel on a seeded layout — no artwork is reviewed, the result is handed in.
+static int ShowReviewPanel(string seed, string path, double w, double h)
+{
+    var view = new LayoutView { DisplayUnit = LayoutUnit.Um };
+    var vm = new LayoutEditorViewModel(view);
+    var tool = new ReviewTool();
+    tool.SetActiveLayout(vm);
+    var panel = tool.Panel;
+    var window = new Window { Width = w, Height = h, Content = new CircuitRF.Ui.Views.Review.ReviewToolView { DataContext = tool } };
+    window.Show();
+    void Settle() { for (int k = 0; k < 4; k++) { Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); window.UpdateLayout(); } }
+    Settle();
+
+    long Mm(double mm) => (long)Math.Round(mm * 1000 * view.DbuPerMicron);
+    CircuitRF.Design.Layout.Review.ReviewFinding Finding(string check, string layer, double x, double y, string sentence, string? measured)
+    {
+        var box = new Bbox(Mm(x), Mm(y), Mm(x + 0.3), Mm(y + 0.3));
+        return new(check, new LayerKey(1, 0), CircuitRF.Design.Layout.Review.ReviewSeverity.Warning, sentence, measured,
+                   [[box.MinX, box.MinY, box.MaxX, box.MinY, box.MaxX, box.MaxY, box.MinX, box.MaxY]], box,
+                   CircuitRF.Design.Layout.Review.ReviewFinding.KeyOf(check, new LayerKey(1, 0), box)) { LayerName = layer };
+    }
+    string Title(string id) => CircuitRF.Design.Layout.Review.LayoutReview.FindCheck(id)!.Title;
+    CircuitRF.Design.Layout.Review.ReviewCheckRow Row(string id, CircuitRF.Design.Layout.Review.ReviewCheckState state, string? why, int n) =>
+        new(id, Title(id), state, why, n, 0);
+
+    switch (seed)
+    {
+        case "checks":
+        {
+            var row = panel.Checks.First(c => c.Def.Id == "edge-copper").Thresholds[0];
+            row.Text = "500";
+            Console.WriteLine($"edge-copper pullback edited to {row.Text} {row.UnitText}; modified: {row.IsModified}; saved: "
+                + string.Join(", ", view.Review?.Thresholds?.Select(kv => $"{kv.Key}={kv.Value}") ?? []));
+            break;
+        }
+        case "result":
+        {
+            var vias = new[]
+            {
+                Finding("via-in-pad", "Top copper", 1, 1, "A 0.3 mm drill in C209 pad 2 (0.6 × 0.5 mm).", "0.3 mm"),
+                Finding("via-in-pad", "Top copper", 4, 2, "A 0.3 mm drill in U3 pad 7 (1.0 × 1.0 mm).", "0.3 mm"),
+            };
+            var result = new CircuitRF.Design.Layout.Review.LayoutReviewResult(
+                [Row("via-in-pad", CircuitRF.Design.Layout.Review.ReviewCheckState.Ran, null, 2),
+                 Row("ground-via-distance", CircuitRF.Design.Layout.Review.ReviewCheckState.NotRun,
+                     "No ground reference is flagged in the stackup. Flag the ground plane in the Technology Editor.", 0),
+                 Row("edge-copper", CircuitRF.Design.Layout.Review.ReviewCheckState.Ran, null, 0)],
+                vias, "Seeded", [], false) { DisplayUnit = LayoutUnit.Mm };
+            view.ReviewAcceptances.Add(CircuitRF.Design.Layout.Review.ReviewAcceptance.For(vias[1], "Top copper", "Filled and capped via", DateTime.UtcNow));
+            vm.ReviewResult = CircuitRF.Design.Layout.Review.ReviewAcceptance.Apply(result, view.ReviewAcceptances);
+            break;
+        }
+        case "many":
+        {
+            var findings = Enumerable.Range(0, 5000).Select(i => Finding("stacked-traces", i % 2 == 0 ? "Top copper" : "Inner 1",
+                i % 100 * 0.5, i / 100 * 0.5, $"Traces of two nets run on top of each other for {1 + i % 7}.2 mm.", $"{1 + i % 7}.2 mm")).ToList();
+            vm.ReviewResult = new CircuitRF.Design.Layout.Review.LayoutReviewResult(
+                [Row("stacked-traces", CircuitRF.Design.Layout.Review.ReviewCheckState.Ran, null, findings.Count)],
+                findings, "Seeded", [], false) { DisplayUnit = LayoutUnit.Mm };
+            Settle();
+            foreach (var layer in panel.Rows.OfType<CircuitRF.Ui.Layout.Review.ReviewLayerResultRow>().ToList())
+                if (!layer.IsExpanded) panel.Rows.OfType<CircuitRF.Ui.Layout.Review.ReviewLayerResultRow>().First(r => r.Title == layer.Title).ToggleExpandedCommand.Execute(null);
+            break;
+        }
+        case "mmic":
+            panel.IsMmic = true;
+            Console.WriteLine($"reviewing as MMIC: {string.Join(", ", panel.Checks.Select(c => c.Def.Id))}");
+            break;
+        default:
+            Console.Error.WriteLine($"--review-panel takes checks, result, many or mmic, not '{seed}'");
+            return 2;
+    }
+    Settle();
+    var list = window.GetVisualDescendants().OfType<ListBox>().First(l => l.Name == "RowsList");
+    int realised = list.GetRealizedContainers().Count();
+    Console.WriteLine($"rows: {panel.Rows.Count:N0}; realised row containers: {realised}");
+    foreach (var c in panel.Rows.OfType<CircuitRF.Ui.Layout.Review.ReviewCheckResultRow>())
+        Console.WriteLine($"  {c.Title}: {c.CountText}{(c.HasDetail ? " — " + c.DetailText : "")}");
+    window.CaptureRenderedFrame()!.Save(path);
+    Console.WriteLine($"wrote {path}");
+    return 0;
 }
 
 static bool Await2(Task<bool> task)

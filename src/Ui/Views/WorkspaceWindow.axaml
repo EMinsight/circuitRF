@@ -223,6 +223,7 @@
                         <NativeMenuItem Header="Ground Pour Margin…"            Command="{Binding SetGroundPourMarginCommand}" CommandParameter="{Binding $parent[Window]}" ToolTip="How far the ground pour reaches beyond the lines and vias it covers, in substrate heights — recorded in the workspace. Requires an open workspace."/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Check Design Rules"             Command="{Binding CheckDesignRulesCommand}" Gesture="Meta+Shift+K"/>
+                        <NativeMenuItem Header="Review Layout…"                 Command="{Binding ReviewLayoutCommand}" ToolTip="Open the Review panel on the active layout: built-in checks that mark the places a reviewer would want to look at — vias in pads, ground vias, stacked traces, copper near the board edge, edge stitching, impedance. A reviewer's aid beside DRC, not a rule check. Requires an active layout document."/>
                     </NativeMenu>
                 </NativeMenuItem.Menu>
             </NativeMenuItem>
@@ -595,6 +596,7 @@
                                     <NativeMenuItem Header="LVS"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Lvs"/>
                                     <NativeMenuItem Header="Instances"    Command="{Binding ShowToolPanelCommand}" CommandParameter="Instances"/>
                                     <NativeMenuItem Header="Impedance"    Command="{Binding ShowToolPanelCommand}" CommandParameter="Impedance"/>
+                                    <NativeMenuItem Header="Review"       Command="{Binding ShowToolPanelCommand}" CommandParameter="Review"/>
                                     <NativeMenuItem Header="History"      Command="{Binding ShowToolPanelCommand}" CommandParameter="History"/>
                                     <NativeMenuItem Header="Wire Profile"     Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondProfile"/>
                                     <NativeMenuItem Header="Array Inductance" Command="{Binding ShowToolPanelCommand}" CommandParameter="WBondInductance"/>
@@ -1247,6 +1249,11 @@
                           ToolTip.Tip="Check the active layout against its technology's minimum-width and minimum-spacing rules. Requires an active layout document.">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="Re_view Layout…"
+                          Command="{Binding ReviewLayoutCommand}"
+                          ToolTip.Tip="Open the Review panel on the active layout: built-in checks that mark the places a reviewer would want to look at — vias in pads, ground vias, stacked traces, copper near the board edge, edge stitching, impedance. A reviewer's aid beside DRC, not a rule check. Requires an active layout document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="ClipboardCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
 
             <!-- brief-em3d-43 — the 3D menu, hand-mirrored with the macOS NativeMenu above (its visibility too). -->
@@ -1726,6 +1733,12 @@
                     <MenuItem Header="I_mpedance"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Impedance">
                         <MenuItem.Icon><mi:MaterialIcon Kind="Omega" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- brief-review-6. Not in either shipped default layout: Design ▸ Review Layout… puts it
+                         on screen. -->
+                    <MenuItem Header="Re_view"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Review">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="ClipboardCheckOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <!-- revision-control.md §5.10, RC-10 R-rc10-1. ONE panel, replacing Restore Points
                          and Versions. §5's argument is about two kinds of ENTRY and rev 2 spent it as

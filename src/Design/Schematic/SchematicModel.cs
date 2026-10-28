@@ -640,6 +640,11 @@ public enum SymbolKind
     /// <c>Centre = Port</c> the layout carries an EM port at the pad centre. Appended so no existing kind's
     /// ordinal moves.</summary>
     TestPad,
+    /// <summary>Ground-signal-ground probe pad (engine "GSGPAD", brief-review-6 follow-up): a signal pad between two
+    /// ground pads at <c>Pitch</c>, each ground pad with <c>NVia</c> vias to the plane, and an MLIN line of
+    /// <c>W</c> × <c>L</c> leaving the signal pad. Pin 1 the probe tip (the signal pad's middle), pin 2 the line's
+    /// end. Appended so no existing kind's ordinal moves.</summary>
+    GsgPad,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

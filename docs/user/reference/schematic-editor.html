@@ -532,13 +532,19 @@ place them. That is the normal workflow, not a workaround — see
 <p>The palette is where every placeable part lives. It has two controls above the tiles and they do
 different jobs:</p>
 <ul>
-<li><p><strong>The category picker.</strong> <strong>All</strong> is the default and shows the whole built-in library in the
+<li><p><strong>The Type menu.</strong> The button shows what is selected, as a path such as
+<em>Library ▸ Capacitors ▸ Series</em>; in a narrow panel the leading levels give way to <em>…</em>. Clicking it
+opens a menu. <strong>All</strong> is the default and shows the whole built-in library in the
 palette's own pinned order — the parts you reach for most, first. <strong>All - Alphabetical</strong> is the
 same set sorted by name, <strong>Common</strong> is a short curated set, and <strong>Recently Used</strong> is what you have
-placed lately. Below those come the built-in categories — Lumped, Devices, <strong>System</strong>, Nonlinear,
-Sources, Terminals, Transmission Line, Microstrip, Matching, Data Files — and then one entry per
-imported kit, with the kit's own groupings indented beneath it. See
-<a href="pdk-integration.html">PDK integration</a> for where kit entries come from.</p>
+placed lately, vendor library parts included. Below those come the built-in categories — Lumped,
+Devices, <strong>System</strong>, Nonlinear, Sources, Terminals, Transmission Line, Microstrip, Matching, Data
+Files. Then come one sub-menu per imported kit holding the kit's own groupings, one sub-menu per
+<a href="pdk-integration.html#vendor">vendor part library</a> following the library's own folders, and
+<strong>Add Vendor Library…</strong>. Every sub-menu starts with <strong>All in …</strong>, so a folder can be chosen as well
+as opened, and a folder holding only one thing is shown as that thing (<em>Inductors ▸ Series</em>). A
+library's files show how many parts each holds. See <a href="pdk-integration.html">PDK integration</a> for
+where kit entries come from.</p>
 <p><strong>System</strong> sits directly after Devices, because a system block is a signal-path part and a user who
 has found Devices is one row away from the blocks they want. It holds the ideal blocks a system
 block diagram is drawn out of — circulator, coupler, hybrid, balun, switch, amplifier, attenuator,
@@ -547,11 +553,38 @@ appear under both. See <a href="system-components.html">System Components</a>.</
 </li>
 <li><p><strong>The search box.</strong> Matches a part's display name and its search terms, and a kit part's kit name
 as well. Searching inside a built-in category narrows within it; searching from All searches
-everything, built-ins and kits together.</p>
+everything, built-ins and kits together. From All, a vendor library with matching parts adds one row
+at the top — <em>312 parts in Caps match</em> — which opens that library with the search kept.</p>
 </li>
 </ul>
 <p>The tile grid is a <strong>reflow grid</strong>: the number of columns follows the panel's width, so widening the
 palette gets you more tiles per row rather than bigger tiles.</p>
+<h3 id="palette-vendor">A vendor library's parts</h3>
+<p>Choosing a vendor library, or a folder or file inside it, replaces the tiles with a list of parts. Each
+row shows the part number and its value, then its description and frequency range. The list is sorted
+by value. Click <strong>Part</strong>, <strong>Value</strong>, <strong>Description</strong> or <strong>Range</strong> above it to sort by that, and click
+again to reverse.</p>
+<p>The search box filters the list. Separate words with spaces; every word must match, in any order. A
+word matches when it appears in the part number, the description (with or without its brackets, so
+<code>50V</code> finds <code>50[V]</code>), the file or the folder name. Two kinds of word are read more exactly:</p>
+<ul>
+<li><strong>A value</strong> — <code>10p</code>, <code>10pF</code>, <code>2.2n</code>, <code>4n7</code> — finds the part whose stated value is that, however the
+library wrote it, and <code>10 pF</code> with a space is the same word. A unit, when you give one, must match
+the part: <code>10nH</code> finds inductors only.</li>
+<li><strong>A case size</strong> — <code>0603</code> — is the imperial size the library states, and <code>1608M</code> the metric one. The
+library writes both (<code>1608M(0603)</code>), and <code>0603</code> never finds a 0201 part through its metric <code>0603M</code>.</li>
+</ul>
+<p>So <code>0603 10pF C0G 100V</code> narrows a library to the parts you want. Typing never waits on the disk; while
+a library is still being read after the workspace opens, the list says <em>Indexing …</em> instead.</p>
+<p><kbd>↓</kbd> and <kbd>↑</kbd>, from the search box or the list, arm the next or previous part, so you
+can type, step to the part and click on the schematic without touching the list. The
+<span class="ui">?</span> button at the end of the column headers opens the documents the library
+came with (each in your system's own viewer), then circuitRF's help on vendor libraries.</p>
+<p>A row places a part exactly as a tile does: click to arm, or drag onto the schematic. The part is a
+<a href="components.html#spicemodel">SPICE Model</a> running from the library's own file. A capacitor or inductor
+draws as the ordinary C or L symbol, is named C1, L1, …, and is labelled with its part number, its name
+and, on a line of its own, its value (<code>C = 10 pF</code>). On a board technology it arrives with the
+<a href="footprints.html#imported">footprint</a> of the case size its library states.</p>
 <h2 id="placing">Placing a component</h2>
 <p>There are two gestures, and they place the identical thing — a kit part in particular resolves
 through the same path either way, so a drag and a click can never disagree about what you get.</p>

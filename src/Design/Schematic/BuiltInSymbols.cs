@@ -109,6 +109,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _via           = BuildVia();
     private static readonly Symbol _viaGnd        = BuildViaGnd();
     private static readonly Symbol _testPad       = BuildTestPad();
+    private static readonly Symbol _gsgPad        = BuildGsgPad();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
     private static readonly Symbol _octSpiral     = BuildOctSpiral();
@@ -240,6 +241,7 @@ public static class BuiltInSymbols
             case SymbolKind.Via:        return _via;
             case SymbolKind.ViaGnd:     return _viaGnd;
             case SymbolKind.TestPad:    return _testPad;
+            case SymbolKind.GsgPad:     return _gsgPad;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
             case SymbolKind.OctSpiral:  return _octSpiral;
@@ -2288,6 +2290,19 @@ public static class BuiltInSymbols
     // TESTPAD (brief-dfr26-7): the via's barrel landing on a wide round pad — the test point a probe
     // touches — drawn from the same viewpoint as the vias. Pin 1 the feed at the top, as a via's A; pin 2
     // leaves the pad's front edge downward. The pad's back half is left out behind the barrel.
+    // GSGPAD — the three pads as the probe sees them, the signal pad between two ground pads each with its via.
+    // The signal pad and the line leaving it are ONE rectangle, as wide as the ground pads, because they are one piece
+    // of metal. Pin 1 is the signal pad's end, where the tip lands.
+    private static Symbol BuildGsgPad() => Sym([
+        L(-200,    0, -150,    0),
+        RRect( -55,    0, 190,  50,  6),   // signal pad + line
+        RRect(-110, -100,  80,  50,  6),   // ground pad
+        RRect(-110,  100,  80,  50,  6),   // ground pad
+        Circ(-110, -100, 12),              // its via
+        Circ(-110,  100, 12),
+        L(  40,    0,  100,    0),
+    ], SymbolKind.GsgPad);
+
     private static Symbol BuildTestPad()
     {
         const double padY = 100, padR = 150;

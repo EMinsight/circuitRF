@@ -47,6 +47,7 @@ internal static class Review
         public bool IgnoreAccepted;
         public bool All;
         public bool WarningsFail;
+        public ReviewTarget? Target;
     }
 
     public static int Run(string[] args)
@@ -61,7 +62,7 @@ internal static class Review
 
         if (o.Path is null)
         {
-            if (o.ListChecks) return List(null, o);
+            if (o.ListChecks) return List(null, o, new ReviewSettings { Target = o.Target });
             JsonRun.Report(CliDiagnostics.ReviewPathRequired());
             return Usage();
         }
@@ -123,11 +124,13 @@ internal static class Review
         Console.Error.WriteLine(
             "Usage: circuitrf review <layout> [--cell <name>] [--checks id,id] [--skip id,id]\n" +
             "                        [--set <check>.<threshold>=<value>]... [--defaults] [--ignore-accepted]\n" +
-            "                        [--all] [--severity warning|none]\n" +
-            "       circuitrf review [<layout>] --list-checks\n" +
+            "                        [--as pcb|mmic] [--all] [--severity warning|none]\n" +
+            "       circuitrf review [<layout>] [--as pcb|mmic] --list-checks\n" +
             "  <layout> is a .clay, a cell folder holding one, or a workspace with --cell. The review saved on\n" +
             "  the layout applies unless --defaults; each --set overrides it for this run, a length WITH its unit\n" +
-            "  (0.3mm, 12mil). Findings are advice: exit 0 unless --severity warning and one is unaccepted.\n" +
+            "  (0.3mm, 12mil). --as reviews the layout as a board or a die; the layout's saved choice applies\n" +
+            "  otherwise, a board when it has none. Findings are advice: exit 0 unless --severity warning and one\n" +
+            "  is unaccepted.\n" +
             "  At most " + ListedPerLayer + " findings per check per layer are listed; --all lists every one.");
         return 1;
     }
@@ -149,6 +152,14 @@ internal static class Review
                 case "--defaults": o.Defaults = true; continue;
                 case "--ignore-accepted": o.IgnoreAccepted = true; continue;
                 case "--all": o.All = true; continue;
+                case "--as" when i + 1 < args.Length:
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "pcb":  o.Target = ReviewTarget.Pcb; break;
+                        case "mmic": o.Target = ReviewTarget.Mmic; break;
+                        default: return JsonRun.Fail(CliDiagnostics.ReviewUnknownTarget(args[i]));
+                    }
+                    continue;
                 case "--severity" when i + 1 < args.Length:
                     switch (args[++i].ToLowerInvariant())
                     {
@@ -211,6 +222,20 @@ internal static class Review
     private static ReviewSettings? Settings(Options o, LayoutView view)
     {
         var settings = o.Defaults ? new ReviewSettings() : view.Review?.Clone() ?? new ReviewSettings();
+        if (o.Target is { } asked) settings.Target = asked;
+
+        // A check named that this review's target does not run would silently not run: refused, naming --as.
+        var target = settings.TargetOrDefault;
+        var named = (o.Checks ?? []).Concat(o.Skip)
+            .Concat(o.Sets.Select(s => s.IndexOf('=') is > 0 and var eq && s.LastIndexOf('.', eq) is > 0 and var dot ? s[..dot].Trim() : ""));
+        foreach (string id in named)
+            if (LayoutReview.FindCheck(id) is { } def && !def.AppliesTo(target))
+            {
+                JsonRun.Fail(CliDiagnostics.ReviewCheckNotForTarget(id, TargetName(target),
+                    string.Join(", ", LayoutReview.ChecksFor(target).Select(c => c.Id))));
+                return null;
+            }
+
         if (o.Checks is { } only)
             foreach (var c in LayoutReview.Checks) settings.SetEnabled(c.Id, only.Contains(c.Id, StringComparer.Ordinal));
         foreach (string id in o.Skip) settings.SetEnabled(id, false);
@@ -251,6 +276,18 @@ internal static class Review
                 }
                 stored = dbu;
             }
+            else if (threshold.Kind == ReviewThresholdKind.Area)
+            {
+                // An area carries its unit squared, as a length carries its unit: a bare 2 could be mm² or µm².
+                if (!ReviewText.TryParseArea(value, null, out stored))
+                {
+                    JsonRun.Fail(ReviewText.TryParseArea(value, LayoutUnit.Mm, out _)
+                        ? CliDiagnostics.ReviewSetNeedsUnit(key, value, $"'{key}={value}mm2' or '{key}={value}um2'", "an area", "mm² or µm²")
+                        : CliDiagnostics.ReviewBadNumber(key, value, "an area with its unit, e.g. 2mm2"));
+                    return null;
+                }
+                if (stored < 0) { JsonRun.Fail(CliDiagnostics.ReviewBadNumber(key, value, "an area of zero or more")); return null; }
+            }
             else if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out stored)
                      || !double.IsFinite(stored) || stored < 0)
             {
@@ -272,7 +309,8 @@ internal static class Review
         var saved = o.Defaults ? null : view?.Review;
         var text = new StringBuilder();
         var rows = new List<ReviewCheckJson>();
-        foreach (var c in LayoutReview.Checks)
+        text.AppendLine($"Checks of a {TargetName(settings.TargetOrDefault)} review:");
+        foreach (var c in LayoutReview.ChecksFor(settings.TargetOrDefault))
         {
             bool on = settings.IsEnabled(c.Id);
             text.AppendLine($"{c.Id}  {c.Title}{(on ? "" : "  (off)")}");
@@ -302,7 +340,8 @@ internal static class Review
     private static string Text(LayoutReviewResult r, string clay, bool all)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"Layout Review of {Path.GetFileName(clay)}" + (r.TechnologyName is { } t ? $" ({t})" : ""));
+        sb.AppendLine($"Layout Review of {Path.GetFileName(clay)}" + (r.TechnologyName is { } t ? $" ({t})" : "")
+                    + $", reviewed as a {TargetName(r.Target)}");
         foreach (var check in r.Checks)
         {
             switch (check.State)
@@ -370,8 +409,12 @@ internal static class Review
                 f.Marker.IsEmpty ? null : [Um(f.Marker.MinX), Um(f.Marker.MinY), Um(f.Marker.MaxX), Um(f.Marker.MaxY)],
                 f.Accepted is { } a ? new ImpedanceAcceptedJson(a.Reason, a.AcceptedUtc) : null))],
             [.. r.StaleAcceptances.Select(a => new ReviewStaleAcceptanceJson(a.Key, a.CheckId, a.LayerName, a.Summary, a.Reason, a.AcceptedUtc))],
-            r.Diagnostics);
+            r.Diagnostics,
+            r.Target == ReviewTarget.Mmic ? "mmic" : "pcb");
     }
+
+    /// <summary>"PCB" or "MMIC" — how a sentence names the target.</summary>
+    internal static string TargetName(ReviewTarget target) => target == ReviewTarget.Mmic ? "MMIC" : "PCB";
 
     private static List<ReviewThresholdJson> Thresholds(ReviewCheckDef c, ReviewSettings settings, ReviewSettings? saved,
                                                         LayoutUnit unit, int dpm)

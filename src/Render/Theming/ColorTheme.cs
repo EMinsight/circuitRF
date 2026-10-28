@@ -87,6 +87,7 @@ public sealed class ColorTheme
             [ColorRole.LayoutDrcError]               = new(220,  40,  60),
             [ColorRole.LayoutDrcWarning]             = new(230, 150,  20),
             [ColorRole.LayoutDrcWaived]              = new(130, 130, 140),
+            [ColorRole.LayoutReviewFinding]          = new(165,  60, 200),
 
             // ── harmonicaRF, LIGHT (harmonicarf.md §7.9.3) ──────────────────────────────────────
             // "Not a recoloured dark theme: the same STRUCTURE (green primary, red reserved,
@@ -218,6 +219,7 @@ public sealed class ColorTheme
             [ColorRole.LayoutDrcError]               = new(255, 100, 120),
             [ColorRole.LayoutDrcWarning]             = new(255, 190,  70),
             [ColorRole.LayoutDrcWaived]              = new(160, 160, 175),
+            [ColorRole.LayoutReviewFinding]          = new(210, 130, 255),
 
             // ── harmonicaRF, DARK — the phosphor-green theme (harmonicarf.md §7.9.2) ────────────
             // "Green is the default for everything textual and structural; red is reserved. Only the

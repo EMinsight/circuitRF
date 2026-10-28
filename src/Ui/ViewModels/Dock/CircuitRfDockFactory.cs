@@ -93,6 +93,9 @@ public class CircuitRfDockFactory : Factory
     /// panels do.</summary>
     public ImpedanceTool?    ImpedanceTool    { get; private set; }
 
+    /// <summary>brief-review-6's Review panel, following the active layout as the Impedance panel does.</summary>
+    public ReviewTool?       ReviewTool       { get; private set; }
+
     /// <summary>brief-tuneopt-4's Tuning panel, following the focused schematic and tabbed behind Analyses.</summary>
     public TuningTool?       TuningTool       { get; private set; }
     /// <summary>brief-tuneopt-10's Optimizer panel, following the focused schematic and tabbed behind Tuning.</summary>
@@ -209,6 +212,7 @@ public class CircuitRfDockFactory : Factory
             LvsTool         = new LvsTool();
             InstancesTool   = new InstancesTool();
             ImpedanceTool   = new ImpedanceTool();
+            ReviewTool      = new ReviewTool();
             TuningTool      = new TuningTool();
             OptimizerTool   = new OptimizerTool();
             YieldTool       = new YieldTool();
@@ -229,6 +233,7 @@ public class CircuitRfDockFactory : Factory
             LvsTool         ??= new LvsTool();
             InstancesTool   ??= new InstancesTool();
             ImpedanceTool   ??= new ImpedanceTool();
+            ReviewTool      ??= new ReviewTool();
             TuningTool      ??= new TuningTool();
             OptimizerTool   ??= new OptimizerTool();
             YieldTool       ??= new YieldTool();
@@ -254,6 +259,7 @@ public class CircuitRfDockFactory : Factory
             DockPanelIds.Lvs         => LvsTool,
             DockPanelIds.Instances   => InstancesTool,
             DockPanelIds.Impedance   => ImpedanceTool,
+            DockPanelIds.Review      => ReviewTool,
             DockPanelIds.Tuning      => TuningTool,
             DockPanelIds.Optimizer   => OptimizerTool,
             DockPanelIds.Yield       => YieldTool,
@@ -779,6 +785,7 @@ public class CircuitRfDockFactory : Factory
         DockPanelIds.Lvs         => LvsTool,
         DockPanelIds.Instances   => InstancesTool,
         DockPanelIds.Impedance   => ImpedanceTool,
+        DockPanelIds.Review      => ReviewTool,
         DockPanelIds.Tuning      => TuningTool,
         DockPanelIds.Optimizer   => OptimizerTool,
         DockPanelIds.Yield       => YieldTool,
@@ -793,7 +800,7 @@ public class CircuitRfDockFactory : Factory
     [
         ProjectTreeTool, PaletteTool, PropertiesTool, AnalysesTool, MessagesTool, DrcTool, LvsTool,
         WBondProfileTool, WBondInductanceTool, HistoryTool, InstancesTool, ImpedanceTool, TuningTool,
-        OptimizerTool, YieldTool,
+        OptimizerTool, YieldTool, ReviewTool,
     ];
 
     // ── Auto-hidden panels ────────────────────────────────────────────────────

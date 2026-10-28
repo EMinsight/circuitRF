@@ -92,6 +92,9 @@ public sealed record LayoutReviewResult(
     public LayoutUnit DisplayUnit { get; init; } = LayoutUnit.Um;
     public int DbuPerMicron { get; init; } = LayoutUnits.DefaultDbuPerMicron;
 
+    /// <summary>What was reviewed: a board or a die — which checks the result's rows are.</summary>
+    public ReviewTarget Target { get; init; } = ReviewTarget.Pcb;
+
     /// <summary>Why nothing was reviewed — no technology — or null.</summary>
     public string? Refusal { get; init; }
 

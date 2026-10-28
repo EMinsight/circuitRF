@@ -4021,3 +4021,11 @@ solve had finished. Both only under load; both classes passed alone.
 - **Two pipes are still two pipes:** nothing orders the host's read of the reply against its read of the log. So the
   failed-point report (`DeviceWorkerInstance.WithWorkerOutput`) reads `ErrorOutputAfterRefusal`, which waits for 10 ms of
   quiet on the error stream, at most 100 ms. Only that path waits — a healthy evaluation never does.
+
+
+## GSGPAD's model (brief-review-6 follow-up, 2026-10-28)
+
+`GsgPadModel` is two `MicrostripLineModel`s cascaded through `MicrostripAbcd`, as MTAPER's sections are: half the
+signal pad (PadW wide, PadL/2 long, the tip at the pad's middle) and the line. The ground pads are ideal ground at
+the probe's reference plane, so their vias are artwork only. Gate: `tests/Engine.Tests/Devices/GsgPadSParamTests.cs`
+matches the same two MLINs wired by hand to 1e-9.

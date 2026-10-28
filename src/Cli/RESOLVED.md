@@ -3319,3 +3319,11 @@ with no unit is refused (`review.args.set-needs-unit`). The read uses `Generated
 the verb writes nothing. Progress reuses `Impedance.ProgressLines`. Registering a verb with an MCP tool needs the
 positional added to `ServeProtocolAdapterTests.EveryAdvertisedArgument_IsAFlagTheVerbActuallyReads`' table, and
 every new diagnostic id to `CliStructuredOutputTests.ExpectedIds`; both gates name what is missing.
+
+
+## review --as pcb|mmic (brief-review-6 follow-up, 2026-10-28)
+
+`--as` overrides the layout's saved review target for one run. A check of the other target named in `--checks`,
+`--skip` or `--set` is refused (`review.args.check-not-for-target`): with a target the registry is filtered, and a
+named check outside it would otherwise not run with nothing said. `--list-checks` lists the target's checks, and
+`--json` carries `target`.

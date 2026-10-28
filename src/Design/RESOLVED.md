@@ -24171,3 +24171,76 @@ on cancellation, so `ReviewCheckRun.Cancelled` was added: the row is `cancelled`
 in 7.9 s with a 1.4 GB peak, 27 cross-sections. It solved 8 traces, 7 passed, and the one finding is a FAIL
 (worst Z0 96.7 Ω, out of tolerance and return path broken). `circuitrf impedance` on the same file reported the
 same 8 traces with the same single FAIL and no WARN, and the trace's end points give the same key.
+
+
+## brief review-6 — what the Review panel needed from the run (2026-10-28)
+
+The panel accepts an impedance finding in the Impedance review (brief-review-5 R-rev5-4), and that needed three
+public calls beside `LayoutReview.Run`, so `src/Ui` computes nothing: `ImpedanceAcceptancesFor` (one
+`TraceImpedanceAcceptance` per open issue on the finding's trace, found in `LayoutReviewResult.Impedance` by the
+finding's key), `CoversImpedanceFinding` (the Un-accept: an Impedance key is the trace key plus `|kind`), and
+`ReapplyImpedance` (re-applies the Impedance acceptances to the held analysis and re-marks each impedance finding's
+`RunAccepted`; apply `ReviewAcceptance.Apply` after it). `ImpedanceCheck.KeyOf` / `AcceptedOf` were factored out of the
+check's own `Add` so the run and the re-apply build the acceptance one way.
+
+
+## A review of a board or of a die (brief-review-6 follow-up, 2026-10-28)
+
+Run on the shipped MMIC examples, the PCB review gave no false numbers but its sentences were wrong advice for a
+die: the four pad checks asked for a soldermask, the three edge checks for a board outline, and stacked-traces ran
+with a board's idea of a crossing. So a review has a target, `ReviewSettings.Target` (`Pcb`/`Mmic`, saved; null is
+PCB, so every layout saved before this reads as it did), and `ReviewCheckDef.Targets` says which checks belong to
+which. `LayoutReview.Run` runs only the target's checks and the result carries `Target`; `impedance` is both.
+
+**A die-edge metal check was built and then removed:** a process's DRC enforces metal-to-die-edge spacing, so as a
+review check it only repeated DRC. A MMIC review check is one a person checks by eye that DRC does not; the three that
+followed are in the next section.
+
+
+## GSGPAD and the RF review checks (brief-review-6 follow-up, 2026-10-28)
+
+**GSGPAD** is MLIN under the hood (`GsgPadModel`: half the signal pad then the line, cascaded) with a cell drawn by
+`GsgPadPCell`, whose `Resolve` is the ONE geometry — the cell draws it and the review's probe-pads check reads it,
+so the two cannot disagree about where a pad is. Placement sizes the probe from the technology
+(`MicrostripSubstrateInjection.ApplyProbePadDefaults`): with fixed 80 µm pads at 150 µm a board's 0.61 mm via
+pads overlapped each other, so pads are at least the technology's via pad and the pitch the smallest common probe
+pitch from 150 µm up leaving half a pad between pads (GaAs 80/150 µm, 20 mil RO4350B 610/1000 µm). Pitch, PadW
+and PadL are µm rows, which no technology's unit rewrite touches.
+
+**A die's ground pads are STACKED.** The microstrip default signal layer is the top conductor, and on the shipped
+GaAs stackup that is Metal2 while a backside via lands on Metal1 (`ResolveViaSpan` moves a defaulted start down
+to where a drill reaches ground). Drawn on Metal2 alone the ground pads touched no via: the probe-pads check found
+it, every placed pad floating. When the via's start is another metal than the pads', each ground pad is drawn on
+both and joined by the technology's post between them (a `ResolveViaSpan` of the two conductors' drill layer),
+as a die's probe pad is built; with no such post the cell says so. A generated cell is cached by its parameters,
+so a cell drawn before a generator change keeps its old artwork in a workspace that already has it.
+
+**The checks.** `ground-pin-via` (MMIC) is ground-via-distance on a die: a die has no soldermask, so a terminal is
+a placed part's pin (`PlacedPins.Of`) whose copper is ground, measured to the nearest ground via's edge. A region
+with holes is tested by counting the rings that contain the point (odd is inside), not by any one ring.
+`coupled-lines` (both) measures parallel pieces exactly in the first piece's frame — the along-run overlap and the
+across gap — rather than by area over width, and its thresholds are `ReviewThresholdKind.Heights`: h is the
+dielectric to the nearest flagged ground reference (stackup thicknesses are at 1000 DBU/µm and are scaled to the
+layout's). `probe-pads` (MMIC) finds GSGPADs through `LayoutView.PCellSnapshots`, as `GroundPourPlanner` finds
+microstrip cells; its approach strip starts past any via pad overhanging a ground pad, so a pad never meets
+itself. A pad inside another cell or in an array is not judged.
+
+
+## Review areas in the layout's unit, and a pitch instead of a density (2026-10-28)
+
+The pad checks' area and density were fixed in mm² and per mm² in the panel, `--list-checks` and the sentences,
+whatever the `.clay`'s unit — wrong for a board laid out in µm or mil. The arithmetic was right throughout (DBU²
+to mm² through the layout's own DBU/µm); only the spelling was not. An area threshold is still STORED in mm² (the
+documented `.clay` value) and is shown, edited and said in the layout's unit squared through `ReviewText.Area` /
+`TryParseArea`; `--set` takes it with its unit squared and refuses a bare number, as for a length. The parse rounds
+to 12 significant digits, or 2,000,000 µm² came back as 2 mm² plus noise and an untouched default read as changed.
+A density has no readable spelling in a small unit (1 per mm² is 0.000001 per µm²), so `thermal-vias` asks for a
+maximum via PITCH instead (`max-via-pitch`, 1 mm, a length): a pad passes when its area over its via count is at
+most p², the same test as density ≥ 1/p², and a finding states the pad's own average pitch. The `Density` threshold
+kind is gone; a `.clay` holding `thermal-vias.min-via-density` keeps the key (an unknown id is kept) but no check
+reads it.
+
+**probe-pads checks the PROBE's pitch** (`probe-pitch`, 150 µm). It first only compared the pads with each other,
+which says nothing about whether the lab's probe lands on them; a pad off the probe's pitch is now the finding, which
+also covers pads of two pitches on one die, so the comparison between pads was dropped rather than reported twice.
+Matched within half a micrometre, so a pitch typed in another unit is the same probe.

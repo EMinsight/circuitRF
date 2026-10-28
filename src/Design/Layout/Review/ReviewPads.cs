@@ -156,7 +156,7 @@ internal sealed class ReviewPads
         {
             double mm2 = DrcRegionEval.AreaOfComponent(ctx.Partition.Pieces[plane].Paths) / Dbu2PerMm2(ctx.DbuPerMicron);
             ctx.Diagnostics.Add($"Ground is the net of the largest copper on the ground reference "
-                              + $"\"{layers.GroundReference.Name}\" ({mm2:0.#} mm²), and everything joined to it.");
+                              + $"\"{layers.GroundReference.Name}\" ({ReviewText.Area(mm2, ctx.Unit)}), and everything joined to it.");
         }
         var vias = ctx.Vias;
 

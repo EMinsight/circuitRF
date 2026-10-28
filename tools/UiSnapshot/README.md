@@ -149,6 +149,9 @@ Messages print as they are posted. Besides the steps below:
 | `--finding <kind>` | With `--impedance`: selects the first finding of that kind (`pad-shunt`, `return-broken`, …) as the panel's row does, and zooms to it. The selection status prints. |
 | `--impedance-layer <name>` | With `--impedance`: run on this copper layer only. Repeat for several. |
 | `--impedance-panel` | With `--impedance`: the real Impedance panel on the editor, waited until its export page counts are in. The export choice and its note print, and `<out>.impedance.png` is the panel scrolled to **Export PDF…**. |
+| `--review` | With `--clay`: runs the editor's own Layout Review and draws its markers on the canvas, as the open Review panel does. Each finding prints. |
+| `--review-panel <seed>` | The real Review panel on a layout with no artwork, its result handed in: `checks` (the checks list with one threshold edited through its row), `result` (a not-run check, an accepted finding and a check with no findings) or `many` (5,000 findings in one check, its layers opened) or `mmic` (the switch set to MMIC, the checks of a die). Prints the rows the list holds against the row containers it realised — the proof that it virtualises — and each check's line. `-o` is the panel. |
+| `--symbol <stem>` | Writes a component's documentation symbol, light and dark (`<stem>.svg`, `<stem>-dark.svg`), through the generator DocGen uses, into `-o`'s directory (default `docs/user/assets/symbols`). Opens no window. |
 
 A capture while a dialog is open also writes `<out>.dialog.png`, the dialog's own window. A commanded "open" of
 another document (Crop to New Cell's new cell) prints `opens <path>`; there is no workspace to open it in.

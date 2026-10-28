@@ -41019,3 +41019,42 @@ one and the output FOOT of the other, so deleting it would move where that wire 
 comes off the picked wire and every sibling with the SAME count. The others are left alone and one message says
 how many. Whole wires selected in the profile are deleted as selected and never widened to the group. The
 standalone wBond editor's handler sends Delete to the profile rule when the profile canvas has focus.
+
+
+## The Review panel (brief-review-6, 2026-10-28)
+
+`ReviewPanelViewModel` (`src/Ui/Layout/Review`) is the Impedance panel's shape: it follows the active layout, the
+result is held on the layout (`LayoutEditorViewModel.ReviewResult`, `Layout/Review/LayoutEditorViewModel.Review.cs`),
+and an edit marks it stale rather than dropping it. Design ▸ Review Layout…, View ▸ Panels ▸ Review and a toolbar
+button beside Check Design Rules open it; the toolbar button is how a torn-off layout window reaches it, through
+`ResolveWorkspace` as the DRC and Impedance buttons do. `DockPanelIds.Review` is in `All`, so it needs an entry in
+BOTH menu surfaces (`DockWindowBehaviourTests` holds that).
+
+- **The results are one flattened list, not a TreeView.** Check → layer → finding rows in one `ListBox`, which
+  virtualises: 5,003 rows realised 11 containers (UiSnapshot `--review-panel many`). The list is replaced with ONE
+  `Reset` (`ReviewRowCollection.ReplaceAll`), not a `Clear` and 5,000 `Add`s. A layer with more than 100 findings
+  opens collapsed; which groups the reviewer opened or closed survive a re-applied acceptance and a re-run.
+- **Selecting a finding row zooms**, unlike the DRC and Impedance lists (double-click): the brief asks for it, and the
+  row being a finding (not a check or layer header) is what keeps an arrow-key walk through the headers still.
+  Copper selected on the canvas selects the findings whose marker boxes it touches on its layer (a finding with no
+  layer, an edge-stitching gap, on any); the zoom is suppressed while that selection is applied, or the canvas would
+  jump to the first of them.
+- **An impedance finding's Accept writes `TraceImpedanceAcceptance`s**, one per open issue on its trace
+  (`LayoutReview.ImpedanceAcceptancesFor`), and `LayoutReview.ReapplyImpedance` re-marks the held result from the
+  re-applied Impedance analysis with no re-run. The editor's `ReapplyImpedanceAcceptances` now also re-applies the
+  review's result, so an acceptance made in the Impedance panel shows in the Review panel at once.
+- **Threshold edits are made on a clone** (`EditReviewSettings`) and saved through `ReviewSettings.ForSave`, so a
+  threshold set back to its default leaves no key and a layout at the defaults has `Review == null`.
+- **The markers draw only while the panel is on screen** (`ShowReviewMarkers`, set from the view's attach/detach).
+
+**PCB / MMIC (follow-up).** "Review as" is two `ToggleButton`s bound to `IsPcb`/`IsMmic`. A ToggleButton unchecks
+itself on a second click, and a setter that ignores `false` leaves it drawn unchecked, so `KeepSwitch` posts the
+two notifications back after the click. The checks list is `LayoutReview.ChecksFor(target)`; a held result of the
+other target stays, with a line saying so. **The panel's unit is the DOCUMENT's** (`Model.DisplayUnit`), the one the
+run's sentences use, not `vm.DisplayUnit`, which a view-local unit can make differ from it.
+
+**Heights.** A `ReviewThresholdKind.Heights` threshold (coupled-lines) shows `× h` beside its box. UiSnapshot gained
+`--symbol <stem>`, which writes a component's documentation symbol through `SymbolArtworkGenerator.GenerateAll`
+(DocGen's own call, so the same bytes; DocGen has no per-symbol `--figure` id, and `--figures` would recapture
+every figure on each edited page), and `--place <code>` for `--clay`, which drops a part through the layout
+palette's own `CommitPaletteDrop`.

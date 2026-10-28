@@ -60,6 +60,9 @@ public sealed class LayoutRenderTheme
     public SKColor DrcWarning { get; init; }
     public SKColor DrcWaived { get; init; }
 
+    /// <summary>brief-review-6 Layout Review finding markers — see <see cref="ColorRole.LayoutReviewFinding"/>.</summary>
+    public SKColor ReviewFinding { get; init; }
+
     public static LayoutRenderTheme FromTheme(ColorTheme theme, ColorVariant variant)
     {
         SKColor SK(string role)
@@ -90,6 +93,7 @@ public sealed class LayoutRenderTheme
             DrcError         = SK(ColorRole.LayoutDrcError),
             DrcWarning       = SK(ColorRole.LayoutDrcWarning),
             DrcWaived        = SK(ColorRole.LayoutDrcWaived),
+            ReviewFinding    = SK(ColorRole.LayoutReviewFinding),
         };
     }
 

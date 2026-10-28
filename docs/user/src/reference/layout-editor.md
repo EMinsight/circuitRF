@@ -1409,12 +1409,24 @@ technology, an imported board's and one you built. A check whose layer the techn
 | Via in pad | A via inside an SMD pad &mdash; solder wicks down the barrel. A via in a thermal pad is not marked here, and a pad centred on its one drill is a through-hole pin, whose drill is its hole. | Thermal pad area (2 mm², shared by the four pad checks) |
 | Ground via distance | A ground pad with no ground via within the distance, pad edge to barrel edge, saying how far the nearest one is. A pad in a ground pour is judged the same way: the pour's stitching vias count when they are close enough. | Maximum distance (0.5 mm) |
 | Shared ground via | A ground via that is the only one within the maximum distance of two or more ground pads. | The maximum distance above |
-| Thermal vias | A thermal pad &mdash; a ground pad of at least the thermal pad area, such as the exposed paddle under a power stage &mdash; with fewer ground vias under it than the density asks for, or none. A via counts when its barrel lies at least half inside the pad. | Minimum via density (1 per mm²) |
+| Thermal vias | A thermal pad &mdash; a ground pad of at least the thermal pad area, such as the exposed paddle under a power stage &mdash; with fewer ground vias under it than one per maximum via pitch squared, or none &mdash; at the default, one via per 1 × 1 mm of pad. A via counts when its barrel lies at least half inside the pad. A finding gives the pad's own average pitch. | Maximum via pitch (1 mm) |
 | Stacked traces | Two traces on adjacent copper layers, on different nets, running on top of each other for at least the minimum length &mdash; broadside coupling between two signals. Layers with another copper layer between them are not compared, because that layer shields them; two traces of one net (a doubled supply trace) are not marked, and only stretches where the two run the same way count, so a crossing is never a finding however wide either trace is. | Lateral margin (0: directly on top of each other), minimum length (1.0 mm) |
+| Coupled lines | Two traces of different nets on one copper layer running side by side closer than the spacing, for at least the minimum length &mdash; coupling a process rule does not ask about. Both are in substrate heights (h, the dielectric between the layer and its ground reference), so one setting suits a thin board and a thick one. Only stretches where the two run the same way count. A coupler, a coupled-line filter or a differential pair is coupled on purpose: accept it. | Spacing (2 h), minimum length (5 h) |
 | Copper at the board edge | Copper on any copper layer closer to the board edge than the pullback, marked where it lies inside that strip. The edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board, whose centre line is the edge &mdash; and cut-outs in the board (slots, milled openings) are edges too. | Pullback (0.25 mm) |
 | Traces at the board edge | A trace on any copper layer closer to the board edge than the distance, marked where it is. A pour pulled to the edge is not a trace and is left to the pullback check. A trace that runs to an edge-launch connector on purpose is a finding to accept. | Minimum distance (1.0 mm) |
 | Edge stitching | A stretch of board edge with no ground copper along it, on the top and bottom copper; and a stretch with no ground via along it, between two vias further apart than the gap. Both are measured along the middle of a band along the edge, so a pour pulled back by the pullback still covers the edge. | Band width (1.0 mm), maximum gap (2.0 mm) |
 | Impedance of the RF traces | Each trace in the [Impedance](#impedance-analysis) panel's saved choice of traces that does not pass &mdash; FAIL, WARN or unsolved &mdash; with its worst Z₀ against the target and what was found on it, marked where. Its line also says which traces were reviewed and how many passed. | None here: the target, bands, layers and traces are the Impedance panel's |
+
+**A board or a die.** The checks above are for a printed circuit board. A MMIC die is reviewed with its own
+checks, chosen with **Review as: PCB | MMIC** at the top of the Review panel and saved with the layout. Each is
+something a reviewer looks at that the foundry's design rules do not check:
+
+| Check | What it marks | Threshold (default) |
+|---|---|---|
+| Ground far from a via | A placed part's terminal on ground &mdash; a shunt capacitor's grounded plate, a transistor's source &mdash; with no via to the ground plane within the distance, straight from the terminal to the via's edge, saying how far the nearest one is. The line between them is inductance in series with that ground. | Maximum distance (100 µm) |
+| Coupled lines | As on a board. | Spacing (2 h), minimum length (5 h) |
+| Probe pads | The placed [GSG probe pads](components.html#gsgpad): one whose pitch is not the probe pitch &mdash; set it to the pitch of the on-wafer probes your lab has, so the layout matches them; a ground pad whose copper is not on ground (the probe's ground tip would land on floating metal); and metal within the clear approach in front of the pads, on their metal or any above it, where the probe comes in. | Probe pitch (150 µm), clear approach (100 µm) |
+| Impedance of the RF traces | As on a board. | As on a board |
 
 **Traces.** A trace is what [Impedance Analysis](#impedance-traces) reads as one: copper with
 two long parallel edges facing each other, outside a pour, with its nominal width. The two trace checks
@@ -1438,6 +1450,45 @@ Findings are counted per check and grouped by layer. Which checks run, the thres
 the findings you accepted are saved in the layout, so the next review reviews what the last one did; an
 accepted finding is still reported, marked with its reason, and does not count. When the marked copper
 moves, the acceptance no longer matches and is listed as stale.
+
+### The Review panel {#review-panel}
+
+**Design ▸ Review Layout…**, or the clipboard button beside Check Design Rules on the toolbar, opens the
+Review panel on the layout you are working in. It follows the active layout, and each layout keeps its own
+last result.
+
+**Review as.** **PCB** or **MMIC** chooses which checks are listed and run: a board's or a die's. The
+choice is saved with the layout. A result from the other kind of review stays on screen, marked as such,
+until you run again.
+
+**Checks.** One row per check, in the order of the tables above: tick the checks to run, and change a
+threshold in its box. Lengths are in the layout's own unit, with the unit beside the box; type another
+unit (`8 mil`) and it is converted. A threshold in substrate heights shows `× h`. A threshold you changed is marked, and the row's **Reset** puts every
+threshold of that check back to its default. The impedance row shows the Impedance panel's target, bands
+and traces, read-only, with a button that opens the [Impedance](#impedance-analysis) panel where they are
+set. The checks you turned off and the thresholds you changed are saved with the layout, and changing them
+is not an undoable edit.
+
+**Run** reviews the layout with the ticked checks, saying which check it is on; **Cancel** stops it and
+keeps the checks that finished, the rest marked *cancelled*. A run replaces the last result whole. After an
+edit the result stays on screen and is marked out of date until the next run. One line in Messages says
+how many checks found something, how many findings and how many accepted, and how many checks did not run.
+
+**Results.** Each check's row gives its count, *No findings*, or *not run* with the change that would let it
+run. Open a check to see its findings grouped by layer, each layer with its own count; a layer with more
+than a hundred findings opens closed. Each finding shows its sentence and the measured value.
+
+**On the canvas.** While the panel is open each finding is marked on the layout in the review's own
+colour, distinct from the DRC markers; an accepted one is greyed. Where markers would land on one another
+at the current zoom they are drawn as one badge carrying their count; zoom in and they separate. Selecting
+a finding zooms the canvas to it; selecting copper on the canvas selects the findings marked on it.
+
+**Accepting.** Select one or more findings, press **Accept…** and give the reason; a reason is required.
+The finding stays listed, marked ACCEPTED with the reason, and stops counting &mdash; there is no re-run.
+**Un-accept** counts it again. Accepting an impedance finding accepts its trace's findings in the
+Impedance panel, so the two panels agree. **Show accepted** hides or shows accepted findings; hidden, they
+are still counted on their check's row. Acceptances that matched nothing in this run are listed under
+their own heading, each with a **Remove**.
 
 Run a review with [`circuitrf review`](cli.html#review).
 

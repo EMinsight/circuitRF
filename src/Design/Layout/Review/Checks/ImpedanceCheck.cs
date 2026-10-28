@@ -29,6 +29,8 @@ internal sealed class ImpedanceCheck : ReviewCheck
         [])
     {
         SettingsOwner = Owner,
+        // A die's RF lines are reviewed as a board's are: the Impedance review is the same on both.
+        Targets = [ReviewTarget.Pcb, ReviewTarget.Mmic],
     };
 
     public override void Run(ReviewContext ctx, ReviewCheckRun run)
@@ -79,22 +81,27 @@ internal sealed class ImpedanceCheck : ReviewCheck
         string sentence = $"{verdict} {t.Id}: {worstText} against {band} ({t.TypeSummary})"
                         + (kinds.Count > 0 ? $"; {string.Join(", ", kinds)}" : "");
 
-        ReviewAcceptance? accepted = null;
-        if (t.Issues.Count > 0 && t.Issues.All(i => i.Accepted is not null))
-            accepted = new ReviewAcceptance
+        run.Add(t.Layer, sentence, worst is null ? null : $"{TraceImpedanceReport.OhmsText(worst)} Ω", Marker(t),
+                KeyOf(report, t), AcceptedOf(report, t));
+    }
+
+    /// <summary>The key of the finding for trace <paramref name="t"/>: the trace part of the Impedance review's key.</summary>
+    internal static string KeyOf(TraceImpedanceReport report, TraceRun t) =>
+        TraceImpedanceAcceptance.TraceKeyOf(t.LayerName, t.StartX, t.StartY, t.EndX, t.EndY, report.DbuPerMicron);
+
+    /// <summary>The trace's finding is accepted when every one of its issues is (R-rev5-4), with their reasons.</summary>
+    internal static ReviewAcceptance? AcceptedOf(TraceImpedanceReport report, TraceRun t) =>
+        t.Issues.Count > 0 && t.Issues.All(i => i.Accepted is not null)
+            ? new ReviewAcceptance
             {
-                Key = TraceImpedanceAcceptance.TraceKeyOf(t.LayerName, t.StartX, t.StartY, t.EndX, t.EndY, report.DbuPerMicron),
+                Key = KeyOf(report, t),
                 CheckId = Id,
                 Reason = string.Join("; ", t.Issues.Select(i => i.Accepted!.Reason).Distinct(StringComparer.Ordinal)),
                 AcceptedUtc = t.Issues.Max(i => i.Accepted!.AcceptedUtc),
                 LayerName = t.LayerName,
                 Summary = string.Join(" ", t.Issues.Select(i => i.Accepted!.Summary)),
-            };
-
-        run.Add(t.Layer, sentence, worst is null ? null : $"{TraceImpedanceReport.OhmsText(worst)} Ω", Marker(t),
-                TraceImpedanceAcceptance.TraceKeyOf(t.LayerName, t.StartX, t.StartY, t.EndX, t.EndY, report.DbuPerMicron),
-                accepted);
-    }
+            }
+            : null;
 
     /// <summary>The trace's issue stretches, each as wide as the trace (a pad shunt's stretch is the pad's
     /// bounds, so its box); the whole trace when it has none — an unsolved trace.</summary>

@@ -1449,6 +1449,7 @@ namespace RfCore.Export
     /// Marker boxes are in µm; a threshold's value is in µm for a length and the number itself otherwise.
     /// </summary>
     /// <param name="Warnings">Warnings no acceptance covers — what <c>--severity warning</c> counts.</param>
+    /// <param name="Target">What was reviewed: <c>pcb</c> or <c>mmic</c> (brief-review-6) — which checks ran.</param>
     public sealed record ReviewReportJson(
         string                                   Path,
         string?                                  Technology,
@@ -1460,7 +1461,8 @@ namespace RfCore.Export
         IReadOnlyList<ReviewCheckJson>           Checks,
         IReadOnlyList<ReviewFindingJson>         Findings,
         IReadOnlyList<ReviewStaleAcceptanceJson> StaleAcceptances,
-        IReadOnlyList<string>                    Diagnostics);
+        IReadOnlyList<string>                    Diagnostics,
+        string                                   Target = "pcb");
 
     /// <param name="State"><c>ran</c>, <c>not-run</c> or <c>cancelled</c>; <c>listed</c> under
     /// <c>--list-checks</c>, which runs nothing.</param>

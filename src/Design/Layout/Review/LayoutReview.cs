@@ -22,12 +22,15 @@ public static class LayoutReview
     [
         new ViaInPadCheck(),
         new GroundViaDistanceCheck(),
+        new GroundPinViaCheck(),
         new SharedGroundViaCheck(),
         new ThermalViasCheck(),
         new StackedTracesCheck(),
+        new CoupledLinesCheck(),
         new EdgeCopperCheck(),
         new EdgeTraceCheck(),
         new EdgeStitchingCheck(),
+        new ProbePadsCheck(),
         new ImpedanceCheck(),
     ];
 
@@ -39,6 +42,9 @@ public static class LayoutReview
     public static string? SettingsText(string checkId, LayoutView? view) =>
         checkId == ImpedanceCheck.Id ? ImpedanceCheck.SettingsText(view?.ImpedanceReview) : null;
 
+    /// <summary>The checks a review of <paramref name="target"/> runs, in order.</summary>
+    public static IReadOnlyList<ReviewCheckDef> ChecksFor(ReviewTarget target) => [.. Checks.Where(c => c.AppliesTo(target))];
+
     public static ReviewCheckDef? FindCheck(string id) =>
         Checks.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
 
@@ -49,6 +55,48 @@ public static class LayoutReview
             if (key.StartsWith(c.Id + ".", StringComparison.Ordinal) && c.Threshold(key[(c.Id.Length + 1)..]) is { } t)
                 return (c, t);
         return null;
+    }
+
+    /// <summary>Whether <paramref name="finding"/> is accepted in the Impedance review rather than the review's own
+    /// list (brief-review-5 R-rev5-4): its Accept writes <see cref="TraceImpedanceAcceptance"/>s.</summary>
+    public static bool IsAcceptedElsewhere(ReviewFinding finding) => FindCheck(finding.CheckId)?.SettingsOwner is not null;
+
+    /// <summary>
+    /// What accepting the impedance finding <paramref name="finding"/> with <paramref name="reason"/> writes
+    /// (brief-review-6 R-rev6-6): one <see cref="TraceImpedanceAcceptance"/> for each not-yet-accepted issue on its
+    /// trace, so the Impedance panel and the review agree about it. Empty when the trace is not in
+    /// <paramref name="result"/>'s Impedance analysis.
+    /// </summary>
+    public static IReadOnlyList<TraceImpedanceAcceptance> ImpedanceAcceptancesFor(
+        LayoutReviewResult result, ReviewFinding finding, string reason, DateTime acceptedUtc)
+    {
+        if (result.Impedance is not { } report || finding.CheckId != ImpedanceCheck.Id) return [];
+        var trace = report.AllTraces.FirstOrDefault(t => ImpedanceCheck.KeyOf(report, t) == finding.Key);
+        return trace is null ? []
+            : [.. trace.Issues.Where(i => i.Accepted is null).Select(i => TraceImpedanceAcceptance.For(report, trace, i, reason, acceptedUtc))];
+    }
+
+    /// <summary>Whether <paramref name="acceptance"/> accepts one of the issues of the impedance finding
+    /// <paramref name="finding"/>'s trace — what its Un-accept removes.</summary>
+    public static bool CoversImpedanceFinding(TraceImpedanceAcceptance acceptance, ReviewFinding finding) =>
+        finding.CheckId == ImpedanceCheck.Id
+        && acceptance.Key.StartsWith(finding.Key + "|", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// <paramref name="result"/> with the Impedance review's <paramref name="acceptances"/> re-applied to the
+    /// analysis it holds and its impedance findings re-marked from it — no re-run, as
+    /// <see cref="ReviewAcceptance.Apply"/> re-applies the review's own. Apply that after this one.
+    /// </summary>
+    public static LayoutReviewResult ReapplyImpedance(LayoutReviewResult result, IReadOnlyList<TraceImpedanceAcceptance>? acceptances)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (result.Impedance is not { } held) return result;
+        var report = TraceImpedanceAcceptance.Apply(held, acceptances);
+        var byKey = new Dictionary<string, TraceRun>(StringComparer.Ordinal);
+        foreach (var t in report.AllTraces) byKey.TryAdd(ImpedanceCheck.KeyOf(report, t), t);
+        var findings = result.Findings.Select(f => f.CheckId == ImpedanceCheck.Id && byKey.TryGetValue(f.Key, out var t)
+            ? f with { RunAccepted = ImpedanceCheck.AcceptedOf(report, t) } : f).ToList();
+        return result with { Findings = findings, Impedance = report };
     }
 
     /// <summary>
@@ -68,7 +116,8 @@ public static class LayoutReview
               + "the board outline. Give the layout a technology, or open it in a workspace that has one.");
 
         var ctx = new ReviewContext(source, tech, settings, control?.Token ?? CancellationToken.None) { Control = control };
-        var enabled = Registry.Where(c => settings.IsEnabled(c.Def.Id)).ToList();
+        var target = settings.TargetOrDefault;
+        var enabled = Registry.Where(c => c.Def.AppliesTo(target) && settings.IsEnabled(c.Def.Id)).ToList();
         var rows = new List<ReviewCheckRow>();
         var findings = new List<(int Check, ReviewFinding Finding)>();
         var notes = new List<string>();
@@ -146,6 +195,7 @@ public static class LayoutReview
             DisplayUnit = source.View.DisplayUnit,
             DbuPerMicron = source.View.DbuPerMicron,
             Impedance = ctx.Impedance,
+            Target = target,
         };
     }
 }

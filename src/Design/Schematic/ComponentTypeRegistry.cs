@@ -800,6 +800,13 @@ public static class ComponentTypeRegistry
                           "cut-out", "clearance", "via", "EM port"]),
         // The MMIC passives (AA-1), in their own category. Not also under Lumped: that category is
         // held to the ideal lumped elements (LibraryCatalogTests), and these are process parts.
+        // A ground-signal-ground probe pad and the microstrip leaving it (brief-review-6 follow-up): with the
+        // microstrip parts, since it is MLIN under the hood, and in the MMIC group, where on-wafer probing is.
+        [SymbolKind.GsgPad]       = new("GSGPAD", "GSG",
+            Category: ComponentCategory.Microstrip,
+            SearchTerms: ["GSGPAD", "GSG", "ground signal ground", "probe pad", "RF probe", "on-wafer", "wafer probe",
+                          "pitch", "probe", "pad", "launch"],
+            ExtraCategories: [ComponentCategory.Mmic]),
         [SymbolKind.MimCap]       = new("MIMCAP", "MIM",
             Category: ComponentCategory.Mmic,
             SearchTerms: ["MIMCAP", "MIM", "MIM capacitor", "metal insulator metal", "capacitor", "MMIC",
@@ -1008,6 +1015,10 @@ public static class ComponentTypeRegistry
         SymbolKind.ViaGnd =>
             "One terminal, A, on FromLayer. The far end is ground: the via lands on GroundLayer.",
 
+        SymbolKind.GsgPad =>
+            "Not interchangeable: terminal 1 is where the probe's signal tip lands, the middle of the signal pad, "
+          + "and terminal 2 the far end of the line. Put the measurement port on terminal 1.",
+
         SymbolKind.TestPad =>
             "Not interchangeable: terminal 1 is the feed — the via on ViaFrom, or the end of the side stub — and "
           + "terminal 2 is the pad centre. Leave 2 open for a test point that is not in use, or continue it to a "
@@ -1172,6 +1183,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Via           => "VIA",
         SymbolKind.ViaGnd        => "VIAGND",
         SymbolKind.TestPad       => "TESTPAD",
+        SymbolKind.GsgPad        => "GSGPAD",
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
         SymbolKind.OctSpiral     => "OSPIRAL",
@@ -1433,6 +1445,17 @@ public static class ComponentTypeRegistry
         (SymbolKind.Cpwg, "SignalLayer") => "The conductor the strip and its coplanar grounds are on. Empty: the technology's top conductor.",
         (SymbolKind.Cpwg, "GroundReference") => "The plane backing the line. Empty: the nearest ground-designated conductor below the "
                                               + "signal layer, or above it when there is none below.",
+        (SymbolKind.GsgPad, "W") => "Width of the line leaving the signal pad. Placed: the 50 Ω width on the technology.",
+        (SymbolKind.GsgPad, "L") => "Length of the line, from the signal pad's edge to terminal 2.",
+        (SymbolKind.GsgPad, "Pitch") => "Probe pitch: centre of the signal pad to the centre of each ground pad. The probe's, "
+                                      + "e.g. 100, 125 or 150 µm.",
+        (SymbolKind.GsgPad, "PadW") => "Width of each pad, across the line.",
+        (SymbolKind.GsgPad, "PadL") => "Length of the signal pad along the line. A ground pad grows longer when its vias need the room.",
+        (SymbolKind.GsgPad, "NVia") => "Ground vias in each ground pad, in a row along it. 0 leaves the ground pads to be "
+                                     + "grounded some other way.",
+        (SymbolKind.GsgPad, "SignalLayer") => "The conductor the pads and the line are on. Empty: the technology's top conductor.",
+        (SymbolKind.GsgPad, "GroundReference") => "The plane under the line, which the ground vias land on. Empty: the nearest "
+                                                + "ground-designated conductor below the signal layer.",
         (SymbolKind.Slin, "W") => "Strip width.",
         (SymbolKind.Slin, "L") => "Line length.",
         (SymbolKind.Slin, "SignalLayer") => "The conductor the strip is on. Its planes are the nearest ground-designated conductors "
@@ -1469,6 +1492,10 @@ public static class ComponentTypeRegistry
     /// </summary>
     public static string ModelValidity(SymbolKind kind) => kind switch
     {
+        SymbolKind.GsgPad =>
+            "MLIN, twice: half the signal pad (PadW wide, PadL/2 long, from the tip to its edge), then the line, "
+          + "cascaded, with MLIN's validity. The ground pads are ideal ground at the probe's reference plane; their "
+          + "vias are artwork, not circuit. A microstrip, never a coplanar line.",
         SymbolKind.Cpwg =>
             "Quasi-static: Ghione-Naldi's conductor-backed coplanar map with the slot walls' capacitance for the "
           + "copper's thickness, or MLIN's Hammerstad-Jensen where its air capacitance is the larger (a far "
@@ -3282,6 +3309,16 @@ public static class ComponentTypeRegistry
             // The MMIC passives (AA-1). Geometry only, in micrometres because that is what a die is
             // drawn in; everything a process decides is injected from the technology at extraction
             // (MmicPassiveInjection), as a microstrip's substrate is.
+            // GSGPAD: W and L are the line's, MLIN's own rows (W re-synthesised for 50 Ω on the placing technology);
+            // the probe's own numbers are in µm, which no technology rewrites — a probe's pitch is the probe's.
+            case SymbolKind.GsgPad:
+                return [new("W",     "2.9", "mm", true, UnitDimension.Length),
+                        new("L",     "100", "µm", true, UnitDimension.Length),
+                        new("Pitch", "150", "µm", true, UnitDimension.Length),
+                        new("PadW",  "80",  "µm", true, UnitDimension.Length),
+                        new("PadL",  "80",  "µm", true, UnitDimension.Length),
+                        new("NVia",  "1",   "",   true, UnitDimension.None),
+                        .. SignalGroundLayerParams];
             case SymbolKind.MimCap:
                 return [new("W", "50", "µm", true, UnitDimension.Length),
                         new("L", "50", "µm", true, UnitDimension.Length)];
@@ -3428,6 +3465,8 @@ public static class ComponentTypeRegistry
             case "VIA":      kind = SymbolKind.Via;          return true;
             case "VIAGND":   kind = SymbolKind.ViaGnd;       return true;
             case "TESTPAD":  kind = SymbolKind.TestPad;      return true;
+            case "GSGPAD":
+            case "GSG":      kind = SymbolKind.GsgPad;       return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
             case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;

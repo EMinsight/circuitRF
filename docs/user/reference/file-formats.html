@@ -116,6 +116,27 @@ format: its parts are imported into a 3D view, and a 3D view or a layout is expo
 application maintains for you — though double-clicking either half of a workspace opens the whole
 workspace. <code>.cnl</code> is the engine's input and is normally derived rather than edited.</p>
 </div>
+<h2 id="clay-review">A layout's review state</h2>
+<p>A <code>.clay</code> carries the <a href="layout-editor.html#layout-review">Layout Review</a>'s state beside the artwork, and
+both keys are left out of the file until there is something to say:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Review</code></td>
+<td><code>Target</code>, <code>&quot;Mmic&quot;</code> when the layout is reviewed as a die (absent: a board); <code>Disabled</code>, the ids of the checks turned off; and <code>Thresholds</code>, each threshold changed from its default, keyed <code>&lt;check&gt;.&lt;threshold&gt;</code> (<code>&quot;edge-copper.pullback&quot;: 300000</code>) — a length in the layout's database units, an area in mm² (whatever unit it is shown in), a number of substrate heights and a count as the number itself. A threshold set back to its default is removed. A check or threshold id this version does not know is kept as it is.</td>
+</tr>
+<tr>
+<td><code>ReviewAcceptances</code></td>
+<td>The findings accepted, each with <code>Key</code>, <code>CheckId</code>, <code>Reason</code> (required), <code>AcceptedUtc</code>, <code>LayerName</code> and <code>Summary</code> (the finding's sentence when it was accepted). <code>Key</code> is <code>&lt;check&gt;\|&lt;layer&gt;/&lt;datatype&gt;\|&lt;minX&gt;,&lt;minY&gt;,&lt;maxX&gt;,&lt;maxY&gt;</code>: the check, the finding's layer and its marker's bounding box in database units, exactly as <code>circuitrf review --json</code> reports it. Moving the marked copper changes the key, and the acceptance is then listed as stale.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="c3d-operations">The 3D view's operations</h2>
 <p>A <code>.c3d</code> holds four kinds of object that the geometry kernel (OpenCASCADE, which ships inside circuitRF)
 builds rather than the editor. <code>circuitrf reference 3d-view</code> prints every field; these are the rules a
@@ -657,6 +678,12 @@ the filesystem; the <code>.cws</code> records configuration only: referenced lib
 bookmarks, the default technology and assembly rules, and the other projects and kits this one
 uses. It <strong>references, never embeds</strong> — the same cell or library can be used by multiple
 workspaces.</p>
+<p>A workspace that references a <a href="pdk-integration.html#vendor">vendor part library</a> lists it under
+<code>VendorLibraries</code>, by name and folder; the key is absent when there are none:</p>
+<pre><code class="language-json">&quot;VendorLibraries&quot;: [ { &quot;Name&quot;: &quot;Caps&quot;, &quot;Path&quot;: &quot;/home/you/libraries/caps&quot; } ]
+</code></pre>
+<p>A placed part names its file as <code>vendorlib://Caps/&lt;file inside the library&gt;</code>, so moving the library is
+one edit to <code>Path</code>.</p>
 <p>Beside it sits a second, optional file: the <strong><code>.cwsuser</code></strong>, which is yours rather than the
 project's.</p>
 <h2 id="cwsuser">Your own view of a workspace</h2>

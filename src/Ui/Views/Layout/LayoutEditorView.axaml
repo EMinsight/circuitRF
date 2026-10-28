@@ -483,6 +483,15 @@
                             <mi:MaterialIcon Kind="ShieldCheckOutline" Width="16" Height="16"/>
                         </Button>
 
+                        <!-- Review Layout (brief-review-6): the Review panel, beside Check Design Rules — a
+                             reviewer's built-in checks, not the process's rules. Here as well as in the Design
+                             menu so a torn-off layout window reaches it the way it reaches DRC. -->
+                        <Button Click="OnReviewLayout"
+                                ToolTip.Tip="Review Layout — the places a reviewer would want to look at, in the Review panel"
+                                Padding="6,3">
+                            <mi:MaterialIcon Kind="ClipboardCheckOutline" Width="16" Height="16"/>
+                        </Button>
+
                         <!-- Impedance Analysis: shows the Impedance panel (brief-impedance-3) — every trace
                              against a target Z0, results on the canvas, a PDF for the review file.
                              Beside Check Design Rules because both are "check the whole layout" actions

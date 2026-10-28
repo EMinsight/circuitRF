@@ -1171,6 +1171,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // finds is the report, and a finding is advice.
         "review.args.bad-number",
         "review.args.bad-set",
+        "review.args.check-not-for-target",
         "review.args.multiple-paths",
         "review.args.path-required",
         "review.args.set-needs-unit",
@@ -1178,6 +1179,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "review.args.unknown-check",
         "review.args.unknown-option",
         "review.args.unknown-severity",
+        "review.args.unknown-target",
         "review.args.unknown-threshold",
         "review.cancelled",
         "review.cell.ambiguous",

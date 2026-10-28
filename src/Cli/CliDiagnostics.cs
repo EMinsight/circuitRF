@@ -4339,11 +4339,12 @@ internal static class CliDiagnostics
 
     /// <summary>A length threshold with no unit — refused, render --window's rule: a bare number could
     /// be DBU, µm or mm, and a threshold read at the wrong one marks nothing or everything.</summary>
-    public static Diagnostic ReviewSetNeedsUnit(string key, string text, string suggestion) => Diagnostic.Create(
+    public static Diagnostic ReviewSetNeedsUnit(string key, string text, string suggestion,
+                                                string kind = "a length", string could = "DBU, µm or mm") => Diagnostic.Create(
         "review.args.set-needs-unit", DiagnosticSeverity.Error,
-        "review: {key} is a length and '{text}' has no unit, which could be DBU, µm or mm. Write it with its "
+        "review: {key} is {kind} and '{text}' has no unit, which could be {could}. Write it with its "
       + "unit — {suggestion}.",
-        ("key", key), ("text", text), ("suggestion", suggestion));
+        ("key", key), ("text", text), ("suggestion", suggestion), ("kind", kind), ("could", could));
 
     public static Diagnostic ReviewBadNumber(string key, string text, string wanted) => Diagnostic.Create(
         "review.args.bad-number", DiagnosticSeverity.Error,
@@ -4352,6 +4353,17 @@ internal static class CliDiagnostics
     public static Diagnostic ReviewUnknownSeverity(string text) => Diagnostic.Create(
         "review.args.unknown-severity", DiagnosticSeverity.Error,
         "review: --severity takes warning or none, got '{text}'.", ("text", text));
+
+    public static Diagnostic ReviewUnknownTarget(string text) => Diagnostic.Create(
+        "review.args.unknown-target", DiagnosticSeverity.Error,
+        "review: --as takes pcb or mmic, got '{text}'.", ("text", text));
+
+    /// <summary>A check named that the review's target does not run — refused rather than silently not run.</summary>
+    public static Diagnostic ReviewCheckNotForTarget(string id, string target, string known) => Diagnostic.Create(
+        "review.args.check-not-for-target", DiagnosticSeverity.Error,
+        "review: '{id}' is not a check of a {target} review, so it would not run. A {target} review's checks are: {known}. "
+      + "Review as the other kind with --as.",
+        ("id", id), ("target", target), ("known", known));
 
     public static Diagnostic ReviewPathNotFound(string path) => Diagnostic.Create(
         "review.path.not-found", DiagnosticSeverity.Error,

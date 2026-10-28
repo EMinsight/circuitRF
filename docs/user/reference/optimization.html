@@ -714,6 +714,14 @@ used and however it ended — a Stop included, which snaps without the polish �
 on the series; <strong>Auto</strong> does the same for integers and steps too. The toolbar button runs it on a
 finished run — to polish after a Stop, or for an integer or a step under another algorithm. <strong>Discrete</strong> searches the allowed values directly when every
 variable has them. A part of a complex value is always continuous.</p>
+<p><strong>A vendor part</strong> is a variable whose values are real parts, not numbers; see
+<a href="pdk-integration.html#vendor-optimize">Letting the optimizer choose the part</a>. Its row shows how many
+candidate parts it has and their value span, and its value is the chosen part number. A run of vendor
+parts alone uses <strong>Discrete</strong>, and the continuous methods are greyed in the menu. With other variables
+too, an ideal component stands in for each part while the values move continuously (the row reads
+<code>ideal 2.3 pF</code>), and the snap then tries the real parts either side. The status line reports both
+costs. At the end of the candidate list the row is marked railed. <strong>Widen</strong> removes the value bound on
+that side, and is not offered when the part is at the end of what the library holds.</p>
 <p><strong>Sensitivity</strong> (in the toolbar) simulates once more per variable around the best point and shows, on
 each row, how much of the cost that variable moves — which variables matter, and which could be left
 alone.</p>

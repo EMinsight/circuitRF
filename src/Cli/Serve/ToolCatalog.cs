@@ -1424,10 +1424,14 @@ internal static class ToolCatalog
                         new("skip", "--skip", OptKind.StrList, "Do not run these checks, by id."),
                         new("set", "--set", OptKind.StrRepeat,
                             "Override a threshold for this run: \"<check>.<threshold>=<value>\", a length WITH its unit "
-                          + "(edge-copper.pullback=0.3mm); a bare number for a length is refused."),
+                          + "(edge-copper.pullback=0.3mm), an area WITH its unit squared (thermal-vias.thermal-pad-area=2mm2); "
+                          + "a bare number for either is refused."),
                         new("defaults", "--defaults", OptKind.Flag, "Ignore the review saved on the layout and use the defaults."),
                         new("ignoreAccepted", "--ignore-accepted", OptKind.Flag,
                             "Report as if nothing had been accepted: every finding counts."),
+                        new("as", "--as", OptKind.Str,
+                            "Review as pcb (a board) or mmic (a die): which checks run. The layout's saved choice applies "
+                          + "otherwise, pcb when it has none. Naming a check the other kind runs is refused."),
                         new("all", "--all", OptKind.Flag,
                             "List every finding in the text report; by default at most 20 per check per layer. The JSON always carries every finding."),
                         new("severity", "--severity", OptKind.Str,

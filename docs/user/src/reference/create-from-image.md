@@ -16,7 +16,7 @@ keywords: image, picture, screenshot, plot, digitise, digitize, Touchstone from 
 <li><a href="#kind">What kind of picture it is</a></li>
 <li><a href="#make">What to make of it</a></li>
 <li><a href="#canvas">The picture, and what was read</a></li>
-<li><a href="#by-hand">Correcting a layout picture by hand</a></li>
+<li><a href="#picture-by-hand">Correcting a layout picture by hand</a></li>
 <li><a href="#schematic">Schematic pictures</a></li>
 <li><a href="#scale">Scale</a></li>
 <li><a href="#plots">Plots</a></li>
@@ -143,7 +143,7 @@ highlight its part on the picture.
 | Double-click, **F** or the Zoom to Fit button | Fit the picture. It opens fitted and stays fitted as the dialog is resized, until it is zoomed or panned. |
 | Escape | Put down a measuring tool. |
 
-## Correcting a layout picture by hand {#by-hand}
+## Correcting a layout picture by hand {#picture-by-hand}
 
 The colours say where the copper is, not what every piece of it is. Once a layout picture has a scale, its pieces can
 be settled by hand before **Create**. Each choice is drawn dashed over the picture, is kept through every re-read, and

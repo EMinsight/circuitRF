@@ -1309,8 +1309,9 @@ A column that cannot answer one row is a warning.
 ## `review` — a reviewer's checklist over the board {#review}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf review &lt;layout&gt; [--cell &lt;name&gt;] [--checks id,id] [--skip id,id]
-<span class="prompt">  </span>[--set &lt;check&gt;.&lt;threshold&gt;=&lt;value&gt;]… [--defaults] [--ignore-accepted] [--all] [--severity warning|none]
-<span class="prompt">$ </span>circuitrf review [&lt;layout&gt;] --list-checks</code></pre>
+<span class="prompt">  </span>[--set &lt;check&gt;.&lt;threshold&gt;=&lt;value&gt;]… [--defaults] [--ignore-accepted] [--as pcb|mmic] [--all]
+<span class="prompt">  </span>[--severity warning|none]
+<span class="prompt">$ </span>circuitrf review [&lt;layout&gt;] [--as pcb|mmic] --list-checks</code></pre>
 
 `review` runs the [Layout Review](layout-editor.html#layout-review): the built-in checks a person
 reviewing a board runs by eye, each marking the places worth a look with a sentence saying why. It is
@@ -1321,16 +1322,23 @@ The path is a **`.clay`**, a **cell folder** holding one, or a **workspace** wit
 resolves as the editor resolves it, and placed cells are flattened as a design-rule check flattens them.
 The board is read once and every check shares that one copy.
 
+**A review is of a board or of a die.** A PCB review runs the checks below marked neither *MMIC only*; a MMIC
+review runs `ground-pin-via`, `coupled-lines`, `probe-pads` and `impedance`. The layout's saved choice applies &mdash; a board when it has
+none &mdash; and `--as` overrides it for this run.
+
 | Check | What it marks | Threshold (default) |
 |---|---|---|
 | `via-in-pad` | A via inside an SMD pad's soldermask opening. Vias in a thermal pad are left to `thermal-vias`, and a pad centred on its one plated drill is a through-hole pin, whose drill is not a via. | &mdash; |
 | `ground-via-distance` | A ground pad with no ground via within the distance, pad edge to barrel edge; the nearest one's distance is stated, looked for out to ten times the threshold. Thermal pads and through-hole pins are not judged. | `max-distance` (0.5 mm) |
 | `shared-ground-via` | A ground via that is the only one within `ground-via-distance.max-distance` of two or more ground pads. | &mdash; |
-| `thermal-vias` | A thermal pad &mdash; a ground pad of at least `thermal-pad-area` &mdash; with fewer ground vias per mm² under it than `min-via-density`, or none. A via counts when at least half its barrel is inside the pad. `thermal-pad-area` is the thermal-pad size all four pad checks use. | `thermal-pad-area` (2 mm²), `min-via-density` (1 per mm²) |
+| `thermal-vias` | A thermal pad &mdash; a ground pad of at least `thermal-pad-area` &mdash; with fewer ground vias under it than one per `max-via-pitch` squared, or none; a finding states the pad's average pitch. A via counts when at least half its barrel is inside the pad. `thermal-pad-area` is the thermal-pad size all four pad checks use. | `thermal-pad-area` (2 mm²), `max-via-pitch` (1 mm) |
 | `stacked-traces` | Two traces on adjacent copper layers, on different nets, running the same way on top of each other for at least `min-length`, each grown by `lateral-margin` first; a crossing is not a run. Layers with another copper layer between are not compared. A trace is what [`impedance`](#impedance) finds. | `lateral-margin` (0), `min-length` (1.0 mm) |
+| `coupled-lines` | Two traces of different nets on one copper layer running the same way, closer than `spacing` for at least `min-length`, both in substrate heights (h: the dielectric between the layer and its ground reference). Reported with the run's length and the closest gap. PCB and MMIC. | `spacing` (2 h), `min-length` (5 h) |
 | `edge-copper` | Copper on any copper layer closer to the board edge than the pullback. The board edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board &mdash; and cut-outs in the board are edges too. | `pullback` (0.25 mm) |
 | `edge-trace` | A trace on any copper layer closer to the board edge than `min-distance`. Copper that is not a trace is `edge-copper`'s alone. | `min-distance` (1.0 mm) |
 | `edge-stitching` | Within `band-width` of the edge: a stretch at least `max-gap` long with no ground copper on the top or bottom copper (one finding per layer), and a gap of at least `max-gap` between ground vias (a finding on no layer). Measured along the middle of the band. | `band-width` (1.0 mm), `max-gap` (2.0 mm) |
+| `ground-pin-via` | MMIC only. A placed part's terminal whose copper is ground with no via to the ground plane within `max-distance`, terminal to the via's edge; the nearest one's distance is stated, looked for out to ten times the threshold. | `max-distance` (100 µm) |
+| `probe-pads` | MMIC only. The placed GSGPADs: one whose pitch is not `probe-pitch` (the lab's probe, within 0.5 µm), a ground pad not on ground, and metal within `approach` in front of the pads on their metal or any above it. A pad inside another cell or in an array is not judged. | `probe-pitch` (150 µm), `approach` (100 µm) |
 | `impedance` | Each trace in the layout's saved [Impedance review](layout-editor.html#impedance-analysis) scope that does not pass it &mdash; FAIL, WARN or unsolved &mdash; with its verdict, worst Z0 against the target band, line type and finding kinds, marked where its findings are. Its line also says the scope and how many traces passed. With no scope saved it is **not run**: the review never analyses every trace on the board. | None of its own: target, bands, layers and scope are the Impedance review's |
 
 **The review saved in the layout applies by default** &mdash; which checks run, and each threshold that
@@ -1343,15 +1351,17 @@ was changed from its default. `--set` overrides one for this run; `--defaults` i
 | `--cell <name>` | With a workspace: the cell whose layout to review. |
 | `--checks id,id` | Run only these checks. |
 | `--skip id,id` | Do not run these checks. |
-| `--set <check>.<threshold>=<value>` | A threshold for this run, e.g. `edge-copper.pullback=0.3mm`. **A length carries its unit** (`0.3mm`, `300um`, `12mil`), and a bare number is refused, as for [`render --window`](#render). An area is a number of mm² and a density a number per mm² (`thermal-vias.thermal-pad-area=4`). Repeatable. |
+| `--set <check>.<threshold>=<value>` | A threshold for this run, e.g. `edge-copper.pullback=0.3mm`. **A length carries its unit** (`0.3mm`, `300um`, `12mil`), and a bare number is refused, as for [`render --window`](#render). **An area carries its unit squared** (`thermal-vias.thermal-pad-area=4mm2`, `4e6um2`, `6200mil2`), and a bare number is refused for the same reason. A height is a number of substrate heights (`coupled-lines.spacing=3`). Repeatable. |
 | `--defaults` | Ignore the review saved in the layout. |
 | `--ignore-accepted` | Report as if nothing had been accepted: every finding counts. |
+| `--as pcb\|mmic` | Review as a board or as a die: which checks run. Naming a check the other kind runs, in `--checks`, `--skip` or `--set`, is refused. |
 | `--all` | List every finding. By default at most 20 per check per layer are listed, followed by *… and N more*. |
 | `--severity warning\|none` | What decides the exit code. Default `none`: findings are advice. `warning` makes an unaccepted finding exit 1. |
-| `--list-checks` | List every check with its thresholds, their defaults and the layout's saved values, and run nothing. With no path it lists the defaults. |
+| `--list-checks` | List the checks of this kind of review with their thresholds, their defaults and the layout's saved values, and run nothing. With no path it lists the defaults. |
 
 stdout gives, per check, a line with its count &mdash; accepted findings counted separately &mdash; and the
-findings grouped by layer under it, each with where it is in the layout's own unit. A check that cannot
+findings grouped by layer under it, each with where it is in the layout's own unit. Lengths and areas are said in
+that unit too (an area in it squared), in the sentences and in `--list-checks`. A check that cannot
 run on this technology says **not run** and the one change that would let it, and the run carries on with
 the others: a technology with no board-outline layer, for one, cannot say where the board edge is. stderr
 says which check is running.
@@ -1364,7 +1374,7 @@ exception: it is accepted in the Impedance review (the `.clay`'s `ImpedanceAccep
 `ACCEPTED` when every finding on its trace is; a `ReviewAcceptances` entry never covers it. Its `key` is the
 Impedance review's trace key, `layer|x,y|x,y` with the trace's end points in whole µm.
 
-With `--json` the result is `review`: `technology`, `displayUnit`, `warnings` (unaccepted), `accepted`,
+With `--json` the result is `review`: `target` (`pcb` or `mmic`), `technology`, `displayUnit`, `warnings` (unaccepted), `accepted`,
 `notes` (checks not run), `checks` (each `id`, `title`, `state` &mdash; `ran`, `not-run` or `cancelled`
 &mdash; `reason`, `findings`, `accepted`, its `thresholds` with `value`, `default` and `text`, and a
 `summary` where the check states one), and

@@ -1058,6 +1058,11 @@ public static partial class LayoutRenderer
                 if (opts.Overlay?.LvsMarkers is { Count: > 0 } lvsMarkers)
                     DrawLvsMarkers(canvas, lvsMarkers, theme, ps, scaleUm);
 
+                // brief-review-6 R-rev6-5: the Layout Review's findings. Overlay-only, like LVS — the PDF
+                // report (brief-review-7) draws its own map, and an export of the artwork never carries them.
+                if (opts.Overlay?.ReviewMarkers is { Count: > 0 } reviewMarkers)
+                    DrawReviewMarkers(canvas, reviewMarkers, theme, ps, scaleUm);
+
                 // brief-artsch-8 R-as8-3: Create Schematic from Artwork's probe. Overlay-only, like LVS.
                 if (opts.Overlay?.ArtworkProbe is { Count: > 0 } artworkProbe)
                     DrawArtworkProbe(canvas, artworkProbe, theme, ps, scaleUm);

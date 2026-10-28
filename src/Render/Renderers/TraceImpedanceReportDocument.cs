@@ -876,30 +876,12 @@ public static class TraceImpedanceReportDocument
                 first += t.Issues.Count;
             }
 
-            // Seats: a failing marker, then the one with most findings, takes a seat; a marker anchored within
-            // a marker's width or so of a seat joins it. Bounded by the seat, so a dense board is many badges
-            // of neighbours rather than one chained across the page.
+            // Seats (MarkerSeats, shared with the canvas's Review markers): a failing marker, then the one with
+            // most findings, takes a seat; a marker anchored within a marker's width or so of a seat joins it.
             const float reach = 12f;
             var order = Enumerable.Range(0, marks.Count)
                 .OrderByDescending(i => marks[i].Fails && !marks[i].Accepted).ThenByDescending(i => marks[i].Count).ToList();
-            var seats = new List<(int Lead, List<int> Members)>();
-            var grid = new Dictionary<(int, int), List<int>>();
-            (int, int) Cell(SKPoint p) => ((int)MathF.Floor(p.X / reach), (int)MathF.Floor(p.Y / reach));
-            foreach (int i in order)
-            {
-                var p = marks[i].Anchor;
-                var (cx, cy) = Cell(p);
-                int seat = -1;
-                for (int gx = cx - 1; gx <= cx + 1 && seat < 0; gx++)
-                    for (int gy = cy - 1; gy <= cy + 1 && seat < 0; gy++)
-                        if (grid.TryGetValue((gx, gy), out var near))
-                            foreach (int k in near)
-                                if (SKPoint.Distance(marks[seats[k].Lead].Anchor, p) <= reach) { seat = k; break; }
-                if (seat >= 0) { seats[seat].Members.Add(i); continue; }
-                seats.Add((i, [i]));
-                (grid.TryGetValue((cx, cy), out var l) ? l : grid[(cx, cy)] = []).Add(seats.Count - 1);
-            }
-            return [.. seats.OrderBy(q => q.Members.Min())
+            return [.. MarkerSeats.Group([.. marks.Select(m => m.Anchor)], order, reach)
                             .Select(q => q.Members.Count == 1 ? marks[q.Lead] : Merge(marks, q.Members, q.Lead))];
         }
 

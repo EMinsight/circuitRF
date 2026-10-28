@@ -35,6 +35,8 @@ public static class PCellRegistry
             { ViaPCell.GroundGeneratorId, ViaPCell.GenerateGround },
             // A test-point pad, through a via or fed from a side (brief-dfr26-7).
             { TestPadPCell.GeneratorId,   TestPadPCell.Generate   },
+            // A ground-signal-ground probe pad and its line (brief-review-6 follow-up).
+            { GsgPadPCell.GeneratorId,    GsgPadPCell.Generate    },
             // The MMIC passives (brief-agent-authoring-overview.md AA-1).
             { MimCapPCell.GeneratorId,    MimCapPCell.Generate    },
             { SpiralPCell.GeneratorId,    SpiralPCell.Generate    },

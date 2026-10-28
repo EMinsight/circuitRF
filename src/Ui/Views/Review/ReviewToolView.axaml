@@ -1,0 +1,284 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:rev="using:CircuitRF.Ui.Layout.Review"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Review.ReviewToolView"
+             x:DataType="vm:ReviewTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- brief-review-6: the Layout Review, on the Impedance panel's terms. Top: the checks with their thresholds
+         inline, and Run. Below: the findings as one virtualised list — check → layer → finding. -->
+    <UserControl.Styles>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.7"/>
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Opacity" Value="0.7"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.unit">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Opacity" Value="0.6"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="3,0,0,0"/>
+        </Style>
+        <Style Selector="Button.link">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4,1"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+        <Style Selector="TextBox.threshold">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="MinHeight" Value="22"/>
+            <Setter Property="Padding" Value="4,1"/>
+            <Setter Property="Width" Value="64"/>
+        </Style>
+        <Style Selector="TextBox.threshold.modified">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColor}"/>
+        </Style>
+        <Style Selector="TextBox.threshold.invalid">
+            <Setter Property="BorderBrush" Value="{DynamicResource CrfWarningBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.warn"><Setter Property="Foreground" Value="{DynamicResource CrfWarningBrush}"/></Style>
+    </UserControl.Styles>
+
+    <Grid x:Name="PanelRoot" RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="4,2">
+
+        <!-- ── what is reviewed: a board or a die, then its checks and thresholds (R-rev6-2) ──── -->
+        <StackPanel Grid.Row="0" Spacing="4">
+        <StackPanel Orientation="Horizontal" Spacing="8" IsEnabled="{Binding Panel.IsLayoutActive}">
+            <TextBlock Text="Review as" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
+            <!-- Two toggles reading as one switch: exactly one is checked, and a click on the checked one keeps it. -->
+            <StackPanel Orientation="Horizontal" Spacing="0">
+                <ToggleButton Content="PCB" FontSize="11" Padding="12,3" MinWidth="54" CornerRadius="4,0,0,4"
+                              HorizontalContentAlignment="Center"
+                              IsChecked="{Binding Panel.IsPcb, Mode=TwoWay}"
+                              ToolTip.Tip="Review a printed circuit board: pads and vias, stacked and coupled traces, the board edge, impedance"/>
+                <ToggleButton Content="MMIC" FontSize="11" Padding="12,3" MinWidth="54" CornerRadius="0,4,4,0"
+                              HorizontalContentAlignment="Center"
+                              IsChecked="{Binding Panel.IsMmic, Mode=TwoWay}"
+                              ToolTip.Tip="Review a MMIC die: grounds far from a via, coupled lines, probe pads, impedance"/>
+            </StackPanel>
+        </StackPanel>
+        <Expander IsExpanded="True" Padding="6,4" HorizontalAlignment="Stretch"
+                  IsEnabled="{Binding Panel.IsLayoutActive}">
+            <Expander.Header>
+                <TextBlock Text="Checks" FontSize="11" FontWeight="SemiBold"/>
+            </Expander.Header>
+            <ScrollViewer x:Name="ChecksScroll" MaxHeight="300" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="ChecksList" ItemsSource="{Binding Panel.Checks}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="rev:ReviewCheckSettingRow">
+                            <!-- The title is the CheckBox's own content, so the box and the text share one baseline;
+                                 the thresholds sit under the title, indented to it. -->
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="0,2">
+                                <CheckBox Grid.Row="0" Grid.Column="0" IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                          VerticalContentAlignment="Center" MinWidth="0" Padding="6,0,0,0"
+                                          ToolTip.Tip="{Binding Description}">
+                                    <TextBlock Text="{Binding Title}" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                </CheckBox>
+                                <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2" Margin="26,0,0,0">
+                                    <ItemsControl ItemsSource="{Binding Thresholds}" IsVisible="{Binding HasThresholds}"
+                                                  IsEnabled="{Binding IsEnabled}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="rev:ReviewThresholdRow">
+                                                <StackPanel Orientation="Horizontal" Margin="0,1,10,1" ToolTip.Tip="{Binding DefaultText}">
+                                                    <TextBlock Classes="label" Text="{Binding Title}" Margin="0,0,4,0"/>
+                                                    <TextBox Classes="threshold" Text="{Binding Text, Mode=TwoWay}"
+                                                             Classes.modified="{Binding IsModified}" Classes.invalid="{Binding IsInvalid}"/>
+                                                    <TextBlock Classes="unit" Text="{Binding UnitText}"/>
+                                                    <TextBlock Text="●" FontSize="8" Margin="3,0,0,0" VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource SystemAccentColor}" IsVisible="{Binding IsModified}"
+                                                               ToolTip.Tip="Not the default"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <!-- The impedance row: its settings are the Impedance review's (brief-review-5 R-rev5-5). -->
+                                    <StackPanel Spacing="2" IsVisible="{Binding IsElsewhere}">
+                                        <TextBlock Text="{Binding SettingsText}" FontSize="11" Opacity="0.7" TextWrapping="Wrap"/>
+                                        <Button Classes="link" HorizontalAlignment="Left" Command="{Binding OpenImpedanceCommand}"
+                                                ToolTip.Tip="Its target, bands and scope are set in the Impedance panel">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <mi:MaterialIcon Kind="OpenInNew" Width="12" Height="12"/>
+                                                <TextBlock Text="Impedance panel…" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Button Grid.Row="0" Grid.Column="1" Classes="link" Content="Reset" VerticalAlignment="Center"
+                                        Command="{Binding ResetCommand}" IsVisible="{Binding IsModified}"
+                                        ToolTip.Tip="Every threshold of this check back to its default"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Expander>
+        </StackPanel>
+
+        <!-- ── Run / Cancel and the per-check progress (R-rev6-3) ─────────────────────────────── -->
+        <StackPanel Grid.Row="1" Spacing="3" Margin="0,4">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Command="{Binding Panel.RunCommand}" Padding="10,3" FontSize="12" Classes="accent"
+                        ToolTip.Tip="Review the layout with the ticked checks. The result replaces the last one.">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="Play" Width="14" Height="14"/>
+                        <TextBlock Text="Run" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding Panel.CancelCommand}" Content="Cancel" Padding="10,3" FontSize="12"
+                        IsVisible="{Binding Panel.IsRunning}"
+                        ToolTip.Tip="Stop the run; the checks that finished are kept"/>
+                <CheckBox Content="Show accepted" FontSize="11" Margin="8,0,0,0" IsVisible="{Binding Panel.HasResults}"
+                          IsChecked="{Binding Panel.ShowAccepted, Mode=TwoWay}"
+                          ToolTip.Tip="List the accepted findings. Hidden, they are still counted on their check's row."/>
+            </StackPanel>
+            <StackPanel Spacing="2" IsVisible="{Binding Panel.IsRunning}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding Panel.RunCheckText}" FontSize="11" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Panel.RunCountText}" FontSize="11" Opacity="0.65"/>
+                </Grid>
+                <ProgressBar Minimum="0" Maximum="1" Height="4" Value="{Binding Panel.RunProgress}"/>
+                <TextBlock Text="{Binding Panel.RunStageText}" FontSize="11" Opacity="0.65" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <TextBlock Text="Open a layout document to review it." FontSize="12" Opacity="0.6" Margin="0,8"
+                       TextWrapping="Wrap" IsVisible="{Binding !Panel.IsLayoutActive}"/>
+        </StackPanel>
+
+        <!-- ── the run's counts, and stale ────────────────────────────────────────────────────── -->
+        <StackPanel Grid.Row="2" Spacing="3" IsVisible="{Binding Panel.HasResults}">
+            <Border CornerRadius="4" Padding="8,4" Background="#33D98A1C" IsVisible="{Binding Panel.IsStale}">
+                <TextBlock FontSize="11" TextWrapping="Wrap" Text="{Binding Panel.StaleText}"/>
+            </Border>
+            <Border CornerRadius="4" Padding="8,4" Background="#33D98A1C" IsVisible="{Binding Panel.HasResultTargetText}">
+                <TextBlock FontSize="11" TextWrapping="Wrap" Text="{Binding Panel.ResultTargetText}"/>
+            </Border>
+            <TextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap" Text="{Binding Panel.SummaryText}"/>
+        </StackPanel>
+
+        <!-- ── the results (R-rev6-4): one list, so it virtualises. Selecting a finding zooms to it. ── -->
+        <ListBox Grid.Row="3" x:Name="RowsList" ItemsSource="{Binding Panel.Rows}"
+                 SelectedItem="{Binding Panel.SelectedRow, Mode=TwoWay}"
+                 SelectionChanged="OnRowsSelectionChanged"
+                 Background="Transparent" BorderThickness="0" SelectionMode="Multiple"
+                 IsVisible="{Binding Panel.HasResults}" Margin="0,4,0,0"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.DataTemplates>
+                <DataTemplate DataType="rev:ReviewCheckResultRow">
+                    <Grid ColumnDefinitions="18,*" Margin="0,2,0,1">
+                        <Button Grid.Column="0" Classes="link" Padding="0" VerticalAlignment="Top"
+                                Command="{Binding ToggleExpandedCommand}" IsVisible="{Binding HasChildren}"
+                                ToolTip.Tip="Show or hide this check's findings">
+                            <Panel>
+                                <mi:MaterialIcon Kind="ChevronRight" Width="14" Height="14" IsVisible="{Binding !IsExpanded}"/>
+                                <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14" IsVisible="{Binding IsExpanded}"/>
+                            </Panel>
+                        </Button>
+                        <StackPanel Grid.Column="1" Spacing="1">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding CountText}" FontSize="11" Opacity="0.75" VerticalAlignment="Center"
+                                           Classes.warn="{Binding HasFindings}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding DetailText}" FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                                       IsVisible="{Binding HasDetail}"/>
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+                <DataTemplate DataType="rev:ReviewLayerResultRow">
+                    <Grid ColumnDefinitions="18,*" Margin="18,0,0,0">
+                        <Button Grid.Column="0" Classes="link" Padding="0" VerticalAlignment="Center"
+                                Command="{Binding ToggleExpandedCommand}"
+                                ToolTip.Tip="Show or hide this layer's findings">
+                            <Panel>
+                                <mi:MaterialIcon Kind="ChevronRight" Width="14" Height="14" IsVisible="{Binding !IsExpanded}"/>
+                                <mi:MaterialIcon Kind="ChevronDown" Width="14" Height="14" IsVisible="{Binding IsExpanded}"/>
+                            </Panel>
+                        </Button>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{Binding Title}" FontSize="11" FontWeight="SemiBold" Opacity="0.85"/>
+                            <TextBlock Text="{Binding CountText}" FontSize="11" Opacity="0.6"/>
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+                <DataTemplate DataType="rev:ReviewFindingResultRow">
+                    <StackPanel Spacing="1" Margin="54,0,0,1">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Text="{Binding Sentence}" FontSize="11" TextWrapping="Wrap" MaxWidth="560"
+                                       Opacity="{Binding TextOpacity}"/>
+                            <TextBlock Grid.Column="1" Text="{Binding MeasuredText}" FontSize="11" FontWeight="SemiBold"
+                                       Opacity="0.75" Margin="8,0,4,0" VerticalAlignment="Top" IsVisible="{Binding HasMeasured}"/>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsAccepted}">
+                            <mi:MaterialIcon Kind="CheckCircle" Width="12" Height="12" Opacity="0.7"/>
+                            <TextBlock Text="{Binding AcceptedText}" FontSize="11" FontWeight="SemiBold"
+                                       TextWrapping="Wrap" MaxWidth="540" Opacity="0.8"/>
+                        </StackPanel>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.DataTemplates>
+        </ListBox>
+
+        <!-- ── accepting (R-rev6-6): select findings, Accept…, give the reason ─────────────────── -->
+        <StackPanel Grid.Row="4" Spacing="4" Margin="0,4,0,2" IsVisible="{Binding Panel.HasResults}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Command="{Binding Panel.BeginAcceptCommand}" Padding="10,3" FontSize="12"
+                        ToolTip.Tip="Accept the selected findings with a reason: they stay listed, marked ACCEPTED, and stop counting. Saved with the layout.">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <mi:MaterialIcon Kind="CheckCircleOutline" Width="14" Height="14"/>
+                        <TextBlock Text="Accept…" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding Panel.UnacceptCommand}" Content="Un-accept" Padding="10,3" FontSize="12"
+                        ToolTip.Tip="Count the selected accepted findings again"/>
+            </StackPanel>
+            <Border CornerRadius="4" Padding="8,6" Background="#14808080" IsVisible="{Binding Panel.IsAccepting}">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Panel.AcceptTargetText}" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Panel.AcceptNoteText}" FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                               IsVisible="{Binding Panel.AcceptNoteText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    <TextBox Text="{Binding Panel.AcceptReason, Mode=TwoWay}" FontSize="12" AcceptsReturn="False"
+                             PlaceholderText="Why this is fine — kept with the layout beside the finding"/>
+                    <TextBlock Text="A reason is required: it is what a reader of a clean review relies on." FontSize="11"
+                               Foreground="{DynamicResource CrfWarningBrush}" TextWrapping="Wrap"
+                               IsVisible="{Binding Panel.AcceptReasonMissing}"/>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Command="{Binding Panel.ConfirmAcceptCommand}" Content="Accept" Classes="accent" Padding="10,3" FontSize="12"/>
+                        <Button Command="{Binding Panel.CancelAcceptCommand}" Content="Cancel" Padding="10,3" FontSize="12"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <!-- Stale acceptances: listed with their saved sentence; removed only by hand. -->
+            <StackPanel Spacing="2" IsVisible="{Binding Panel.HasStaleAcceptances}">
+                <TextBlock Classes="section" Text="Accepted, but matched nothing in this run"/>
+                <TextBlock FontSize="11" Opacity="0.65" TextWrapping="Wrap"
+                           Text="The copper was moved, or the finding no longer occurs. Kept on the layout until removed."/>
+                <ItemsControl ItemsSource="{Binding Panel.StaleAcceptances}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="rev:ReviewStaleAcceptanceRow">
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,1">
+                                <StackPanel Grid.Column="0" Spacing="1">
+                                    <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding ReasonText}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Classes="link" Command="{Binding RemoveCommand}" VerticalAlignment="Top"
+                                        Content="Remove" ToolTip.Tip="Remove this acceptance from the layout"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</UserControl>

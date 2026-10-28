@@ -92,6 +92,8 @@ public static class ComponentModelFactory
             "VIA", "VIAGND",
             // A round test-point pad off a line, through a via or fed from a side (brief-dfr26-7).
             "TESTPAD",
+            // A ground-signal-ground probe pad and its line, MLIN under the hood (brief-review-6 follow-up).
+            "GSGPAD",
             // The four MMIC passives (brief-agent-authoring-overview.md AA-1), each bound to the
             // technology's stackup at extraction as MLIN is.
             "MIMCAP", "SPIRAL", "OSPIRAL", "TFR", "AIRBRIDGE",
@@ -233,6 +235,8 @@ public static class ComponentModelFactory
             return CreateViaGroundModel(parameters);
         if (typeName.Equals("TESTPAD", StringComparison.OrdinalIgnoreCase))
             return new TestPadModel(ReadTestPadGeometry(parameters));
+        if (typeName.Equals("GSGPAD", StringComparison.OrdinalIgnoreCase))
+            return CreateGsgPadModel(parameters);
         if (typeName.Equals("MIMCAP", StringComparison.OrdinalIgnoreCase))
             return CreateMimCapModel(parameters);
         if (typeName.Equals("SPIRAL", StringComparison.OrdinalIgnoreCase))
@@ -2229,6 +2233,15 @@ public static class ComponentModelFactory
 
     private static string MicrostripInstanceName(IReadOnlyDictionary<string, Value> parameters, string fallback)
         => parameters.TryGetValue("Name", out var nm) && nm.Kind == ValueKind.String ? nm.AsString() : fallback;
+
+    /// <summary>GSGPAD: MLIN's substrate and loss, its own W and L for the line, and the signal pad's PadW and PadL.</summary>
+    private static GsgPadModel CreateGsgPadModel(IReadOnlyDictionary<string, Value> parameters) => new(
+        GetReal(parameters, "W", 0.0), GetReal(parameters, "L", 0.0),
+        GetReal(parameters, "PadW", 0.0), GetReal(parameters, "PadL", 0.0),
+        GetReal(parameters, "H", DefaultSubstrateHMeters), GetReal(parameters, "T", DefaultSubstrateTMeters),
+        GetReal(parameters, "Er", DefaultSubstrateEpsR), GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM),
+        GetReal(parameters, "TanD", DefaultSubstrateTanD), MicrostripInstanceName(parameters, "GSGPAD"),
+        GetReal(parameters, "Roughness", 0.0));
 
     private static MicrostripLineModel CreateMicrostripLineModel(IReadOnlyDictionary<string, Value> parameters)
     {

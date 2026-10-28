@@ -99,7 +99,7 @@ both keys are left out of the file until there is something to say:
 
 | Key | Holds |
 |---|---|
-| `Review` | `Disabled`, the ids of the checks turned off, and `Thresholds`, each threshold changed from its default, keyed `<check>.<threshold>` (`"edge-copper.pullback": 300000`) &mdash; a length in the layout's database units, an area in mm², a density per mm² and a count as the number itself. A threshold set back to its default is removed. A check or threshold id this version does not know is kept as it is. |
+| `Review` | `Target`, `"Mmic"` when the layout is reviewed as a die (absent: a board); `Disabled`, the ids of the checks turned off; and `Thresholds`, each threshold changed from its default, keyed `<check>.<threshold>` (`"edge-copper.pullback": 300000`) &mdash; a length in the layout's database units, an area in mm² (whatever unit it is shown in), a number of substrate heights and a count as the number itself. A threshold set back to its default is removed. A check or threshold id this version does not know is kept as it is. |
 | `ReviewAcceptances` | The findings accepted, each with `Key`, `CheckId`, `Reason` (required), `AcceptedUtc`, `LayerName` and `Summary` (the finding's sentence when it was accepted). `Key` is `<check>\|<layer>/<datatype>\|<minX>,<minY>,<maxX>,<maxY>`: the check, the finding's layer and its marker's bounding box in database units, exactly as `circuitrf review --json` reports it. Moving the marked copper changes the key, and the acceptance is then listed as stale. |
 
 ## The 3D view's operations {#c3d-operations}

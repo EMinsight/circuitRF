@@ -143,7 +143,12 @@ public sealed class PadViaChecksTests
         var result = Review(four, tech, "via-in-pad", "thermal-vias");
         var finding = Assert.Single(result.Findings);
         Assert.Equal("thermal-vias", finding.CheckId);
-        Assert.Equal("4 vias under a 9.0 mm² thermal pad (0.44 per mm²); the review asks for 1.0 per mm²", finding.Sentence);
+        Assert.Equal("4 vias under a 9 mm² thermal pad, one per 1.5 mm pitch; the review asks for one per 1 mm pitch", finding.Sentence);
+
+        // Said in the layout's own unit, squared for the area.
+        four.DisplayUnit = LayoutUnit.Um;
+        Assert.Equal("4 vias under a 9,000,000 µm² thermal pad, one per 1500 µm pitch; the review asks for one per 1000 µm pitch",
+                     Assert.Single(Review(four, tech, "via-in-pad", "thermal-vias").Findings).Sentence);
 
         var (nine, _) = Paddle(3);
         Assert.Empty(Review(nine, tech, "via-in-pad", "thermal-vias").Findings);

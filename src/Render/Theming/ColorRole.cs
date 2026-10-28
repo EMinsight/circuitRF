@@ -105,6 +105,14 @@ public static class ColorRole
     public const string LayoutDrcWarning = "Layout.DrcWarning";
     public const string LayoutDrcWaived  = "Layout.DrcWaived";
 
+    /// <summary>
+    /// brief-review-6 R-rev6-5: a Layout Review finding's marker. Its own role, distinct from the DRC
+    /// colours, because the two panels' markers can be on screen together and a review finding is never an
+    /// error: a reviewer has to tell "the process forbids this" from "somebody should look at this" at a
+    /// glance. An accepted finding draws in <see cref="LayoutDrcWaived"/>, as a waived violation does.
+    /// </summary>
+    public const string LayoutReviewFinding = "Layout.ReviewFinding";
+
     // ── Stackup cross-section (docs/sonnet-briefs/brief-stackup-render-1-scene.md §7) ────────────
     //
     // The Technology Editor's stackup drawing. Eight roles, and deliberately no more: a conductor's
@@ -392,7 +400,7 @@ public static class ColorRole
         LayoutRulerAnnotationLine, LayoutRulerAnnotationText,
         LayoutEmMeshConductor, LayoutEmMeshInterface, LayoutEmMeshTruncation,
         LayoutPlanarMeshCell,
-        LayoutDrcError, LayoutDrcWarning, LayoutDrcWaived,
+        LayoutDrcError, LayoutDrcWarning, LayoutDrcWaived, LayoutReviewFinding,
         StackupBackground, StackupBandEdge, StackupDielectricFill, StackupGroundAccent,
         StackupLabelInk, StackupOnBandInk, StackupGripper, StackupDragGhost,
         HarmonicaBackground, HarmonicaAxisLine, HarmonicaAxisText, HarmonicaReadoutText,

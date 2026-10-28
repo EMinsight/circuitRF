@@ -1057,6 +1057,29 @@ any cut-out — so the pad can be solved with and without each cut-out before a 
 
 {{table: components/TestPad}}
 
+### GSG Probe Pad (GSGPAD) {#gsgpad}
+
+{{symbol: gsgpad}}
+
+A ground-signal-ground probe pad and the microstrip line leaving it, for an RF probe landing on a die or a
+board. The signal pad sits between two ground pads at `Pitch` — centre to centre, the probe's own pitch — each
+ground pad holding `NVia` vias to the plane in a row along it, and a line `W` wide and `L` long leaves the
+signal pad. Terminal 1 is where the probe's signal tip lands, the middle of the signal pad; terminal 2 is the
+line's far end. Put the measurement port on terminal 1. In the layout the probe approaches from the side away
+from the line.
+
+The model is MLIN: half the signal pad, `PadW` wide and `PadL/2` long, then the line, cascaded. The ground pads
+are ideal ground at the probe's tip, which is where a calibrated probe puts its reference; their vias are drawn
+but are not part of the circuit. It is a microstrip, never a coplanar line: the ground pads stop at the signal
+pad and do not run along the line. The vias are a [Via to Ground](#viagnd)'s, landing on the plane under the
+line — on a die, backside vias — with the technology's drill and pad; a ground pad grows longer when its row
+of vias needs the room. `NVia = 0` draws no vias, for ground pads grounded some other way.
+
+`W` is set to the 50 Ω width when the part is placed on a technology. `Pitch`, `PadW` and `PadL` are in µm and
+are the probe's, so no technology changes them.
+
+{{table: components/GsgPad}}
+
 ### Wirebond (wBond) {#wbond}
 
 {{symbol: wbond}}
