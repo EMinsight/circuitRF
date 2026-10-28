@@ -881,7 +881,8 @@ internal static class Check
         string? layerName = v.Layer is { } key ? tech?.Layers.FirstOrDefault(l => l.Key == key)?.Name : null;
 
         // A die-side rule's value is in DBU; a wire rule states its own measurement in words.
-        string? required = v.IsAssembly || v.Layer is null ? null : Spell(v.RequiredDbu);
+        string? required = v.IsAssembly || v.Layer is null || v.Kind == DrcRuleKind.MustBeEmpty
+            ? null : Spell(v.RequiredDbu);
         string? measured = v.MeasuredText ?? (v.MeasuredDbu is { } m ? Spell(m) : null);
         bool touching    = v.MeasuredDbu == 0 && v.NetA is not null && v.NetB is not null && v.NetA != v.NetB;
 

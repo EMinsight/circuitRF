@@ -990,8 +990,10 @@ lossless in both directions.
 that process's rules without anything being re-entered.
 
 The rule kinds a technology can declare are minimum width, minimum spacing, minimum separation,
-minimum enclosure, minimum overlap and metal density; each names the layer (or the layer pair) it
-applies to and the value it requires. `.ctech` files carry them, so a kit's own rules arrive with the
+minimum enclosure, minimum overlap, metal density and **must be empty**; each names the layer (or the
+layer pair) it applies to and the value it requires. A must-be-empty rule has no value: every shape
+left in its region is reported under the rule's name, which is how a rule such as "no drill inside an
+SMD pad's mask opening" is written. `.ctech` files carry them, so a kit's own rules arrive with the
 kit.
 
 {{ui: drc-violations}}

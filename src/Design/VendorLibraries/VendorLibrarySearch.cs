@@ -14,7 +14,8 @@ namespace CircuitRF.Design.VendorLibraries;
 /// a case-insensitive substring of the part name, the description, the file stem or a folder
 /// segment — or when it READS AS A VALUE (<c>10p</c>, <c>10pF</c>, <c>2.2n</c>, <c>4n7</c>,
 /// <c>1u</c>) and the entry's stated value equals it within 0.5 %. So <c>10p</c> finds a part whose
-/// header says <c>1.00e-05[uF]</c>.</para>
+/// header says <c>1.00e-05[uF]</c>. A number with its unit written apart (<c>200 fF</c>) is one
+/// token.</para>
 ///
 /// <para><b>It reads only the in-memory entry.</b> A keystroke must read no file.</para>
 /// </summary>
@@ -31,11 +32,47 @@ public static class VendorLibrarySearch
         public bool IsEmpty => Tokens.Count == 0;
     }
 
-    public static Query Parse(string? query)
-        => new([.. (query ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-                               .Select(t => TryReadValue(t, out double v, out var unit)
+    public static Query Parse(string? query) => FromTokens(Words(query));
+
+    private static Query FromTokens(IEnumerable<string> tokens)
+        => new([.. tokens.Select(t => TryReadValue(t, out double v, out var unit)
                                    ? (t, (double?)v, unit)
                                    : (t, (double?)null, VendorPartQuantity.None))]);
+
+    /// <summary>
+    /// The query's words, with a number and the UNIT written after it joined into one token:
+    /// <c>200 fF</c> is <c>200fF</c>. Every token has to match, and a unit on its own matches
+    /// nothing, so left apart the two found no part at all.
+    /// </summary>
+    private static List<string> Words(string? query)
+    {
+        var words = new List<string>();
+        foreach (string t in (query ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (words.Count > 0 && UnitWord.IsMatch(t) && BareNumber.IsMatch(words[^1])) words[^1] += t;
+            else words.Add(t);
+        }
+        return words;
+    }
+
+    /// <summary>A unit, with or without a prefix: <c>fF</c>, <c>nH</c>, <c>kΩ</c>, <c>F</c>.</summary>
+    private static readonly Regex UnitWord =
+        new(@"^([TGMkKmunpfµμ]|MEG|meg)?(F|H|Ohm|ohm|Ω)$", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// <see cref="Parse(string?)"/> for a box that is editing a VALUE: a bare number is read in
+    /// <paramref name="bareNumberUnit"/> (<c>fF</c>, <c>kΩ</c>), so <c>200</c> typed over
+    /// <c>400 fF</c> finds 200 fF. Everywhere else a bare number stays text, for
+    /// <see cref="TryReadValue(string, out double)"/>'s reason — and as text, <c>200</c> would also be
+    /// read as a case code, which no value is.
+    /// </summary>
+    public static Query Parse(string? query, string? bareNumberUnit)
+    {
+        if (string.IsNullOrEmpty(bareNumberUnit)) return Parse(query);
+        return FromTokens(Words(query).Select(t => BareNumber.IsMatch(t) ? t + bareNumberUnit : t));
+    }
+
+    private static readonly Regex BareNumber = new(@"^(\d+\.?\d*|\.\d+)$", RegexOptions.CultureInvariant);
 
     public static bool Match(VendorLibraryEntry entry, string? query) => Match(entry, Parse(query));
 

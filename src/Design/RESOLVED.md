@@ -23949,3 +23949,48 @@ grid minimum" held. The test now also requires the grid's costs to differ.
 Measured on the generated 300-part fixture (a 0402 C0G entry and a 6–20 pF search): `explain --tunables` lists 3
 and 10 candidates; Auto on two parts ran Discrete over all 30 pairs; a part plus a resistor reached cost 4.9e-12
 with the ideal capacitor, 0.118 with the real part snapped in, 0.109 after polishing the resistor.
+
+## brief review-1 — three additions to the DRC region engine (2026-10-27)
+
+`DrcRuleKind.MustBeEmpty` (appended last), `near(a, b, d[, min, max])`, a count on `interacting`, and
+`same_net(a, b)` / `on_ground(a)`. All inert unless used: an uncounted `interacting` runs the old code path, and a
+technology whose rules name no net selection builds no connectivity.
+
+**The ground reach names nets only for a reference that draws nothing.** `GroundReach.Nets` is filled by the via walk
+where a barrel reaches a flagged conductor with NO drawing layers; a drawn reference is ordinary copper and the
+partition names no ground net for it (`GroundReach`'s own remarks). So `on_ground` as specified — "a net
+`GroundReach.Nets` contains" — selects nothing on a board whose ground plane is drawn, which is most imported boards.
+It does not do so silently: it says the reference is drawn copper. Choosing a ground net on a drawn reference is a
+guess (the largest piece on it, or a stated net name) and the series rules out guessing; that decision is left for
+brief review-3, which is the first reader that needs ground pads.
+
+**A derived polygon's nets come from the pieces on the layers its own expression reads**, not from every piece it
+overlaps in plan view. Without the restriction a top-copper pad lies over an inner ground plane wherever it sits and
+every pad would be on ground. `SameNet_KeepsAPadJoinedByAViaToBOnAnotherLayer_AndDropsAnUnjoinedOne` puts the
+second-layer copper under both pads to hold this.
+
+**`near` grows A with ROUND joins and `sized` keeps MITER.** A miter-grown square corner reaches √2·d along the
+diagonal, so a square 1.05·d from a disc read as within d. B's components are dilated by the one-DBU touch, sorted by
+left edge and bounding-box rejected before any clip; counting stops once the answer is settled.
+`DrcRegionEval.NearClipCount` is the gate, not a timing.
+
+**The engine now reads `ConnectivityCache.Get` directly** and hands the partition to the evaluator — the same cached
+answer `DrcConnectivity.Extract` returned, so the net-scoped and antenna rules see the same pieces as before. The
+evaluator's own sentences (no partition, no ground reference) come back in `DrcRegionEval.Diagnostics`, each once.
+
+The rule-deck importer is unchanged (R-rev1-6): a construct it reports as unsupported stays reported.
+
+## Vendor part search: a value written with a space, and a plain number in the value box (2026-10-27)
+
+Reported against the schematic's inline value box: typing `200` over `400 fF`, or `47 pF`, found nothing though both
+values exist in the file. Two separate causes.
+
+- **A unit written apart from its number was a word of its own.** Every word must match, and `pF` alone matches
+  no part, so `47 pF` found nothing while `47pF` worked. `VendorLibrarySearch` now joins a number with a following
+  unit word (`fF`, `nH`, `kΩ`, `F`) into one token — in the shared grammar, so the palette, the Parameter Editor's
+  Part field and `find --parts` all read it the same way.
+- **A plain number is text, by design, and three or more digits read as a case code.** The palette keeps that
+  (`100` is more often a part-name fragment), but the value row's box is editing a value: there
+  `Parse(query, bareNumberUnit)` reads a plain number in the seeded value's own prefix and unit, so `200` over
+  `400 fF` is 200 fF. Without that, `200` was compared against the part's stated case code (`0402`) and failed
+  before any value comparison happened.

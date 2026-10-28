@@ -292,7 +292,8 @@ frequency range and description in the Parameter Editor. The editor's title is t
   the parts of the same kind listed under it, in value order, and the placed part highlighted:
   <kbd>↓</kbd>/<kbd>↑</kbd> and <kbd>Enter</kbd> step the value, or type to search the whole file — a
   value, a part number or words of the description (`22p 100V`) — and take a match with
-  <kbd>Enter</kbd> or a click. <kbd>Esc</kbd> changes nothing.
+  <kbd>Enter</kbd> or a click. A plain number is in the value's own unit: `22` typed over `10 pF`
+  finds 22 pF. <kbd>Esc</kbd> changes nothing.
   Double-clicking the part number does the same over the whole file.
 
 Either way the instance keeps its place, wires and labels. The footprint follows the part only when it

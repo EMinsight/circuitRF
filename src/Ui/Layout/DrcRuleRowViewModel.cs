@@ -62,7 +62,8 @@ public sealed partial class DrcRuleRowViewModel : ObservableObject
     // "second region" on a width rule invites the question of what it would have meant.
     public bool ShowRegionB   => StagedKind is DrcRuleKind.MinSeparation or DrcRuleKind.MinEnclosure
                                             or DrcRuleKind.MinOverlap or DrcRuleKind.AntennaRatio;
-    public bool ShowValue     => StagedKind is not (DrcRuleKind.Density or DrcRuleKind.AntennaRatio);
+    public bool ShowValue     => StagedKind is not (DrcRuleKind.Density or DrcRuleKind.AntennaRatio
+                                                or DrcRuleKind.MustBeEmpty);
     public bool ShowDensity   => StagedKind is DrcRuleKind.Density;
     public bool ShowMaxRatio  => StagedKind is DrcRuleKind.Density or DrcRuleKind.AntennaRatio;
     public bool ShowNetScope  => StagedKind is DrcRuleKind.MinSpacing or DrcRuleKind.MinSeparation;

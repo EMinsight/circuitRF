@@ -198,18 +198,20 @@ public static class DrcEngine
         // The technology's own layer table, so the evaluator can tell "this layer does not exist"
         // from "this design has nothing on it" — two very different things to tell a user.
         var definedLayers = tech.Layers.Select(l => l.Key).ToHashSet();
-        var eval = new DrcRegionEval(layerRegions, definedLayers);
 
         // ── Net identity, once, and only when a rule actually asks for it ───────────────────────
         // Extraction walks every via in the stackup against every piece of metal, so it is not free.
         // A technology whose rules never mention nets must not pay for it — which is most of them,
-        // and all of the starter technologies.
+        // and all of the starter technologies. A region that SELECTS by net (same_net, on_ground)
+        // asks for it too, and is handed the same partition (brief-review-1 R-rev1-4).
         bool needsNets = tech.DrcRules.Any(r =>
-            r.NetScope != DrcNetScope.Any || r.Kind == DrcRuleKind.AntennaRatio);
+            r.NetScope != DrcNetScope.Any || r.Kind == DrcRuleKind.AntennaRatio ||
+            RegionNeedsConnectivity(r.RegionA) || RegionNeedsConnectivity(r.RegionB));
 
-        IReadOnlyList<DrcNetPiece> netPieces = needsNets
-            ? DrcConnectivity.Extract(layerRegions, tech)
-            : [];
+        var partition = needsNets ? ConnectivityCache.Get(layerRegions, tech) : null;
+        IReadOnlyList<DrcNetPiece> netPieces = partition?.Pieces ?? [];
+
+        var eval = new DrcRegionEval(layerRegions, definedLayers, partition);
 
         if (needsNets)
         {
@@ -229,7 +231,8 @@ public static class DrcEngine
             // An unset rule checks nothing — but Density and AntennaRatio do not use ValueDbu at
             // all (a density is a fraction, an antenna limit is a ratio), so gating them on it
             // would silently skip every one of them.
-            bool usesValue = rule.Kind is not (DrcRuleKind.Density or DrcRuleKind.AntennaRatio);
+            bool usesValue = rule.Kind is not (DrcRuleKind.Density or DrcRuleKind.AntennaRatio
+                                               or DrcRuleKind.MustBeEmpty);
             if (usesValue && rule.ValueDbu <= 0) continue;
 
             if (!TryResolveRegion(rule, rule.RegionA, isSecond: false, eval, out var regionA, out string? whyA))
@@ -283,12 +286,15 @@ public static class DrcEngine
                 case DrcRuleKind.MinPerimeter:  CheckMinPerimeter(rule, regionA, violations);           break;
                 case DrcRuleKind.Density:       CheckDensity(rule, regionA, violations);                break;
                 case DrcRuleKind.AntennaRatio:  CheckAntennaRatio(rule, regionA, regionB, netPieces, violations); break;
+                case DrcRuleKind.MustBeEmpty:   CheckMustBeEmpty(rule, regionA, violations);            break;
             }
         }
 
         if (unusable > 0)
             diagnostics.Add($"{unusable:N0} rule(s) could not be checked and are listed above. " +
                             "Every other rule was checked normally.");
+
+        diagnostics.AddRange(eval.Diagnostics);
 
         if (eval.MissingLayers.Count > 0)
             diagnostics.Add(
@@ -320,6 +326,13 @@ public static class DrcEngine
 
         return new DrcRunResult(final, rulesEvaluated, checkedLayers.Count, checkable.Count, tech.Name, diagnostics);
     }
+
+    /// <summary>True when a rule's region text parses to an expression that selects by net. A text
+    /// that does not parse asks for nothing; the rule loop reports it as unusable.</summary>
+    private static bool RegionNeedsConnectivity(string? text) =>
+        !string.IsNullOrWhiteSpace(text) &&
+        DrcLayerExprParser.TryParse(text, out var expr, out _) && expr is not null &&
+        expr.NeedsConnectivity();
 
     private static List<DrcViolation> Sorted(IEnumerable<DrcViolation> violations)
     {
@@ -738,6 +751,19 @@ public static class DrcEngine
         foreach (var component in DrcRegions.Components(region))
             if (DrcRegionEval.AreaOfComponent(component) < rule.ValueDbu)
                 into.Add(Make(rule, component, netA: null, netB: null));
+    }
+
+    // ── Must be empty ───────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Every polygon of the region is a violation, marked by itself (brief-review-1 R-rev1-1). There
+    /// is nothing to measure: the rule's own name is the sentence, which is why it is not
+    /// <see cref="DrcRuleKind.MinArea"/> at a huge value, whose "area below" would be wrong.
+    /// </summary>
+    private static void CheckMustBeEmpty(DrcRule rule, Paths64 region, List<DrcViolation> into)
+    {
+        foreach (var component in DrcRegions.Components(region))
+            into.Add(Make(rule, component, netA: null, netB: null));
     }
 
     private static void CheckMinPerimeter(DrcRule rule, Paths64 region, List<DrcViolation> into)

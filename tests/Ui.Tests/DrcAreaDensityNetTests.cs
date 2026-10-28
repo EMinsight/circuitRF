@@ -394,4 +394,112 @@ public class DrcAreaDensityNetTests
         Assert.Contains(problems, p => p.Contains("no maximum ratio"));
         Assert.Contains(problems, p => p.Contains("only a spacing or separation rule can use"));
     }
+
+    // ── brief-review-1: MustBeEmpty and the net-aware selections ────────────────────────────────
+
+    private static DrcRule MustBeEmpty(string region) => new()
+    {
+        Name = "must be empty", Kind = DrcRuleKind.MustBeEmpty, Layer = M1, RegionA = region,
+        Severity = DrcSeverity.Warning,
+    };
+
+    [Fact]
+    public void MustBeEmpty_MarksEveryPolygon_AndNothingOnAnEmptyRegion()
+    {
+        var shapes = new List<LayoutShape> { Rect(M1, 0, 0, 100, 100), Rect(M1, 500, 0, 700, 50) };
+
+        var result = DrcEngine.Run(shapes, Tech(MustBeEmpty("1/0")));
+
+        Assert.Equal([new Bbox(0, 0, 100, 100), new Bbox(500, 0, 700, 50)],
+                     result.Violations.Select(v => v.Marker).ToList());
+        Assert.All(result.Violations, v =>
+        {
+            Assert.Equal("must be empty", v.RuleName);
+            Assert.Null(v.MeasuredText);
+            Assert.Equal(DrcSeverity.Warning, v.Severity);
+        });
+
+        Assert.Empty(DrcEngine.Run(shapes, Tech(MustBeEmpty("4/0"))).Violations);
+    }
+
+    /// <summary>
+    /// The M2 plane lies under BOTH pads in plan view, and only one pad is tied to it by a via. A
+    /// polygon's nets come from the pieces on the layers its own expression reads, so the unjoined
+    /// pad is not on the plane's net merely for sitting over it.
+    /// </summary>
+    [Fact]
+    public void SameNet_KeepsAPadJoinedByAViaToBOnAnotherLayer_AndDropsAnUnjoinedOne()
+    {
+        var shapes = new List<LayoutShape>
+        {
+            Rect(M1, 0, 0, 100, 100),          // joined
+            Rect(M1, 300, 0, 400, 100),        // not joined
+            Rect(M2, -50, -50, 450, 150),
+            Rect(VIA, 30, 30, 70, 70),
+        };
+
+        var result = DrcEngine.Run(shapes, Tech(MustBeEmpty("same_net(1/0, 2/0)")));
+
+        Assert.Equal(new Bbox(0, 0, 100, 100), Assert.Single(result.Violations).Marker);
+    }
+
+    [Fact]
+    public void OnGround_WithNoGroundReferenceFlagged_IsEmpty_AndSaysSoOnce()
+    {
+        var tech = Tech(MustBeEmpty("on_ground(1/0)"), MustBeEmpty("on_ground(1/0)"));
+        foreach (var l in tech.Stackup.Layers) l.IsGroundReference = false;
+        var shapes = new List<LayoutShape> { Rect(M1, 0, 0, 100, 100) };
+
+        var result = DrcEngine.Run(shapes, tech);
+
+        Assert.Empty(result.Violations);
+        Assert.Single(result.Diagnostics, d => d.Contains("on_ground(1/0)") && d.Contains("ground reference"));
+    }
+
+    /// <summary>The ground nets are the partition's: a reference that draws nothing, reached by a
+    /// via. The M2 piece the via lands on is ground; the one beside it is not.</summary>
+    [Fact]
+    public void OnGround_KeepsTheCopperAViaCarriesToAnUndrawnReference()
+    {
+        var tech = Tech(MustBeEmpty("on_ground(2/0)"));
+        tech.Stackup.Layers.Single(l => l.Name == "Metal1").DrawingLayers.Clear();
+        var shapes = new List<LayoutShape>
+        {
+            Rect(M2, 0, 0, 100, 100),
+            Rect(M2, 300, 0, 400, 100),
+            Rect(VIA, 30, 30, 70, 70),
+        };
+
+        var result = DrcEngine.Run(shapes, tech);
+
+        Assert.Equal(new Bbox(0, 0, 100, 100), Assert.Single(result.Violations).Marker);
+    }
+
+    /// <summary>
+    /// The additions are inert unless used: a shipped technology's own rules report the same
+    /// violations, keys and diagnostics with a rule in the new vocabulary beside them that selects
+    /// nothing — and that rule asks for no connectivity.
+    /// </summary>
+    [Fact]
+    public void AShippedTechnology_ReportsTheSameViolations_WithAnInertNewRuleBesideIt()
+    {
+        var shapes = new List<LayoutShape>
+        {
+            Rect(new LayerKey(1, 0), 0, 0, 1_000_000, 100_000),            // narrower than the rule
+            Rect(new LayerKey(1, 0), 0, 150_000, 1_000_000, 400_000),      // 50 µm from it
+            Rect(new LayerKey(2, 0), 0, 0, 2_000_000, 2_000_000),
+        };
+
+        var plain = DrcEngine.Run(shapes, ShippedTechnologies.Load("pcb-2layer_FR-4_70mil_1oz"));
+
+        var withRule = ShippedTechnologies.Load("pcb-2layer_FR-4_70mil_1oz");
+        withRule.DrcRules.Add(MustBeEmpty("near(7/0, 1/0, 100000, 2, )"));
+        var extended = DrcEngine.Run(shapes, withRule);
+
+        Assert.NotEmpty(plain.Violations);
+        Assert.Equal(plain.Violations.Select(v => v.Key), extended.Violations.Select(v => v.Key));
+        Assert.Equal(plain.Violations.Select(v => v.MarkerRings.Sum(r => r.Sum())),
+                     extended.Violations.Select(v => v.MarkerRings.Sum(r => r.Sum())));
+        Assert.Equal(plain.Diagnostics, extended.Diagnostics);
+    }
 }

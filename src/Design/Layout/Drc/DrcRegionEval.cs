@@ -17,10 +17,16 @@ namespace CircuitRF.Design.Layout.Drc;
 /// a check that runs once and one that runs once per rule. The cache is keyed by the expression
 /// itself — <see cref="DrcLayerExpr"/> is a record tree, so two structurally identical expressions
 /// are equal and share an entry with no hand-written key to get wrong.</para>
+///
+/// <para><b>The net partition is optional</b> (brief-review-1 R-rev1-4). A run builds connectivity
+/// only when some rule asks for it, and hands the one it built — <see cref="ConnectivityCache"/>'s —
+/// to the evaluator. Without one, a net-aware selection selects nothing and says so in
+/// <see cref="Diagnostics"/>, once.</para>
 /// </summary>
 internal sealed class DrcRegionEval(
     IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
-    IReadOnlySet<LayerKey>?                definedLayers = null)
+    IReadOnlySet<LayerKey>?                definedLayers = null,
+    ConnectivityPartition?                 partition = null)
 {
     /// <summary>
     /// How far apart two regions may be and still count as touching, for the topological
@@ -50,6 +56,28 @@ internal sealed class DrcRegionEval(
     /// <summary>How many sub-expressions were evaluated rather than served from the cache.
     /// Test-only instrumentation — there is no other way to observe that memoization is working.</summary>
     internal int EvaluatedNodeCount { get; private set; }
+
+    /// <summary>
+    /// Clipper operations run by <see cref="DrcLayerExpr.Near"/> and a counted
+    /// <c>interacting</c> to test one polygon of A against one of B — the pairs that survived the
+    /// bounding-box rejection. The cost gate for those two (R-rev1-5): a board with thousands of
+    /// drills and pads must not clip every pair.
+    /// </summary>
+    internal long NearClipCount { get; private set; }
+
+    /// <summary>
+    /// What an evaluation had to say that is not a missing layer — a net selection with no
+    /// partition, an <c>on_ground</c> with no ground reference. Each sentence appears once however
+    /// many nodes said it; the run reports them.
+    /// </summary>
+    public IReadOnlyList<string> Diagnostics => _diagnostics;
+
+    private readonly List<string> _diagnostics = [];
+
+    private void Report(string sentence)
+    {
+        if (!_diagnostics.Contains(sentence)) _diagnostics.Add(sentence);
+    }
 
     public Paths64 Evaluate(DrcLayerExpr expr)
     {
@@ -105,7 +133,21 @@ internal sealed class DrcRegionEval(
             }
 
             case DrcLayerExpr.Select sel:
-                return Selection(Evaluate(sel.A), Evaluate(sel.B), sel.Op);
+                // Uncounted is today's selection, by today's code: R-rev1-3's "exactly today's".
+                return sel.IsCounted
+                    ? CountWithin(Evaluate(sel.A), Evaluate(sel.B), 0, sel.MinCount ?? 0, sel.MaxCount)
+                    : Selection(Evaluate(sel.A), Evaluate(sel.B), sel.Op);
+
+            case DrcLayerExpr.Near nr:
+                return nr.MinCount is null && nr.MaxCount is null
+                    ? CountWithin(Evaluate(nr.A), Evaluate(nr.B), nr.DistanceDbu, 1, null)
+                    : CountWithin(Evaluate(nr.A), Evaluate(nr.B), nr.DistanceDbu, nr.MinCount ?? 0, nr.MaxCount);
+
+            case DrcLayerExpr.SameNet sn:
+                return SameNetOf(sn);
+
+            case DrcLayerExpr.OnGround og:
+                return OnGroundOf(og);
 
             case DrcLayerExpr.Holes h:
                 return HolesOf(Evaluate(h.A));
@@ -122,6 +164,135 @@ internal sealed class DrcRegionEval(
             default:
                 throw new NotSupportedException($"Unhandled expression node {expr.GetType().Name}.");
         }
+    }
+
+    /// <summary>
+    /// Keeps each component of A for which the number of distinct components of B within
+    /// <paramref name="distanceDbu"/> lies in [<paramref name="min"/>, <paramref name="max"/>].
+    /// See <see cref="DrcLayerExpr.Near"/> for why the growth is ROUND.
+    ///
+    /// <para>A is grown by the distance and tested against each B component with the same one-DBU
+    /// touch dilation <c>interacting</c> uses, so a distance of zero is "touches". B's bounding boxes
+    /// reject a pair before any clip, and counting stops as soon as the answer is settled.</para>
+    /// </summary>
+    private Paths64 CountWithin(Paths64 a, Paths64 b, long distanceDbu, int min, int? max)
+    {
+        if (a.Count == 0) return [];
+
+        // Each B component dilated for touch, with its bounds, sorted by left edge so the scan for
+        // one A stops at the first B that starts to its right.
+        var bs = new List<(Bbox Bounds, Paths64 Touch)>();
+        foreach (var c in DrcRegions.Components(b))
+        {
+            var touch = Clipper.InflatePaths(c, TouchDilationDbu, JoinType.Miter, EndType.Polygon, MiterLimit);
+            bs.Add((DrcRegions.BoundsOf(touch), touch));
+        }
+        bs.Sort((x, y) => x.Bounds.MinX.CompareTo(y.Bounds.MinX));
+
+        var kept = new Paths64();
+        foreach (var component in DrcRegions.Components(a))
+        {
+            var grown = distanceDbu > 0
+                ? Clipper.InflatePaths(component, distanceDbu, JoinType.Round, EndType.Polygon)
+                : component;
+            var gb = DrcRegions.BoundsOf(grown);
+
+            int count = 0;
+            foreach (var (bounds, touch) in bs)
+            {
+                if (bounds.MinX > gb.MaxX) break;
+                if (!bounds.Intersects(gb)) continue;
+
+                NearClipCount++;
+                if (IsEmpty(Clipper.BooleanOp(ClipType.Intersection, grown, touch, LayoutClipper.Rule))) continue;
+
+                count++;
+                // Settled: past the maximum it can only stay past; with no maximum, reaching the
+                // minimum is enough.
+                if (max is { } m ? count > m : count >= min) break;
+            }
+
+            if (count >= min && (max is null || count <= max)) kept.AddRange(component);
+        }
+        return kept;
+    }
+
+    // ── Net-aware selections (R-rev1-4) ──────────────────────────────────────────────────────
+
+    private Paths64 SameNetOf(DrcLayerExpr.SameNet sn)
+    {
+        var a = Evaluate(sn.A);
+        var b = Evaluate(sn.B);
+        if (!HasPartition("same_net", sn)) return [];
+        if (a.Count == 0 || b.Count == 0) return [];
+
+        var netsOfB = new HashSet<int>();
+        var bLayers = sn.B.ReferencedLayers();
+        foreach (var c in DrcRegions.Components(b)) netsOfB.UnionWith(NetsOf(c, bLayers));
+
+        var aLayers = sn.A.ReferencedLayers();
+        var kept = new Paths64();
+        foreach (var c in DrcRegions.Components(a))
+            if (NetsOf(c, aLayers).Overlaps(netsOfB)) kept.AddRange(c);
+        return kept;
+    }
+
+    private Paths64 OnGroundOf(DrcLayerExpr.OnGround og)
+    {
+        var a = Evaluate(og.A);
+        if (!HasPartition("on_ground", og)) return [];
+
+        var ground = partition!.Ground;
+        if (ground.ReferenceName is null)
+        {
+            Report($"{og} selected nothing: no conductor in the stackup is marked as the ground " +
+                   "reference. Flag the ground plane in the Technology Editor.");
+            return [];
+        }
+
+        // The partition infers ground nets only for a reference that draws nothing (GroundReach's
+        // remarks); a drawn one is ordinary copper and names no ground net. Said, not left empty.
+        if (ground.Nets.Count == 0)
+        {
+            Report(ground.ReferenceDraws
+                ? $"{og} selected nothing: the ground reference \"{ground.ReferenceName}\" is drawn " +
+                  "copper, and the connectivity names a ground net only where a via reaches a reference " +
+                  "that draws nothing."
+                : $"{og} selected nothing: no via reaches the ground reference \"{ground.ReferenceName}\".");
+            return [];
+        }
+
+        if (a.Count == 0) return [];
+        var layers = og.A.ReferencedLayers();
+        var kept = new Paths64();
+        foreach (var c in DrcRegions.Components(a))
+            if (NetsOf(c, layers).Overlaps(ground.Nets)) kept.AddRange(c);
+        return kept;
+    }
+
+    private bool HasPartition(string name, DrcLayerExpr node)
+    {
+        if (partition is not null) return true;
+        Report($"{node} selected nothing: '{name}' needs connectivity, which this run did not build.");
+        return false;
+    }
+
+    /// <summary>The nets of one polygon: those of every piece on <paramref name="layers"/> it
+    /// overlaps or touches. See <see cref="DrcLayerExpr.OnGround"/>.</summary>
+    private HashSet<int> NetsOf(Paths64 component, IReadOnlyCollection<LayerKey> layers)
+    {
+        var nets = new HashSet<int>();
+        var touch = Clipper.InflatePaths(component, TouchDilationDbu, JoinType.Miter, EndType.Polygon, MiterLimit);
+        var bounds = DrcRegions.BoundsOf(touch);
+
+        foreach (var piece in partition!.Pieces)
+        {
+            if (nets.Contains(piece.Net) || !layers.Contains(piece.Layer)) continue;
+            if (!piece.Bounds.Intersects(bounds)) continue;
+            if (!IsEmpty(Clipper.BooleanOp(ClipType.Intersection, piece.Paths, touch, LayoutClipper.Rule)))
+                nets.Add(piece.Net);
+        }
+        return nets;
     }
 
     private static Paths64 Boolean(ClipType op, Paths64 a, Paths64 b)

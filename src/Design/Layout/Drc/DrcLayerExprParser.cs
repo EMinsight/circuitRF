@@ -28,7 +28,14 @@ namespace CircuitRF.Design.Layout.Drc;
 ///   call    := NAME '(' expr (',' expr)* [',' INT] ')'
 ///   NAME    := and | or | not | xor | sized | merged | holes
 ///            | interacting | not_interacting | inside | outside | covering | not_covering
+///            | with_area | with_perimeter | near | same_net | on_ground
+///
+///   interacting(a, b[, min, max])     a count of distinct B polygons touched
+///   near(a, b, d[, min, max])         a count of distinct B polygons within d DBU
+///   same_net(a, b)    on_ground(a)    net-aware selections
 /// </code>
+/// <para>A count is two slots, either of which may be empty (an open bound), as in
+/// <c>with_area</c>: <c>near(1/0, 2/0, 500, 2, )</c> is "at least two".</para>
 /// </summary>
 public static class DrcLayerExprParser
 {
@@ -106,8 +113,33 @@ public static class DrcLayerExprParser
                 break;
 
             case DrcLayerExpr.Select sel:
-                Binary(NameOf(sel.Op), sel.A, sel.B, sb);
+                if (sel.IsCounted)
+                {
+                    sb.Append(NameOf(sel.Op)).Append('(');
+                    Write(sel.A, sb);
+                    sb.Append(", ");
+                    Write(sel.B, sb);
+                    Count(sel.MinCount, sel.MaxCount, sb);
+                    sb.Append(')');
+                }
+                else
+                {
+                    Binary(NameOf(sel.Op), sel.A, sel.B, sb);
+                }
                 break;
+
+            case DrcLayerExpr.Near nr:
+                sb.Append("near(");
+                Write(nr.A, sb);
+                sb.Append(", ");
+                Write(nr.B, sb);
+                sb.Append(", ").Append(nr.DistanceDbu.ToString(CultureInfo.InvariantCulture));
+                if (nr.MinCount is not null || nr.MaxCount is not null) Count(nr.MinCount, nr.MaxCount, sb);
+                sb.Append(')');
+                break;
+
+            case DrcLayerExpr.SameNet sn: Binary("same_net", sn.A, sn.B, sb); break;
+            case DrcLayerExpr.OnGround og: Unary("on_ground", og.A, sb); break;
 
             case DrcLayerExpr.Holes h:  Unary("holes", h.A, sb); break;
             case DrcLayerExpr.Merged m: Unary("merged", m.A, sb); break;
@@ -133,6 +165,12 @@ public static class DrcLayerExprParser
             into.Append(name).Append('(');
             Write(a, into);
             into.Append(')');
+        }
+
+        static void Count(int? lo, int? hi, StringBuilder into)
+        {
+            into.Append(", ").Append(lo?.ToString(CultureInfo.InvariantCulture) ?? "");
+            into.Append(", ").Append(hi?.ToString(CultureInfo.InvariantCulture) ?? "");
         }
 
         // An open bound writes as an empty slot rather than a sentinel number: `with_area(1/0, 100, )`
@@ -279,7 +317,24 @@ public static class DrcLayerExprParser
         if (SelectOpFor(name) is { } op)
         {
             Require(args.Count == 2, $"'{name}' takes two layer operands.", pos);
-            return new DrcLayerExpr.Select(args[0], args[1], op);
+            if (ranged.Count == 0) return new DrcLayerExpr.Select(args[0], args[1], op);
+
+            Require(op == DrcSelectOp.Interacting,
+                $"only 'interacting' takes a count ('{name}' does not; not_interacting(a, b) is interacting(a, b, 0, 0)).", pos);
+            var (lo, hi) = CountOf(name, ranged, pos);
+            return new DrcLayerExpr.Select(args[0], args[1], op, lo, hi);
+        }
+
+        if (name == "near")
+        {
+            Require(args.Count == 2, "'near' takes two layer operands.", pos);
+            Require(ranged.Count is 1 or 3 && ranged[0].HasValue,
+                "'near' needs a distance in DBU, then optionally a minimum and a maximum count, e.g. near(1/0, 2/0, 500) or near(1/0, 2/0, 500, 2, ).", pos);
+            Require(ranged[0]!.Value >= 0, "'near' needs a distance of zero or more.", pos);
+            if (ranged.Count == 1) return new DrcLayerExpr.Near(args[0], args[1], ranged[0]!.Value);
+
+            var (lo, hi) = CountOf(name, ranged.GetRange(1, 2), pos);
+            return new DrcLayerExpr.Near(args[0], args[1], ranged[0]!.Value, lo, hi);
         }
 
         switch (name)
@@ -306,9 +361,28 @@ public static class DrcLayerExprParser
             case "merged":
                 Require(args.Count == 1, "'merged' takes one layer operand.", pos);
                 return new DrcLayerExpr.Merged(args[0]);
+            case "same_net":
+                Require(args.Count == 2 && ranged.Count == 0, "'same_net' takes two layer operands.", pos);
+                return new DrcLayerExpr.SameNet(args[0], args[1]);
+            case "on_ground":
+                Require(args.Count == 1 && ranged.Count == 0, "'on_ground' takes one layer operand.", pos);
+                return new DrcLayerExpr.OnGround(args[0]);
             default:
                 throw new FormatException($"Unknown operation '{name}'.");
         }
+    }
+
+    /// <summary>A count's two slots: a minimum and a maximum, either open, not both, neither
+    /// negative, and the minimum not above the maximum.</summary>
+    private static (int? Lo, int? Hi) CountOf(string name, List<long?> slots, int pos)
+    {
+        Require(slots.Count == 2, $"'{name}' takes a count as a minimum and a maximum, either of which may be empty.", pos);
+        Require(slots[0].HasValue || slots[1].HasValue, $"'{name}' needs at least one bound on its count.", pos);
+        foreach (var v in slots)
+            Require(v is null or (>= 0 and <= int.MaxValue), $"'{name}' needs a count of zero or more.", pos);
+        if (slots[0] is { } lo && slots[1] is { } hi)
+            Require(lo <= hi, $"'{name}' has a minimum count above its maximum.", pos);
+        return ((int?)slots[0], (int?)slots[1]);
     }
 
     private static void Require(bool ok, string message, int pos)

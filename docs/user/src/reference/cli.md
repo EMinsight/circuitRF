@@ -2855,7 +2855,7 @@ workspace the application has open.
 With `--parts`, `find` searches the workspace's [vendor part libraries](pdk-integration.html#vendor)
 instead of listing documents. Words are separated by spaces and every word must match. A word matches a
 part when it appears in the part's name, its description (its unit brackets dropped, so `50V` finds
-`50[V]`), its file or its folder. A word that reads as a value (`10p`, `10pF`, `2.2n`, `4n7`) matches
+`50[V]`), its file or its folder. A word that reads as a value (`10p`, `10pF`, `10 pF`, `2.2n`, `4n7`) matches
 the part's stated value within 0.5 % instead, and a unit, when given, must be the part's (`10nH`
 finds inductors only). A case size matches the stated size exactly: `0603` the imperial code, `1608M`
 the metric one. The palette's search box and the Parameter Editor's Part field use the same rules.

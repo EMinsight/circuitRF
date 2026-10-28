@@ -157,6 +157,24 @@ public sealed class VendorPlacedPartTests : IDisposable
         _ = model;
     }
 
+    // A bare number typed over the value row's seed is in the seed's own unit: 3 over 1.5 pF is 3 pF,
+    // and so is 3 pF written with its unit apart.
+    // Read as text it matched nothing — and, three or more digits, was taken for a case code.
+    [Fact]
+    public void TheValueRowsInlineEdit_ReadsABareNumberInTheSeededUnit()
+    {
+        BuildIndex();
+        var (_, comp, vm, _) = OpenEditor(VendorPart("TSTC0402A0001"));
+
+        vm.BeginInlineEditForHit(new SchematicHitTest.HitResult(SchematicHitTest.HitKind.ComponentVendorValue, comp.Id, 2), 0, 0);
+        foreach (string typed in new[] { "3", "3 pF" })
+        {
+            vm.InlineEditValue = typed;
+            Assert.Contains(vm.VendorInlineMatches, m => m.Part == "TSTC0402A0004");
+            Assert.All(vm.VendorInlineMatches, m => Assert.Equal("3 pF", m.Entry.Header.ValueText()));
+        }
+    }
+
     // 4 — the footprint follows the part only when it came from the part; undo restores both.
     [Fact]
     public void TheFootprint_FollowsThePart_OnlyWhenItCameFromThePart()

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using CircuitRF.Ui.Layout;
@@ -287,5 +288,116 @@ public class DrcRegionEvalTests
         // the record tree's own equality, not reference identity.
         eval.Evaluate(DrcLayerExprParser.Parse("and(1/0, 2/0)"));
         Assert.Equal(afterFirst, eval.EvaluatedNodeCount);
+    }
+}
+
+/// <summary>
+/// brief-review-1's additions to the expression vocabulary: <c>near</c> with a count, a count on
+/// <c>interacting</c>, and the net-aware spellings' text form. The net selections' evaluation is in
+/// <see cref="DrcAreaDensityNetTests"/>, beside the rest of the net-aware rules.
+/// </summary>
+public class DrcLayerExprReviewAdditionsTests
+{
+    private static readonly LayerKey A = new(1, 0);
+    private static readonly LayerKey B = new(2, 0);
+
+    private static Paths64 Rect(long x1, long y1, long x2, long y2) =>
+        [[new Point64(x1, y1), new Point64(x2, y1), new Point64(x2, y2), new Point64(x1, y2)]];
+
+    private static Paths64 Disc(long cx, long cy, long r) => [Clipper.Ellipse(new Point64(cx, cy), r, r, 256)];
+
+    private static Paths64 All(params Paths64[] parts)
+    {
+        var all = new Paths64();
+        foreach (var p in parts) all.AddRange(p);
+        return all;
+    }
+
+    private static DrcRegionEval Eval(Paths64 a, Paths64 b) =>
+        new(new Dictionary<LayerKey, Paths64> { [A] = a, [B] = b });
+
+    [Theory]
+    [InlineData("interacting(1/0, 2/0, 2, )")]
+    [InlineData("interacting(1/0, 2/0, , 3)")]
+    [InlineData("near(1/0, 2/0, 500)")]
+    [InlineData("near(1/0, 2/0, 500, 2, )")]
+    [InlineData("near(1/0, 2/0, 500, 0, 0)")]
+    [InlineData("same_net(1/0, 2/0)")]
+    [InlineData("on_ground(and(1/0, 2/0))")]
+    public void EveryNewSpelling_RoundTripsExactly_AndReadsBothOperands(string text)
+    {
+        Assert.True(DrcLayerExprParser.TryParse(text, out var expr, out string? err), err);
+        Assert.Equal(text, DrcLayerExprParser.Format(expr!));
+        Assert.Equal([A, B], expr!.ReferencedLayers().OrderBy(k => k.Layer).ToList());
+    }
+
+    [Theory]
+    [InlineData("not_interacting(1/0, 2/0, 0, 0)")]   // the count belongs to interacting alone
+    [InlineData("interacting(1/0, 2/0, , )")]         // a count with no bound
+    [InlineData("interacting(1/0, 2/0, 3, 1)")]       // minimum above maximum
+    [InlineData("near(1/0, 2/0)")]                    // no distance
+    [InlineData("near(1/0, 2/0, 500, 2)")]            // half a count
+    [InlineData("same_net(1/0)")]
+    public void AMalformedNewSpelling_ReturnsFalseWithAReason(string text)
+    {
+        Assert.False(DrcLayerExprParser.TryParse(text, out _, out string? err));
+        Assert.False(string.IsNullOrWhiteSpace(err));
+    }
+
+    /// <summary>
+    /// The case a miter offset gets wrong: a square's corner pointing diagonally at a disc. Grown by
+    /// d with miter joins the corner reaches √2·d along the diagonal, so 1.05·d would read as near.
+    /// </summary>
+    [Theory]
+    [InlineData(0.95, true)]
+    [InlineData(1.05, false)]
+    public void Near_MeasuresTheTrueDistance_AtADiagonalCorner(double fraction, bool kept)
+    {
+        const long r = 2000, d = 1000;
+        long c = (long)Math.Round((r + fraction * d) / Math.Sqrt(2));
+        var eval = Eval(Rect(c, c, c + 1000, c + 1000), Disc(0, 0, r));
+
+        var result = eval.Evaluate(DrcLayerExprParser.Parse($"near(1/0, 2/0, {d})"));
+
+        Assert.Equal(kept, result.Count > 0);
+    }
+
+    /// <summary>
+    /// A count of distinct B polygons — and B's bounding boxes reject every pair that cannot be
+    /// near before any clip: a far-off square is never clipped, and a disc stops counting once it
+    /// has the two it needs.
+    /// </summary>
+    [Fact]
+    public void Near_WithAMinimumCount_KeepsOnlyTheDiscWithEnoughNeighbours_AndClipsOnlyCandidates()
+    {
+        var discs = All(Disc(0, 0, 1000), Disc(100_000, 0, 1000));
+        var squares = All(
+            Rect(-1900, -200, -1500, 200), Rect(1500, -200, 1900, 200),   // two by the first disc
+            Rect(101_500, -200, 101_900, 200),                           // one by the second
+            Rect(50_000, 50_000, 50_400, 50_400));                       // near nothing
+        var eval = Eval(discs, squares);
+
+        var result = eval.Evaluate(DrcLayerExprParser.Parse("near(1/0, 2/0, 1000, 2, )"));
+
+        var bounds = DrcRegions.BoundsOf(result);
+        Assert.True(bounds.MaxX < 50_000, "only the first disc is kept");
+        Assert.True(bounds.MinX < 0);
+        Assert.Equal(3, eval.NearClipCount);
+    }
+
+    [Fact]
+    public void Interacting_WithNoCount_IsExactlyTheCountedFormFromOne_AndACountSelects()
+    {
+        var a = All(Rect(0, 0, 100, 100), Rect(1000, 0, 1100, 100));
+        var b = All(Rect(50, 50, 150, 150), Rect(-50, -50, 10, 10));     // both on the first rect
+        var eval = Eval(a, b);
+
+        var plain = eval.Evaluate(DrcLayerExprParser.Parse("interacting(1/0, 2/0)"));
+        var fromOne = eval.Evaluate(DrcLayerExprParser.Parse("interacting(1/0, 2/0, 1, )"));
+        Assert.Equal(plain, fromOne);
+        Assert.Equal(new Bbox(0, 0, 100, 100), DrcRegions.BoundsOf(plain));
+
+        Assert.NotEmpty(eval.Evaluate(DrcLayerExprParser.Parse("interacting(1/0, 2/0, 2, )")));
+        Assert.Empty(eval.Evaluate(DrcLayerExprParser.Parse("interacting(1/0, 2/0, 3, )")));
     }
 }

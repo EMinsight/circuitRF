@@ -182,6 +182,7 @@ public static class TechnologyMerge
         {
             DrcRuleKind.Density      => $"window {r.WindowDbu}, {r.MinRatio}..{r.MaxRatio}",
             DrcRuleKind.AntennaRatio => $"max ratio {r.MaxRatio}",
+            DrcRuleKind.MustBeEmpty  => "must be empty",
             _                        => $"{r.ValueDbu} DBU",
         };
         string region = r.RegionA is { } a ? $" on {a}" : "";

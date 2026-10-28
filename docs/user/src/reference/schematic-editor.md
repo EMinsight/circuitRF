@@ -97,7 +97,8 @@ word matches when it appears in the part number, the description (with or withou
 `50V` finds `50[V]`), the file or the folder name. Two kinds of word are read more exactly:
 
 - **A value** — `10p`, `10pF`, `2.2n`, `4n7` — finds the part whose stated value is that, however the
-  library wrote it. A unit, when you give one, must match the part: `10nH` finds inductors only.
+  library wrote it, and `10 pF` with a space is the same word. A unit, when you give one, must match
+  the part: `10nH` finds inductors only.
 - **A case size** — `0603` — is the imperial size the library states, and `1608M` the metric one. The
   library writes both (`1608M(0603)`), and `0603` never finds a 0201 part through its metric `0603M`.
 

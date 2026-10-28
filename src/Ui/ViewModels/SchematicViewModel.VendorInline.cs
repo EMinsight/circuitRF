@@ -80,7 +80,8 @@ public sealed partial class SchematicViewModel
             rows = _vendorInlineValueRow ? VendorPartChange.SameKind(_vendorInlineEntries, _vendorInlineCurrent!) : _vendorInlineEntries;
         else
         {
-            var q = VendorLibrarySearch.Parse(text);
+            // On the value row a bare number is in the seeded value's own unit: 200 over 400 fF is 200 fF.
+            var q = VendorLibrarySearch.Parse(text, _vendorInlineValueRow ? SeedUnit(_vendorInlineSeed) : null);
             rows = q.IsEmpty ? _vendorInlineEntries : _vendorInlineEntries.Where(e => VendorLibrarySearch.Match(e, q));
         }
 
@@ -94,6 +95,14 @@ public sealed partial class SchematicViewModel
         }
         SelectedVendorInlineMatch = current ?? VendorInlineMatches.FirstOrDefault();
         IsVendorInlineOpen = VendorInlineMatches.Count > 0;
+    }
+
+    /// <summary>The prefix and unit of a seeded value — <c>fF</c> from <c>400 fF</c> (the form
+    /// <see cref="VendorLibraryHeader.ValueText"/> writes), or null when it has none.</summary>
+    private static string? SeedUnit(string seed)
+    {
+        int space = seed.LastIndexOf(' ');
+        return space >= 0 && space < seed.Length - 1 ? seed[(space + 1)..] : null;
     }
 
     /// <summary>↑/↓ in the inline box: moves the list's highlight, clamped to its ends.</summary>

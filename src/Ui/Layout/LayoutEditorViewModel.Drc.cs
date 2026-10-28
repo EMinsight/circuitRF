@@ -334,6 +334,9 @@ public sealed partial class DrcViolationRow : ObservableObject
                 return $"{measured}{groups}";
             }
 
+            // Nothing was measured: the rule's name, shown beside this, is the whole sentence.
+            if (Violation.Kind == DrcRuleKind.MustBeEmpty) return "";
+
             long   dbu    = Violation.RequiredDbu;
             var    model  = _owner.Model;
             string value  = $"{LayoutUnits.Format(dbu, model.DisplayUnit, model.DbuPerMicron)} " +

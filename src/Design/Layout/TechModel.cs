@@ -486,6 +486,17 @@ public enum DrcRuleKind
     /// <c>DrcConnectivity</c>.</para>
     /// </summary>
     AntennaRatio,
+
+    /// <summary>
+    /// Every polygon of the region is a violation, marked by itself — the region must be empty
+    /// (brief-review-1 R-rev1-1).
+    ///
+    /// <para>No value: <see cref="DrcRule.ValueDbu"/> is ignored, and the violation's sentence is the
+    /// rule's own <see cref="DrcRule.Name"/> with nothing measured. The work is all in the region:
+    /// <c>and(drill, and(pad, mask))</c> is a via in a pad. Appended last because tests and the panel
+    /// sort by the enum's value.</para>
+    /// </summary>
+    MustBeEmpty,
 }
 
 /// <summary>
