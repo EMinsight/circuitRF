@@ -101,7 +101,10 @@ public sealed partial class LayoutEditorViewModel
     /// <summary>
     /// The copper layer a region drawn now belongs to (R-imp6-1), by name: the CURRENT drawing layer
     /// where it is a conductor the review analyses — that is the layer the reviewer is looking at; else
-    /// the one layer analysed, where only one is; else null, every layer.
+    /// the one layer analysed, where only one is; else null, every layer. A HIDDEN current layer is not
+    /// the one being looked at: with only Bottom shown and Top still current, a region went to Top and
+    /// vanished as it was drawn, since a region is drawn only while its layer is shown — so the one
+    /// analysed layer that is shown wins over it.
     /// </summary>
     public string? ImpedanceRegionLayer()
     {
@@ -110,8 +113,13 @@ public sealed partial class LayoutEditorViewModel
         foreach (var layer in tech.Stackup.Layers)
             if (layer.Kind == StackupKind.Conductor && layer.DrawingLayers.Contains(CurrentLayerKey)
                 && TraceImpedanceLayers().FirstOrDefault(c => layer.DrawingLayers.Contains(c.Key)) is { } current
-                && analysed.Contains(current.Name, StringComparer.OrdinalIgnoreCase))
+                && analysed.Contains(current.Name, StringComparer.OrdinalIgnoreCase)
+                && ResolveLayerDef(current.Key).Visible)
                 return current.Name;
+        var shown = TraceImpedanceLayers()
+            .Where(c => analysed.Contains(c.Name, StringComparer.OrdinalIgnoreCase) && ResolveLayerDef(c.Key).Visible)
+            .Select(c => c.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (shown.Count == 1) return shown[0];
         return analysed.Count == 1 ? analysed[0] : null;
     }
 

@@ -777,13 +777,27 @@ public class TraceImpedanceAnalysisTests
 
         var mid = Run(new() { Regions = [box with { LayerName = "Mid" }] });
         Assert.Equal((0, 1), (On(mid, "Top"), On(mid, "Mid")));
-        Assert.Contains("Top, nothing selected", mid.ScopeText, StringComparison.Ordinal);
+        Assert.Contains("nothing selected on Top", mid.ScopeText, StringComparison.Ordinal);
 
         var every = Run(new() { Regions = [box] });
         Assert.Equal((1, 1), (On(every, "Top"), On(every, "Mid")));
 
         var whole = Run(new() { Regions = [box with { LayerName = "Mid" }], WholeLayers = ["Top"] });
         Assert.Equal((2, 1), (On(whole, "Top"), On(whole, "Mid")));
+    }
+
+    /// <summary>Field report: a region round a via-to-test-pad link reviewed nothing and gave no reason. Copper
+    /// a region covers that is too short to be a trace — here 1.5 of its widths — is named in a run note with its
+    /// size.</summary>
+    [Fact]
+    public void ARegionOverPadLengthCopper_SaysWhyNothingWasReviewed()
+    {
+        LayoutShape[] shapes = [Rect(Top, -750, -500, 750, 500), Rect(Gnd, -5000, -5000, 5000, 5000)];
+        var report = TraceImpedanceAnalysis.Analyze(shapes, Tech(), LayoutUnits.DefaultDbuPerMicron,
+            new TraceImpedanceOptions { Layers = [Top], Scope = new() { Regions = [Box(-2000, -2000, 2000, 2000)] } });
+        Assert.Empty(report.Layers.Single().Traces);
+        var note = Assert.Single(report.Notes, n => n.Contains("a region covers copper", StringComparison.Ordinal));
+        Assert.Contains("1500 µm long and 1000 µm wide", note, StringComparison.Ordinal);
     }
 
     /// <summary>The verb's --region takes a unit on every coordinate and refuses a bare number; with

@@ -181,20 +181,40 @@ public static class PalaceRun
                 if (File.Exists(stale)) File.Delete(stale);
             WriteText(geoPath, lowering.Geo!);
 
-            // brief-em3d-21 R-em3d21-1e — Gmsh's own stage lines, not a count of them.
-            gmshLog = new GmshLogProgress(control);
-            gmshLog.Begin();
-            Interlocked.Increment(ref _gmsh);
-            var run = RunProcess(gmsh, [GmshGeoWriter.GeoFile, "-3", "-o", GmshGeoWriter.MeshFile], runDir, logPath,
-                                 Em3dProcessKind.Mesher, env: null, control, ct, Watch(limits, gmshLog.Line, physicalBytes, runDir));
-            if (run.Cancelled) return new(false, true, false, null);
-            if (run.Stopped is { } stopped) return new(false, false, false, null) { Stopped = stopped, PeakFootprintBytes = run.PeakFootprint };
-            if (run.StartFailure is { } why)
-                return new(false, false, false, $"Gmsh could not be started ({why}).");
-            if (run.ExitCode != 0)
-                return new(false, false, false,
-                    $"Gmsh failed (exit code {run.ExitCode}). Its own words: {Quote(run.Tail, "Error")} " +
-                    $"The full log is {logPath}.");
+            // Gmsh meshes in a local scratch folder and the mesh and entity table are moved in after. The
+            // script writes the entity table one Printf at a time, each opening and closing the file, and in
+            // a workspace on a network drive some of those opens failed ("Unable to open file
+            // 'entities.txt'", field report): Gmsh then wrote the mesh, exited 1 and the run stopped.
+            string stage = Path.Combine(Path.GetTempPath(), "crf-gmsh-" + Guid.NewGuid().ToString("N")[..12]);
+            try
+            {
+                Directory.CreateDirectory(stage);
+                WriteText(Path.Combine(stage, GmshGeoWriter.GeoFile), lowering.Geo!);
+                foreach (var kernel in lowering.KernelFiles ?? []) kernel.WriteInto(stage);
+
+                // brief-em3d-21 R-em3d21-1e — Gmsh's own stage lines, not a count of them.
+                gmshLog = new GmshLogProgress(control);
+                gmshLog.Begin();
+                Interlocked.Increment(ref _gmsh);
+                var run = RunProcess(gmsh, [GmshGeoWriter.GeoFile, "-3", "-o", GmshGeoWriter.MeshFile], stage, logPath,
+                                     Em3dProcessKind.Mesher, env: null, control, ct, Watch(limits, gmshLog.Line, physicalBytes, stage));
+                if (run.Cancelled) return new(false, true, false, null);
+                if (run.Stopped is { } stopped) return new(false, false, false, null) { Stopped = stopped, PeakFootprintBytes = run.PeakFootprint };
+                if (run.StartFailure is { } why)
+                    return new(false, false, false, $"Gmsh could not be started ({why}).");
+                if (run.ExitCode != 0)
+                    return new(false, false, false,
+                        $"Gmsh failed (exit code {run.ExitCode}). Its own words: {GmshErrors(logPath, run.Tail)} " +
+                        $"The full log is {logPath}.");
+                foreach (string produced in new[] { GmshGeoWriter.MeshFile, GmshGeoWriter.EntitiesFile })
+                    if (File.Exists(Path.Combine(stage, produced)))
+                        File.Move(Path.Combine(stage, produced), Path.Combine(runDir, produced), overwrite: true);
+            }
+            finally
+            {
+                try { Directory.Delete(stage, recursive: true); }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }
         }
 
         var table = File.Exists(entPath) ? GmshGeoWriter.ReadEntities(File.ReadAllText(entPath)) : null;
@@ -1282,6 +1302,24 @@ public static class PalaceRun
     /// a colon brings the line after it, because that is where a GPU error states its cause (the device library's
     /// message names the call that failed, then gives the reason — "out of memory" — on a line of its own).
     /// </summary>
+    /// <summary>
+    /// What a failed Gmsh run said: its first <c>Error</c> lines from the whole log. Gmsh logs an error where it
+    /// happens and exits 1 only at the end, after its closing summary, so the tail held "0 errors" and the
+    /// error itself was 29,000 lines earlier (field report). The tail is the fallback when the log has none.
+    /// </summary>
+    internal static string GmshErrors(string logPath, IReadOnlyList<string> tail)
+    {
+        List<string> errors = [];
+        try
+        {
+            if (File.Exists(logPath))
+                errors = [.. File.ReadLines(logPath).Select(l => l.Trim())
+                              .Where(l => l.StartsWith("Error", StringComparison.Ordinal)).Distinct().Take(5)];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        return errors.Count == 0 ? Quote(tail, "Error") : "“" + string.Join(" | ", errors) + "”";
+    }
+
     internal static string Quote(IReadOnlyList<string> tail, string marker)
     {
         var lines = tail.Select(l => l.Trim()).Where(l => l.Length > 0).ToList();

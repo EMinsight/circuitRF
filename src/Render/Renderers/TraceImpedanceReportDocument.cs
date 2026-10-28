@@ -34,7 +34,8 @@
 // the traces they hit and the worst value, then the 20 worst written out as Full writes them, with
 // passing traces and junctions counted rather than listed. Every finding is counted somewhere — an
 // accepted one in its group's Accepted column, never dropped. A layer with no trace reviewed has no pages
-// in a Summary (the summary page's By layer row says so); on a multilayer board those are the planes.
+// in either style (the summary page's By layer row says so); on a multilayer board those are the planes,
+// and a Full report of a 10-layer board reviewed on its two outer layers was 16 pages of blank inner maps.
 //
 // On either map, markers that would land on one another are one BADGE (a pill, not a disc): its count in
 // Summary, and in Full the numbers it stands for, which the list after the table spells out. A map where
@@ -247,9 +248,9 @@ public static class TraceImpedanceReportDocument
             Summary();
             foreach (var layer in report.Layers)
             {
-                // A Summary gives a layer with no trace reviewed no pages: the summary page's By layer table
-                // already says so, and on a multilayer board the planes are most of the layers.
-                if (IsSummary && layer.Traces.Count == 0) continue;
+                // A layer with no trace reviewed has no pages, in either style: the summary page's By layer
+                // table already says so, and on a multilayer board the planes are most of the layers.
+                if (layer.Traces.Count == 0 && layer.JunctionReviews.Count == 0) continue;
                 LayerMap(layer);
                 if (IsSummary) LayerFindings(layer);
                 else LayerTable(layer);

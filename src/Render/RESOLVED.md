@@ -5624,3 +5624,11 @@ delegate to it, so the two reports cannot drift apart. Clustering is `MarkerSeat
 
 Board C, every check, Release: 53.8 s and 2.04 GB for the run with `-o`, of which laying out and writing the
 19-page, 25 MB PDF is 2.2 s; the run without `-o` measured the same within run-to-run noise.
+
+## Designer round 30 — no pages for an impedance layer with nothing reviewed, in Full too (2026-10-28)
+
+`TraceImpedanceReportDocument.Compose` skips a layer with no trace and no junction reviewed in BOTH styles; brief
+impedance-9 had done it for Summary only. A Full report of a 10-layer board reviewed on its two outer layers was
+22 pages, 18 of them the empty map and empty table of the eight inner layers and of Bottom Copper (whose region
+selected no trace); it is 4. The summary page's By layer table
+still has a row per layer, with its pours and out-of-scope counts.

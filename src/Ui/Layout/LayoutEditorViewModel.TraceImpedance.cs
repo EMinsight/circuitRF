@@ -220,6 +220,10 @@ public partial class LayoutEditorViewModel
             report with { Title = title, SourcePath = source, TechnologyPath = ResolvedTechPath }, Model.ImpedanceAcceptances);
         IsImpedanceStale = false;
         PostImpedanceVerdict(ImpedanceReport, pdfPath: null);
+        // The run's own notes, which the CLI writes to stderr and the PDF lists on its first page: in the
+        // editor they reached neither the panel nor Messages, so a region that chose only pad-length copper
+        // was a layer of "0 traces" with no reason given.
+        foreach (string note in ImpedanceReport.Notes) _messageSink?.Info($"Impedance Analysis: {note}");
         return ImpedanceReport;
     }
 

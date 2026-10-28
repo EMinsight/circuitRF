@@ -174,6 +174,42 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
         Assert.True(new FileInfo(Path.Combine(dir, GmshGeoWriter.MeshFile)).Length > 0);
     }
 
+    // ── 4a. Gmsh runs in a local scratch folder ─────────────────────────────────────────────────
+
+    /// <summary>Field report: in a workspace on a network drive Gmsh's script could not reopen its entity
+    /// table, wrote the mesh anyway and exited 1, and the message quoted the closing "0 errors" summary.
+    /// Gmsh now meshes outside the run folder, what it wrote is moved in, and a failure quotes its Error
+    /// lines from anywhere in the log.</summary>
+    [Fact]
+    public void Gmsh_MeshesOutsideTheRunFolder_AndAFailureQuotesItsErrorLine()
+    {
+        if (OperatingSystem.IsWindows()) return;   // the fake Gmsh is a shell script
+        var (problem, settings) = Lowerable("small-microstrip");
+        var low = GmshGeoWriter.Write(problem, settings);
+
+        string Fake(string name, string body)
+        {
+            string path = Path.Combine(_root, name);
+            File.WriteAllText(path, "#!/bin/sh\n" + body);
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            return path;
+        }
+
+        string dir = Dir("staged");
+        var step = PalaceRun.Mesh(dir, low, Fake("gmsh-ok", "pwd > model.msh\necho nonsense > entities.txt\n"), null, default);
+        Assert.True(step.Refused, step.Message);   // the planted table is not one the script writes
+        Assert.DoesNotContain("staged", File.ReadAllText(Path.Combine(dir, GmshGeoWriter.MeshFile)));
+        Assert.True(File.Exists(Path.Combine(dir, GmshGeoWriter.EntitiesFile)));
+
+        string failing = Fake("gmsh-fails",
+            "echo \"Error   : 'model.geo', line 7: Unable to open file 'entities.txt'\"\n" +
+            "i=0; while [ $i -lt 40 ]; do echo 'Info    : Meshing'; i=$((i+1)); done\n" +
+            "echo 'Warning :     0 errors'\necho \"Info    : Done writing 'model.msh'\"\nexit 1\n");
+        step = PalaceRun.Mesh(Dir("fails"), low, failing, null, default);
+        Assert.False(step.Ok);
+        Assert.Contains("Unable to open file 'entities.txt'", step.Message);
+    }
+
     // ── 4b. The background ──────────────────────────────────────────────────────────────────────
 
     /// <summary>Two slabs meeting at z = 0.25 mm, and two coplanar sheets on that shared plane: the

@@ -24259,3 +24259,34 @@ artwork as it was reviewed.
 `ReviewCheckDef.SpansAdjacentCopper` marks a check whose finding is between a conductor and the next one below
 (stacked-traces); the report outlines that lower layer's copper under the upper one, found by
 `ReviewArtwork.LowerNeighbour` from the stackup's adjacent pairs.
+
+## Designer round 30 — Gmsh in a scratch folder; the scope sentence's unreached layers (2026-10-28)
+
+**Gmsh now meshes in a local scratch folder** (`PalaceRun.Mesh`, `crf-gmsh-<id>` under the temp folder) and
+`model.msh` and `entities.txt` are moved into the run folder after it exits; the `.geo`, the groups, the kernel
+B-reps, the hash and the log stay where they were, so mesh reuse is unchanged. Field report: a capacitance run on a
+workspace on a mapped network drive failed with "Gmsh failed (exit code 1)" while Gmsh's own summary said 0 errors
+and the mesh was written. The log held four `Unable to open file 'entities.txt'` errors 29,000 lines earlier: the
+entity table is written by one `Printf … >> "entities.txt"` per line, each an open, append and close, and on that
+share some of the opens failed — not the first, not consecutive ones, so not a path or permission problem. Gmsh logs
+the error, carries on, and exits 1 at the end. Writing the table to stdout instead would have removed the opens but
+changed every script, every golden and the version gate's byte-identical `entities.txt`; the scratch folder changes
+no byte of either. The disk-floor watch now names the scratch folder's volume, since that is where the mesh grows.
+
+**A failed Gmsh run quotes its `Error` lines from the whole log** (`PalaceRun.GmshErrors`, first five distinct),
+falling back to the tail. `Quote(run.Tail, "Error")` only saw the last lines, which after a mesh are Gmsh's closing
+summary — "Mesh generation error summary … 0 errors" — so the message quoted a sentence saying nothing was wrong.
+
+**The impedance scope sentence names the layers nothing selects in ONE clause** — "nothing selected on Inner 1,
+Inner 2, … and Inner 8" — rather than "Inner 1, nothing selected; Inner 2, nothing selected; …", which on a
+10-layer board reviewed on its two outer layers ran past the summary page's cell and was cut off mid-list.
+
+**A region that chooses no trace but covers pad-length copper says so** (`TraceImpedanceAnalysis.Analyze`, a run
+note; `LayerWork.TooShort` keeps the chains `Chain`'s length rule drops, `Selection.RegionChooses` is the region half
+of `Select` with no pick counted). Field report: a Bottom Copper region round the link from a via to a test pad
+reported "0 traces" and nothing else — the finder reads that link as one piece 1,040 µm long and 714 µm wide, 1.46
+of its widths, under `SelectedMinAspect`, so a pad. Lowering the minimum was the alternative and was not taken: at
+that length a Z0 is a number about a lump, not a line, and the minimum is what kept fan-out stubs out of reviews.
+The note is given only when the layer's regions chose NO trace, one per copper island (a pad reads as a short chain
+along and one across), at most three per layer. The editor now posts the run's notes to Messages — until now only
+the CLI (stderr) and the PDF's first page carried them.

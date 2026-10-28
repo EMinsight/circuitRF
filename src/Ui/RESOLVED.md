@@ -41066,3 +41066,11 @@ The panel's **Export PDF (N pages)…** writes `LayoutReviewReportDocument.Pdf` 
 result `Stale` when the layout was edited since, so the PDF says so on its first page. The page count is
 `LayoutReviewReportDocument.PageCount`, counted in the background whenever the result changes (an accept included),
 a version counter dropping a count that finished after a newer one started. One Messages line with a link to the file.
+
+## Designer round 30 — an impedance region drawn with only Bottom shown (2026-10-28)
+
+`ImpedanceRegionLayer` skips a HIDDEN current layer: the region goes to the one analysed copper layer that is shown,
+when only one is, before the "one layer analysed" fallback. Field report: with every layer but Bottom Copper hidden
+and Top Copper still the current drawing layer (an imported Gerber opens on it), Add region ▸ Rectangle made a Top
+region — which is drawn only while Top is shown, so it vanished as it was drawn and the reviewer had to change its
+layer in the list afterwards. Gate: `ImpedancePanelTests.ARectangle_WithOnlyBottomShown_IsABottomRegion`.

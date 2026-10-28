@@ -1207,10 +1207,14 @@ on it (*1 region*, *every trace*, or *nothing selected &mdash; not reviewed*). T
 without drawing round it, tick **Whole layer** beside it.
 
 - **A region takes a trace any part of which lies inside it**, and reviews it **whole**: a region that
-  clips the end of the RF trace does not drop it, and never cuts it short.
+  clips the end of the RF trace does not drop it, and never cuts it short. Copper a region chooses must
+  still be **two of its widths long** to be a trace; when a region on a layer finds no trace but covers
+  shorter copper (a short link from a via to a test pad, say), Messages and the report's first page say
+  so, with that copper's length and width.
 - **A region belongs to the layer you draw it on**: the layout's current layer, when that is a copper
-  layer under review; otherwise the one layer under review, when only one is ticked; otherwise every
-  layer. It selects traces on that layer only, and is drawn only while that layer is shown and ticked.
+  layer under review and shown; otherwise the one layer under review that is shown, when only one is
+  (hide the other copper layers to draw on Bottom without changing the current layer); otherwise the
+  one layer under review, when only one is ticked; otherwise every layer. It selects traces on that layer only, and is drawn only while that layer is shown and ticked.
   A region on **All layers** selects on every layer, is always drawn, and has an amber dash-dot outline
   so it is not mistaken for one left over from another layer. Regions saved before regions had layers
   open as **All layers** and review exactly what they reviewed before.
@@ -1354,6 +1358,8 @@ not undone by **Undo**. [`circuitrf impedance`](cli.html#impedance) applies them
   PASS, WARN or FAIL; then the layer's **junctions**, one row per arm with its trace, width, Z0 and
   result; and then the numbered findings in full, each with its severity &mdash; or **ACCEPTED** and its
   reason.
+- **A layer with no trace reviewed has no pages** &mdash; a plane, or a layer nothing in the scope
+  reaches: its row in the summary page's **By layer** table says so.
 - **Accepted findings**, when there are any: each accepted finding with its trace, its text, the reason
   and the date, and any acceptance that matched nothing in this run. An accepted finding is also still
   on its layer's map, **grey with a check** where its number would be.

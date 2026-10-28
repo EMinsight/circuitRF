@@ -768,6 +768,7 @@ public static partial class TraceImpedanceAnalysis
         var notes = prep.Notes;
         var scope = options.Scope is { IsEmpty: false } s ? s : null;
         var selection = new Selection(scope, prep, shapes, tech);
+        var units = new TraceImpedanceReport { DbuPerMicron = dbuPerMicron, DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um };
         // brief-dfr29-3 R-dfr29-3-1: the drilled holes the pad search looks through, vias and bare drill circles alike.
         var padSearch = PadSearchOf(shapes, ctx);
 
@@ -826,6 +827,23 @@ public static partial class TraceImpedanceAnalysis
                         outOfScopeKeys.Add(TraceImpedanceAcceptance.TraceKeyOf(name, sx, sy, ex, ey, dbuPerMicron));
                     }
                     lw = lw with { Chains = kept };
+
+                    // A region that chose no trace on its layer but covers copper the length rule read as a pad
+                    // says so, with the copper's size: a via-to-test-pad link under two widths long reviewed nothing
+                    // and the report said only "0 traces" (field report).
+                    // One per copper island: a pad reads as a short chain each way, along and across.
+                    static double Aspect(ChainWork c) => c.Pieces.Sum(p => p.Piece.Length) / c.Pieces.Max(p => p.Piece.Width);
+                    if (lw.Chains.Count == 0)
+                        foreach (var c in lw.TooShort.Where(c => selection.RegionChooses(lw, c))
+                                                     .GroupBy(c => lw.IslandOfRing[c.Pieces[0].Piece.Ring])
+                                                     .Select(g => g.MaxBy(Aspect)!).Take(3))
+                        {
+                            var (mx, my) = ChainMiddle(c);
+                            double len = c.Pieces.Sum(p => p.Piece.Length), w = c.Pieces.Max(p => p.Piece.Width);
+                            notes.Add($"{name}: a region covers copper at {units.Pt((long)Math.Round(mx), (long)Math.Round(my))} " +
+                                      $"but no trace there — that copper is {units.Len(len)} long and {units.Len(w)} wide, shorter than " +
+                                      $"{SelectedMinAspect:0} of its widths, so it is read as a pad and was not reviewed.");
+                        }
                 }
 
                 control?.BeginStage($"{tag}: cutting");
@@ -1270,13 +1288,15 @@ public static partial class TraceImpedanceAnalysis
 
         bool counted = !(beforeRun && scope.HasSelectors);
         var clauses = new List<string>();
+        var unreached = new List<string>();
         foreach (var l in layers)
         {
             // brief-impedance-6: while selectors are set, a layer none of them reaches is not reviewed —
-            // said by name, because "0 traces" reads as a layer with no copper.
+            // said by name, because "0 traces" reads as a layer with no copper. Gathered into one clause:
+            // a clause each made a 10-layer board's sentence eight repeats long, cut off on the report.
             if (!scope.Reaches(l.Name))
             {
-                clauses.Add($"{l.Name}, nothing selected");
+                unreached.Add(l.Name);
                 continue;
             }
             var widths = scope.WidthsOn(l.Name).Select(w => w.NominalMicrons).Distinct().OrderBy(w => w).ToList();
@@ -1285,6 +1305,7 @@ public static partial class TraceImpedanceAnalysis
                 ? $"{l.Name}, every width{count}"
                 : $"{l.Name} at {JoinAnd([.. widths.Select(w => units.Num(w * units.DbuPerMicron))])} {units.Unit}{count}");
         }
+        if (unreached.Count > 0) clauses.Add($"nothing selected on {JoinAnd(unreached)}");
         string text = (scope.HasSelectors ? $"Selected by {SelectorText(scope)}. " : "") + string.Join("; ", clauses) + ".";
 
         if (!counted)
@@ -1527,11 +1548,11 @@ public static partial class TraceImpedanceAnalysis
         foreach (var b in barrels.GetValueOrDefault(band.Index) ?? [])
             if (cu.Contains(b.X, b.Y)) transitionVias.Add(b);
 
-        var chains = Chain(pieces, cu, islandOfRing, out var junctionCentres, out var junctionArms);
+        var chains = Chain(pieces, cu, islandOfRing, out var junctionCentres, out var junctionArms, out var tooShort);
         return new LayerWork(key, name, band, cu, chains, pours, maxW)
         {
             Vias = bandVias, TransitionVias = transitionVias, IslandOfRing = islandOfRing, JunctionCentres = junctionCentres,
-            JunctionArms = junctionArms,
+            JunctionArms = junctionArms, TooShort = tooShort,
         };
     }
 
@@ -1806,11 +1827,16 @@ public static partial class TraceImpedanceAnalysis
 
         /// <summary>Every chain end on each junction, by its key — the chains too short to be traces included.</summary>
         public Dictionary<int, List<(ChainWork Chain, bool AtStart)>> JunctionArms { get; init; } = [];
+
+        /// <summary>The chains the length rule dropped as pads, so a region that chose only those can say why it
+        /// reviewed nothing.</summary>
+        public List<ChainWork> TooShort { get; init; } = [];
     }
 
     private static List<ChainWork> Chain(List<Piece> pieces, TraceCopper cu, int[] islandOfRing,
                                          out Dictionary<int, (double X, double Y)> junctionCentres,
-                                         out Dictionary<int, List<(ChainWork Chain, bool AtStart)>> junctionArms)
+                                         out Dictionary<int, List<(ChainWork Chain, bool AtStart)>> junctionArms,
+                                         out List<ChainWork> tooShort)
     {
         int m = pieces.Count;
         // Ends: 2i is piece i's A end, 2i+1 its B end.
@@ -1946,11 +1972,12 @@ public static partial class TraceImpedanceAnalysis
         // A chain shorter than SelectedMinAspect widths is a pad; one piece shorter than a width is a
         // corner. One shorter than MinAspect widths is kept, marked Short: only a selector admits it.
         var kept = new List<ChainWork>();
+        tooShort = [];
         foreach (var c in chains)
         {
             double length = c.Pieces.Sum(p => p.Piece.Length);
             double width = c.Pieces.Max(p => p.Piece.Width);
-            if (length < SelectedMinAspect * width || !c.Pieces.Any(p => p.Piece.Length >= width)) continue;
+            if (length < SelectedMinAspect * width || !c.Pieces.Any(p => p.Piece.Length >= width)) { tooShort.Add(c); continue; }
             c.Short = length < MinAspect * width;
             kept.Add(c);
         }

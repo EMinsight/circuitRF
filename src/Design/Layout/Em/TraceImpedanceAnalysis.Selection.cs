@@ -133,6 +133,12 @@ public static partial class TraceImpedanceAnalysis
             return chosen;
         }
 
+        /// <summary>Whether a region on <paramref name="lw"/>'s layer (or on every layer) takes <paramref name="chain"/>
+        /// — the region half of <see cref="Select"/>, with no pick counted.</summary>
+        public bool RegionChooses(LayerWork lw, ChainWork chain) =>
+            _scope is not null
+            && _scope.Regions.Any(r => (r.LayerName is null || BandIndexOf(r.LayerName) == lw.Band.Index) && InRegion(chain, r));
+
         /// <summary>The conductor band a layer NAME is on — a drawing layer of the technology, as the
         /// panel and the CLI name them — or −1 when it names no copper layer, which then selects
         /// nothing.</summary>

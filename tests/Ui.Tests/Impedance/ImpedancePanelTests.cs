@@ -332,6 +332,26 @@ public class ImpedancePanelTests
         Assert.Null(vm.Overlay.ImpedanceScope);
     }
 
+    /// <summary>Field report: with only Bottom shown and Top still the current drawing layer, a rectangle
+    /// is a Bottom region — not a Top one, which is drawn only while Top is shown and so vanished.</summary>
+    [Fact]
+    public void ARectangle_WithOnlyBottomShown_IsABottomRegion()
+    {
+        var vm = TwoSided();
+        vm.CurrentLayerKey = Top;
+        vm.SetLayerVisible(Top, false);
+        vm.SetLayerVisible(Gnd, false);
+        vm.ShowImpedanceScope = true;
+
+        vm.ArmImpedanceScopeTool(ImpedanceScopeTool.Rectangle);
+        vm.OnPointerPressed(Um(-7000), Um(-800), Avalonia.Input.KeyModifiers.None);
+        vm.OnPointerMoved(Um(7000), Um(800), leftDown: true, Avalonia.Input.KeyModifiers.None);
+        vm.OnPointerReleased(Um(7000), Um(800), Avalonia.Input.KeyModifiers.None);
+
+        Assert.Equal("Bottom", Assert.Single(vm.ImpedanceScope.Regions).LayerName);
+        Assert.Single(vm.Overlay.ImpedanceScope!.Regions);
+    }
+
     /// <summary>The owner's rule, on the panel: once a region is drawn on Bottom, the Top row says it is
     /// not reviewed and offers Whole layer; ticking it keeps all of Top.</summary>
     [Fact]
