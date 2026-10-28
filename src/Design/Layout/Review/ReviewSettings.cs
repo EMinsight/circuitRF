@@ -10,12 +10,13 @@ using System.Globalization;
 
 namespace CircuitRF.Design.Layout.Review;
 
-/// <summary>What a threshold measures: a length (stored in DBU, stated in SI), a count, or a density.</summary>
-public enum ReviewThresholdKind { Length, Count, Density }
+/// <summary>What a threshold measures: a length (stored in DBU, stated in SI), a count, a density
+/// (per mm²) or an area (mm²). Only a length is converted; the others are stored as stated.</summary>
+public enum ReviewThresholdKind { Length, Count, Density, Area }
 
 /// <summary>One threshold of one check.</summary>
-/// <param name="Default">In SI: metres for a <see cref="ReviewThresholdKind.Length"/>, a plain number
-/// otherwise. Converted to DBU through the layout's <c>DbuPerMicron</c>, so a threshold never silently
+/// <param name="Default">In SI: metres for a <see cref="ReviewThresholdKind.Length"/>; mm² for an
+/// area, per mm² for a density, a plain number for a count. Converted to DBU through the layout's <c>DbuPerMicron</c>, so a threshold never silently
 /// takes a different value on a board of a different resolution.</param>
 public sealed record ReviewThresholdDef(string Id, string Title, ReviewThresholdKind Kind, double Default)
 {
@@ -98,7 +99,11 @@ public sealed class ReviewSettings
 
     /// <summary>A stored value as a reviewer reads it: a length in <paramref name="unit"/>, else the number.</summary>
     public static string Display(ReviewThresholdDef threshold, double stored, LayoutUnit unit, int dbuPerMicron) =>
-        threshold.Kind == ReviewThresholdKind.Length
-            ? ReviewText.Length((long)Math.Round(stored), unit, dbuPerMicron)
-            : stored.ToString("0.###", CultureInfo.InvariantCulture);
+        threshold.Kind switch
+        {
+            ReviewThresholdKind.Length  => ReviewText.Length((long)Math.Round(stored), unit, dbuPerMicron),
+            ReviewThresholdKind.Area    => $"{stored.ToString("0.###", CultureInfo.InvariantCulture)} mm²",
+            ReviewThresholdKind.Density => $"{stored.ToString("0.###", CultureInfo.InvariantCulture)} per mm²",
+            _                           => stored.ToString("0.###", CultureInfo.InvariantCulture),
+        };
 }

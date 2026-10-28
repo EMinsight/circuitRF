@@ -24023,3 +24023,52 @@ their findings. Disabled checks get no row.
 **Settings keep what they do not know**: `Thresholds` is a flat `check.threshold` dictionary and `Disabled` a list
 of ids, so an unknown key survives a read and a write untouched. `ForSave` drops a known threshold equal to its
 default and returns null when nothing is left, so a layout at the defaults writes no `Review`.
+
+## brief review-3 — the four pad and via checks (2026-10-27)
+
+`Review/ReviewPads.cs` (pads, vias, ground, built once per run) and `Checks/ViaInPadCheck`,
+`GroundViaDistanceCheck`, `SharedGroundViaCheck`, `ThermalViasCheck`, registered ahead of `edge-copper` in the
+overview's table order. D1–D3 took their defaults.
+
+**Ground on a drawn reference is the net of its largest copper** (owner decision, 2026-10-27, closing brief
+review-1's open question). `GroundReach` still infers nothing for a drawn reference — LVS and railRF read it and
+are unchanged — but `on_ground` now reads ground through `DrcRegionEval.GroundNets`: the partition's via walk for
+an undrawn reference, and for a drawn one the net of the largest piece on the reference conductor's drawing layers
+(`GroundReach.ReferenceLayers`, added for this). It is the artwork reader's `GroundSource.ReferenceConductor` rule.
+Largest, not every net with copper there: three of the shipped PCB technologies flag a routed Bottom Copper, and
+"any copper on it" would make every bottom trace ground. The choice is stated — in the DRC run's diagnostics and
+in the review's, with the plane's area.
+
+**`on_ground` / `same_net` ask the connectivity walk's own touch test.** `NetsOf` clipped each polygon against the
+whole of every piece whose box met it, and a pour's or a plane's box is the board: a review's thousands of pads
+each clipped a plane's whole outline. It now goes through `DrcConnectivity.LocalTouch` (made internal for this),
+which tests against the piece's edges near the polygon with `PieceEdgeGrid`, plus a per-layer piece list. The
+answers are the same, built from the same edges.
+
+**`near`'s routine keeps identities.** `DrcRegionEval.WithinEach` returns, per polygon of A, which polygons of B
+are within the distance (up to a stop count), and `near`'s counting is now written on it with the same early stop.
+`shared-ground-via` needs to know WHICH via a pad depends on; it reads the same lists `ground-via-distance` does
+(`ReviewPads.GroundViasNear`, once per distance), so nothing is measured twice.
+
+**A via is a plated drill (`Plated != false`), not `Fill = Plated`.** `Fill` is a fill model and both values
+conduct; `Plated` is the field that says whether a hole is metal.
+
+**One via per drill polygon, however many entries claim its layer.** An imported technology can bind two via
+entries to one drill layer; the connectivity walk then reads that layer's barrels under both spans, so the review
+gives the via the union of the spans. Listing it once per entry counted every such drill twice.
+
+**A via reaches a pad only when its span includes the pad's side.** A buried or opposite-side blind via under a pad
+is not in it. A span that does not resolve reaches every side.
+
+**A through-hole pin is not judged by the ground checks either.** D2 says its drill is no via; its pad is not an SMD
+pad, and its own barrel is its path to ground, so `ground-via-distance` and `shared-ground-via` judge ground pads
+that are neither thermal nor pins. A pin pad is also never a thermal pad.
+
+**The rule is geometric and takes a centred microvia for a pin's hole.** A pad with exactly one plated drill under
+its centroid is a pin whatever the drill's size or span, so a via-in-pad microvia placed dead centre (common on HDI
+pads) is exempt from `via-in-pad` and is not counted as a ground via. Narrowing it by span fails the other way on
+an import whose mechanical holes share a layer with its laser vias.
+
+**Thresholds read across checks.** `thermal-pad-area` is declared once, on `thermal-vias`, and read by all four
+through `ReviewContext.Threshold`; `shared-ground-via` reads `ground-via-distance.max-distance` the same way. The
+area is a new threshold kind, `ReviewThresholdKind.Area` (mm²), shown with its unit beside `Density` (per mm²).

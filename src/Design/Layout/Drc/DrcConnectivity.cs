@@ -99,6 +99,11 @@ public readonly record struct PieceJoin(
 internal readonly record struct GroundReach(
     string? ReferenceName, bool ReferenceDraws, IReadOnlySet<int> Nets, int ViasReached)
 {
+    /// <summary>The reference conductor's drawing layers — empty when it draws nothing. Where
+    /// <c>on_ground</c> looks for the plane on a drawn reference (brief-review-3); the partition
+    /// itself still infers nothing there.</summary>
+    public IReadOnlyList<LayerKey> ReferenceLayers { get; init; } = [];
+
     /// <summary>A technology that flags no ground reference at all.</summary>
     public static readonly GroundReach None =
         new(null, ReferenceDraws: false, new HashSet<int>(), 0);
@@ -416,7 +421,10 @@ internal static class DrcConnectivity
         foreach (int piece in groundPieces) groundNets.Add(result[piece].Net);
 
         return new ConnectivityPartition(
-            result, joins, new GroundReach(groundName, groundDraws, groundNets, groundVias))
+            result, joins, new GroundReach(groundName, groundDraws, groundNets, groundVias)
+            {
+                ReferenceLayers = groundLayer is null ? [] : [.. groundLayer.DrawingLayers],
+            })
             { Barrels = barrels };
     }
 
@@ -472,8 +480,10 @@ internal static class DrcConnectivity
     /// the six-layer field board every plane is a candidate for every barrel, 15,831 clips over
     /// 631 million vertices, 224 s for one extraction.</para>
     /// </remarks>
-    private sealed class LocalTouch(
-        List<(LayerKey Layer, Paths64 Paths, Bbox Bounds)> pieces, ConnectivityCounters? counters)
+    /// <para><b>Also the evaluator's</b> (brief-review-3): <c>same_net</c> and <c>on_ground</c> ask
+    /// which pieces a pad or a barrel touches, and against a pour or a plane that is this question.</para>
+    internal sealed class LocalTouch(
+        IReadOnlyList<(LayerKey Layer, Paths64 Paths, Bbox Bounds)> pieces, ConnectivityCounters? counters)
     {
         private readonly PieceEdgeGrid?[] _grids = new PieceEdgeGrid?[pieces.Count];
         private readonly int[] _vertices = new int[pieces.Count];

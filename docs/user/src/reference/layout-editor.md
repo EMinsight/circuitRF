@@ -1406,7 +1406,19 @@ technology, an imported board's and one you built. A check whose layer the techn
 
 | Check | What it marks | Threshold (default) |
 |---|---|---|
+| Via in pad | A via inside an SMD pad &mdash; solder wicks down the barrel. A via in a thermal pad is not marked here, and a pad centred on its one drill is a through-hole pin, whose drill is its hole. | Thermal pad area (2 mm², shared by the four pad checks) |
+| Ground via distance | A ground pad with no ground via within the distance, pad edge to barrel edge, saying how far the nearest one is. A pad in a ground pour is judged the same way: the pour's stitching vias count when they are close enough. | Maximum distance (0.5 mm) |
+| Shared ground via | A ground via that is the only one within the maximum distance of two or more ground pads. | The maximum distance above |
+| Thermal vias | A thermal pad &mdash; a ground pad of at least the thermal pad area, such as the exposed paddle under a power stage &mdash; with fewer ground vias under it than the density asks for, or none. A via counts when its barrel lies at least half inside the pad. | Minimum via density (1 per mm²) |
 | Copper at the board edge | Copper on any copper layer closer to the board edge than the pullback, marked where it lies inside that strip. The edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board, whose centre line is the edge &mdash; and cut-outs in the board (slots, milled openings) are edges too. | Pullback (0.25 mm) |
+
+**Pads, vias and ground.** A pad is copper exposed by a soldermask opening, on the top and bottom
+copper; parts placed in the layout name a pad in a finding ("C209 pad 2") but do not decide which pads
+there are, so the checks run the same on an imported board with no parts. A via is a drill on a layer
+the stackup's via entries draw on, provided its holes are plated. Ground is the net of the copper on the
+conductor flagged as the ground reference: where that conductor is drawn, the net of its largest copper
+(the plane), and everything joined to it; where it is not drawn, the copper vias carry down to it. With
+no ground reference flagged, the four pad checks are not run.
 
 Findings are counted per check and grouped by layer. Which checks run, the thresholds you changed and
 the findings you accepted are saved in the layout, so the next review reviews what the last one did; an

@@ -30,8 +30,17 @@ public sealed class ReviewRunTests
         return view;
     }
 
-    private static LayoutReviewResult Run(LayoutView view, Technology tech, ReviewSettings? settings = null) =>
-        LayoutReview.Run(new TraceImpedanceAnalysis.LayoutSource("board.clay", view, tech, null, [.. view.Shapes], null), settings);
+    /// <summary>Reviews with edge-copper alone unless <paramref name="settings"/> says otherwise — the frame's
+    /// one check; the pad checks have their own class.</summary>
+    private static LayoutReviewResult Run(LayoutView view, Technology tech, ReviewSettings? settings = null)
+    {
+        if (settings is null)
+        {
+            settings = new ReviewSettings();
+            foreach (var c in LayoutReview.Checks) settings.SetEnabled(c.Id, c.Id == "edge-copper");
+        }
+        return LayoutReview.Run(new TraceImpedanceAnalysis.LayoutSource("board.clay", view, tech, null, [.. view.Shapes], null), settings);
+    }
 
     [Fact]
     public void Roles_AreTheSame_OnAShippedTechnology_AndOneNumberedDifferently()

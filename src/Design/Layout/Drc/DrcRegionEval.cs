@@ -179,26 +179,56 @@ internal sealed class DrcRegionEval(
     {
         if (a.Count == 0) return [];
 
-        // Each B component dilated for touch, with its bounds, sorted by left edge so the scan for
-        // one A stops at the first B that starts to its right.
-        var bs = new List<(Bbox Bounds, Paths64 Touch)>();
-        foreach (var c in DrcRegions.Components(b))
-        {
-            var touch = Clipper.InflatePaths(c, TouchDilationDbu, JoinType.Miter, EndType.Polygon, MiterLimit);
-            bs.Add((DrcRegions.BoundsOf(touch), touch));
-        }
-        bs.Sort((x, y) => x.Bounds.MinX.CompareTo(y.Bounds.MinX));
+        // Settled: past the maximum it can only stay past; with no maximum, reaching the minimum is
+        // enough.
+        var components = DrcRegions.Components(a);
+        var within = WithinEach(components, DrcRegions.Components(b), distanceDbu, max is { } m ? m + 1 : Math.Max(min, 1));
 
         var kept = new Paths64();
-        foreach (var component in DrcRegions.Components(a))
+        for (int i = 0; i < components.Count; i++)
         {
+            int count = within[i].Count;
+            if (count >= min && (max is null || count <= max)) kept.AddRange(components[i]);
+        }
+        return kept;
+    }
+
+    /// <summary>
+    /// <see cref="DrcLayerExpr.Near"/>'s own routine with the identities kept: for each polygon of
+    /// <paramref name="a"/>, the indices into <paramref name="b"/> of the polygons within
+    /// <paramref name="distanceDbu"/>, in <paramref name="b"/>'s order — at most
+    /// <paramref name="stopAt"/> of them, because the scan for one A stops there. A reader that
+    /// needs WHICH polygons are near (brief-review-3's shared ground via) asks this rather than
+    /// measuring a second time.
+    ///
+    /// <para>A is grown by the distance with ROUND joins and tested against each B component with
+    /// the same one-DBU touch dilation <c>interacting</c> uses, so a distance of zero is "touches".
+    /// B's bounding boxes, sorted by left edge, reject a pair before any clip.</para>
+    /// </summary>
+    internal List<List<int>> WithinEach(IReadOnlyList<Paths64> a, IReadOnlyList<Paths64> b, long distanceDbu,
+                                        int stopAt = int.MaxValue)
+    {
+        var bs = new List<(Bbox Bounds, Paths64 Touch, int Index)>(b.Count);
+        for (int j = 0; j < b.Count; j++)
+        {
+            var touch = Clipper.InflatePaths(b[j], TouchDilationDbu, JoinType.Miter, EndType.Polygon, MiterLimit);
+            bs.Add((DrcRegions.BoundsOf(touch), touch, j));
+        }
+        bs.Sort((x, y) => x.Bounds.MinX != y.Bounds.MinX ? x.Bounds.MinX.CompareTo(y.Bounds.MinX) : x.Index.CompareTo(y.Index));
+
+        var result = new List<List<int>>(a.Count);
+        foreach (var component in a)
+        {
+            var hits = new List<int>();
+            result.Add(hits);
+            if (stopAt <= 0) continue;
+
             var grown = distanceDbu > 0
                 ? Clipper.InflatePaths(component, distanceDbu, JoinType.Round, EndType.Polygon)
                 : component;
             var gb = DrcRegions.BoundsOf(grown);
 
-            int count = 0;
-            foreach (var (bounds, touch) in bs)
+            foreach (var (bounds, touch, index) in bs)
             {
                 if (bounds.MinX > gb.MaxX) break;
                 if (!bounds.Intersects(gb)) continue;
@@ -206,15 +236,12 @@ internal sealed class DrcRegionEval(
                 NearClipCount++;
                 if (IsEmpty(Clipper.BooleanOp(ClipType.Intersection, grown, touch, LayoutClipper.Rule))) continue;
 
-                count++;
-                // Settled: past the maximum it can only stay past; with no maximum, reaching the
-                // minimum is enough.
-                if (max is { } m ? count > m : count >= min) break;
+                hits.Add(index);
+                if (hits.Count >= stopAt) break;
             }
-
-            if (count >= min && (max is null || count <= max)) kept.AddRange(component);
+            hits.Sort();
         }
-        return kept;
+        return result;
     }
 
     // ── Net-aware selections (R-rev1-4) ──────────────────────────────────────────────────────
@@ -242,32 +269,76 @@ internal sealed class DrcRegionEval(
         var a = Evaluate(og.A);
         if (!HasPartition("on_ground", og)) return [];
 
-        var ground = partition!.Ground;
-        if (ground.ReferenceName is null)
-        {
-            Report($"{og} selected nothing: no conductor in the stackup is marked as the ground " +
-                   "reference. Flag the ground plane in the Technology Editor.");
-            return [];
-        }
+        var ground = GroundNets(out string? why);
+        if (why is not null) Report(ground.Count == 0 ? $"{og} selected nothing: {why}" : $"{og} {why}");
+        if (ground.Count == 0 || a.Count == 0) return [];
 
-        // The partition infers ground nets only for a reference that draws nothing (GroundReach's
-        // remarks); a drawn one is ordinary copper and names no ground net. Said, not left empty.
-        if (ground.Nets.Count == 0)
-        {
-            Report(ground.ReferenceDraws
-                ? $"{og} selected nothing: the ground reference \"{ground.ReferenceName}\" is drawn " +
-                  "copper, and the connectivity names a ground net only where a via reaches a reference " +
-                  "that draws nothing."
-                : $"{og} selected nothing: no via reaches the ground reference \"{ground.ReferenceName}\".");
-            return [];
-        }
-
-        if (a.Count == 0) return [];
         var layers = og.A.ReferencedLayers();
         var kept = new Paths64();
         foreach (var c in DrcRegions.Components(a))
-            if (NetsOf(c, layers).Overlaps(ground.Nets)) kept.AddRange(c);
+            if (NetsOf(c, layers).Overlaps(ground)) kept.AddRange(c);
         return kept;
+    }
+
+    private (IReadOnlySet<int> Nets, string? Said, int Plane)? _ground;
+
+    /// <summary>
+    /// The nets <c>on_ground</c> reads as ground, and the clause saying how — or, with no nets, why
+    /// there are none.
+    ///
+    /// <para>An undrawn reference: the nets the partition's via walk carried down to it
+    /// (<see cref="GroundReach.Nets"/>). A DRAWN reference names no ground net in the partition — it
+    /// is ordinary copper there, for the reasons <see cref="GroundReach"/>'s remarks give — so here
+    /// ground is the net of the LARGEST piece on the reference conductor's drawing layers: the
+    /// plane (brief-review-3; the artwork reader's <c>GroundSource.ReferenceConductor</c> is the same
+    /// rule). Largest, not every net with copper on it: a two-layer board that flags its routed
+    /// bottom copper would otherwise read every bottom trace as ground. The choice is stated, never
+    /// silent.</para>
+    /// </summary>
+    internal IReadOnlySet<int> GroundNets(out string? said)
+    {
+        if (_ground is { } hit) { said = hit.Said; return hit.Nets; }
+        _ground = ComputeGround();
+        said = _ground.Value.Said;
+        return _ground.Value.Nets;
+    }
+
+    /// <summary>The partition piece read as the plane on a drawn reference, or -1.</summary>
+    internal int GroundPlanePiece
+    {
+        get
+        {
+            GroundNets(out _);
+            return _ground!.Value.Plane;
+        }
+    }
+
+    private (IReadOnlySet<int>, string?, int) ComputeGround()
+    {
+        var ground = partition!.Ground;
+        if (ground.ReferenceName is null)
+            return (new HashSet<int>(), "no conductor in the stackup is marked as the ground " +
+                                        "reference. Flag the ground plane in the Technology Editor.", -1);
+
+        if (!ground.ReferenceDraws)
+            return ground.Nets.Count == 0
+                ? (ground.Nets, $"no via reaches the ground reference \"{ground.ReferenceName}\".", -1)
+                : (ground.Nets, null, -1);
+
+        int best = -1;
+        double bestArea = -1;
+        var pieces = partition.Pieces;
+        for (int i = 0; i < pieces.Count; i++)
+        {
+            if (!ground.ReferenceLayers.Contains(pieces[i].Layer)) continue;
+            double area = AreaOfComponent(pieces[i].Paths);
+            if (area > bestArea) { best = i; bestArea = area; }
+        }
+        if (best < 0)
+            return (new HashSet<int>(), $"nothing is drawn on the ground reference \"{ground.ReferenceName}\", " +
+                                        "so no copper is the ground plane.", -1);
+        return (new HashSet<int> { pieces[best].Net },
+                $"reads ground as the net of the largest copper on the ground reference \"{ground.ReferenceName}\".", best);
     }
 
     private bool HasPartition(string name, DrcLayerExpr node)
@@ -279,21 +350,34 @@ internal sealed class DrcRegionEval(
 
     /// <summary>The nets of one polygon: those of every piece on <paramref name="layers"/> it
     /// overlaps or touches. See <see cref="DrcLayerExpr.OnGround"/>.</summary>
+    /// <remarks>Asked through the connectivity walk's own <see cref="DrcConnectivity.LocalTouch"/>, so
+    /// a pad beside a pour is tested against the pour's edges near it rather than all of them: a pour's
+    /// or a plane's box is the board, so every pad on it would clip its whole outline (brief-review-3).</remarks>
     private HashSet<int> NetsOf(Paths64 component, IReadOnlyCollection<LayerKey> layers)
     {
         var nets = new HashSet<int>();
         var touch = Clipper.InflatePaths(component, TouchDilationDbu, JoinType.Miter, EndType.Polygon, MiterLimit);
         var bounds = DrcRegions.BoundsOf(touch);
+        var pieces = partition!.Pieces;
+        _local ??= new DrcConnectivity.LocalTouch([.. pieces.Select(p => (p.Layer, p.Paths, p.Bounds))], null);
+        _piecesByLayer ??= pieces.Select((p, i) => (p.Layer, i)).GroupBy(t => t.Layer)
+                                 .ToDictionary(g => g.Key, g => g.Select(t => t.i).ToArray());
 
-        foreach (var piece in partition!.Pieces)
+        foreach (var layer in layers)
         {
-            if (nets.Contains(piece.Net) || !layers.Contains(piece.Layer)) continue;
-            if (!piece.Bounds.Intersects(bounds)) continue;
-            if (!IsEmpty(Clipper.BooleanOp(ClipType.Intersection, piece.Paths, touch, LayoutClipper.Rule)))
-                nets.Add(piece.Net);
+            if (!_piecesByLayer.TryGetValue(layer, out var onLayer)) continue;
+            foreach (int i in onLayer)
+            {
+                var piece = pieces[i];
+                if (nets.Contains(piece.Net) || !piece.Bounds.Intersects(bounds)) continue;
+                if (_local.Touches(i, touch, bounds, wantMeet: false, out _)) nets.Add(piece.Net);
+            }
         }
         return nets;
     }
+
+    private DrcConnectivity.LocalTouch? _local;
+    private Dictionary<LayerKey, int[]>? _piecesByLayer;
 
     private static Paths64 Boolean(ClipType op, Paths64 a, Paths64 b)
     {

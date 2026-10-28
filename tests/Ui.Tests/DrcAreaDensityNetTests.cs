@@ -475,6 +475,26 @@ public class DrcAreaDensityNetTests
         Assert.Equal(new Bbox(0, 0, 100, 100), Assert.Single(result.Violations).Marker);
     }
 
+    /// <summary>brief-review-3: on a DRAWN reference, ground is the net of the largest copper on it —
+    /// not every net with copper there. Each M2 pad is joined by a via to its own M1 piece; only the
+    /// one on the plane is ground, and the choice is stated.</summary>
+    [Fact]
+    public void OnGround_OnADrawnReference_IsTheNetOfItsLargestCopper()
+    {
+        var shapes = new List<LayoutShape>
+        {
+            Rect(M1, 0, 0, 1000, 1000),        // the plane
+            Rect(M1, 2000, 0, 2200, 200),      // an island on the reference layer
+            Rect(M2, 0, 0, 100, 100),   Rect(VIA, 30, 30, 70, 70),
+            Rect(M2, 2000, 0, 2100, 100), Rect(VIA, 2030, 30, 2070, 70),
+        };
+
+        var result = DrcEngine.Run(shapes, Tech(MustBeEmpty("on_ground(2/0)")));
+
+        Assert.Equal(new Bbox(0, 0, 100, 100), Assert.Single(result.Violations).Marker);
+        Assert.Contains(result.Diagnostics, d => d.Contains("largest copper on the ground reference \"Metal1\""));
+    }
+
     /// <summary>
     /// The additions are inert unless used: a shipped technology's own rules report the same
     /// violations, keys and diagnostics with a rule in the new vocabulary beside them that selects

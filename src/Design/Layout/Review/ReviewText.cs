@@ -19,4 +19,9 @@ public static class ReviewText
     /// <summary><paramref name="dbu"/> in <paramref name="unit"/> with its suffix: "0.25 mm".</summary>
     public static string Length(long dbu, LayoutUnit unit, int dbuPerMicron) =>
         $"{LayoutUnits.Format(dbu, unit, dbuPerMicron, Decimals(unit))} {LayoutUnits.Suffix(unit)}";
+
+    /// <summary>A width and a height sharing one suffix: "0.6 × 0.5 mm".</summary>
+    public static string Size(long w, long h, LayoutUnit unit, int dbuPerMicron) =>
+        $"{LayoutUnits.Format(w, unit, dbuPerMicron, Decimals(unit))} × " +
+        $"{LayoutUnits.Format(h, unit, dbuPerMicron, Decimals(unit))} {LayoutUnits.Suffix(unit)}";
 }

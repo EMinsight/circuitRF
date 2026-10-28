@@ -1323,6 +1323,10 @@ The board is read once and every check shares that one copy.
 
 | Check | What it marks | Threshold (default) |
 |---|---|---|
+| `via-in-pad` | A via inside an SMD pad's soldermask opening. Vias in a thermal pad are left to `thermal-vias`, and a pad centred on its one plated drill is a through-hole pin, whose drill is not a via. | &mdash; |
+| `ground-via-distance` | A ground pad with no ground via within the distance, pad edge to barrel edge; the nearest one's distance is stated, looked for out to ten times the threshold. Thermal pads and through-hole pins are not judged. | `max-distance` (0.5 mm) |
+| `shared-ground-via` | A ground via that is the only one within `ground-via-distance.max-distance` of two or more ground pads. | &mdash; |
+| `thermal-vias` | A thermal pad &mdash; a ground pad of at least `thermal-pad-area` &mdash; with fewer ground vias per mm² under it than `min-via-density`, or none. A via counts when at least half its barrel is inside the pad. `thermal-pad-area` is the thermal-pad size all four pad checks use. | `thermal-pad-area` (2 mm²), `min-via-density` (1 per mm²) |
 | `edge-copper` | Copper on any copper layer closer to the board edge than the pullback. The board edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board &mdash; and cut-outs in the board are edges too. | `pullback` (0.25 mm) |
 
 **The review saved in the layout applies by default** &mdash; which checks run, and each threshold that
@@ -1333,7 +1337,7 @@ was changed from its default. `--set` overrides one for this run; `--defaults` i
 | `--cell <name>` | With a workspace: the cell whose layout to review. |
 | `--checks id,id` | Run only these checks. |
 | `--skip id,id` | Do not run these checks. |
-| `--set <check>.<threshold>=<value>` | A threshold for this run, e.g. `edge-copper.pullback=0.3mm`. **A length carries its unit** (`0.3mm`, `300um`, `12mil`), and a bare number is refused, as for [`render --window`](#render). Repeatable. |
+| `--set <check>.<threshold>=<value>` | A threshold for this run, e.g. `edge-copper.pullback=0.3mm`. **A length carries its unit** (`0.3mm`, `300um`, `12mil`), and a bare number is refused, as for [`render --window`](#render). An area is a number of mm² and a density a number per mm² (`thermal-vias.thermal-pad-area=4`). Repeatable. |
 | `--defaults` | Ignore the review saved in the layout. |
 | `--ignore-accepted` | Report as if nothing had been accepted: every finding counts. |
 | `--all` | List every finding. By default at most 20 per check per layer are listed, followed by *… and N more*. |

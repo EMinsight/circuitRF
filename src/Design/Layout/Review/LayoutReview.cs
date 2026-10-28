@@ -20,6 +20,10 @@ public static class LayoutReview
     /// overview's table order). Briefs 3–5 add theirs in their place.</summary>
     private static readonly ReviewCheck[] Registry =
     [
+        new ViaInPadCheck(),
+        new GroundViaDistanceCheck(),
+        new SharedGroundViaCheck(),
+        new ThermalViasCheck(),
         new EdgeCopperCheck(),
     ];
 
@@ -54,7 +58,7 @@ public static class LayoutReview
                 $"'{Path.GetFileName(source.Path)}' resolves no technology, so the review cannot tell copper from "
               + "the board outline. Give the layout a technology, or open it in a workspace that has one.");
 
-        var ctx = new ReviewContext(source, tech);
+        var ctx = new ReviewContext(source, tech, settings);
         var enabled = Registry.Where(c => settings.IsEnabled(c.Def.Id)).ToList();
         var rows = new List<ReviewCheckRow>();
         var findings = new List<(int Check, ReviewFinding Finding)>();
@@ -138,6 +142,7 @@ internal sealed class ReviewContext
 {
     public TraceImpedanceAnalysis.LayoutSource Source { get; }
     public Technology Tech { get; }
+    public ReviewSettings Settings { get; }
     public ReviewLayers Layers { get; }
     public int DbuPerMicron => Source.View.DbuPerMicron;
     public LayoutUnit Unit => Source.View.DisplayUnit;
@@ -147,11 +152,13 @@ internal sealed class ReviewContext
     private ConnectivityPartition? _partition;
     private DrcRegionEval? _eval;
     private ReviewBoard? _board;
+    private ReviewPads? _pads;
 
-    public ReviewContext(TraceImpedanceAnalysis.LayoutSource source, Technology tech)
+    public ReviewContext(TraceImpedanceAnalysis.LayoutSource source, Technology tech, ReviewSettings settings)
     {
         Source = source;
         Tech = tech;
+        Settings = settings;
         Layers = ReviewLayers.For(tech);
     }
 
@@ -170,6 +177,18 @@ internal sealed class ReviewContext
         _eval ??= new DrcRegionEval(Regions, Tech.Layers.Select(l => l.Key).ToHashSet(), Partition);
 
     public ReviewBoard Board => _board ??= ReviewBoard.Build(Source.Shapes, Tech, Layers, Unit, DbuPerMicron);
+
+    /// <summary>The pads, vias and ground the four pad checks share (brief-review-3).</summary>
+    public ReviewPads Pads => _pads ??= ReviewPads.Build(this);
+
+    /// <summary>A threshold of ANY check as this run sees it, stored units — for a threshold one check
+    /// declares and others read (<c>thermal-vias.thermal-pad-area</c>, <c>ground-via-distance.max-distance</c>).</summary>
+    public double Threshold(string checkId, string thresholdId)
+    {
+        string key = ReviewSettings.KeyOf(checkId, thresholdId);
+        var (def, threshold) = LayoutReview.FindThreshold(key) ?? throw new KeyNotFoundException(key);
+        return Settings.Value(def, threshold, DbuPerMicron);
+    }
 
     public string Length(long dbu) => ReviewText.Length(dbu, Unit, DbuPerMicron);
 }
@@ -204,6 +223,7 @@ internal sealed class ReviewCheckRun(ReviewCheckDef def, ReviewSettings settings
         Findings.Clear();
     }
 
+    /// <param name="region">The marker. A two-point path in it is a LINE (a pad to its nearest via).</param>
     public void Add(LayerKey? layer, string sentence, string? measured, Paths64 region)
     {
         var bounds = DrcRegions.BoundsOf(region);

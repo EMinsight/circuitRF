@@ -4314,3 +4314,15 @@ The MCP `review` tool is the verb with its arguments (`ToolCatalog`). Gates:
 findings identical in order; a bare-number `--set` refused; exit 0 / 1) and `ReviewRunTests.cs` (roles by role,
 not run with its sentence, the edge-copper check firing and silent, acceptance by key and stale, settings
 round-trip).
+
+### 32.5 The pad checks (brief-review-3)
+
+`via-in-pad`, `ground-via-distance`, `shared-ground-via` and `thermal-vias` share one `ReviewPads`, built once per
+run on the run's regions, partition and evaluator: pads are `and(outer copper, soldermask)` per side, vias the
+plated drill layers' polygons (one via per polygon however many stackup entries claim its layer, spanning their
+union), ground is `on_ground`'s. On a DRAWN ground reference `on_ground` reads the net of the largest piece on the
+reference conductor (`DrcRegionEval.GroundNets`) — the artwork reader's `ReferenceConductor` rule — and states it;
+an undrawn one keeps the partition's via walk. The per-pad via lists are `near`'s own routine with identities kept
+(`DrcRegionEval.WithinEach`), asked once per distance and shared by the two ground-via checks. `thermal-pad-area` is a
+new threshold kind, `ReviewThresholdKind.Area` (mm²), beside `Density` (per mm²): both plain numbers on `--set`. Gate:
+`tests/Ui.Tests/Review/PadViaChecksTests.cs`.

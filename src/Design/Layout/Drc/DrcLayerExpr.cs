@@ -106,8 +106,10 @@ public abstract record DrcLayerExpr
 
     /// <summary>
     /// Keeps each polygon of <paramref name="A"/> on a net the stackup's ground reference reaches —
-    /// the nets <c>GroundReach.Nets</c> names (brief-review-1 R-rev1-4). Nothing infers a ground net:
-    /// a technology that flags no reference selects nothing, and says so.
+    /// the nets <c>GroundReach.Nets</c> names for a reference that draws nothing, and on a DRAWN
+    /// reference the net of the largest copper on it, the plane (brief-review-3;
+    /// <c>DrcRegionEval.GroundNets</c>). A technology that flags no reference selects nothing, and
+    /// says so.
     ///
     /// <para><b>A derived polygon's nets</b>, for this and <see cref="SameNet"/>: the nets of every
     /// connectivity piece it overlaps or touches, among the pieces on the drawing layers its own
