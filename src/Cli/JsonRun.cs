@@ -155,6 +155,12 @@ internal static class JsonRun
     /// Analysis report and nothing else.</summary>
     public static ImpedanceReportJson? Impedance;
 
+    /// <summary>What <c>review</c> found — a projection of the Layout Review's result.</summary>
+    public static ReviewReportJson? Review;
+
+    /// <summary>What <c>review --list-checks</c> listed: every check and its thresholds.</summary>
+    public static IReadOnlyList<ReviewCheckJson>? ReviewChecks;
+
     /// <summary>What <c>impedance --survey</c> found — the width classes per layer.</summary>
     public static ImpedanceSurveyJson? ImpedanceSurvey;
 
@@ -243,6 +249,8 @@ internal static class JsonRun
         Smith               = null;
         Lvs                 = null;
         Impedance           = null;
+        Review              = null;
+        ReviewChecks        = null;
         ImpedanceSurvey     = null;
         ImpedanceLine       = null;
         FieldPlots          = null;
@@ -486,14 +494,14 @@ internal static class JsonRun
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
          || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
          || Center is not null || Doe is not null || Recognize is not null || StepImport is not null || ConvertImage is not null
-         || Model is not null || Library is not null)
+         || Model is not null || Library is not null || Review is not null || ReviewChecks is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
                                      ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: Optimize,
                                      Yield: Yield, Corners: Corners, Center: Center, Doe: Doe,
                                      Recognize: Recognize, StepImport: StepImport, Convert: ConvertImage,
-                                     Model: Model, Library: Library);
+                                     Model: Model, Library: Library, Review: Review, ReviewChecks: ReviewChecks);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

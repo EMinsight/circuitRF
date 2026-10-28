@@ -1229,6 +1229,22 @@ public sealed class LayoutView
     /// </summary>
     public List<Em.TraceImpedanceAcceptance> ImpedanceAcceptances { get; } = [];
 
+    /// <summary>
+    /// brief-review-2 R-rev2-6: which Layout Review checks run and the thresholds that differ from
+    /// their defaults — see <see cref="CircuitRF.Design.Layout.Review.ReviewSettings"/>. Null means the
+    /// defaults. Beside <see cref="ImpedanceReview"/> and on its terms: review state, not artwork, dirty
+    /// but <b>not undoable</b>.
+    /// </summary>
+    public CircuitRF.Design.Layout.Review.ReviewSettings? Review { get; set; }
+
+    /// <summary>
+    /// brief-review-2 R-rev2-7: Layout Review findings the designer has accepted, each with its reason —
+    /// see <see cref="CircuitRF.Design.Layout.Review.ReviewAcceptance"/>. Beside <see cref="DrcWaivers"/>
+    /// and on its terms, and its own list: not a DRC waiver and not an Impedance acceptance. The RUN
+    /// never writes this; it reads the list.
+    /// </summary>
+    public List<CircuitRF.Design.Layout.Review.ReviewAcceptance> ReviewAcceptances { get; } = [];
+
     public List<LayoutShape> Shapes { get; } = [];
     public List<LayoutInstance> Instances { get; } = [];
 

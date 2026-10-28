@@ -1399,6 +1399,46 @@ internal static class ToolCatalog
                     ""),
             ]),
 
+        // The Layout Review — the `review` verb with no second implementation (brief-review-2
+        // R-rev2-11). A reviewer's checklist an agent can run on a board it did not draw, and cannot
+        // look at: copper at the board edge, and the checks the series adds.
+        new("review",
+            "Layout Review of a board: the built-in checks a person reviewing artwork runs by eye, each marking "
+          + "the places worth a look with a sentence saying why. Beside DRC, not part of it: a finding is advice "
+          + "(a warning), never an error, and a check whose layer role the technology lacks (no board outline, no "
+          + "ground reference flagged) is reported not run with the one sentence that fixes it (a note). Layers "
+          + "are found by role, never by number, so it runs on shipped, imported and hand-built technologies alike. "
+          + "Findings are grouped per check and per layer. The review saved on the layout (checks on or off, "
+          + "thresholds) applies unless an argument overrides it, and so do the findings accepted there. To accept "
+          + "one headlessly, add it to the .clay's ReviewAcceptances with the finding's key (reference topic layout). "
+          + "Exit 0 when it ran, whatever it found; 1 on a refusal, or with severity warning when an unaccepted "
+          + "warning remains. Writes nothing.",
+            null, null,
+            [
+                new("", [ "review" ],
+                    [new("path", true, "A .clay, a cell folder holding one, or a workspace with cell. Required, except with listChecks.",
+                         Required: false)],
+                    [
+                        new("cell", "--cell", OptKind.Str, "With a workspace: the cell whose layout to review."),
+                        new("checks", "--checks", OptKind.StrList, "Run only these checks, by id (listChecks lists them)."),
+                        new("skip", "--skip", OptKind.StrList, "Do not run these checks, by id."),
+                        new("set", "--set", OptKind.StrRepeat,
+                            "Override a threshold for this run: \"<check>.<threshold>=<value>\", a length WITH its unit "
+                          + "(edge-copper.pullback=0.3mm); a bare number for a length is refused."),
+                        new("defaults", "--defaults", OptKind.Flag, "Ignore the review saved on the layout and use the defaults."),
+                        new("ignoreAccepted", "--ignore-accepted", OptKind.Flag,
+                            "Report as if nothing had been accepted: every finding counts."),
+                        new("all", "--all", OptKind.Flag,
+                            "List every finding in the text report; by default at most 20 per check per layer. The JSON always carries every finding."),
+                        new("severity", "--severity", OptKind.Str,
+                            "What decides the exit code: warning (an unaccepted warning exits 1) or none (the default)."),
+                        new("listChecks", "--list-checks", OptKind.Flag,
+                            "List every check with its thresholds, defaults and the layout's saved values, and run nothing."),
+                        Summary,
+                    ],
+                    ""),
+            ]),
+
         new("read",
             "Read a file back: a result file as cubes, or one of circuitRF's own documents as its own text.",
             null, null,

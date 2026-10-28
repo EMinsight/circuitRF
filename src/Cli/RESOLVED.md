@@ -3309,3 +3309,13 @@ Found checking a field report about plotting gain against output power at each f
   refuses a versus trace whose resolve left an `ExpressionError` (`plot.trace.unresolved`, verb `plot` only) rather
   than writing an empty frame.
 - Gate: `Ui.Tests/Cli/MissingVerbsCliTests.PlotVersus_CarriesTheXSide_AndRefusesOneThatDoesNotResolve`.
+
+## `review` — the Layout Review verb (brief-review-2, 2026-10-27)
+
+`src/Cli/Review.cs` holds parsing, refusals and reporting only; every finding is `LayoutReview.Run`'s and
+acceptances are `ReviewAcceptance.Apply`'s. Check ids in `--checks`/`--skip` are validated before the layout is
+read; `--set` is applied after it, because a length is parsed against the layout's own `DbuPerMicron`. A length
+with no unit is refused (`review.args.set-needs-unit`). The read uses `GeneratedCells.Prepare(mayWrite: false)`:
+the verb writes nothing. Progress reuses `Impedance.ProgressLines`. Registering a verb with an MCP tool needs the
+positional added to `ServeProtocolAdapterTests.EveryAdvertisedArgument_IsAFlagTheVerbActuallyReads`' table, and
+every new diagnostic id to `CliStructuredOutputTests.ExpectedIds`; both gates name what is missing.

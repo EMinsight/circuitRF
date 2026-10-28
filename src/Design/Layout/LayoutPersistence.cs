@@ -100,6 +100,15 @@ public sealed class ClayFile
     /// <see cref="FormatVersion"/> bump.</summary>
     public List<Em.TraceImpedanceAcceptance>? ImpedanceAcceptances { get; set; }
 
+    /// <summary>See <see cref="LayoutView.Review"/> (brief-review-2 R-rev2-6). Additive — omitted when the
+    /// layout is at the defaults, so every existing <c>.clay</c> re-serializes byte-for-byte and needs no
+    /// <see cref="FormatVersion"/> bump.</summary>
+    public Review.ReviewSettings? Review { get; set; }
+
+    /// <summary>See <see cref="LayoutView.ReviewAcceptances"/> (brief-review-2 R-rev2-7). Additive —
+    /// omitted when empty.</summary>
+    public List<Review.ReviewAcceptance>? ReviewAcceptances { get; set; }
+
     /// <summary>See <see cref="LayoutView.Rulers"/> (docs/design/layout-view.md §9B.7, R-rul-15).
     /// Additive — omitted when empty, so every existing ruler-free <c>.clay</c> re-serializes
     /// byte-for-byte and needs no <see cref="FormatVersion"/> bump.</summary>
@@ -439,6 +448,8 @@ public static class LayoutPersistence
         LvsWaivers    = view.LvsWaivers.Count > 0 ? [.. view.LvsWaivers] : null,
         ImpedanceReview = view.ImpedanceReview,
         ImpedanceAcceptances = view.ImpedanceAcceptances.Count > 0 ? [.. view.ImpedanceAcceptances] : null,
+        Review        = view.Review?.ForSave(view.DbuPerMicron),
+        ReviewAcceptances = view.ReviewAcceptances.Count > 0 ? [.. view.ReviewAcceptances] : null,
         Rulers        = view.Rulers.Count > 0 ? [.. view.Rulers] : null,
         ImageSource   = view.ImageSource,
         Shapes        = [.. view.Shapes],
@@ -501,6 +512,8 @@ public static class LayoutPersistence
         if (file.LvsWaivers is not null) view.LvsWaivers.AddRange(file.LvsWaivers);
         view.ImpedanceReview = file.ImpedanceReview;
         if (file.ImpedanceAcceptances is not null) view.ImpedanceAcceptances.AddRange(file.ImpedanceAcceptances);
+        view.Review = file.Review;
+        if (file.ReviewAcceptances is not null) view.ReviewAcceptances.AddRange(file.ReviewAcceptances);
         if (file.Rulers is not null) view.Rulers.AddRange(file.Rulers);
         view.ImageSource = file.ImageSource;
         view.LoadFindings = [.. degenerate.Findings()];

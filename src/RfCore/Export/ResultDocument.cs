@@ -184,7 +184,11 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ModelReportJson? Model = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        VendorLibraryJson? Library = null);
+        VendorLibraryJson? Library = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ReviewReportJson? Review = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ReviewCheckJson>? ReviewChecks = null);
 
     /// <summary>What a <c>model</c> noun did (brief-modelcomposer-13 R-mc13-3): the same lines stdout carries, one item
     /// each, with what each is about.</summary>
@@ -1439,6 +1443,72 @@ namespace RfCore.Export
         int                                Accepted = 0,
         IReadOnlyList<ImpedanceStaleAcceptanceJson>? StaleAcceptances = null,
         int?                               Junctions = null);
+
+    /// <summary>
+    /// What <c>review</c> found — a projection of the Layout Review's result (brief-review-2 R-rev2-10).
+    /// Marker boxes are in µm; a threshold's value is in µm for a length and the number itself otherwise.
+    /// </summary>
+    /// <param name="Warnings">Warnings no acceptance covers — what <c>--severity warning</c> counts.</param>
+    public sealed record ReviewReportJson(
+        string                                   Path,
+        string?                                  Technology,
+        string                                   DisplayUnit,
+        bool                                     Cancelled,
+        int                                      Warnings,
+        int                                      Accepted,
+        int                                      Notes,
+        IReadOnlyList<ReviewCheckJson>           Checks,
+        IReadOnlyList<ReviewFindingJson>         Findings,
+        IReadOnlyList<ReviewStaleAcceptanceJson> StaleAcceptances,
+        IReadOnlyList<string>                    Diagnostics);
+
+    /// <param name="State"><c>ran</c>, <c>not-run</c> or <c>cancelled</c>; <c>listed</c> under
+    /// <c>--list-checks</c>, which runs nothing.</param>
+    public sealed record ReviewCheckJson(
+        string                               Id,
+        string                               Title,
+        string                               State,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Reason,
+        int                                  Findings,
+        int                                  Accepted,
+        IReadOnlyList<ReviewThresholdJson>   Thresholds,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Description = null);
+
+    /// <param name="Kind"><c>length</c>, <c>count</c> or <c>density</c>.</param>
+    /// <param name="Text">The value as a reviewer reads it, in the layout's display unit.</param>
+    /// <param name="Saved">The value the layout saved, when it saved one (µm for a length).</param>
+    public sealed record ReviewThresholdJson(
+        string  Id,
+        string  Title,
+        string  Kind,
+        double  Value,
+        double  Default,
+        string  Text,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Saved = null);
+
+    /// <param name="Severity"><c>warning</c>, or <c>note</c> for a check that could not run.</param>
+    /// <param name="Marker">The marked region's bounding box, µm: minX, minY, maxX, maxY. Absent on a note.</param>
+    /// <param name="Key">The key an acceptance names in the <c>.clay</c>'s ReviewAcceptances.</param>
+    public sealed record ReviewFindingJson(
+        string                 Check,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                Layer,
+        string                 Severity,
+        string                 Sentence,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                Measured,
+        string                 Key,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double[]?              Marker,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ImpedanceAcceptedJson? Accepted);
+
+    /// <summary>A review acceptance saved on the layout that matched no finding of a check that ran.</summary>
+    public sealed record ReviewStaleAcceptanceJson(
+        string Key, string Check, string Layer, string Summary, string Reason, DateTime Date);
 
     /// <summary>An acceptance saved on the layout that matched no finding in this run — the trace was
     /// moved or re-routed, or the finding is gone. Listed, never removed by a run.</summary>

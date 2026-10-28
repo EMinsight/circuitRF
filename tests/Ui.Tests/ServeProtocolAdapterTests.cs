@@ -872,9 +872,10 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         // asking whether the artwork implements the drawing is the only way it can find out.
         //
         // `impedance` is the Trace Impedance Analysis — a board review an agent can run on artwork it
-        // did not draw. `recognize` (brief-artsch-7) turns that artwork into a circuit.
+        // did not draw. `recognize` (brief-artsch-7) turns that artwork into a circuit. `review`
+        // (brief-review-2) is the Layout Review, a reviewer's checklist over the same artwork.
         Assert.Equal(["run", "check", "explain", "create", "import", "convert", "render", "netlist", "plot",
-                      "find", "lvs", "recognize", "impedance", "read", "model", "history", "solver", "reference", "batch"],
+                      "find", "lvs", "recognize", "impedance", "review", "read", "model", "history", "solver", "reference", "batch"],
                      tools);
 
         Assert.Equal(0, server.Close());
@@ -996,6 +997,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["lvs/"]              = ["path"],
             // Trace Impedance Analysis. Single-mode: one layout, its layers named by flag.
             ["impedance/"]        = ["path"],
+            ["review/"]           = ["path"],
             // brief-artsch-7 R-as7-7. Single-mode: one layout, the kind inferred from the path.
             ["recognize/"]        = ["path"],
             // `reference` has no REQUIRED positional at all: its no-argument form is the topic list,

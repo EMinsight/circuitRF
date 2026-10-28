@@ -155,45 +155,10 @@ public static class DrcEngine
         }
         long CapFor(LayerKey k) => tolCap.TryGetValue(k, out long c) ? c : long.MaxValue;
 
-        // ── Geometry, once, grouped by layer ────────────────────────────────────────────────────
-        // Flattening is the expensive half and every rule on a layer wants the same result, so it
-        // happens once per shape here rather than once per rule.
-        var byLayer = new Dictionary<LayerKey, List<(string? Net, Paths64 Paths)>>();
-        var layerOrder = new List<LayerKey>();
-
-        foreach (var shape in checkable)
-        {
-            try
-            {
-                DrcRegions.Expand(shape, tech, CapFor, (layer, net, paths) =>
-                {
-                    if (!byLayer.TryGetValue(layer, out var list))
-                    {
-                        byLayer[layer] = list = [];
-                        layerOrder.Add(layer);
-                    }
-                    list.Add((net, paths));
-                });
-            }
-            catch (Exception ex)
-            {
-                // One unflattenable shape must not lose the whole run's findings.
-                diagnostics.Add($"A {shape.GetType().Name} on layer {shape.Layer.Layer}/{shape.Layer.Datatype} " +
-                                $"could not be flattened and was skipped: {ex.Message}");
-            }
-        }
-
-        // ── One unioned region per layer, for the expression evaluator ──────────────────────────
-        // The net-aware `byLayer` structure above stays as it is — minimum SPACING is the one check
-        // that needs net attribution, and it reads that structure directly. Everything else measures
-        // regions, so it reads these.
-        var layerRegions = new Dictionary<LayerKey, Paths64>();
-        foreach (var (layer, entries) in byLayer)
-        {
-            var all = new Paths64();
-            foreach (var (_, paths) in entries) all.AddRange(paths);
-            layerRegions[layer] = DrcRegions.Union(all);
-        }
+        // ── Geometry, once, grouped by layer, and one unioned region per layer ─────────────────
+        // DrcLayerGeometry, shared with the layout review (brief-review-2 R-rev2-1), so the two read
+        // the same flattened copper rather than two copies of one loop.
+        var (byLayer, layerRegions) = DrcLayerGeometry.Build(checkable, tech, CapFor, diagnostics);
 
         // The technology's own layer table, so the evaluator can tell "this layer does not exist"
         // from "this design has nothing on it" — two very different things to tell a user.

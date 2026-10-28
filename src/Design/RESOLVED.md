@@ -23994,3 +23994,32 @@ values exist in the file. Two separate causes.
   `Parse(query, bareNumberUnit)` reads a plain number in the seeded value's own prefix and unit, so `200` over
   `400 fF` is 200 fF. Without that, `200` was compared against the part's stated case code (`0402`) and failed
   before any value comparison happened.
+
+## brief review-2 — the Layout Review run, its roles, and `edge-copper` (2026-10-27)
+
+`src/Design/Layout/Review/`: `LayoutReview.Run(LayoutSource, ReviewSettings?, RunControl?)` over the source
+`TraceImpedanceAnalysis.LoadLayout` reads once; `ReviewLayers` (roles), `ReviewBoard` (board region and edge band),
+`ReviewSettings` / `ReviewAcceptance` (saved on `LayoutView.Review` / `ReviewAcceptances`), `ReviewModel` (finding,
+row, result) and `Checks/EdgeCopperCheck`. `DrcEngine.Run`'s per-layer flatten-and-union loop is now
+`DrcLayerGeometry.Build`, called by both; DRC's output is unchanged (its engine tests pass as they were).
+
+**The board edge is read the way Crop to Rectangle reads it, by the same calls**: the outline shapes unioned
+(`LayoutBooleans.Union`), polygons (`PlanarExtractor.ToPolygons` at scale 1, so DBU) and
+`Em3dLayoutSolids.Builder.BoardRegions`, which already tells a closed region from a line drawn round the board.
+A line's holes are grown back by half the widest outline stroke, as `LayoutCrop.RebuildOutline` does, so the edge
+is the stroke's centre line. An outline that encloses nothing is not run with the largest gap between stroke ends.
+
+**The edge band erodes with ROUND joins**, not `sized`'s MITER: a mitred erosion is exact at the board's convex
+corners but under-measures at the inner corner of a notch, which is exactly where an edge check must be right.
+
+**Acceptances are applied outside the run** (`ReviewAcceptance.Apply`), on `TraceImpedanceAcceptance.Apply`'s
+terms, so a panel can re-apply after an Accept with no re-run. An acceptance whose check did not run is neither
+applied nor stale.
+
+**Not run is one Note per fix sentence**, however many checks it stops, attributed to the first; the row of each
+check still carries its reason. A check that throws is not run with the exception's message and the others keep
+their findings. Disabled checks get no row.
+
+**Settings keep what they do not know**: `Thresholds` is a flat `check.threshold` dictionary and `Disabled` a list
+of ids, so an unknown key survives a read and a write untouched. `ForSave` drops a known threshold equal to its
+default and returns null when nothing is left, so a layout at the defaults writes no `Review`.

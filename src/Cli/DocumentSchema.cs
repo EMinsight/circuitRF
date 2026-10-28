@@ -311,6 +311,13 @@ internal static class DocumentSchema
             first, and the finding's Kind. Moving the trace stops it matching. Reason is required.
             For OutOfTolerance, WorstOhms is the trace's worst Z0 when it was accepted; a run that
             finds it further from target counts the finding again.
+          * Review and ReviewAcceptances are the Layout Review's state (`review`). Review holds
+            Disabled, the check ids turned off, and Thresholds, keyed "<check>.<threshold>" with a
+            length in DBU or a plain number; only values that differ from the default are written, and
+            `review --list-checks` lists every check and threshold. A review acceptance's Key is
+            "<check>|<layer>/<datatype>|<minX>,<minY>,<maxX>,<maxY>": the check id, the finding's
+            layer and its marker's exact bounding box in DBU, as `review --json` reports them. Moving
+            the marked copper stops it matching. Reason is required.
 
         Every field the reader understands follows, with its default. Shapes are listed once per
         kind, each with the "$type" value that selects it.

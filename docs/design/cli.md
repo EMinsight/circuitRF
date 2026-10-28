@@ -4273,3 +4273,44 @@ byte, for `new`, `import`, `fit --step all --seed 1`, `export` and `check-charge
 3 on a planted non-conservative device; 130 on a cancel, nothing written), `ModelCliNoLogicTests`,
 `ModelAgentEndToEndTests` (raw files to a `circuitrf hb` run of the exported model, held within 1 dB of the truth's
 output) and `ModelMcpToolTests` (the tool's export is the CLI's bytes; `reference cmodel` serves the field table).
+
+## 32. `review` — the Layout Review, headless (brief-review-2)
+
+`circuitrf review <layout> [--cell <name>] [--checks id,id] [--skip id,id] [--set <check>.<threshold>=<value>]… [--defaults] [--ignore-accepted] [--all] [--severity warning|none]`
+· `circuitrf review [<layout>] --list-checks`
+
+### 32.1 It owns no check
+
+Every finding is `LayoutReview.Run` (`src/Design/Layout/Review`), the function the Review panel calls, over the
+`TraceImpedanceAnalysis.LayoutSource` that `LoadLayout` reads once. `src/Cli/Review.cs` is argument parsing,
+refusals and reporting; acceptances are applied by `ReviewAcceptance.Apply`, the panel's own call. A review is
+**not DRC** and is not a mode of `check`: DRC is pass/fail against the technology's rules, a review is a
+person's aid whose findings are advice, and the two stay two runs.
+
+### 32.2 Input, settings, units
+
+- **Input** by kind through `DocumentKinds.Classify`: a `.clay`, a cell folder's primary layout, or a workspace
+  with `--cell` (resolved by `CellLookup`, `render`'s rule). Anything else is refused by kind.
+- **The saved review applies** (`LayoutView.Review`): checks off and thresholds changed. `--checks`/`--skip`
+  then `--set` override it for this run; `--defaults` starts from the defaults instead. Every check id is
+  validated before the layout is read, so a typo does not cost a large board's read.
+- **A length `--set` carries its unit**; a bare number is `review.args.set-needs-unit`, `render --window`'s rule.
+  It is parsed against the layout's own `DbuPerMicron`, which is why `--set` is applied after the read.
+- **Units.** Sentences and stdout speak the layout's `DisplayUnit`; `--json` markers are µm.
+
+### 32.3 Output and exit codes
+
+stdout: per check its count (accepted separately) and its findings grouped by layer, at most
+`Review.ListedPerLayer` (20) per check per layer without `--all`; a check not run prints its reason. `--json`
+carries every finding (`result.review`), and `--list-checks` answers `result.reviewChecks` without running.
+The findings are the report, not diagnostics: every `review.` id is a refusal of the verb's own. Exit **0** when
+it ran, **1** on a refusal or with `--severity warning` while an unaccepted warning remains, **130** cancelled
+(the checks that finished are reported). Never 2. It writes nothing; brief-review-7 adds `-o`.
+
+### 32.4 The protocol and the gate
+
+The MCP `review` tool is the verb with its arguments (`ToolCatalog`). Gates:
+`tests/Ui.Tests/Review/ReviewCliVerbTests.cs` (the verb as a process against `LayoutReview.Run` in process, the
+findings identical in order; a bare-number `--set` refused; exit 0 / 1) and `ReviewRunTests.cs` (roles by role,
+not run with its sentence, the edge-copper check firing and silent, acceptance by key and stale, settings
+round-trip).

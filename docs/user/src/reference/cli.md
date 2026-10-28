@@ -134,6 +134,7 @@ convention behind both.</p>
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
 | `recognize` | a `.clay`, a cell folder, or a workspace with `--cell` | Reads the board's copper as a circuit — ground, vias, ports, parts and lines as native components | **Nothing** — the report and the parts table to stdout; `-o circuit.cnl`, `--into new:<name>` for a schematic, `--parts-out parts.csv` |
 | `impedance` | a `.clay` or a cell folder | The same analysis the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis) runs | The per-trace report to stdout; `-o report.pdf` |
+| `review` | a `.clay`, a cell folder, or a workspace with `--cell` | The [Layout Review](layout-editor.html#layout-review)'s built-in checks | **Nothing** — the findings, grouped per check and layer, to stdout |
 | `convert` | any layout format | The same importer and exporter **File ▸ Import/Export** runs | The layout in the format you asked for |
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
 | `new cell` | a workspace + a name | The same code **New Cell** runs | A cell folder and one empty-but-valid file per view |
@@ -1304,6 +1305,62 @@ A layout path given with `--tech`, or a flag that only means something for a dra
 `z0DifferencePercent` and, on a `--z0` row, `crossSectionAtModelWidth` and `widthDifferencePercent`.
 Exit **0** when every row is answered, and **1** when the calculator is refused or a row has no answer.
 A column that cannot answer one row is a warning.
+
+## `review` — a reviewer's checklist over the board {#review}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf review &lt;layout&gt; [--cell &lt;name&gt;] [--checks id,id] [--skip id,id]
+<span class="prompt">  </span>[--set &lt;check&gt;.&lt;threshold&gt;=&lt;value&gt;]… [--defaults] [--ignore-accepted] [--all] [--severity warning|none]
+<span class="prompt">$ </span>circuitrf review [&lt;layout&gt;] --list-checks</code></pre>
+
+`review` runs the [Layout Review](layout-editor.html#layout-review): the built-in checks a person
+reviewing a board runs by eye, each marking the places worth a look with a sentence saying why. It is
+not a design-rule check and does not replace one: a finding is **advice**, and the reviewer either changes
+the artwork or accepts the finding with a reason.
+
+The path is a **`.clay`**, a **cell folder** holding one, or a **workspace** with `--cell`. The technology
+resolves as the editor resolves it, and placed cells are flattened as a design-rule check flattens them.
+The board is read once and every check shares that one copy.
+
+| Check | What it marks | Threshold (default) |
+|---|---|---|
+| `edge-copper` | Copper on any copper layer closer to the board edge than the pullback. The board edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board &mdash; and cut-outs in the board are edges too. | `pullback` (0.25 mm) |
+
+**The review saved in the layout applies by default** &mdash; which checks run, and each threshold that
+was changed from its default. `--set` overrides one for this run; `--defaults` ignores what was saved.
+
+| Option | Meaning |
+|---|---|
+| `--cell <name>` | With a workspace: the cell whose layout to review. |
+| `--checks id,id` | Run only these checks. |
+| `--skip id,id` | Do not run these checks. |
+| `--set <check>.<threshold>=<value>` | A threshold for this run, e.g. `edge-copper.pullback=0.3mm`. **A length carries its unit** (`0.3mm`, `300um`, `12mil`), and a bare number is refused, as for [`render --window`](#render). Repeatable. |
+| `--defaults` | Ignore the review saved in the layout. |
+| `--ignore-accepted` | Report as if nothing had been accepted: every finding counts. |
+| `--all` | List every finding. By default at most 20 per check per layer are listed, followed by *… and N more*. |
+| `--severity warning\|none` | What decides the exit code. Default `none`: findings are advice. `warning` makes an unaccepted finding exit 1. |
+| `--list-checks` | List every check with its thresholds, their defaults and the layout's saved values, and run nothing. With no path it lists the defaults. |
+
+stdout gives, per check, a line with its count &mdash; accepted findings counted separately &mdash; and the
+findings grouped by layer under it, each with where it is in the layout's own unit. A check that cannot
+run on this technology says **not run** and the one change that would let it, and the run carries on with
+the others: a technology with no board-outline layer, for one, cannot say where the board edge is. stderr
+says which check is running.
+
+**Accepted findings apply by default.** An accepted finding is reported `ACCEPTED` with its reason and
+does not count. A saved acceptance that matched nothing is listed as stale. There is no `--accept`: a
+script that must accept a finding headlessly adds it to the `.clay`'s `ReviewAcceptances` with the
+finding's `key`; [`reference layout`](#reference) documents the fields.
+
+With `--json` the result is `review`: `technology`, `displayUnit`, `warnings` (unaccepted), `accepted`,
+`notes` (checks not run), `checks` (each `id`, `title`, `state` &mdash; `ran`, `not-run` or `cancelled`
+&mdash; `reason`, `findings`, `accepted` and its `thresholds` with `value`, `default` and `text`), and
+`findings` (each `check`, `layer`, `severity` &mdash; `warning`, or `note` for a check not run &mdash;
+`sentence`, `measured`, `key`, `marker` as a bounding box in **µm**, and `accepted` with its `reason`
+and `date`), then `staleAcceptances`. With `--list-checks` the result is `reviewChecks` instead.
+
+**Exit codes:** **0** when it ran, whatever it found; **1** on a refusal, or with `--severity warning` when
+an unaccepted finding remains; **130** on a cancellation, reporting the checks that finished. `review`
+writes nothing.
 
 ## `smith` — a matching network, headless {#smith}
 
@@ -3244,6 +3301,7 @@ the same documents.
 | `find` | `find` — the workspaces, cells, views and analyses under a directory |
 | `lvs` | [`lvs`](#lvs) — does a cell's artwork implement its schematic |
 | `impedance` | [`impedance`](#impedance) — every trace on a layout against a target Z0, and its return path |
+| `review` | [`review`](#review) — the Layout Review's checks over a board |
 | `model` | [`model`](#model) — the Model Composer's nouns, chosen by `noun` |
 | `history` | [`history checkpoint`, `list` or `restore`](history.html) — the correction nouns (`rename`, `retitle`, `correct`, `review`) are on the verb but not on this server |
 | `reference` | `reference` |

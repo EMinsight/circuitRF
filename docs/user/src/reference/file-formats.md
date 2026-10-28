@@ -92,6 +92,16 @@ application maintains for you — though double-clicking either half of a worksp
 workspace. <code>.cnl</code> is the engine's input and is normally derived rather than edited.</p>
 </div>
 
+## A layout's review state {#clay-review}
+
+A `.clay` carries the [Layout Review](layout-editor.html#layout-review)'s state beside the artwork, and
+both keys are left out of the file until there is something to say:
+
+| Key | Holds |
+|---|---|
+| `Review` | `Disabled`, the ids of the checks turned off, and `Thresholds`, each threshold changed from its default, keyed `<check>.<threshold>` (`"edge-copper.pullback": 300000`) &mdash; a length in the layout's database units, a count or density as the number itself. A threshold set back to its default is removed. A check or threshold id this version does not know is kept as it is. |
+| `ReviewAcceptances` | The findings accepted, each with `Key`, `CheckId`, `Reason` (required), `AcceptedUtc`, `LayerName` and `Summary` (the finding's sentence when it was accepted). `Key` is `<check>\|<layer>/<datatype>\|<minX>,<minY>,<maxX>,<maxY>`: the check, the finding's layer and its marker's bounding box in database units, exactly as `circuitrf review --json` reports it. Moving the marked copper changes the key, and the acceptance is then listed as stale. |
+
 ## The 3D view's operations {#c3d-operations}
 
 A `.c3d` holds four kinds of object that the geometry kernel (OpenCASCADE, which ships inside circuitRF)

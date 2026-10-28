@@ -4301,6 +4301,91 @@ internal static class CliDiagnostics
         ("done", done.ToString(System.Globalization.CultureInfo.InvariantCulture)),
         ("asked", asked.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
+    // ── review (Layout Review, brief-review-2) ─────────────────────────────────────────────────
+    //
+    // Every id here is a REFUSAL of the verb's own. What the review FOUND is the report, not a
+    // diagnostic: a finding is advice, and a run that finds things is the verb working.
+
+    public static Diagnostic ReviewPathRequired() => new(
+        "review.args.path-required", DiagnosticSeverity.Error,
+        "review: a layout is required — a .clay, a cell folder holding one, or a workspace with --cell.");
+
+    public static Diagnostic ReviewUnknownOption(string option) => Diagnostic.Create(
+        "review.args.unknown-option", DiagnosticSeverity.Error,
+        "review: unknown option '{option}'.", ("option", option));
+
+    public static Diagnostic ReviewMultiplePaths() => new(
+        "review.args.multiple-paths", DiagnosticSeverity.Error,
+        "review: one layout at a time.");
+
+    public static Diagnostic ReviewUnknownCheck(string id, string known) => Diagnostic.Create(
+        "review.args.unknown-check", DiagnosticSeverity.Error,
+        "review: '{id}' is not a review check. The checks are: {known}.", ("id", id), ("known", known));
+
+    public static Diagnostic ReviewUnknownThreshold(string check, string id, string known) => Diagnostic.Create(
+        "review.args.unknown-threshold", DiagnosticSeverity.Error,
+        "review: the check '{check}' has no threshold '{id}'. Its thresholds are: {known}.",
+        ("check", check), ("id", id), ("known", known));
+
+    public static Diagnostic ReviewBadSet(string text) => Diagnostic.Create(
+        "review.args.bad-set", DiagnosticSeverity.Error,
+        "review: --set takes <check>.<threshold>=<value>, e.g. edge-copper.pullback=0.3mm, got '{text}'.",
+        ("text", text));
+
+    /// <summary>A length threshold with no unit — refused, render --window's rule: a bare number could
+    /// be DBU, µm or mm, and a threshold read at the wrong one marks nothing or everything.</summary>
+    public static Diagnostic ReviewSetNeedsUnit(string key, string text, string suggestion) => Diagnostic.Create(
+        "review.args.set-needs-unit", DiagnosticSeverity.Error,
+        "review: {key} is a length and '{text}' has no unit, which could be DBU, µm or mm. Write it with its "
+      + "unit — {suggestion}.",
+        ("key", key), ("text", text), ("suggestion", suggestion));
+
+    public static Diagnostic ReviewBadNumber(string key, string text, string wanted) => Diagnostic.Create(
+        "review.args.bad-number", DiagnosticSeverity.Error,
+        "review: {key} takes {wanted}, got '{text}'.", ("key", key), ("text", text), ("wanted", wanted));
+
+    public static Diagnostic ReviewUnknownSeverity(string text) => Diagnostic.Create(
+        "review.args.unknown-severity", DiagnosticSeverity.Error,
+        "review: --severity takes warning or none, got '{text}'.", ("text", text));
+
+    public static Diagnostic ReviewPathNotFound(string path) => Diagnostic.Create(
+        "review.path.not-found", DiagnosticSeverity.Error,
+        "No such file or folder: {path}", ("path", path));
+
+    public static Diagnostic ReviewNotALayout(string path, string kind) => Diagnostic.Create(
+        "review.path.not-a-layout", DiagnosticSeverity.Error,
+        "'{path}' is {kind}, and review reads a layout's artwork. Give a .clay, a cell folder that holds one, "
+      + "or a workspace with --cell.",
+        ("path", path), ("kind", kind));
+
+    public static Diagnostic ReviewLayoutUnreadable(string path, string why) => Diagnostic.Create(
+        "review.path.unreadable", DiagnosticSeverity.Error,
+        "review: '{path}' could not be read: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic ReviewCellRequired(string path) => Diagnostic.Create(
+        "review.cell.required", DiagnosticSeverity.Error,
+        "review: '{path}' is a workspace; say which cell's layout to review with --cell <name>.", ("path", path));
+
+    public static Diagnostic ReviewNoSuchCell(string path, string cell, string known) => Diagnostic.Create(
+        "review.cell.not-found", DiagnosticSeverity.Error,
+        "review: the workspace '{path}' has no cell '{cell}'. Its cells are: {known}.",
+        ("path", path), ("cell", cell), ("known", known));
+
+    public static Diagnostic ReviewAmbiguousCell(string cell, string found) => Diagnostic.Create(
+        "review.cell.ambiguous", DiagnosticSeverity.Error,
+        "review: more than one cell is named '{cell}': {found}. Give the cell folder itself.",
+        ("cell", cell), ("found", found));
+
+    public static Diagnostic ReviewRefused(string path, string why) => Diagnostic.Create(
+        "review.refused", DiagnosticSeverity.Error,
+        "review: '{path}' was not reviewed: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic ReviewCancelled(int done, int asked) => Diagnostic.Create(
+        "review.cancelled", DiagnosticSeverity.Warning,
+        "review: cancelled after {done} of {asked} checks; the findings are those of the checks that finished.",
+        ("done", done.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        ("asked", asked.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
     // ── impedance --tech: the line calculator (AA-3) ────────────────────────────────────────────
     //
     // Refusals of the calculator's own. A column with no answer for one row (a coplanar line has no

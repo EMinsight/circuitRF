@@ -1390,6 +1390,31 @@ page's footer says which, beside Z0 in Ω.
 The same analysis and the same PDF are available headlessly as
 [`circuitrf impedance`](cli.html#impedance).
 
+## Layout Review {#layout-review}
+
+A **Layout Review** is help for a person reviewing a board. A [design-rule check](#drc) answers whether
+the artwork meets the process's rules, pass or fail; a review marks the places an experienced reviewer
+would want to look at, each with a sentence saying why, and leaves the judgement to the reviewer. A
+finding is never an error: you either change the artwork or accept the finding with a reason.
+
+The checks are built in, each with thresholds you can change. They find every layer they need by its
+**role** rather than by its number &mdash; copper from the stackup, soldermask and paste from the board's
+two surfaces, drills from the stackup's vias, the board edge from the board-outline layer, ground from
+the conductor flagged as the ground reference &mdash; so one review runs unchanged on a shipped
+technology, an imported board's and one you built. A check whose layer the technology lacks is reported
+**not run**, with the one change that would let it run, and the other checks carry on.
+
+| Check | What it marks | Threshold (default) |
+|---|---|---|
+| Copper at the board edge | Copper on any copper layer closer to the board edge than the pullback, marked where it lies inside that strip. The edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board, whose centre line is the edge &mdash; and cut-outs in the board (slots, milled openings) are edges too. | Pullback (0.25 mm) |
+
+Findings are counted per check and grouped by layer. Which checks run, the thresholds you changed and
+the findings you accepted are saved in the layout, so the next review reviews what the last one did; an
+accepted finding is still reported, marked with its reason, and does not count. When the marked copper
+moves, the acceptance no longer matches and is listed as stale.
+
+Run a review with [`circuitrf review`](cli.html#review).
+
 ## The toolbar {#toolbar}
 
 {{toolbar: layout}}

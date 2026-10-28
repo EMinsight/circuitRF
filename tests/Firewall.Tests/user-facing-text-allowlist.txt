@@ -312,6 +312,8 @@ src/Design/Layout/Em/EmSetupPersistence.cs|a name is a string
 src/Design/Layout/Em/EmSetupPersistence.cs|expected a name list or \"*\"
 src/Design/Thermal/ThermalFosterNetlist.cs|an empty network
 src/Design/Layout/Em/TraceImpedanceAcceptance.cs|An acceptance needs a reason.
+src/Design/Layout/Review/ReviewAcceptance.cs|An acceptance needs a reason.
+src/Design/Layout/Review/LayoutReview.cs|'{def.Id}' has no threshold '{thresholdId}'.
 src/Design/Layout/Interchange/DxfUnits.cs|Unsupported/unset $INSUNITS value {insunits}.
 src/Design/Layout/Interchange/DxfWriter.cs|DXF export does not support shape type {shape.GetType().Name}.
 src/Design/Layout/Interchange/GdsiiReader.cs|GDSII BOUNDARY is missing its ENDEL record.

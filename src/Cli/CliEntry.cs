@@ -255,6 +255,10 @@ return JsonRun.Finish(Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : Unkno
     // Trace Impedance Analysis: every trace on the chosen copper layers against a target Z0, as the
     // layout editor's Impedance Analysis runs it. Owns no analysis and no page — see its header.
     "impedance" => CircuitRF.Cli.Impedance.Run,
+    // The Layout Review (brief-review-2): the built-in checks a person reviewing a board runs by eye,
+    // beside DRC and separate from it. Owns no check — every finding comes out of LayoutReview.Run,
+    // which the Review panel calls.
+    "review"    => CircuitRF.Cli.Review.Run,
     // Create Schematic from Artwork, headless (brief-artsch-7). It owns no recognition — every decision is
     // ArtworkRecognition's in src/Design, the function the GUI command calls — and writes nothing unless asked.
     "recognize" or "recognise" => CircuitRF.Cli.Recognize.Run,
