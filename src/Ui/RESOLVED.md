@@ -41114,6 +41114,59 @@ already hidden, and its command is gated too. The reader is kept and `circuitrf 
 the switch as an instance property, so the tests of the withheld reader turn it on for themselves alone, never through
 a static that parallel tests would share.
 
-**The picture dialog's tool strip is on every layout picture, scale or none, Fill first beside Zoom to Fit (owner,
+**The picture dialog's tool strip is on every layout picture, scale or none, Paint Fill first beside Zoom to Fit (owner,
 2026-10-28).** It used to appear only once the picture had a scale, and the owner found no tools at all on a pasted
 picture. Every correction is in pixels, and the copper ones now act before the scale, so there is nothing to grey.
+
+## Nothing moves because something was clicked (brief-dfr30-3 R-dfr30-3-1, 2026-10-28)
+
+**Standing rule (owner, said several times).** No control may move because something else was clicked, armed,
+selected or chosen. A control whose options appear on demand never puts them IN LINE before other controls. They go
+in a slot of their own, sized to the widest of them and reserved when empty, or on a row of their own that is always
+there. An `IsVisible` element in a row is allowed only where nothing follows it, or where it depends on something no
+click in that row changes (the picture's kind, for example). A checked toggle keeps its padding and text.
+
+The picture dialog's layout tool strip broke this: the conductor picker sat after Fill, and the Drill picker and
+Other…'s box after Via. Arming a tool moved every tool after it, and the legend too. Via went from x ≈ 92 to ≈ 205 with
+Fill armed. The options now share one 252-px slot (`ToolOptions`: the 170-px Drill picker plus Other…'s 80-px box) on a
+second row under the tools. D1 (b), because (a) does not fit: the canvas is two-thirds of the dialog, about 490 px at
+its 760-px minimum width, and the tools, the slot and the legend need about 880. The slot holds one tool's options at a
+time: a selected hand via shows its Drill only while no tool with options of its own is armed (`DrillPickerShown`).
+`tools/UiSnapshot --image <picture> --strip-geometry` is the gate. It reads the bounds of every strip control, the
+legend and the slot with nothing armed, each tool armed by a real click, a hand via selected, and Other… chosen, and
+exits 1 if any moved.
+
+Checked against the rule, in `ImageReadingPanel.axaml` and `ImageSourcePane.axaml`:
+- **Read as**: Automatic's confidence dot appeared inside the button once a kind was read, pushing the other three
+  buttons right. Its 8-px place is now kept before then. Fixed.
+- **Make**: the drawing pair and the plot pair swap with the picture's kind. Both are two buttons of one size. No shift.
+- **Plot row**: Smith Z0 follows the reading, and Keep the source pictures is last in its row. Nothing follows them.
+- **Scale pill**: the value has a minimum width, and the resolution line and the error come last. Nothing follows them.
+- **Canvas**: the plot box tools depend on the picture kind and the read mode, not on anything in the strip. The
+  centred prompt pill changes its text, and nothing is placed after it. The corrections row's conductor picker depends
+  on the row's kind, which never changes.
+
+**Everything drawn over the picture says what it is** (R-dfr30-3-3). Pointing at an item on a layout picture shows one
+line by the pointer (`ImageSourceViewModel.HoverLine`, hit-tested with `ImageOverlay.HitTest(…, corrections: true)` so
+a hand correction and the board outline answer too). A via gives the drill as written (*Via ⌀12 mil*), not the circle
+read. The legend's Drills is now **Holes**, because it shows openings, as their own outlines, as well as vias.
+
+**The paint bucket is Paint Fill** (R-dfr30-3-5). `ImageCorrectionKind.PaintFill`, `PictureDrawTool.PaintFill` and
+`convert --paint-fill`. "Fill" alone is a copper pour to a PCB designer. The Copper tool's corrections are still
+called copper fills, because that is what they are.
+
+**A control over a picture needs a solid background** (owner-reported the same day). The theme's button, toggle,
+combo and text-box backgrounds are see-through tints: a button on the grey canvas read as #A3A3A3, which is the
+canvas darkened, and on a white picture it is nearly white with no outline. The tools could not be seen. The column
+that floats over the canvas now overrides those brushes for Light and Dark (`ButtonBackground`,
+`ToggleButtonBackground`, `ComboBoxBackground`, `TextControlBackground`, with their pointer-over and pressed brushes,
+and an outline brush for each), so each control is opaque and outlined whatever lies under it. The override changes
+colours only, never a size, and the strip-geometry gate still reports identical bounds. Anything else floated over
+a drawing needs the same treatment, or a backed `Border` as the Wire Profile's floating controls have.
+
+**The Crop tool** (owner, 2026-10-28). It is a toggle left of Paint Fill (`PictureDrawTool.Crop`, `CropArmed`), armed
+until Escape like the other tools. Each box dragged with it becomes `ScopeRect`: the part of the picture read, and
+`convert --region` in the CLI. Outside the crop the picture is dimmed, as it is outside a board outline. On a layout
+picture, a drag with no tool armed no longer sets the scope. That was an invisible gesture, and it is the Crop tool's
+job now. A plot or schematic picture keeps its own drag. `tools/UiSnapshot --strip-geometry` arms Crop too, and the
+strip is identical in every state.

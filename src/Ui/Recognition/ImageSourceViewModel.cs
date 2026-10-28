@@ -156,7 +156,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         {
             if (e.PropertyName == nameof(ImageScaleViewModel.Tool)) OnPropertyChanged(nameof(Raster));
             if (e.PropertyName is nameof(ImageScaleViewModel.NeedsScale) or nameof(ImageScaleViewModel.Tool)
-                or nameof(ImageScaleViewModel.ToolPrompt))
+                or nameof(ImageScaleViewModel.ToolPrompt) or nameof(ImageScaleViewModel.SizeLine))
             {
                 RaiseCanvasPrompt();
                 RefreshCreate();
@@ -1130,14 +1130,20 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             ? $"Double-click to place a point on {curve.Name}; drag one to move it; right-click or Delete removes it. Escape stops."
         : Scale.Tool != ImageMeasureTool.None ? Scale.ToolPrompt
         : IsLayoutPicture && Scale.NeedsScale && FailureText.Length == 0 ? ImageScaleViewModel.SetScalePrompt
-        : "";
+        : SizeCheckPrompt ?? "";
 
-    /// <summary>The prompt is the scale being waited for: the pill offers the scale tools as buttons, since the prompt's
-    /// own words read as one (designer round 29).</summary>
-    public bool CanvasPromptOffersScale => CanvasPrompt == ImageScaleViewModel.SetScalePrompt;
+    /// <summary>With a scale and no tool armed, the board's size at it, on the picture where it is seen, with the scale tools
+    /// beside it: a scale taken against the wrong stackup is several times off and otherwise looks entirely right
+    /// (owner, 2026-10-28).</summary>
+    private string? SizeCheckPrompt => IsLayoutPicture && FailureText.Length == 0 && Scale.SizeLine.Length > 0
+        ? $"{Scale.SizeLine} at this scale. Not the board's size? Set the scale:" : null;
+
+    /// <summary>The prompt is the scale being waited for, or checked: the pill offers the scale tools as buttons, since
+    /// the prompt's own words read as one (designer round 29).</summary>
+    public bool CanvasPromptOffersScale => CanvasPrompt == ImageScaleViewModel.SetScalePrompt || (SizeCheckPrompt is { } check && CanvasPrompt == check);
 
     /// <summary>The pill's words: the prompt, or only its lead-in where the tools follow it as buttons.</summary>
-    public string CanvasPromptText => CanvasPromptOffersScale ? "Set the scale:" : CanvasPrompt;
+    public string CanvasPromptText => CanvasPrompt == ImageScaleViewModel.SetScalePrompt ? "Set the scale:" : CanvasPrompt;
 
     private void RaiseCanvasPrompt()
     {

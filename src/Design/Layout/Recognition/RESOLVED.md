@@ -658,9 +658,11 @@ closes and nothing is enclosed. The test now uses the strokes alone. The copper 
 bounding box, and its mean width (twice its area over its edge length) is no more than 3 px, or 1 % of that box's
 narrower side.
 
-## Painting copper into a line drawing: Fill / `--fill` (2026-10-28)
+## Painting copper into a line drawing: Paint Fill / `--paint-fill` (2026-10-28)
 
-`ImageCorrectionKind.Fill` (`ImageTraceFill.cs`) is a paint bucket. It floods the clicked pixel's colour cluster
+Renamed from Fill / `--fill` by brief-dfr30-3 R-dfr30-3-5: to a PCB designer a fill is a copper pour.
+
+`ImageCorrectionKind.PaintFill` (`ImageTraceFill.cs`) is a paint bucket. It floods the clicked pixel's colour cluster
 (`ColourClusterSet.Label`, 4-connected) and adds the near half of the line drawn round that area. A line pixel within
 `FillEdgePx` belongs to the area when the area is nearer it than the clicked colour beyond the line is. A pixel exactly
 in the middle counts half, so the contour crosses it half way. When every tie went to the area, each drawn hole
@@ -679,3 +681,88 @@ test is still made on the layers as read. `Prepared.Painted` names the layers a 
 measures a click inside painted copper on that copper with `PaintedWidth`, from the row and column runs through the
 outline geometry. It was first measured on a whole-pixel raster, and that lost the half pixel at each edge: a line
 drawn 12 px between its centre lines read 11 px, an 8 % scale error.
+
+## A round hole must be round (brief-dfr30-3 R-dfr30-3-2, 2026-10-28)
+
+A datasheet's board drawn as a closed outline is a line region whose hole is the whole board. `RoundHole` took any hole
+up to 1.3:1 filling 60 % of its box, so a near-square board passed. The 10 mm cap that DFR30-1 added is a length, so it
+held only at the true scale. At 8 µm a pixel a 17 mm datasheet board was 4 mm across, kept as an opening, and drawn by the
+overlay as the circle of its area: a black circle round the board that nothing explained.
+
+The tests are now of shape alone. Circularity (4π·area / perimeter²) and box fill were measured on traced holes:
+
+| Shape | Circularity | Box fill |
+|---|---|---|
+| Circles 0.3–1.0 mm, 10–32.5 µm a pixel (solid, rimmed, drawn as lines) | 0.93–0.997 | 0.74–0.87 |
+| A datasheet line drawing's hand-drawn vias, 10–14 px | 0.75–0.96 | 0.66–0.89 |
+| Square, any size | 0.785–0.813 | 0.97–1.00 |
+| Square rounded by 10 % of its side | 0.83–0.87 | 0.98–0.99 |
+| Square rounded by 20 % of its side | 0.88–0.92 | 0.96–0.97 |
+| Square rounded by 30 % of its side | 0.94–0.96 | 0.91–0.93 |
+
+A hole is round when box fill ≤ 0.9 (`MaxHoleBoxFill`), with the 1.3:1 aspect and 0.6 fill floor it already had. No
+circle measured above 0.89, and no rounded square up to 30 % below 0.91.
+
+**Circularity was tried as well and withdrawn the same day.** The first version also required circularity ≥ 0.85. A
+larger copy of the same datasheet drawing, pasted at 1936 px, traces its hand-drawn holes as ragged pixel staircases,
+and a staircase's perimeter is long for its area: 156 holes 15–40 px across scored 0.21–0.85 (median 0.77). Every one
+was rejected, so the automatic reading of that drawing found no vias at all, where the previous commit had found 99. A
+staircase disc scores about 0.62, below a square's 0.79, so no circularity threshold separates the two on traced
+outlines. Box fill does not depend on the perimeter and still keeps out the square board and a rounded pad. Without
+circularity the same picture gives 80 vias. `AStaircaseCircle_IsARoundHole` holds it.
+
+Independent of the scale, a hole wider than half the picture's shorter side is no drilled hole (`MaxHolePictureShare`).
+It catches a round board drawn as an outline, which the shape tests admit. `MaxHoleMetres` (10 mm) is kept: a 12 mm
+round clearance in a 60 mm board's picture is round and a fifth of the picture, and is still no drill.
+
+An opening is drawn as its own outline (`ImageTracedHole.Outline`), never as the circle of its area. A drill circle
+has no outline and is still drawn as its circle. Openings the report did not lead the user to expect are named with
+the way out (`ImageTrace.HoleWayOut`), and so are round holes in copper with no drill drawn in them when the picture has
+a drill colour. These were opened silently before.
+
+Seen while testing, not changed: a Paint Fill clicked on a solid pour takes up to `FillEdgePx` (4 px) of every hole
+in it, because it treats each hole's edge as a drawn line. A 0.3 mm hole drawn 12 px across at 25 µm a pixel was lost.
+Paint Fill is for line drawings, and on those it is right.
+
+## A line drawing made simple: no copper from its lines, the board outline bounds the reading, its size beside the scale (2026-10-28)
+
+The owner traced a pasted screenshot of the datasheet's line-drawn test board and got a layout that looked nothing like
+it. Three things went wrong, and only the first was a defect:
+
+- **The round-hole tightening of the same day dropped every via** (see the section above: circularity was withdrawn).
+- **The scale was 4× too small with nothing to show it.** Line impedance… was taken on the RF line with a 10-layer
+  1.7 mm technology, where a 50 Ω Top Copper line is 102 µm wide over its thin prepreg. The drawing's board is 0.2 mm
+  FR-4, where it is 0.4 mm. The 24 px line was measured correctly, so the board came out 4.45 mm across instead of 17.
+  Every via that got the technology's 0.6 mm pad on a 0.1 mm drill read as a large dark disc.
+- **Every line, letter and the parts table were copper.** A clean board needed Remove ▾ on each layer before any Paint
+  Fill, and nothing said so in the order it had to be done.
+
+What changed:
+
+- **A line drawing reads no copper from its lines.** `IsLineArt` is now decided before any correction, and when it
+  holds, the copper layers read are emptied before `EditCopper`. Paint Fill floods the colour clusters, not the regions
+  read, so it is unaffected. The round holes inside a painted area still become vias. `LineArtNote` says to click each
+  copper area with Paint Fill.
+- **Only the copper inside the board outline drawn by hand is read** (`InsideOutline`, after the copper corrections).
+  The last outline drawn counts, as it does for the outline written.
+- **`ImageTraceResult.SizeLine`** gives the board's size at the scale: the outline drawn, else one read from the
+  picture, else the crop (`Scope`), else the whole picture (*Board 17 mm × 17 mm*, *Crop …*, *Picture …*). It is
+  appended to the scale's report sentence and shown in the dialog's Scale row. At a scale 4× too small it reads *Board
+  4.45 mm × 4.44 mm*.
+
+On a screenshot of a datasheet's line-drawn 17 mm test board at 16.3 µm a pixel, a crop to the board, three Paint Fill clicks (both pours and the RF
+line) and the outline give two pours, the line and 70 vias, with the parts table and notes left out.
+
+**Silkscreen is off by default, and a via's pad is never a disc six holes wide** (owner, the same day). The owner's
+next attempt used the same 4.26 µm-a-pixel Line impedance scale and showed two more defaults working against a user:
+
+- Auto mapped the drawing's grey anti-aliased edges (#818181) to Silkscreen. Its 2,696 traced edge shapes drew a second
+  outline round every line. A colour that `IsSilkscreen` recognises is now mapped to **Ignore**. It is still kept out of
+  the copper, and silkscreen is read only when the user sets a row to it. The owner's reasons: most pictures are read
+  for their RF traces and top copper, silkscreen read from a picture is seldom right, and something that is seldom
+  right should be asked for, not given.
+- A via with no pad drawn took the technology's 0.6 mm pad whatever its drill, so a 0.1 mm drill (a scale 4× too small)
+  drew as a dark disc six holes across. `PadFor` now takes the technology's pad only up to twice the drill, else twice
+  the drill. At the true scale, 0.35–0.45 mm drills keep the 0.6 mm pad.
+- The board's size is now also the canvas prompt whenever a scale is set and no tool is armed, with Two points…, Board
+  corners… and Line impedance… beside it (`SizeCheckPrompt`). The same size in the side pane alone was not seen.

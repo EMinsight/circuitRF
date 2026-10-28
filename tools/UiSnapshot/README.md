@@ -170,7 +170,12 @@ The real `CreateSchematicFromArtworkDialog` on an `ImageSourceViewModel`, as **C
 empty and is handed the picture as a drop is). The workspace is the picture's folder and `--tech` its one technology —
 copy the technology's material library (`.cmat`) beside it, or the technology does not load and the dialog says there
 is none. Each step waits for the reading to settle, then prints one line: the title, the kind read, what Make makes,
-the scale, the armed tool and the canvas prompt. `--type`, `--button`, `--click` and `--drag` act on the dialog itself.
+the scale, the armed tool and the canvas prompt. `--type`, `--button`, `--click` and `--drag` act on the dialog itself;
+`--hover x,y` moves the pointer there, which shows the line saying what the item under it is.
+`--scale-points x0,y0,x1,y1=<distance>` sets the scale by Two points… in the picture's pixels before any step.
+`--strip-geometry` checks that the layout tool strip never moves: it reads the bounds of every tool, the legend and the
+options slot with nothing armed, each tool armed by a click, a hand via selected and Other… chosen, prints them, and
+exits 1 if any differ.
 
 ## Vendor libraries
 

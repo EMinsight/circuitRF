@@ -176,14 +176,14 @@ internal sealed class PictureFlags
                 Corrections.Add(ImageCorrection.Copper(poly, v[(eq + 1)..].Trim()));
                 { LayoutFlags.Add(a); i++; return 0; }
             }
-            case "--fill":
+            case "--paint-fill":
             {
-                // A paint bucket (the dialog's Fill tool): the area enclosed at the point is copper on the conductor.
+                // A paint bucket (the dialog's Paint Fill tool): the area enclosed at the point is copper on the conductor.
                 int eq = v.LastIndexOf('=');
                 if (eq < 0 || v[(eq + 1)..].Trim().Length == 0)
                     return Bad("\"x,y=<conductor>\": a point in pixels with px inside the area, then the conductor");
                 if (PointPx(verb, a, v[..eq]) is not { } p) return _pxRefusal;
-                Corrections.Add(ImageCorrection.Fill(p.X, p.Y, v[(eq + 1)..].Trim()));
+                Corrections.Add(ImageCorrection.PaintFill(p.X, p.Y, v[(eq + 1)..].Trim()));
                 { LayoutFlags.Add(a); i++; return 0; }
             }
             case "--clear":
@@ -395,11 +395,11 @@ internal sealed class PictureFlags
         // The corrections in the picture TRACED: the file's pixels carried onto a reduced reading, or the rectified picture's
         // own with --corners (whose pixels --overlay draws), as the dialog holds them.
         var conductors = ImageTrace.ConductorLayerNames(tech);
-        foreach (var c in Corrections.Where(c => c.Kind is ImageCorrectionKind.Copper or ImageCorrectionKind.Fill || c is { Kind: ImageCorrectionKind.Clear, Layer: not null }))
+        foreach (var c in Corrections.Where(c => c.Kind is ImageCorrectionKind.Copper or ImageCorrectionKind.PaintFill || c is { Kind: ImageCorrectionKind.Clear, Layer: not null }))
             if (!conductors.Contains(c.Layer ?? "", StringComparer.Ordinal))
                 return (null, JsonRun.Fail(CliDiagnostics.PictureBadValue(verb, c.Kind switch
                 {
-                    ImageCorrectionKind.Copper => "--copper", ImageCorrectionKind.Fill => "--fill", _ => "--clear",
+                    ImageCorrectionKind.Copper => "--copper", ImageCorrectionKind.PaintFill => "--paint-fill", _ => "--clear",
                 }, c.Layer ?? "",
                     $"one of {tech.Name}'s conductors: {string.Join(", ", conductors)}")));
         if (OutlineCorners && _corners is null)

@@ -106,8 +106,9 @@ public sealed partial class ImageOverlay
         boardRefdes is null ? null
         : Items.FirstOrDefault(i => i.Class == ImageOverlayClass.Part && string.Equals(i.PartKey, boardRefdes, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The topmost item under a pixel, the selectable classes first (a part over the copper it sits on).</summary>
-    public ImageOverlayItem? HitTest(double x, double y, double tolerancePx, Func<ImageOverlayClass, bool> shown)
+    /// <summary>The topmost item under a pixel, the selectable classes first (a part over the copper it sits on). With
+    /// <paramref name="corrections"/> a correction counts too — what the pointer is over, rather than what a click means.</summary>
+    public ImageOverlayItem? HitTest(double x, double y, double tolerancePx, Func<ImageOverlayClass, bool> shown, bool corrections = false)
     {
         ImageOverlayItem? best = null;
         double bestArea = double.MaxValue;
@@ -118,7 +119,7 @@ public sealed partial class ImageOverlay
             // A trace's fitted curve is drawn over the trace, which is what a click there means (brief-pdg-2 R-pdg2-4).
             if (item.Id.StartsWith(FitPrefix, StringComparison.Ordinal)) continue;
             // A correction is drawn over what it corrects, which is what a click there means (brief-dfr29-1 R-dfr29-1-2).
-            if (item.Id.StartsWith(CorrectionPrefix, StringComparison.Ordinal)) continue;
+            if (!corrections && item.Id.StartsWith(CorrectionPrefix, StringComparison.Ordinal)) continue;
             int rank = item.Class switch
             {
                 ImageOverlayClass.Crossing => 0,
@@ -204,12 +205,15 @@ public sealed partial class ImageOverlay
                                            new PixelBounds(c.Cx - c.R, c.Cy - c.R, c.Cx + c.R, c.Cy + c.R), (c.Cx, c.Cy, c.R)));
         }
 
-        // Round holes kept as openings or made non-plated — what the hole picker answers (brief-dfr29-1 R-dfr29-1-2).
+        // Round holes kept as openings or made non-plated — what the hole picker answers (brief-dfr29-1 R-dfr29-1-2). One
+        // read in the copper is drawn as its own outline, never as the circle of its area: a shape that is not round can
+        // then never show as a circle no one drew (brief-dfr30-3 R-dfr30-3-2). The circle stays, for the picker.
         for (int h = 0; h < trace.Holes.Count; h++)
         {
             var (hole, kind) = (trace.Holes[h].Circle, trace.Holes[h].Kind);
             if (kind == ImageHoleKind.Via) continue;   // drawn as a drill above
-            items.Add(new ImageOverlayItem($"{HolePrefix}{h}", ImageOverlayClass.Drill, [], true,
+            IReadOnlyList<IReadOnlyList<(double X, double Y)>> outline = trace.Holes[h].Outline is { Count: >= 3 } o ? [Points(o)] : [];
+            items.Add(new ImageOverlayItem($"{HolePrefix}{h}", ImageOverlayClass.Drill, outline, true,
                                            kind == ImageHoleKind.NonPlated ? "not plated" : "opening", Colours.Ignored, false, null,
                                            new PixelBounds(hole.Cx - hole.R, hole.Cy - hole.R, hole.Cx + hole.R, hole.Cy + hole.R),
                                            (hole.Cx, hole.Cy, hole.R)));
@@ -232,7 +236,7 @@ public sealed partial class ImageOverlay
                 continue;
             }
             // A painted area is its copper, drawn with the layer it is on; the point clicked is marked.
-            if (fix.Kind == ImageCorrectionKind.Fill)
+            if (fix.Kind == ImageCorrectionKind.PaintFill)
             {
                 var (fx, fy) = (fix.At.X, fix.At.Y);
                 int? layerRgb = technology?.Layers.FirstOrDefault(l => string.Equals(l.Name, fix.Layer, StringComparison.Ordinal)) is { } fd

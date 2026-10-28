@@ -167,7 +167,7 @@ public partial class ImageReadingPanel : UserControl
         Say(items[0], "Vias read from the picture", vm.AutoViaCount);
         Say(items[1], "Vias placed by hand", vm.HandViaCount);
         Say(items[2], "Copper fills drawn", vm.CopperFillCount);
-        Say(items[3], "Areas painted", vm.PaintedCount);
+        Say(items[3], "Paint fills", vm.PaintedCount);
         Say(items[4], "Clears drawn", vm.ClearCount);
         Say(items[5], "The outline drawn", vm.OutlineCount);
         var read = items[6];

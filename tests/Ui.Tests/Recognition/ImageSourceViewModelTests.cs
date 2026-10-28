@@ -228,6 +228,69 @@ public sealed class ImageSourceViewModelTests : IDisposable
         foreach (var (x, y, r) in holes) c.DrawCircle(x, y, r, white);
     });
 
+    /// <summary>The Crop tool (owner, 2026-10-28): armed by its toggle, each box dragged is the part of the picture read, it
+    /// stays armed for another, and Escape disarms it.</summary>
+    [Fact]
+    public async Task TheCropTool_ReadsOnlyTheBoxDragged_AndEscapeDisarmsIt()
+    {
+        var vm = await Scaled(Board(), 17);
+        vm.CropArmed = true;
+        vm.CropTo(new PixelPoint(300, 300), new PixelPoint(10, 10));
+        await vm.Recognition;
+        Assert.Equal(new PixelRect(10, 10, 300, 300), vm.ScopeRect);
+        Assert.Equal(new PixelRect(10, 10, 300, 300), Traced(vm).Traced);
+        Assert.True(vm.CropArmed);
+        vm.CancelTools();
+        Assert.False(vm.CropArmed);
+    }
+
+    /// <summary>brief-dfr30-3 gate 4 — everything drawn over a layout picture says what it is when pointed at: one line for
+    /// each kind of item, an opening drawn as its own outline rather than as a circle.</summary>
+    [Fact]
+    public async Task EveryItemOverALayoutPicture_HasAHoverLine()
+    {
+        // A pour with two 0.3 mm holes and a 2.6 mm one, and beside it a pad drawn as an outline, to paint.
+        var picture = Pictures.Draw(680, 680, c =>
+        {
+            using var copper = Pictures.Fill(new SKColor(0xc8, 0x75, 0x33));
+            using var white = Pictures.Fill(SKColors.White);
+            using var line = Pictures.Stroke(SKColors.Black, 2);
+            c.DrawRect(SKRect.Create(20, 20, 440, 640), copper);
+            foreach (var (x, y, r) in new[] { (200f, 200f, 6f), (400f, 200f, 6f), (240f, 500f, 52f) }) c.DrawCircle(x, y, r, white);
+            c.DrawRect(SKRect.Create(500, 40, 140, 160), line);
+        });
+        var vm = await Scaled(picture, 17);
+        vm.EveryOneLikeIt = false;
+        vm.SelectedItem = vm.Overlay.HitTest(400, 200, 2, vm.Shows);
+        vm.HoleIsNotPlatedCommand.Execute(null);
+        vm.DrawTool = PictureDrawTool.Via;
+        vm.PlaceVia(new PixelPoint(300, 400));
+        vm.DrawTool = PictureDrawTool.PaintFill;
+        vm.DrawLayer = "Top Copper";
+        vm.PaintAt(new PixelPoint(570, 120));
+        vm.DrawTool = PictureDrawTool.Copper;
+        vm.DrawRectangle(new PixelPoint(40, 40), new PixelPoint(80, 80));
+        vm.DrawTool = PictureDrawTool.Outline;
+        vm.DrawRectangle(new PixelPoint(10, 10), new PixelPoint(670, 670));
+        vm.DrawTool = PictureDrawTool.None;
+        await vm.Recognition;
+
+        Assert.All(vm.Overlay.Items, i => Assert.False(string.IsNullOrEmpty(vm.HoverLine(i)), i.Id));
+        var lines = vm.Overlay.Items.Select(i => vm.HoverLine(i)!).ToList();
+        Assert.Contains("Via ⌀12 mil", lines);   // as written, on this inch-unit technology
+        Assert.Contains("Opening ⌀2.6 mm — a hole kept open", lines);
+        Assert.Contains(lines, l => l.StartsWith("Non-plated hole ⌀", StringComparison.Ordinal));
+        Assert.Contains("Painted copper on Top Copper", lines);
+        Assert.Contains("Copper drawn on Top Copper", lines);
+        Assert.Contains("Board outline", lines);
+        Assert.Contains("Hole made non-plated by hand", lines);
+        Assert.Contains("Via placed by hand, drilled as the hole under it", lines);
+        Assert.Contains(lines, l => l.StartsWith("Copper on ", StringComparison.Ordinal) || l.StartsWith("Painted copper on ", StringComparison.Ordinal));
+        var opening = vm.Overlay.Items.Single(i => i.Id.StartsWith(CircuitRF.Design.Imaging.ImageOverlay.HolePrefix, StringComparison.Ordinal)
+                                                   && vm.HoverLine(i)!.StartsWith("Opening", StringComparison.Ordinal));
+        Assert.True(Assert.Single(opening.Paths).Count >= 8);   // its own outline
+    }
+
     /// <summary>brief-dfr30-1 gate 2 — three hand vias placed with a size read (0.3 mm), another (0.6 mm) and Other… 1.0 mm
     /// are written with those drills: 12, 24 and 39 mil on this inch-unit technology.</summary>
     [Fact]
@@ -335,7 +398,7 @@ public sealed class ImageSourceViewModelTests : IDisposable
     }
 
     /// <summary>Owner, 2026-10-28: on a line drawing the scale is set by Line impedance… on a line painted in first. With no
-    /// scale yet, the lines read as copper are removed and the outlined line painted with Fill; a click on it with a 50 Ω
+    /// scale yet, the lines read as copper are removed and the outlined line painted with Paint Fill; a click on it with a 50 Ω
     /// impedance then sets the scale from the painted line's width.</summary>
     [Fact]
     public async Task ALinePaintedBeforeTheScale_SetsTheScaleByItsImpedance()
@@ -351,7 +414,7 @@ public sealed class ImageSourceViewModelTests : IDisposable
         Assert.True(vm.DrawToolsShown);   // the tools need no scale
 
         foreach (string layer in vm.ConductorChoices.Where(l => vm.CopperReadCount(l) > 0).ToList()) vm.RemoveCopperRead(layer);
-        vm.DrawTool = PictureDrawTool.Fill;
+        vm.DrawTool = PictureDrawTool.PaintFill;
         vm.DrawLayer = "Top Copper";
         vm.PaintAt(new PixelPoint(200, 100));
         vm.DrawTool = PictureDrawTool.None;

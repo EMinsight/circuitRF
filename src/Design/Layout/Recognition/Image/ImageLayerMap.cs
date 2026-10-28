@@ -7,7 +7,9 @@
 // Auto, in this order:
 //   - the background is the cluster with the most border contact (ties: the lightest);
 //   - Drill is a cluster whose components are at least 80 % circles sitting inside other copper;
-//   - Silkscreen is a cluster of thin strokes with text-like rows;
+//   - a cluster of thin strokes with text-like rows looks like silkscreen, and is IGNORED: silkscreen read from a
+//     picture is seldom right and seldom wanted — most pictures are read for their RF traces and top copper — so it is
+//     only ever read when the user sets a row to Silkscreen (owner, 2026-10-28);
 //   - an OVERLAP — a viewer drawing one translucent layer over another — is a colour within ΔE 12 of the second
 //     composited under the first: obs(P over Q) = obs(P) + β·(obs(Q) − background), β the top layer's transparency.
 //     It maps to BOTH layers;
@@ -182,12 +184,8 @@ public sealed record ImageLayerMap(IReadOnlyList<ImageLayerRow> Rows, bool Edite
                 role[k] = ImageLayerRole.Drill;
                 if (ViaBarrelLayer(technology) is { } via) layers[k].Add(NameOf(technology, via));
             }
-            else if (IsSilkscreen(Mask(k)))
-            {
-                role[k] = ImageLayerRole.Silkscreen;
-                if (SilkscreenText.Layers(technology).FirstOrDefault() is { Layer: var silk } && technology.Layers.Any(l => l.Key == silk))
-                    layers[k].Add(NameOf(technology, silk));
-            }
+            // Looks like silkscreen: kept out of the copper, and not read unless the user asks for it.
+            else if (IsSilkscreen(Mask(k))) role[k] = ImageLayerRole.Ignore;
         }
 
         // Overlaps among what is left, then the copper by area.

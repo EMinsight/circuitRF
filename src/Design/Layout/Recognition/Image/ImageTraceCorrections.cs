@@ -44,8 +44,9 @@ public enum ImageCorrectionKind
     /// <summary>The board outline, written on the technology's outline layer.</summary>
     Outline,
 
-    /// <summary>The area enclosed at the point, painted as copper on a conductor — a paint bucket (ImageTraceFill.cs).</summary>
-    Fill,
+    /// <summary>The area enclosed at the point, painted as copper on a conductor — the Paint Fill tool, a paint bucket
+    /// (ImageTraceFill.cs).</summary>
+    PaintFill,
 }
 
 /// <summary>One correction, in the traced picture's pixels (y down).</summary>
@@ -63,7 +64,7 @@ public sealed record ImageCorrection(ImageCorrectionKind Kind, IReadOnlyList<Pix
     public static ImageCorrection Copper(IReadOnlyList<PixelPoint> polygon, string layer) => new(ImageCorrectionKind.Copper, polygon, layer);
     public static ImageCorrection Clear(IReadOnlyList<PixelPoint> polygon, string? layer = null) => new(ImageCorrectionKind.Clear, polygon, layer);
     public static ImageCorrection Outline(IReadOnlyList<PixelPoint> polygon) => new(ImageCorrectionKind.Outline, polygon);
-    public static ImageCorrection Fill(double x, double y, string layer) => new(ImageCorrectionKind.Fill, [new(x, y)], layer);
+    public static ImageCorrection PaintFill(double x, double y, string layer) => new(ImageCorrectionKind.PaintFill, [new(x, y)], layer);
 
     /// <summary>The axis-aligned rectangle between two corners, as a polygon.</summary>
     public static IReadOnlyList<PixelPoint> Rectangle(double x0, double y0, double x1, double y1) =>
@@ -90,7 +91,7 @@ public sealed record ImageCorrection(ImageCorrectionKind Kind, IReadOnlyList<Pix
                 ImageCorrectionKind.Hole => $"--hole {P(At)}",
                 ImageCorrectionKind.NotVia => $"--not-via {P(At)}",
                 ImageCorrectionKind.Copper => $"--copper \"{Poly()}={Layer}\"",
-                ImageCorrectionKind.Fill => $"--fill \"{P(At)}={Layer}\"",
+                ImageCorrectionKind.PaintFill => $"--paint-fill \"{P(At)}={Layer}\"",
                 ImageCorrectionKind.Clear => Layer is null ? $"--clear \"{Poly()}\"" : $"--clear \"{Poly()}={Layer}\"",
                 _ => $"--outline \"{Poly()}\"",
             };
@@ -112,7 +113,12 @@ public sealed record ImageCorrectionOutcome(ImageCorrection Correction, string? 
 public enum ImageHoleKind { Via, NonPlated, Opening }
 
 /// <summary>A round hole read in the picture, pixels, and what it became.</summary>
-public sealed record ImageTracedHole(CircleFit Circle, ImageHoleKind Kind);
+public sealed record ImageTracedHole(CircleFit Circle, ImageHoleKind Kind)
+{
+    /// <summary>The hole's own outline in the copper, pixels, when it was read as a hole there (a drill circle has none):
+    /// what the overlay draws, so an opening is never a circle that was not drawn (brief-dfr30-3 R-dfr30-3-2).</summary>
+    public Clipper2Lib.PathD? Outline { get; init; }
+}
 
 public static partial class ImageTrace
 {
@@ -168,7 +174,7 @@ public static partial class ImageTrace
     private static List<PixelLayer> EditCopper(List<PixelLayer> read, IReadOnlyList<ImageCorrection> fixes, Technology tech,
                                                ImageCorrectionOutcome?[] outcomes, ColourClusterSet clusters, ImageTraceOptions options)
     {
-        if (!fixes.Any(f => f.Kind is ImageCorrectionKind.Copper or ImageCorrectionKind.Clear or ImageCorrectionKind.Fill)) return read;
+        if (!fixes.Any(f => f.Kind is ImageCorrectionKind.Copper or ImageCorrectionKind.Clear or ImageCorrectionKind.PaintFill)) return read;
         var layers = new List<PixelLayer>(read);
         var copperOrder = ImageLayerMap.CopperLayers(tech);
 
@@ -206,14 +212,14 @@ public static partial class ImageTrace
         };
         for (int i = 0; i < fixes.Count; i++)
         {
-            if (fixes[i].Kind is not (ImageCorrectionKind.Copper or ImageCorrectionKind.Fill)) continue;
+            if (fixes[i].Kind is not (ImageCorrectionKind.Copper or ImageCorrectionKind.PaintFill)) continue;
             PathsD fill;
-            if (fixes[i].Kind == ImageCorrectionKind.Fill)
+            if (fixes[i].Kind == ImageCorrectionKind.PaintFill)
             {
                 var painted = FillRegions(clusters, fixes[i].At, contour, options.MinFeaturePx2, out bool background);
                 if (painted.Count == 0)
                 {
-                    outcomes[i] = new(fixes[i], background ? FillBackgroundRefusal : $"There is nothing to fill at {fixes[i].At.X.ToString("0.#", CultureInfo.InvariantCulture)}px,{fixes[i].At.Y.ToString("0.#", CultureInfo.InvariantCulture)}px.");
+                    outcomes[i] = new(fixes[i], background ? FillBackgroundRefusal : $"There is nothing to paint at {fixes[i].At.X.ToString("0.#", CultureInfo.InvariantCulture)}px,{fixes[i].At.Y.ToString("0.#", CultureInfo.InvariantCulture)}px.");
                     continue;
                 }
                 fill = [.. painted.SelectMany(r => r.Paths)];
@@ -332,8 +338,8 @@ public static partial class ImageTrace
         Say(ImageCorrectionKind.NotVia, "hole kept as an opening", "holes kept as openings");
         foreach (var g in applied.Where(c => c.Kind == ImageCorrectionKind.Copper).GroupBy(c => c.Layer ?? ""))
             parts.Add($"{Plural(g.Count(), "copper fill", "copper fills")} on {g.Key}");
-        foreach (var g in applied.Where(c => c.Kind == ImageCorrectionKind.Fill).GroupBy(c => c.Layer ?? ""))
-            parts.Add($"{Plural(g.Count(), "area", "areas")} painted as copper on {g.Key}");
+        foreach (var g in applied.Where(c => c.Kind == ImageCorrectionKind.PaintFill).GroupBy(c => c.Layer ?? ""))
+            parts.Add($"{Plural(g.Count(), "paint fill", "paint fills")} on {g.Key}");
         int clears = applied.Count(c => c.Kind == ImageCorrectionKind.Clear && c.Layer is null);
         if (clears > 0) parts.Add(Plural(clears, "area cleared of copper", "areas cleared of copper"));
         foreach (var g in applied.Where(c => c.Kind == ImageCorrectionKind.Clear && c.Layer is not null).GroupBy(c => c.Layer!))

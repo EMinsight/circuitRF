@@ -1,7 +1,7 @@
-// Painting copper into a picture — the Fill tool, and convert's --fill.
+// Painting copper into a picture — the Paint Fill tool, and convert's --paint-fill.
 //
 // A datasheet often draws a board as a line drawing: each pour and pad is an outline, with white inside it, and the trace
-// reads almost no copper from it (ImageTrace.LineArtNote). A Fill correction says "the area enclosed here is copper on
+// reads almost no copper from it (ImageTrace.LineArtNote). A Paint Fill correction says "the area enclosed here is copper on
 // this conductor". It is a paint bucket. Starting at the point clicked, it floods every pixel of the clicked colour
 // connected to it. It then takes the near half of the drawn line around that area: a line pixel belongs to the area when
 // the area is no farther from it than the colour beyond the line. The copper's edge, and each hole's, therefore lands on
@@ -9,7 +9,7 @@
 // round hole left inside the area (a drawn via) is then read as any round hole in copper is: a via, the copper whole
 // under it.
 //
-// A Fill is a correction, not an edit to the picture. It is kept in the picture's pixels, undone and listed like every
+// A Paint Fill is a correction, not an edit to the picture. It is kept in the picture's pixels, undone and listed like every
 // other correction, and it works the same on a picture pasted from the clipboard, which has no file to edit.
 
 using Clipper2Lib;
@@ -19,13 +19,13 @@ namespace CircuitRF.Design.Layout.Recognition.Image;
 
 public static partial class ImageTrace
 {
-    /// <summary>The widest drawn line a Fill takes half of, pixels each side.</summary>
+    /// <summary>The widest drawn line a Paint Fill takes half of, pixels each side.</summary>
     internal const int FillEdgePx = 4;
 
     public const string FillBackgroundRefusal =
         "That is the picture's background, reaching all four of its edges: click inside a closed outline.";
 
-    /// <summary>The copper a Fill at <paramref name="seed"/> paints, as regions with their holes — empty when the point is
+    /// <summary>The copper a Paint Fill at <paramref name="seed"/> paints, as regions with their holes — empty when the point is
     /// off the picture. <paramref name="background"/> is set when the flood reaches all four of the picture's edges.</summary>
     internal static List<ContourRegion> FillRegions(ColourClusterSet clusters, PixelPoint seed, ContourOptions contour, double minArea,
                                                     out bool background)

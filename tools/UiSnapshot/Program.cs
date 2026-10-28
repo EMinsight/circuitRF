@@ -125,7 +125,8 @@ string? optimizer = null;
 bool optimize = false;
 string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
 string? image = null, imageTech = null;
-bool digitise = false, makeSchematic = false;
+bool digitise = false, makeSchematic = false, stripGeometry = false;
+string? imageScalePoints = null;
 int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 string? archive = null, manageLibraries = null, addVendorLibrary = null;
@@ -158,6 +159,8 @@ for (int i = 0; i < args.Length; i++)
         case "--tech" when i + 1 < args.Length: imageTech = Path.GetFullPath(args[++i]); break;
         case "--digitise": digitise = true; break;
         case "--make-schematic": makeSchematic = true; break;
+        case "--strip-geometry": stripGeometry = true; break;
+        case "--scale-points" when i + 1 < args.Length: imageScalePoints = args[++i]; break;
         case "--import" when i + 1 < args.Length: cmcImport = Path.GetFullPath(args[++i]); break;
         case "--step" when i + 1 < args.Length: cmcStep = args[++i]; break;
         case "--run" when i + 1 < args.Length: cmcRun = args[++i]; break;
@@ -185,7 +188,7 @@ for (int i = 0; i < args.Length; i++)
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
             sizeGiven = true;
             break;
-        case "--click" or "--drag" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button"
+        case "--click" or "--drag" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover"
             when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
             break;
@@ -210,7 +213,7 @@ if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && optimi
                           + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--size WxH] [steps]\n"
-                          + "       UiSnapshot --image <picture> -o <out.png> [--tech <file.ctech>] [--digitise] [--make-schematic] [--size WxH] [steps]");
+                          + "       UiSnapshot --image <picture> -o <out.png> [--tech <file.ctech>] [--digitise] [--make-schematic] [--scale-points x0,y0,x1,y1=<len>] [--strip-geometry] [--size WxH] [steps]");
     return 2;
 }
 
@@ -304,7 +307,21 @@ else if (image is not null)
     host.Show();
     Pump();
     WaitImage();
+    if (imageScalePoints is not null)
+    {
+        // Two points… as the user takes it: x0,y0,x1,y1=<distance>, in the picture's pixels.
+        int eq = imageScalePoints.IndexOf('=');
+        double[] xy = [.. imageScalePoints[..eq].Split(',').Select(t => double.Parse(t, System.Globalization.CultureInfo.InvariantCulture))];
+        imageVm.Scale.StartTwoPointsCommand.Execute(null);
+        imageVm.Scale.Click(new CircuitRF.Design.Layout.Recognition.Image.PixelPoint(xy[0], xy[1]));
+        imageVm.Scale.Click(new CircuitRF.Design.Layout.Recognition.Image.PixelPoint(xy[2], xy[3]));
+        imageVm.Scale.DistanceText = imageScalePoints[(eq + 1)..];
+        imageVm.Scale.ApplyDistanceCommand.Execute(null);
+        Pump();
+        WaitImage();
+    }
     PrintImage();
+    if (stripGeometry) return StripGeometry();
 }
 else if (cem is not null)
 {
@@ -542,6 +559,9 @@ foreach (var (kind, arg) in steps)
         case "--shot":
             Capture(arg);
             break;
+        case "--hover":
+            host.MouseMove(PointOf(arg), RawInputModifiers.None);
+            break;
         case "--rclick":
         {
             var p = PointOf(arg);
@@ -614,6 +634,71 @@ foreach (var (kind, arg) in steps)
 
 Capture(output);
 return 0;
+
+// brief-dfr30-3 gate 1 — the layout tool strip's geometry in every state: no tool armed, each tool armed in turn by a real
+// click on it, a hand via selected, and Other… chosen for its drill. Every control of the strip, the legend and the options
+// row must keep one place throughout; exit 1 when any moved.
+int StripGeometry()
+{
+    var v = imageVm!;
+    if (!v.DrawToolsShown) { Console.WriteLine("strip: this picture has no drawing tools"); return 1; }
+    var strip = host.GetVisualDescendants().OfType<Control>().Single(c => c.Name == "ToolStrip");
+    var options = host.GetVisualDescendants().OfType<Control>().Single(c => c.Name == "ToolOptions");
+    string Label(Control c) => c switch
+    {
+        Border b when b.Classes.Contains("pill") => "legend",
+        ContentControl { Content: string t } => t,
+        ContentControl { Content: StackPanel p } => string.Concat(p.Children.OfType<TextBlock>().Select(t => t.Text)),
+        _ => ToolTip.GetTip(c) as string ?? c.GetType().Name,
+    };
+    List<(string Name, Rect Box)> Read()
+    {
+        Pump();
+        var controls = strip.GetVisualDescendants().OfType<Control>()
+                            .Where(c => c.IsEffectivelyVisible && (c is Button || c is Border { Classes: var k } && k.Contains("pill")))
+                            .Append(options).ToList();
+        return [.. controls.Select(c => (Label(c), new Rect(c.TranslatePoint(default, host)!.Value, c.Bounds.Size)))];
+    }
+    void Click(string tool)
+    {
+        var b = strip.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ToggleButton>().Single(t => !t.Classes.Contains("legend") && Label(t) == tool);
+        var c = b.TranslatePoint(new Point(b.Bounds.Width / 2, b.Bounds.Height / 2), host)!.Value;
+        host.MouseDown(c, MouseButton.Left, RawInputModifiers.None);
+        host.MouseUp(c, MouseButton.Left, RawInputModifiers.None);
+        Pump();
+        WaitImage();
+    }
+    var states = new List<(string State, List<(string Name, Rect Box)> Boxes)> { ("nothing armed", Read()) };
+    foreach (string tool in new[] { "Crop", "Paint Fill", "Via", "Copper", "Outline" })
+    {
+        Click(tool);
+        states.Add(($"{tool} armed ({v.DrawTool})", Read()));
+        Click(tool);
+    }
+    var raster = v.Source!.Raster;
+    v.DrawTool = CircuitRF.Ui.Recognition.PictureDrawTool.Via;
+    v.PlaceVia(new CircuitRF.Design.Layout.Recognition.Image.PixelPoint(raster.Width / 2.0, raster.Height / 2.0));
+    WaitImage();
+    v.DrawTool = CircuitRF.Ui.Recognition.PictureDrawTool.None;
+    v.SelectedCorrection = v.Corrections.ToList().FindLastIndex(c => c.Kind == CircuitRF.Design.Layout.Recognition.Image.ImageCorrectionKind.Via);
+    states.Add(("hand via selected", Read()));
+    v.ViaDrill = v.ViaDrillChoices[^1];
+    states.Add(($"{v.ViaDrill?.Label} chosen", Read()));
+    Click("Via");
+    states.Add(("Via armed, Other… chosen", Read()));
+
+    bool same = true;
+    var first = states[0].Boxes;
+    foreach (var (state, boxes) in states)
+    {
+        bool ok = boxes.Count == first.Count && boxes.Zip(first).All(p => p.First.Name == p.Second.Name && p.First.Box == p.Second.Box);
+        same &= ok;
+        Console.WriteLine($"{(ok ? "same " : "MOVED")} {state}: {string.Join(" | ", boxes.Select(b => $"{b.Name} {b.Box.X:0.#},{b.Box.Y:0.#} {b.Box.Width:0.#}×{b.Box.Height:0.#}"))}");
+    }
+    if (output is not null) Capture(output);
+    Console.WriteLine(same ? "strip geometry: identical in every state" : "strip geometry: MOVED");
+    return same ? 0 : 1;
+}
 
 // A reading is scheduled through the dispatcher, then runs off it and posts back: pump until it has settled.
 void WaitImage()

@@ -74,6 +74,10 @@ public sealed partial class ImageScaleViewModel : ObservableObject
     /// <summary>R-im3-3's line, beside the value.</summary>
     [ObservableProperty] private string _resolutionLine = "";
 
+    /// <summary>How big the board, the crop or the picture is at the scale: a wrong stackup under Line impedance… is seen
+    /// at once (owner, 2026-10-28).</summary>
+    [ObservableProperty] private string _sizeLine = "";
+
     /// <summary>The reading has copper but no scale: the row is highlighted and Create waits.</summary>
     [ObservableProperty] private bool _needsScale;
 
@@ -388,6 +392,7 @@ public sealed partial class ImageScaleViewModel : ObservableObject
 
             ValueText = trace?.Scale?.Display ?? "—";
             ResolutionLine = trace?.ResolutionLine ?? "";
+            SizeLine = trace?.SizeLine ?? "";
             Error = statementRefusal ?? "";
             NeedsScale = applicable && trace is { Scale: null } t && (t.Ok || statementRefusal is not null);
         }

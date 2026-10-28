@@ -4080,7 +4080,7 @@ repeatable, `px` on every point: `--via x,y[,drill]` (the drill a LENGTH with it
 without one — a size chosen stays that size when the scale changes, brief-dfr30-1 R-dfr30-1-2), `--hole x,y` (a
 non-plated hole; a technology with none gains a
 `Non-plated hole` via layer in a copy written beside the cell as `<cell>.ctech`, D2), `--not-via x,y` (the hole stays an
-opening), `--copper "x,y;x,y;x,y=<conductor>"`, `--fill "x,y=<conductor>"` (the dialog's Fill tool: the area enclosed at
+opening), `--copper "x,y;x,y;x,y=<conductor>"`, `--paint-fill "x,y=<conductor>"` (the dialog's Paint Fill tool: the area enclosed at
 the point, its edge on the drawn line's centre, `ImageTraceFill.cs`), `--clear "x,y;…"` (every layer) or `--clear "x,y;…=<conductor>"` (that
 conductor only: the dialog's Remove ▸ Copper read on, R-dfr30-1-4), `--outline "x,y;…"` or `--outline corners` (the
 rectangle `--corners` names). In the FILE's pixels — the rectified picture's with `--corners`, the pixels `--overlay`

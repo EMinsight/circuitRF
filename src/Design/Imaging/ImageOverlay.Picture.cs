@@ -90,7 +90,8 @@ public sealed partial class ImageOverlay
             float pen = (float)((item.Class == ImageOverlayClass.Copper ? 1.25 : 1.75) * u);
             switch (item.Class)
             {
-                case ImageOverlayClass.Drill when item.Circle is { } c:
+                // A via is the circle of its drill; a hole kept open is its own outline (the default case, R-dfr30-3-2).
+                case ImageOverlayClass.Drill when item.Circle is { } c && item.Paths.Count == 0:
                     // A correction dashed over what it corrects (brief-dfr29-1 R-dfr29-1-3).
                     stroke.PathEffect = item.Id.StartsWith(CorrectionPrefix, StringComparison.Ordinal)
                         ? SKPathEffect.CreateDash([(float)(3 * u), (float)(2 * u)], 0) : null;

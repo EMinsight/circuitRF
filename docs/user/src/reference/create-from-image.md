@@ -121,7 +121,7 @@ What was read is drawn over the picture, each kind toggled from the legend at th
 | Legend | What it shows |
 |---|---|
 | **Copper** | Each traced region, outlined in its layer's colour. |
-| **Drills** | Each drill hole, as the circle read &mdash; a drill colour's, or a small round hole in the copper. |
+| **Holes** | Each via, as the circle of its drill &mdash; a drill colour's, or a small round hole in the copper &mdash; and each hole kept open or not plated, as its own outline. |
 | **Wires** | A schematic picture's wires, junction dots and crossings &mdash; a crossing read as connected is filled. |
 | **Parts** | Each recognised part, boxed with its designator &mdash; on a schematic picture, with its kind and which way it faces. |
 | **Lines** | Each line, as its centre line, labelled with its component and width &mdash; `MLIN W=450 µm`. |
@@ -137,7 +137,7 @@ highlight its part on the picture.
 |---|---|
 | Wheel, or pinch | Zoom about the pointer. |
 | Right- or middle-drag, or Space with a drag | Pan. |
-| Drag | On a layout picture, read only the rectangle dragged; drag again to read another. **Whole picture**, or **Delete**, reads all of it again. The scale stays the picture's: a line picked for **Line impedance…** still sets it when a later rectangle leaves it out. |
+| Drag, with **Crop** armed | On a layout picture, read only the rectangle dragged; drag again to read another. **Whole picture**, or **Delete**, reads all of it again. The scale stays the picture's: a line picked for **Line impedance…** still sets it when a later rectangle leaves it out. |
 | Click a crossing | On a schematic picture, connect or disconnect it. |
 | Drag a wire end | On a schematic picture, drop a wire end that reaches nothing onto a pin to connect it. |
 | Double-click, **F** or the Zoom to Fit button | Fit the picture. It opens fitted and stays fitted as the dialog is resized, until it is zoomed or panned. |
@@ -167,14 +167,21 @@ read as copper; nothing is written inside it, on any layer. A traced region's sh
 make it **Not copper** and draw a **Copper** fill in its place, or reshape it after **Create** in the layout editor, with
 **Keep the source picture under the result** putting the picture under it.
 
-**Draw** with the tools beside the **Zoom to Fit** button, each armed until Escape:
+**Draw** with the tools beside the **Zoom to Fit** button, each armed until Escape. The armed tool's choice &mdash; the
+conductor, or the via's drill &mdash; appears under the tools; nothing in the row of tools moves when one is armed.
 
 | Tool | Does |
 |---|---|
-| **Via** | Click to place a via; a click on a hole places it at the hole's centre. The **Drill** picker beside it sets its size, and is kept for the following clicks. |
-| **Copper** | Drag a rectangle, or click corners and double-click to close, to fill copper on the conductor chosen beside the tool. |
-| **Fill** | A paint bucket: click inside an outline and the area it encloses is copper on the conductor chosen beside the tool, its edge on the middle of the drawn line. The round holes drawn inside it are vias. |
+| **Crop** | Drag a box round the board: only what is inside it is read, and the rest of the picture is dimmed. A parts table, notes or a title beside the board are left out. Drag again to change it; **Whole picture** reads all of it again. |
+| **Paint Fill** | A paint bucket: click inside an outline and the area it encloses is copper on the conductor chosen under the tools, its edge on the middle of the drawn line. The round holes drawn inside it are vias. |
+| **Via** | Click to place a via; a click on a hole places it at the hole's centre. The **Drill** picker under the tools sets its size, and is kept for the following clicks. |
+| **Copper** | Drag a rectangle, or click corners and double-click to close, to fill copper on the conductor chosen under the tools. |
 | **Outline** | The same gestures: the board's outline, on the technology's outline layer. Drawing another replaces it. |
+
+**Point at anything drawn over the picture** to see what it is, in one line: *Via ⌀0.6 mm*, *Opening ⌀2.4 mm &mdash; a hole
+kept open*, *Painted copper on Top Copper*, *Board outline*. A hole is read as one only when it is round: a square or
+rounded-square hole is a pad's, and the board inside a drawn outline is never a hole, whatever the scale. Openings
+wider than any via are counted in the report: click one to make it a via or a non-plated hole.
 
 The **Drill** picker offers:
 
@@ -193,11 +200,12 @@ on, every via placed by hand at its size. A copper fill's conductor is chosen on
 
 **Remove ▾** clears one kind at once, each one undo step, each item saying how many it removes (a kind with none is
 greyed): **Vias read from the picture** (their holes stay openings), **Vias placed by hand**, **Copper fills drawn**,
-**Areas painted**, **Clears drawn**, **The outline drawn**, and **Copper read on** a conductor &mdash; everything traced on it, so only the
+**Paint fills**, **Clears drawn**, **The outline drawn**, and **Copper read on** a conductor &mdash; everything traced on it, so only the
 copper you draw there is written.
 
 **The board outline** &mdash; drawn, set by **Board corners… ▸ Use as the board outline**, or read from the picture
 &mdash; stays drawn above the copper in the accent colour after the tool is put down, the picture outside it dimmed.
+Once one is drawn, only the copper inside it is read.
 
 A choice that lands on nothing &mdash; a via off the copper, a hole where there is none &mdash; is named in the report
 and not applied. The report counts the rest: *4 corrections: 2 vias added, 1 hole not plated, 1 copper fill on Top
@@ -315,8 +323,12 @@ combo beside it lists every piece of evidence found:
 | **File resolution** &mdash; the dots per inch the file states | Never: a screenshot's resolution describes a screen |
 
 The distance needs its unit &mdash; `1.6 mm`, `62 mil`, `500 um`. A bare number is refused where you typed it: it could
-be any of them. Beside the value, the resolution line says how finely the picture can be read: *1 px = 20 µm; a
-451 µm trace is read to ± 2 %*.
+be any of them. Beside the value, and on the picture with the scale buttons beside it, the row says how big the board
+is at that scale &mdash; its outline once drawn, else
+the crop, else the whole picture: *Board 17 mm × 17 mm*. If that is not the board's real size, the scale is wrong: a
+**Line impedance…** taken with a technology whose stackup is not the board's gives a board several times too small or
+too large. Then the resolution line says how finely the picture can be read: *1 px = 20 µm; a 451 µm trace is read to
+± 2 %*.
 
 With no usable evidence, the row is highlighted, the picture asks *Set the scale:* with **Two points…**, **Board
 corners…** and **Line impedance…** as buttons beside it, and **Create** waits.
@@ -547,7 +559,8 @@ A picture's colours are its only layer information. **Layers** lists each colour
 what it is read as: one of your technology's layers, **Drill**, **Board outline**, **Silkscreen**, **Background** or
 **Ignore**. The first reading maps the colour touching most of the picture's border to the background, round holes to
 **Drill**, and the rest to your copper layers by area, top first; a colour that is two translucent layers drawn over
-each other is read as both. Hover over a row to see its colour on the picture.
+each other is read as both. A colour drawn as lettering goes to **Ignore**: silkscreen is read only when you set its
+row to **Silkscreen** yourself. Hover over a row to see its colour on the picture.
 
 A photograph is read differently, since it shows one side of a real board and its largest colour is usually the
 laminate or the mask. Its colours are read with the lamp's tint taken out, the copper-coloured ones go to your top
@@ -621,12 +634,14 @@ and it holds the picture alone, at the scale you set, to draw over by hand in th
   circles. A drawing that shows its holes in the background's colour is read too: a round hole in the copper up to 1 mm
   across becomes a via, with the copper whole under it, and a wider one &mdash; a mounting hole &mdash; stays an
   opening. A hole drawn with a dark rim is one hole, drilled on the rim's centre line, and the rim is not copper.
-  Drills and pads are rounded to a whole mil, or to 0.05 mm, in the technology's unit.
-- **Filled copper, not outlines.** Copper is read as an area of its colour, so a line drawing that draws copper as its
-  outline reads little of it, and says so. A coloured or filled picture of the same board reads better, or paint the
-  copper in with **Fill**: **Remove ▾ Copper read on** each layer first, so the drawing's lines are not copper too,
-  then click inside each pour and pad. A pasted picture needs no file for this. Painting needs no scale, and a line
-  painted in is one **Line impedance…** can set the scale on: its width is measured between the drawn line's centres.
+  Drills and pads are rounded to a whole mil, or to 0.05 mm, in the technology's unit. A via whose picture draws no
+  pad takes the technology's via pad, or twice its drill if that is smaller.
+- **A line drawing** &mdash; copper drawn as outlines &mdash; reads no copper from its lines, and says so: which of
+  its closed outlines are copper, and not a hole, a part's body or a letter, is not in the picture. **Crop** to the
+  board, then click inside each pour, pad and trace with **Paint Fill**; the round holes inside each become vias. Draw
+  the **Outline** so the scale row gives the board's size to check. A pasted picture needs no file for this. Painting
+  needs no scale, and a line painted in is one **Line impedance…** can set the scale on: its width is measured between
+  the drawn line's centres.
 - **Something of known size** on a layout picture &mdash; a scale bar, a dimension, a part whose size you know, a line
   of known impedance &mdash; so the scale can be set. A picture of ordinary chip parts often sets its own.
 - **If you have the original file** &mdash; the PDF, the SVG, the board's Gerber &mdash; it is the better source. A

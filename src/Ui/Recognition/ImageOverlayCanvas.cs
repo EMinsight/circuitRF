@@ -88,6 +88,8 @@ public sealed class ImageOverlayCanvas : Control
     private bool _dragVia;
     private PixelPoint? _dragTo;
     private string? _manualReadout;
+    /// <summary>What the item under the pointer on a layout picture is, one line (brief-dfr30-3 R-dfr30-3-3).</summary>
+    private string? _hoverLine;
     private Point _pressPosition;
 
     /// <summary>How far above the box's top edge its rotation handle stands, screen pixels.</summary>
@@ -280,7 +282,8 @@ public sealed class ImageOverlayCanvas : Control
 
             switch (item.Class)
             {
-                case ImageOverlayClass.Drill when item.Circle is { } c:
+                // A via is the circle of its drill; a hole kept open is its own outline (the default case).
+                case ImageOverlayClass.Drill when item.Circle is { } c && item.Paths.Count == 0:
                     context.DrawEllipse(null, pen, new Point(c.X, c.Y), c.R, c.R);
                     break;
                 case ImageOverlayClass.Port when item.Circle is { } c:
@@ -334,8 +337,13 @@ public sealed class ImageOverlayCanvas : Control
                 if (b.Picture == vm.Plots.ShownPicture) DrawIgnoreBox(context, b.Box, Equals(b, vm.Plots.SelectedIgnoreBox), px);
 
         if (vm.ScopeRect is { } s)
-            context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Accent), 1.5 * px, new ImmutableDashStyle([4, 3], 0)),
-                                  new Rect(s.Left, s.Top, s.Right - s.Left, s.Bottom - s.Top));
+        {
+            // What the crop leaves out is dimmed, as outside the board outline is, so it reads as not read.
+            var kept = new Rect(s.Left, s.Top, s.Right - s.Left, s.Bottom - s.Top);
+            context.DrawGeometry(new ImmutableSolidColorBrush(Colors.Black, 0.3), null,
+                                 new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(pictureRect), new RectangleGeometry(kept)));
+            context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Accent), 1.5 * px, new ImmutableDashStyle([4, 3], 0)), kept);
+        }
     }
 
     /// <summary>The board outline (R-dfr30-1-6): the picture outside it dimmed, then a 2 px line in the accent over a halo,
@@ -501,6 +509,11 @@ public sealed class ImageOverlayCanvas : Control
         DrawSelectedCorrection(context);
         if (_vm.IsManualPlotPicture) DrawManual(context);
         else if (_vm.IsPlotPicture && !_vm.HasFailure) DrawProbes(context);
+        if (_hoverLine is { } line && _hover is { } over && !_panning)
+        {
+            var v = ToView(over.X, over.Y);
+            Readout(context, line, new Point(v.X + 14, v.Y + 12), Colors.Black);
+        }
     }
 
     /// <summary>The selected correction (R-dfr30-1-3): a shape's corners as handles — the one clicked filled — and its edges
@@ -509,7 +522,7 @@ public sealed class ImageOverlayCanvas : Control
     {
         if (_vm is not { IsLayoutPicture: true, SelectedCorrectionRecord: { } fix } vm) return;
         var accent = new ImmutableSolidColorBrush(Accent);
-        if (fix.IsPoint || fix.Kind == ImageCorrectionKind.Fill)
+        if (fix.IsPoint || fix.Kind == ImageCorrectionKind.PaintFill)
         {
             var at = _dragVia && _dragTo is { } to ? to : fix.At;
             double r = fix.IsPoint ? Math.Max(6, vm.HoleRadiusAt(fix.At) * _zoom + 3) : 8;
@@ -854,6 +867,8 @@ public sealed class ImageOverlayCanvas : Control
     {
         base.OnPointerExited(e);
         _hover = null;
+        _hoverLine = null;
+        InvalidateVisual();
         if (_probe is null) return;
         _probe = null;
         InvalidateVisual();
@@ -923,8 +938,8 @@ public sealed class ImageOverlayCanvas : Control
             && editing.Scale.Tool == ImageMeasureTool.None)
         {
             var on = ToPicture(held);
-            if (!chosen.IsPoint && chosen.Kind != ImageCorrectionKind.Fill) _dragVertex = editing.VertexAt(editing.SelectedCorrection, on, 6 / _zoom);
-            else if (chosen.Kind is ImageCorrectionKind.Via or ImageCorrectionKind.Fill && editing.CorrectionAt(on, 4 / _zoom) == editing.SelectedCorrection) _dragVia = true;
+            if (!chosen.IsPoint && chosen.Kind != ImageCorrectionKind.PaintFill) _dragVertex = editing.VertexAt(editing.SelectedCorrection, on, 6 / _zoom);
+            else if (chosen.Kind is ImageCorrectionKind.Via or ImageCorrectionKind.PaintFill && editing.CorrectionAt(on, 4 / _zoom) == editing.SelectedCorrection) _dragVia = true;
             if (_dragVertex >= 0) _selectedVertex = _dragVertex;
         }
         if (Manual is { } m)
@@ -961,6 +976,10 @@ public sealed class ImageOverlayCanvas : Control
             ? _vm.Plots.ProbeAt(_hover.Value.X, _hover.Value.Y, PlotSessionViewModel.SnapScreenPx / _zoom)
             : null;
         _manualReadout = Manual is not null && !_panning ? _vm!.Plots.ManualReadout(_hover.Value.X, _hover.Value.Y) : null;
+        _hoverLine = _vm is { IsLayoutPicture: true } layout && !_panning && _pressAt is null
+                     && layout.Overlay.HitTest(_hover.Value.X, _hover.Value.Y, 4 / _zoom,
+                                                c => layout.Shows(c) || (c == ImageOverlayClass.Line && !layout.MakeSchematic), corrections: true) is { } under
+            ? layout.HoverLine(under) : null;
         if (_panning)
         {
             _autoFit = false;
@@ -1066,7 +1085,9 @@ public sealed class ImageOverlayCanvas : Control
                 InvalidateVisual();
                 return;
             }
-            if (vm.DrawTool is PictureDrawTool.Via or PictureDrawTool.Fill) { InvalidateVisual(); return; }
+            if (vm.DrawTool == PictureDrawTool.Crop) { vm.CropTo(a, b); InvalidateVisual(); return; }
+            // On a layout picture only the Crop tool crops: a drag with no tool armed is no edit (owner, 2026-10-28).
+            if (vm.DrawTool is PictureDrawTool.Via or PictureDrawTool.PaintFill || vm.IsLayoutPicture) { InvalidateVisual(); return; }
             if (vm.BoxTool != PlotBoxTool.None)
             {
                 // Read only here crops and Ignore here excludes (R-ptu6-2, R-ptu6-3); either way the tool is done.
@@ -1107,7 +1128,7 @@ public sealed class ImageOverlayCanvas : Control
         }
         if (vm.Scale.Click(at)) { ViewChanged?.Invoke(); InvalidateVisual(); return; }
         if (vm.DrawTool == PictureDrawTool.Via) { vm.PlaceVia(at); InvalidateVisual(); return; }
-        if (vm.DrawTool == PictureDrawTool.Fill) { vm.PaintAt(at); InvalidateVisual(); return; }
+        if (vm.DrawTool == PictureDrawTool.PaintFill) { vm.PaintAt(at); InvalidateVisual(); return; }
         if (vm.DrawTool is PictureDrawTool.Copper or PictureDrawTool.Outline) { vm.AddDrawPoint(at); InvalidateVisual(); return; }
         var picked = vm.Overlay.HitTest(at.X, at.Y, 4 / _zoom, vm.Shows);
         if (picked is { Class: ImageOverlayClass.Crossing }) { vm.ToggleCrossing(picked); return; }

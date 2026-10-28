@@ -269,7 +269,7 @@ public enum RecognitionFindingClass
     /// <summary>The corrections made by hand, and any refused (brief-dfr29-1 R-dfr29-1-1).</summary>
     ImageCorrections,
 
-    /// <summary>The picture draws copper as outlines, so little copper is read from it (brief-dfr30-1 R-dfr30-1-7).</summary>
+    /// <summary>The picture draws copper as outlines, so none is read from its lines (brief-dfr30-1 R-dfr30-1-7).</summary>
     ImageLineArt,
 
     // ── IM-13: a photograph of a board (R-im13-5) ─────────────────────────────────────────────────

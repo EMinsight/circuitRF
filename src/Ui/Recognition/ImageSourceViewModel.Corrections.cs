@@ -21,8 +21,8 @@ using CircuitRF.Design.Layout.Recognition.Image;
 
 namespace CircuitRF.Ui.Recognition;
 
-/// <summary>The canvas's drawing tools on a layout picture (R-dfr29-1-3).</summary>
-public enum PictureDrawTool { None, Via, Copper, Outline, Fill }
+/// <summary>The canvas's drawing tools on a layout picture (R-dfr29-1-3), and Crop, which says what part of it is read.</summary>
+public enum PictureDrawTool { None, Via, Copper, Outline, PaintFill, Crop }
 
 public sealed partial class ImageSourceViewModel
 {
@@ -92,8 +92,70 @@ public sealed partial class ImageSourceViewModel
 
     /// <summary>The hole picker's caption: the hole's size and what it is now.</summary>
     public string HolePickerCaption => SelectedHole is not { } h ? ""
-        : $"Hole ⌀{(Overlay.Frame is { } f ? ImageScale.FormatLength(2 * h.R * 0.5 * (f.ScaleX + f.ScaleY) / (TraceDbuPerMicron * 1e6)) : $"{2 * h.R:0.#} px")}" +
-          $" — {KindOf(h) switch { ImageHoleKind.Via => "a via", ImageHoleKind.NonPlated => "not plated", _ => "an opening" }}";
+        : $"Hole ⌀{Diameter(h.R)} — {KindOf(h) switch { ImageHoleKind.Via => "a via", ImageHoleKind.NonPlated => "not plated", _ => "an opening" }}";
+
+    /// <summary>A circle's diameter at the scale read, or in pixels without one.</summary>
+    private string Diameter(double rPx) =>
+        Overlay.Frame is { } f ? ImageScale.FormatLength(2 * rPx * 0.5 * (f.ScaleX + f.ScaleY) / (TraceDbuPerMicron * 1e6)) : $"{2 * rPx:0.#} px";
+
+    /// <summary>What an item drawn over a layout picture is, in one line — shown while the pointer is over it, so nothing on
+    /// the picture is left unaccounted for (brief-dfr30-3 R-dfr30-3-3). Null for an item that is not a layout picture's.</summary>
+    public string? HoverLine(ImageOverlayItem item)
+    {
+        if (!IsLayoutPicture) return null;
+        string id = item.Id;
+        if (id.StartsWith(ImageOverlay.CorrectionPrefix, StringComparison.Ordinal))
+        {
+            if (!int.TryParse(id.AsSpan(ImageOverlay.CorrectionPrefix.Length), out int i) || _trace is not { } t || i >= t.Corrections.Count) return null;
+            var o = t.Corrections[i];
+            if (!o.Applied) return $"Not applied: {o.Refusal}";
+            var fix = o.Correction;
+            return fix.Kind switch
+            {
+                ImageCorrectionKind.Via => fix.DrillMetres is { } m ? $"Via placed by hand ⌀{FormatDrill(m)}" : "Via placed by hand, drilled as the hole under it",
+                ImageCorrectionKind.Hole => "Hole made non-plated by hand",
+                ImageCorrectionKind.NotVia => "Hole kept open by hand",
+                ImageCorrectionKind.PaintFill => $"Painted copper on {fix.Layer}",
+                ImageCorrectionKind.Copper => $"Copper drawn on {fix.Layer}",
+                ImageCorrectionKind.Clear => "Copper removed here",
+                _ => "Board outline",
+            };
+        }
+        if (id.StartsWith(ImageOverlay.HolePrefix, StringComparison.Ordinal) && item.Circle is { } hole)
+            return KindOf(hole) == ImageHoleKind.NonPlated ? $"Non-plated hole ⌀{Diameter(hole.R)}" : $"Opening ⌀{Diameter(hole.R)} — a hole kept open";
+        return item.Class switch
+        {
+            ImageOverlayClass.Drill when item.Circle is { } c => $"Via ⌀{WrittenDrill(c) ?? Diameter(c.R)}",
+            ImageOverlayClass.Copper when id.StartsWith("copper:", StringComparison.Ordinal) => CopperLine(item, id["copper:".Length..id.LastIndexOf(':')]),
+            ImageOverlayClass.Part => $"Part {item.Label}",
+            ImageOverlayClass.Line => $"Line {item.Label}",
+            ImageOverlayClass.Port => $"Port {item.Label}",
+            _ => null,
+        };
+    }
+
+    /// <summary>The drill of the via written at a drill circle, as the technology states it — what Create writes, rounded.</summary>
+    private string? WrittenDrill((double X, double Y, double R) c) =>
+        _trace?.Shapes.OfType<ViaShape>().Where(v => Overlay.ToPixel(v.X, v.Y) is { } p && Math.Abs(p.X - c.X) <= Math.Max(1, c.R) && Math.Abs(p.Y - c.Y) <= Math.Max(1, c.R))
+                      .Select(v => FormatDrill(v.DrillSize / (TraceDbuPerMicron * 1e6))).FirstOrDefault();
+
+    /// <summary>A copper region's line: painted when a Paint Fill on its layer was clicked inside it.</summary>
+    private string CopperLine(ImageOverlayItem item, string layer)
+    {
+        if (item.Unknown) return $"Copper read on {layer}, a layer {_technology?.Name ?? "the technology"} does not have";
+        bool painted = item.Paths is [var outer, ..] && Corrections.Any(c => c.Kind == ImageCorrectionKind.PaintFill && c.Layer == layer && Inside(outer, c.At));
+        return painted ? $"Painted copper on {layer}" : $"Copper on {layer}";
+    }
+
+    private static bool Inside(IReadOnlyList<(double X, double Y)> ring, PixelPoint p)
+    {
+        bool inside = false;
+        for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
+            if ((ring[i].Y > p.Y) != (ring[j].Y > p.Y)
+                && p.X < (ring[j].X - ring[i].X) * (p.Y - ring[i].Y) / (ring[j].Y - ring[i].Y) + ring[i].X)
+                inside = !inside;
+        return inside;
+    }
 
     /// <summary><i>And every one like it</i>: the choice applies to every hole of the same diameter within 10 %.</summary>
     [ObservableProperty] private bool _everyOneLikeIt = true;
@@ -196,15 +258,36 @@ public sealed partial class ImageSourceViewModel
         set => DrawTool = value ? PictureDrawTool.Copper : DrawTool == PictureDrawTool.Copper ? PictureDrawTool.None : DrawTool;
     }
 
-    /// <summary>The Fill tool: a paint bucket — a click paints the area enclosed there as copper on <see cref="DrawLayer"/>.</summary>
-    public bool FillArmed
+    /// <summary>The Paint Fill tool: a paint bucket — a click paints the area enclosed there as copper on <see cref="DrawLayer"/>.</summary>
+    public bool PaintFillArmed
     {
-        get => DrawTool == PictureDrawTool.Fill;
-        set => DrawTool = value ? PictureDrawTool.Fill : DrawTool == PictureDrawTool.Fill ? PictureDrawTool.None : DrawTool;
+        get => DrawTool == PictureDrawTool.PaintFill;
+        set => DrawTool = value ? PictureDrawTool.PaintFill : DrawTool == PictureDrawTool.PaintFill ? PictureDrawTool.None : DrawTool;
     }
 
-    /// <summary>The conductor picker beside the Copper and Fill tools.</summary>
-    public bool DrawLayerShown => DrawTool is PictureDrawTool.Copper or PictureDrawTool.Fill;
+    /// <summary>The Crop tool (owner, 2026-10-28): each box dragged is the part of the picture read — what lies round the
+    /// board, a parts table or notes, is left out. Armed until Escape; Whole picture undoes it.</summary>
+    public bool CropArmed
+    {
+        get => DrawTool == PictureDrawTool.Crop;
+        set => DrawTool = value ? PictureDrawTool.Crop : DrawTool == PictureDrawTool.Crop ? PictureDrawTool.None : DrawTool;
+    }
+
+    /// <summary>A box dragged with Crop armed, picture pixels: the part of the picture read from now on.</summary>
+    public void CropTo(PixelPoint a, PixelPoint b)
+    {
+        if (Raster is not { } r) return;
+        var box = new PixelRect(Math.Clamp(Math.Min(a.X, b.X), 0, r.Width), Math.Clamp(Math.Min(a.Y, b.Y), 0, r.Height),
+                                Math.Clamp(Math.Max(a.X, b.X), 0, r.Width), Math.Clamp(Math.Max(a.Y, b.Y), 0, r.Height));
+        if (box.Right - box.Left < MinCropPx || box.Bottom - box.Top < MinCropPx) { Status = "The box is too small: drag it round the board."; return; }
+        ScopeRect = box;
+    }
+
+    /// <summary>The smallest crop, picture pixels a side — less is a click that slipped.</summary>
+    private const int MinCropPx = 8;
+
+    /// <summary>The conductor picker, for the Copper and Paint Fill tools.</summary>
+    public bool DrawLayerShown => DrawTool is PictureDrawTool.Copper or PictureDrawTool.PaintFill;
 
     public bool OutlineArmed
     {
@@ -225,12 +308,13 @@ public sealed partial class ImageSourceViewModel
         DrawPoints.Clear();
         OnPropertyChanged(nameof(ViaArmed));
         OnPropertyChanged(nameof(CopperArmed));
-        OnPropertyChanged(nameof(FillArmed));
+        OnPropertyChanged(nameof(PaintFillArmed));
+        OnPropertyChanged(nameof(CropArmed));
         OnPropertyChanged(nameof(DrawLayerShown));
         OnPropertyChanged(nameof(OutlineArmed));
         OnPropertyChanged(nameof(DrillPickerShown));
         OnPropertyChanged(nameof(OtherDrillShown));
-        if (value is PictureDrawTool.Copper or PictureDrawTool.Fill && (DrawLayer is null || !ConductorChoices.Contains(DrawLayer))) DrawLayer = ConductorChoices.FirstOrDefault();
+        if (value is PictureDrawTool.Copper or PictureDrawTool.PaintFill && (DrawLayer is null || !ConductorChoices.Contains(DrawLayer))) DrawLayer = ConductorChoices.FirstOrDefault();
         RaiseCanvasPrompt();
     }
 
@@ -242,7 +326,8 @@ public sealed partial class ImageSourceViewModel
         PictureDrawTool.Via => $"Click to place a via, drilled {DrillPromptText}; a click on a hole places it at the hole's centre. Escape stops.",
         PictureDrawTool.Copper => $"Drag a rectangle, or click corners and double-click to close, to fill copper on {DrawLayer}. Escape stops.",
         PictureDrawTool.Outline => "Drag a rectangle, or click corners and double-click to close: the board's outline. Escape stops.",
-        PictureDrawTool.Fill => $"Click inside an outline to paint it as copper on {DrawLayer}. Escape stops.",
+        PictureDrawTool.PaintFill => $"Paint Fill: click inside an outline to paint it as copper on {DrawLayer}. Escape stops.",
+        PictureDrawTool.Crop => "Crop: drag a box round the board — only what is inside it is read. Escape stops.",
         _ => null,
     };
 
@@ -268,12 +353,12 @@ public sealed partial class ImageSourceViewModel
         });
     }
 
-    /// <summary>A click with the Fill tool armed: the area enclosed there painted as copper on <see cref="DrawLayer"/>.
+    /// <summary>A click with the Paint Fill tool armed: the area enclosed there painted as copper on <see cref="DrawLayer"/>.
     /// Whether there is an area to paint is ImageTrace.Build's to say, in the report, as for every correction.</summary>
     public void PaintAt(PixelPoint p)
     {
         if (DrawLayer is not { } layer) return;
-        Correct(list => { list.Add(ImageCorrection.Fill(Math.Round(p.X, 2), Math.Round(p.Y, 2), layer)); return null; });
+        Correct(list => { list.Add(ImageCorrection.PaintFill(Math.Round(p.X, 2), Math.Round(p.Y, 2), layer)); return null; });
     }
 
     /// <summary>A click with the Copper or Outline tool armed: one more corner of the polygon being drawn.</summary>

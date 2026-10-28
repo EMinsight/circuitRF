@@ -60,7 +60,7 @@ public sealed partial class PictureCorrectionRow : ObservableObject
     public string Detail { get; }
 
     /// <summary>A copper fill's or a painted area's conductor is chosen on its row.</summary>
-    public bool IsCopper => Correction.Kind is ImageCorrectionKind.Copper or ImageCorrectionKind.Fill;
+    public bool IsCopper => Correction.Kind is ImageCorrectionKind.Copper or ImageCorrectionKind.PaintFill;
 
     public IReadOnlyList<string> Layers { get; }
 
@@ -160,7 +160,7 @@ public sealed partial class ImageSourceViewModel
         ImageCorrectionKind.Hole => ("Hole, not plated", ""),
         ImageCorrectionKind.NotVia => ("Opening", ""),
         ImageCorrectionKind.Copper => ("Copper fill on", ""),
-        ImageCorrectionKind.Fill => ("Painted copper on", ""),
+        ImageCorrectionKind.PaintFill => ("Paint Fill on", ""),
         ImageCorrectionKind.Clear => c.Layer is { } l ? ("Copper read removed", $"on {l}") : ("Not copper", "on every layer"),
         _ => ("Board outline", $"{c.Points.Count} corners"),
     };
@@ -212,14 +212,14 @@ public sealed partial class ImageSourceViewModel
     /// <summary>A hand via, or a painted area's point, dragged to a new place (R-dfr30-1-3).</summary>
     public bool MoveCorrection(int index, PixelPoint to)
     {
-        if (index < 0 || index >= Corrections.Count || Corrections[index].Kind is not (ImageCorrectionKind.Via or ImageCorrectionKind.Fill)) return false;
+        if (index < 0 || index >= Corrections.Count || Corrections[index].Kind is not (ImageCorrectionKind.Via or ImageCorrectionKind.PaintFill)) return false;
         return Correct(list => { list[index] = list[index] with { Points = [Round(to)] }; return null; });
     }
 
     /// <summary>A copper fill moved to another conductor, from its row.</summary>
     public bool SetCorrectionLayer(int index, string layer)
     {
-        if (index < 0 || index >= Corrections.Count || Corrections[index].Kind is not (ImageCorrectionKind.Copper or ImageCorrectionKind.Fill)
+        if (index < 0 || index >= Corrections.Count || Corrections[index].Kind is not (ImageCorrectionKind.Copper or ImageCorrectionKind.PaintFill)
             || !ConductorChoices.Contains(layer)) return false;
         return Correct(list => { list[index] = list[index] with { Layer = layer }; return null; });
     }
@@ -236,7 +236,7 @@ public sealed partial class ImageSourceViewModel
         for (int i = Corrections.Count - 1; i >= 0; i--)
         {
             var c = Corrections[i];
-            if (c.IsPoint || c.Kind == ImageCorrectionKind.Fill)
+            if (c.IsPoint || c.Kind == ImageCorrectionKind.PaintFill)
             {
                 double r = (c.IsPoint ? HoleRadiusAt(c.At) : 4) + tolerancePx;
                 if ((p.X - c.At.X) * (p.X - c.At.X) + (p.Y - c.At.Y) * (p.Y - c.At.Y) <= r * r) return i;
@@ -245,7 +245,7 @@ public sealed partial class ImageSourceViewModel
         for (int i = Corrections.Count - 1; i >= 0; i--)
         {
             var c = Corrections[i];
-            if (c.IsPoint || c.Kind == ImageCorrectionKind.Fill || c is { Kind: ImageCorrectionKind.Clear, Layer: not null } || c.Points.Count < 3) continue;
+            if (c.IsPoint || c.Kind == ImageCorrectionKind.PaintFill || c is { Kind: ImageCorrectionKind.Clear, Layer: not null } || c.Points.Count < 3) continue;
             if (EdgeAt(i, p, tolerancePx) >= 0) return i;
             if (c.Kind != ImageCorrectionKind.Outline && Inside(c.Points, p)) return i;
         }
@@ -327,7 +327,9 @@ public sealed partial class ImageSourceViewModel
     /// <summary>Other…'s typed size, with its unit.</summary>
     [ObservableProperty] private string _otherDrillText = "";
 
-    public bool DrillPickerShown => ViaArmed || SelectedCorrectionRecord is { Kind: ImageCorrectionKind.Via };
+    /// <summary>The Drill picker: with the Via tool armed, or a hand via selected while no tool with options of its own is
+    /// armed — the two share one slot under the tools (brief-dfr30-3 R-dfr30-3-1).</summary>
+    public bool DrillPickerShown => ViaArmed || (!DrawLayerShown && SelectedCorrectionRecord is { Kind: ImageCorrectionKind.Via });
     public bool OtherDrillShown => DrillPickerShown && _viaDrill.Source == ViaDrillSource.Other;
 
     /// <summary>The drill the next via is placed with, metres; null takes the hole's (or the technology's off a hole).</summary>
@@ -437,7 +439,7 @@ public sealed partial class ImageSourceViewModel
     public int AutoViaCount => AutoVias().Count;
     public int HandViaCount => Corrections.Count(c => c.Kind == ImageCorrectionKind.Via);
     public int CopperFillCount => Corrections.Count(c => c.Kind == ImageCorrectionKind.Copper);
-    public int PaintedCount => Corrections.Count(c => c.Kind == ImageCorrectionKind.Fill);
+    public int PaintedCount => Corrections.Count(c => c.Kind == ImageCorrectionKind.PaintFill);
     public int ClearCount => Corrections.Count(c => c.Kind == ImageCorrectionKind.Clear && c.Layer is null);
     public int OutlineCount => Corrections.Count(c => c.Kind == ImageCorrectionKind.Outline);
 
@@ -466,7 +468,7 @@ public sealed partial class ImageSourceViewModel
 
     public void RemoveHandVias() => RemoveKind(ImageCorrectionKind.Via, null, "via placed by hand", "vias placed by hand");
     public void RemoveCopperFills() => RemoveKind(ImageCorrectionKind.Copper, null, "copper fill", "copper fills");
-    public void RemovePainted() => RemoveKind(ImageCorrectionKind.Fill, null, "painted area", "painted areas");
+    public void RemovePainted() => RemoveKind(ImageCorrectionKind.PaintFill, null, "paint fill", "paint fills");
     public void RemoveClears() => RemoveKind(ImageCorrectionKind.Clear, c => c.Layer is null, "clear", "clears");
     public void RemoveOutline() => RemoveKind(ImageCorrectionKind.Outline, null, "outline", "outlines");
 
@@ -510,11 +512,11 @@ public sealed partial class ImageSourceViewModel
         }
     }
 
-    /// <summary>The line drawing's one note, or "" — with what the dialog offers for one: paint its copper in.</summary>
+    /// <summary>The line drawing's one note, or "" — with what the dialog offers for one: crop to the board, paint its copper in.</summary>
     public string LineArtNote => IsLayoutPicture && _trace is { LineArt: true } ? ImageTrace.LineArtNote + " " + LineArtFillHint : "";
 
     public const string LineArtFillHint =
-        "Or paint its copper in with Fill: Remove ▾ Copper read on each layer first, so the drawing's lines are not copper too.";
+        "Crop to the board first if the picture holds more than the board, and draw its Outline so its size can be checked.";
 
     /// <summary>The copper picker's one line on reshaping a traced region (R-dfr30-1-5, D1 (a)).</summary>
     public const string ReshapeHint =

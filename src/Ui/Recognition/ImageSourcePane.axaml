@@ -45,8 +45,10 @@
                     </ToolTip.Tip>
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="AutoFix" Width="16" Height="16"/>
-                        <Ellipse Width="8" Height="8" Fill="{Binding AutoConfidenceBrush}" IsVisible="{Binding HasReadKind}"
-                                 VerticalAlignment="Center"/>
+                        <!-- The dot's place is kept before a kind is read, so the buttons after it never shift (R-dfr30-3-1). -->
+                        <Panel Width="8" Height="8" VerticalAlignment="Center">
+                            <Ellipse Fill="{Binding AutoConfidenceBrush}" IsVisible="{Binding HasReadKind}"/>
+                        </Panel>
                     </StackPanel>
                 </RadioButton>
                 <RadioButton Classes="tool" Theme="{StaticResource {x:Type ToggleButton}}"
@@ -157,6 +159,8 @@
                     <ComboBox ItemsSource="{Binding Scale.Choices}" SelectedItem="{Binding Scale.SelectedChoice}" MinWidth="250"
                               PlaceholderText="Choose the evidence…"
                               ToolTip.Tip="What the scale is taken from. Two points…: click two points and type the distance between them. Line impedance…: click a trace and type its Z0."/>
+                    <SelectableTextBlock Text="{Binding Scale.SizeLine}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"
+                                         ToolTip.Tip="How big the board is at this scale — its outline drawn, else the crop, else the whole picture. If it is not the board's real size, the scale is wrong."/>
                     <SelectableTextBlock Text="{Binding Scale.ResolutionLine}" FontSize="11" Opacity="0.75" VerticalAlignment="Center"/>
                     <SelectableTextBlock Text="{Binding Scale.Error}" Classes="error" MaxWidth="420"
                                          IsVisible="{Binding Scale.Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>

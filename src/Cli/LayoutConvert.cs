@@ -1434,7 +1434,7 @@ public static class LayoutConvert
         Console.Error.WriteLine("              --region x0,y0,x1,y1 (each with px)  --min-feature px2  --simplify px  --edge-stroke px  --snap-deg d");
         Console.Error.WriteLine("              --snap45 on|off  --underlay on|off  --overlay out.png");
         Console.Error.WriteLine("              corrections (repeatable, every point with px):  --via x,y[,drill]  --hole x,y (not plated)  --not-via x,y");
-        Console.Error.WriteLine("              --copper \"x,y;x,y;x,y=<conductor>\"  --fill \"x,y=<conductor>\"  --clear \"x,y;...[=<conductor>]\"  --outline \"x,y;...\"|corners");
+        Console.Error.WriteLine("              --copper \"x,y;x,y;x,y=<conductor>\"  --paint-fill \"x,y=<conductor>\"  --clear \"x,y;...[=<conductor>]\"  --outline \"x,y;...\"|corners");
         JsonRun.Note(CliDiagnostics.ConvertUsage());
         return 1;
     }

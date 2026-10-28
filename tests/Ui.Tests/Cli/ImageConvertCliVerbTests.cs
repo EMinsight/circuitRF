@@ -98,15 +98,15 @@ public sealed class ImageConvertCliVerbTests(ITestOutputHelper output) : IDispos
         vm.ViaDrill = vm.ViaDrillChoices.Single(c => c.Source == CircuitRF.Ui.Recognition.ViaDrillSource.Other);
         vm.OtherDrillText = "0.6 mm";
         vm.PlaceVia(new PixelPoint(300, 60));
-        // An area painted with the Fill tool: spelled --fill "x,y=<conductor>".
-        vm.DrawTool = CircuitRF.Ui.Recognition.PictureDrawTool.Fill;
+        // An area painted with the Paint Fill tool: spelled --paint-fill "x,y=<conductor>".
+        vm.DrawTool = CircuitRF.Ui.Recognition.PictureDrawTool.PaintFill;
         vm.DrawLayer = "Bottom Copper";
         vm.PaintAt(new PixelPoint(100, 150));
         await vm.Recognition;
         var input = vm.BuildTraceInput(TechPersistence.LoadFromFile(tech), null);
         Assert.Equal(5, input.Corrections.Count);
         Assert.Equal("--via 300px,60px,0.6mm", input.Corrections[^2].Spelling);
-        Assert.Equal("--fill \"100px,150px=Bottom Copper\"", input.Corrections[^1].Spelling);
+        Assert.Equal("--paint-fill \"100px,150px=Bottom Copper\"", input.Corrections[^1].Spelling);
         var run = ImageTrace.Run(input, ImageTraceTarget.NewCell(Path.Combine(_root, "b", "out"), "board"));
         Assert.True(run.Ok, run.Refusal);
 
