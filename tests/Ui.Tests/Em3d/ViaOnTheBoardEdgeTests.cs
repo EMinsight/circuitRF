@@ -105,5 +105,39 @@ public sealed class ViaOnTheBoardEdgeTests : IDisposable
         Assert.Contains(off.Notes, n => n.Contains("'via/1' lies wholly off the board", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// The 3D view of that via (owner report, 2026-10-28): its barrel's flat face lies in the board's side, and the inner
+    /// planes and the slabs it passes through ran on under it, so their edges and the face were two surfaces in one place —
+    /// unseen in one colour, broken up at every zoom once the via was hovered and tinted. The view cuts the barrel's outline
+    /// out of each of them, so nothing of theirs lies on the flat face.
+    /// </summary>
+    [Fact]
+    public void AnEdgeCutVia_IsCutOutOfThePlanesAndSlabsItPassesThrough_InTheView()
+    {
+        var (setup, source, tech) = Board(2, 3);
+        var g = Em3dGenerator.Generate(setup, source, tech);
+        Assert.True(g.Ok, g.Refusal);
+        var problem = g.Problem!;
+        var bores = CircuitRF.Render.Scene3D.Scene3DBores.Of(problem,
+            n => g.Origins.TryGetValue(n, out var o) && o.Kind == Em3dObjectKind.Via)!;
+        var barrel = problem.Solids.Single(s => s.Name == "via/1");
+        double z0 = ((Em3dExtrudedPolygon)barrel.Primitive).ZBottom, z1 = ((Em3dExtrudedPolygon)barrel.Primitive).ZTop;
+
+        // Every conductor and dielectric the barrel passes right through: a GND plane on each inner layer, the slabs between.
+        var through = problem.Solids.Where(s => s.Role is Em3dRole.Conductor or Em3dRole.Dielectric && s.Name != "via/1"
+                                             && s.Primitive is Em3dExtrudedPolygon e && e.ZBottom >= z0 - 1e-12 && e.ZTop <= z1 + 1e-12
+                                             && e.Outline.Max(q => q.Y) >= 3e-3 - 1e-12).ToList();
+        Assert.Contains(through, s => s.Role == Em3dRole.Conductor);
+        Assert.Contains(through, s => s.Role == Em3dRole.Dielectric);
+        foreach (var s in through)
+        {
+            var mesh = bores.Carved(s)?.Make() ?? Em3dTessellation.Of(s);
+            // No triangle of it reaches the via's axis at the board edge (x = 2 mm, y = 3 mm), where the flat face is.
+            Assert.DoesNotContain(mesh.Triangles, t =>
+                new[] { t.A, t.B, t.C }.All(v => Math.Abs(mesh.Vertices[v].Y - 3e-3) < 1e-12)
+                && new[] { t.A, t.B, t.C }.Min(v => mesh.Vertices[v].X) < 2e-3 && new[] { t.A, t.B, t.C }.Max(v => mesh.Vertices[v].X) > 2e-3);
+        }
+    }
+
     private static string Gmsh() => SolverDiscovery.Gmsh.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Gmsh)).Installation!.Path;
 }

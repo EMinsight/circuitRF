@@ -69,6 +69,46 @@ public class LayoutBooleanOperationsViewModelTests
         Assert.Equal(jsonBefore, LayoutPersistence.Serialize(model));
     }
 
+    // ── Remove All Holes (owner request, 2026-10-28) ─────────────────────────────────────────────
+
+    /// <summary>The polygon under the right-click loses every hole and keeps its outline and its place
+    /// in the drawing order; one undo puts the holes back. A polygon with none is offered the item
+    /// disabled, and anything that is not a polygon is not offered it at all.</summary>
+    [Fact]
+    public void RemoveAllHoles_StripsTheRightClickedPolygon_InPlace_OneUndo()
+    {
+        var model = FreshModel();
+        var rect  = new RectShape { Layer = Layer1, X1 = 100_000, Y1 = 0, X2 = 110_000, Y2 = 10_000 };
+        var holed = new PolygonShape
+        {
+            Layer = Layer1,
+            Xy    = [0, 0, 30_000, 0, 30_000, 30_000, 0, 30_000],
+            Holes = [[5000, 5000, 10_000, 5000, 10_000, 10_000, 5000, 10_000],
+                     [20_000, 20_000, 25_000, 20_000, 25_000, 25_000, 20_000, 25_000]],
+        };
+        var plain = new PolygonShape { Layer = Layer1, Xy = [50_000, 0, 60_000, 0, 60_000, 10_000] };
+        model.Shapes.Add(rect);    // 0
+        model.Shapes.Add(holed);   // 1
+        model.Shapes.Add(plain);   // 2
+        var jsonBefore = LayoutPersistence.Serialize(model);
+        var vm = new LayoutEditorViewModel(model) { ActiveTool = LayoutEditorViewModel.Tool.Select };
+
+        Assert.Null(vm.FindPolygonUnder(105_000, 5000, 40));                       // a rect: not offered
+        Assert.False(vm.RemoveHolesAvailability(58_000, 2000, 40).CanExecute);     // no holes: disabled
+        Assert.True(vm.RemoveHolesAvailability(15_000, 15_000, 40).CanExecute);
+
+        vm.ApplyRemoveAllHoles(15_000, 15_000, 40);
+
+        var stripped = Assert.IsType<PolygonShape>(model.Shapes[1]);
+        Assert.Null(stripped.Holes);
+        Assert.Equal(holed.Xy, stripped.Xy);
+        Assert.Same(rect, model.Shapes[0]);
+        Assert.Same(plain, model.Shapes[2]);
+
+        vm.UndoRedo.Undo();
+        Assert.Equal(jsonBefore, LayoutPersistence.Serialize(model));
+    }
+
     // ── L1h gate 2 (brief-L1h-scale-and-context-menu.md R-L1h-1): Union groups by layer — this is
     // what "Merge" used to do; Merge is deleted, and this is now what Union itself does. ───────────
 

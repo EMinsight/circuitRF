@@ -361,6 +361,12 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? EmMemoryLimitGb { get; set; }
 
+    // The scratch folder: where Gmsh stages a mesh and an unsaved 3D view runs (CircuitRF.Design.ScratchFolder). Null is the
+    // system temp folder. Per MACHINE — it names a disk on this computer. See ScratchFolderPreference.
+    [JsonPropertyName(CircuitRF.Design.ScratchFolder.PreferenceKey)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ScratchFolder { get; set; }
+
     // brief-em3d-44 R-em3d44-5: the 3D snap's switches — the master and one per kind. Per USER, not per
     // document: how someone likes to snap is a working habit, and a .c3d from someone else must not change it.
     // Null means the shipped default (on, every kind). See Snap3DPreference.

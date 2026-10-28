@@ -765,10 +765,8 @@
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="Technology:"/>
                     <!-- Two actions behind the ▾, rather than the click going straight to Change:
-                         Edit… opens the .ctech as an ordinary document, in its OWN pane to the RIGHT
-                         of this layout and only as wide as the layer table's Name/Vis/Sel/Color
-                         columns, so layers can be toggled with the artwork still in view
-                         (WorkspaceViewModel.OpenTechnologyDocumentBesideLayout); Change… re-targets
+                         Edit… opens the .ctech as an ordinary document
+                         (WorkspaceViewModel.OpenTechnologyDocument); Change… re-targets
                          this layout at a different technology. Declared once in XAML and owned by the
                          framework — never built per click, which is the menu-stacking bug fixed twice
                          already here. -->

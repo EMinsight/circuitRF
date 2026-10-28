@@ -468,6 +468,12 @@ the startup volume or the results' volume falls below 10 GB free; either way the
 `--force` lifts the memory limit, never the disk floor. `explain` on a 3D setup reports both, and takes
 `--memory-limit` too.
 
+A 3D or thermal run makes its mesh in the **Scratch folder** that **Settings ▸ Solvers** names, the system temp folder
+when none is named, and prints it as a `Scratch:` line beside the solver. `--json` carries it on every run, refused or
+not, as `result.scratch`: `folder`, `source` (`preference` or `system`), `exists`, and `systemTemp`, which a solver's
+own helpers still use (the parallel runtime's session files for a Palace run on several processes). A named folder
+that is not there, such as a drive that is not connected, refuses the run before meshing and exits **1**.
+
 A `.c3d` runs too — `circuitrf em <view.c3d> --setup <name>` — and a **thermal** setup embedded in it runs through the
 same verb with circuitRF's own thermal solver (Gmsh meshes it). It writes `<cell> <setup>.thermal.npy` and the temperature
 field beside it, and prints the probes, the measures and, when the setup asks for one, the Rth matrix. See

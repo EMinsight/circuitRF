@@ -24,6 +24,14 @@
 // apart only by the via's constant depth bias — which an orthographic view at an angle defeats, so the pads speckled through
 // the bore and round its end rings. At the barrel's outside the bore shows the plating alone and the rings meet the pads
 // edge to edge. A bare hole through metal (no barrel) is still carved at the bore.
+//
+// A via the board's edge cuts through (DFR28-1) is no cylinder: its barrel is the drill's disc clipped to the board, an
+// extruded polygon whose flat face lies in the board's side. The pads it passes through are drawn whole, so on every
+// layer a pad's straight side lay on that flat face, two faces of one colour fighting unseen until the via was hovered
+// and tinted (owner report, 2026-10-28: the copper layers broke through the hovered via, differently at each zoom). Its
+// barrel outline is a SHAPED bore: it carves the conductors and slabs it passes right through as a round barrel's outside
+// does, so the flat face is the only surface on that plane. A slab needs it as well as Scene3DWalls' cut: the wall is
+// cut, but a slab's caps ran on under the flat face, and with the slab hovered their edges came through it as a line.
 
 using Clipper2Lib;
 using CircuitRF.Engine.Em3d;
@@ -37,8 +45,10 @@ internal sealed class Scene3DBores
     private const double Tol = 1e-9;
 
     /// <param name="Outer">The radius a polygon is carved at: the barrel's outside when the bore is a plated via's, else
-    /// <paramref name="R"/> — a bare hole.</param>
-    private readonly record struct Bore(double X, double Y, double R, double Z0, double Z1, int Priority, double Outer);
+    /// <paramref name="R"/> — a bare hole. For a <paramref name="Shape"/>, the radius that encloses it.</param>
+    /// <param name="Shape">An edge-cut via's barrel outline, carved exactly instead of a circle.</param>
+    private readonly record struct Bore(double X, double Y, double R, double Z0, double Z1, int Priority, double Outer,
+                                        Point2[]? Shape = null);
 
     private readonly Bore[] _bores;   // by X
     private readonly Em3dPrecedence _precedence;
@@ -52,8 +62,9 @@ internal sealed class Scene3DBores
         _reach = bores.Max(b => b.Outer);
     }
 
-    /// <summary>The problem's bores, or null when it has none (the ordinary problem, which then costs nothing).</summary>
-    public static Scene3DBores? Of(Em3dProblem problem)
+    /// <summary>The problem's bores, or null when it has none (the ordinary problem, which then costs nothing).
+    /// <paramref name="isVia"/> names the conductors that are via barrels, so an edge-cut one is a shaped bore.</summary>
+    public static Scene3DBores? Of(Em3dProblem problem, Func<string, bool>? isVia = null)
     {
         Em3dPrecedence? precedence = null;
         var bores = new List<Bore>();
@@ -71,6 +82,16 @@ internal sealed class Scene3DBores
                         if (bores[i].Outer == bores[i].R && Math.Abs(bores[i].X - m.AxisStart.X) <= Tol && Math.Abs(bores[i].Y - m.AxisStart.Y) <= Tol &&
                             bores[i].R < m.Radius - Tol)
                             bores[i] = bores[i] with { Outer = m.Radius };
+        if (isVia is not null)
+            foreach (var s in problem.Solids)
+            {
+                if (s.Role != Em3dRole.Conductor || s.Primitive is not Em3dExtrudedPolygon e || e.Holes.Count > 0 || !isVia(s.Name)) continue;
+                precedence ??= Em3dPrecedence.Of(problem);
+                double x0 = e.Outline.Min(q => q.X), x1 = e.Outline.Max(q => q.X), y0 = e.Outline.Min(q => q.Y), y1 = e.Outline.Max(q => q.Y);
+                double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+                double reach = e.Outline.Max(q => Math.Sqrt((q.X - cx) * (q.X - cx) + (q.Y - cy) * (q.Y - cy)));
+                bores.Add(new Bore(cx, cy, reach, e.ZBottom, e.ZTop, precedence.Of(s), reach, [.. e.Outline]));
+            }
         if (bores.Count == 0) return null;
         bores.Sort((a, b) => a.X.CompareTo(b.X));
         return new Scene3DBores([.. bores], precedence!);
@@ -129,6 +150,11 @@ internal sealed class Scene3DBores
             // A pad too narrow for the barrel's outside is still carved at the bore, as it was, rather than drawn over it.
             if (bore.Priority <= priority || !Spans(bore, e.ZBottom, e.ZTop)) continue;
             var centre = new Point2(bore.X, bore.Y);
+            if (bore.Shape is not null)
+            {
+                if (Touches(e, centre, bore.Outer)) (crossing ??= []).Add(bore);
+                continue;
+            }
             var b = Fits(e, centre, bore.Outer) ? bore with { R = bore.Outer } : bore;
             if (Fits(e, centre, b.R) && taken?.Any(o => Math.Sqrt((o.X - b.X) * (o.X - b.X) + (o.Y - b.Y) * (o.Y - b.Y)) < o.R + b.R) != true)
                 (taken ??= []).Add(b);
@@ -282,6 +308,7 @@ internal sealed class Scene3DBores
     /// <summary>The bore's circle at the tube's own vertices, so a pad's hole and the barrel's bore meet edge to edge.</summary>
     private static Point2[] Ring(Bore b)
     {
+        if (b.Shape is { } shape) return shape;
         int n = Em3dTessellation.CylinderSegments;
         var ring = new Point2[n];
         for (int k = 0; k < n; k++)

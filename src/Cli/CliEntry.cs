@@ -1549,6 +1549,17 @@ static int RunEm(string[] args)
         }
     }
 
+    // The scratch folder Settings ▸ Solvers names, read now so a change there reaches the next run (an MCP server runs many
+    // in one process), and said: on stdout below and in --json's scratch block, refused run or not, so a caller can tell
+    // which disk a run filled.
+    {
+        string? scratchChosen = CircuitRF.Design.ScratchFolder.FromPreferences();
+        CircuitRF.Design.ScratchFolder.Chosen = scratchChosen;
+        string scratchRoot = CircuitRF.Design.ScratchFolder.Root;
+        JsonRun.Scratch = new ScratchJson(scratchRoot, scratchChosen is null ? "system" : "preference",
+                                          Directory.Exists(scratchRoot), Path.GetTempPath());
+    }
+
     // A GPU asked of a run that starts no Palace is refused rather than ignored: the flag would otherwise say a run
     // used a GPU that nothing was ever going to use.
     if (component is not null && device == CircuitRF.Design.Em3d.PalaceDevice.Gpu)
@@ -1820,6 +1831,8 @@ static int ReportEmRun(EmRunResult result, EmSetup setup, string cemPath)
     Console.WriteLine($"EM setup:  {(setup.Name.Length > 0 ? setup.Name : Path.GetFileNameWithoutExtension(cemPath))}");
     // A 3D run has no planar kernel; its KernelName is the solver and version (brief-em3d-7).
     Console.WriteLine(setup.Is3D || setup.IsThermal ? $"Solver:    {result.KernelName}" : $"Kernel:    {result.KernelName} ({result.Kind})");
+    if ((setup.Is3D || setup.IsThermal) && JsonRun.Scratch is { } scratch)
+        Console.WriteLine($"Scratch:   {scratch.Folder} ({(scratch.Source == "preference" ? "Settings ▸ Solvers" : "system temp folder")})");
 
     JsonRun.Data = result.Data;
 

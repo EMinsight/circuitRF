@@ -817,8 +817,10 @@ public sealed partial class Viewer3DViewModel
     /// brief-em3d-107 — <paramref name="supersample"/> (Export Picture's <see cref="ExportSupersample"/>; Copy draws once, at 1) and
     /// <paramref name="transparent"/> apply to the realistic view only.
     /// </summary>
+    /// <param name="live">Plan the picture as the live view is planned — hover and selection drawn in the realistic view too. Only
+    /// a diagnostic asks for it (tools/UiSnapshot <c>--live</c>); Export Picture never does.</param>
     public FieldPictureShot? CapturePicture(int windowPixelsW, int windowPixelsH, int scale, out string? error, bool transparent = false,
-                                            int supersample = 1)
+                                            int supersample = 1, bool live = false)
     {
         error = null;
         float k = Math.Clamp(scale, 1, 4);
@@ -837,7 +839,7 @@ public sealed partial class Viewer3DViewModel
             try
             {
                 plan.Plan(Scene, View, w * ss, h * ss, backend.FlipY, pick: false, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn,
-                          export: true, transparent: transparent, pixelScale: k * ss);
+                          export: !live, transparent: transparent, pixelScale: k * ss);
             }
             finally { View.CursorX = cx; View.CursorY = cy; }
             var rgba = Session.RenderPixels(plan, Scene, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn);

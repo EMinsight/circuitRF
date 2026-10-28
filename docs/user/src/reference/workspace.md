@@ -356,6 +356,13 @@ symbol, layout and 3D — and each opens as its own tab, so the schematic and th
 are two tabs you can put side by side. Double-clicking the cell itself opens its schematic, or its
 layout when it has no schematic, or its 3D view when it has neither; a cell with none of these
 opens its parameters. **Edit Parameters** on the cell's right-click menu always opens the parameters.
+Right-click a cell's `schematic`, `symbol`, `layout` or `3d` folder and choose **Open View** to open
+that view's primary document, or **Remove All Views** to move the whole folder to the Trash; the
+confirmation says how many files go with it.
+
+Every file, cell and folder in the Project panel, and every document tab, has **Copy Path** and
+**Copy Full Path** on its right-click menu. **Copy Full Path** copies the path itself; **Copy Path**
+copies the folder that holds it.
 
 Tabs are rearrangeable, splittable and detachable: drag one along the strip to reorder it, drop it
 against an edge of the document area to split the area in two, or drag it clear of the window to

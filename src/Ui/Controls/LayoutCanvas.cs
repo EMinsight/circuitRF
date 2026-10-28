@@ -1684,11 +1684,18 @@ public sealed class LayoutCanvas : Control
         AddAvailItem("Difference", boolAvail).Click += (_, _) => { _viewModel.ApplyDifference(); InvalidateVisual(); };
         AddAvailItem("XOR", boolAvail).Click        += (_, _) => { _viewModel.ApplyXor(); InvalidateVisual(); };
 
+        long clipTol = HitTolDbu();
+
+        // Directly under XOR (owner request, 2026-10-28), and only over a polygon — the kind that
+        // carries holes. Disabled with the reason when it has none.
+        if (_viewModel.FindPolygonUnder(wx, wy, clipTol) is not null)
+            AddAvailItem("Remove All Holes", _viewModel.RemoveHolesAvailability(wx, wy, clipTol)).Click +=
+                (_, _) => { _viewModel.ApplyRemoveAllHoles(wx, wy, clipTol); InvalidateVisual(); };
+
         // brief-layout-clip-and-cut-out.md §7: in the boolean block, directly after XOR, no separator
         // — they ARE booleans and belong with the others. Unlike everything else in this method these
         // two are stencil-scoped as well as selection-scoped (R-clip-1: the shape under the right-click
         // is the stencil), which is why this method now takes the (wx, wy) its caller already had.
-        long clipTol = HitTolDbu();
         var stencil = _viewModel.FindClipStencil(wx, wy, clipTol);
         var clipAvail = _viewModel.ClipAvailability(wx, wy, clipTol);
 

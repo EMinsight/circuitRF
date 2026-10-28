@@ -191,9 +191,9 @@
                                             </StackPanel>
                                             <Button.Flyout>
                                                 <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                                                    <MenuItem Header="C1 / C2  meter → other   868.95 MHz, 100 kchip/s, ±45 kHz, FSK" Command="{Binding PresetWmbusC1Command}"/>
+                                                    <MenuItem Header="C1  meter → other   868.95 MHz, 100 kchip/s, ±45 kHz, FSK" Command="{Binding PresetWmbusC1Command}"/>
                                                     <MenuItem Header="C2  other → meter   869.525 MHz, 50 kchip/s, ±25 kHz, GFSK BT 0.5" Command="{Binding PresetWmbusC2Command}"/>
-                                                    <MenuItem Header="T1 / T2  meter → other   868.95 MHz, 100 kchip/s, ±50 kHz, FSK" Command="{Binding PresetWmbusT1Command}"/>
+                                                    <MenuItem Header="T1  meter → other   868.95 MHz, 100 kchip/s, ±50 kHz, FSK" Command="{Binding PresetWmbusT1Command}"/>
                                                     <MenuItem Header="T2  other → meter   868.3 MHz, 32.768 kchip/s, ±50 kHz, FSK" Command="{Binding PresetWmbusT2Command}"/>
                                                 </MenuFlyout>
                                             </Button.Flyout>

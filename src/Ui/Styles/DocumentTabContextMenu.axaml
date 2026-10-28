@@ -50,6 +50,20 @@
                   CommandParameter="{Binding}"
                   IsVisible="{Binding Converter={x:Static conv:FileBackedDocumentConverter.Instance}}" />
 
+        <!-- Copy Path is the folder holding the file; Copy Full Path the file itself (PathClipboard).
+             Same visibility as Reveal, and the same static-command-taking-the-dockable shape. The
+             separator under them shows only when Save or Save As… follows — with neither, the
+             separator that closes circuitRF's block is the next thing, and two would stack. -->
+        <MenuItem Header="Copy Path"
+                  Command="{x:Static cmds:DocumentTabCommands.CopyPath}"
+                  CommandParameter="{Binding}"
+                  IsVisible="{Binding Converter={x:Static conv:FileBackedDocumentConverter.Instance}}" />
+        <MenuItem Header="Copy Full Path"
+                  Command="{x:Static cmds:DocumentTabCommands.CopyFullPath}"
+                  CommandParameter="{Binding}"
+                  IsVisible="{Binding Converter={x:Static conv:FileBackedDocumentConverter.Instance}}" />
+        <Separator IsVisible="{Binding Converter={x:Static conv:DocumentTabMenuVisibility.AfterPaths}}" />
+
         <!-- Save / Save As… for the RIGHT-CLICKED tab (owner request, 2026-09-09). File ▸ Save always
              means the ACTIVE document; these mean this one, which is very often a background tab. Both
              hide on a document kind that has no such route rather than showing as disabled, and neither

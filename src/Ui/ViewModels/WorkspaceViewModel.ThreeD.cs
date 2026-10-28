@@ -106,10 +106,16 @@ public partial class WorkspaceViewModel
         OpenC3dEditor(full, C3dEditorDocument.KeyFor(full), document, scratch: true);
     }
 
-    /// <summary>The session's own scratch workspace, made on first use; null (and said) when it cannot be.</summary>
+    /// <summary>The session's own scratch workspace, made on first use in the scratch folder (Settings ▸ Solvers); null
+    /// (and said) when it cannot be. A run of an unsaved 3D view writes its results here, so it follows that setting.</summary>
     private string? ScratchC3dWorkspace()
     {
-        string parent = Path.Combine(Path.GetTempPath(), "circuitRF-scratch", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (CircuitRF.Design.ScratchFolder.Refusal() is { } noScratch)
+        {
+            Messages.Error($"Could not make a scratch 3D design: {noScratch}");
+            return null;
+        }
+        string parent = Path.Combine(CircuitRF.Design.ScratchFolder.Root, "circuitRF-scratch", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         string dir = Path.Combine(parent, "3d");
         if (File.Exists(Path.Combine(dir, ".cws"))) return dir;
         try

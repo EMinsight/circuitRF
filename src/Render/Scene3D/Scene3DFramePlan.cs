@@ -487,6 +487,9 @@ public sealed class Scene3DFramePlan
         PlanLighting(scene, view, preview, cam, width, height, flipY, export, pixelScale);
         if (!quiet) MarkFaded(view);
         else _fadedCount = 0;
+        bool hoverTinted = !quiet && !view.HoverHidden;
+        _hoverId = hoverTinted ? view.Hovered : 0;
+        _hoverGroup = hoverTinted && _hoverId != 0 && view.Mode == Scene3DSelectMode.Object ? view.HoverGroup : [];
         if (real) ColourRealistic(scene, view, preview, mesh, section, grid, field, cam, width, height, flipY);
         else ColourDefault(scene, view, preview, mesh, section, grid, field, cam, width, height, flipY);
 
@@ -580,6 +583,22 @@ public sealed class Scene3DFramePlan
                 if (r.Count > 0 && r.First >= 0 && r.First + r.Count <= f.Vertices.Length)
                     Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, r.First, r.Count, FieldSlot(r.Layer),
                         Scene3DDepthTie.Field);
+
+        // brief-em3d-45 R-em3d45-2b — the drawing grid after everything opaque (so solids hide it) and before
+        // the translucent objects (so it shows faintly through a dielectric). Uniforms only: nothing uploads.
+        // Before the lines and overlays, which draw over it, and followed by the hovered object drawn again (HoverOverGrid).
+        GridSpacing = default;
+        if (view.DrawingGrid is { Visible: true } dg)
+        {
+            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, cam, dg, width, height, flipY);
+            if (GridSpacing.MinorDbu > 0)
+            {
+                Add(ref Draws, ref DrawCount, Scene3DPipeline.Grid, Scene3DBuffer.None, 0, 6);
+                GridFrames++;
+            }
+        }
+        else Uniforms.AsSpan(GridAt, PlaneGrid.Floats).Clear();
+        if (GridSpacing.MinorDbu > 0) HoverOverGrid(scene, view, preview, realistic: false);
         foreach (var lb in scene.LineBatches)
             if (view.IsVisible(lb.ObjectId))
                 AddMoved(preview, lb.ObjectId, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, lb.FirstVertex, lb.VertexCount, identity: true);
@@ -595,19 +614,6 @@ public sealed class Scene3DFramePlan
         if (view.ShowGrid && grid.Lines.Length > 0)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay2, 0, grid.Lines.Length);
 
-        // brief-em3d-45 R-em3d45-2b — the drawing grid after everything opaque (so solids hide it) and before
-        // the translucent objects (so it shows faintly through a dielectric). Uniforms only: nothing uploads.
-        GridSpacing = default;
-        if (view.DrawingGrid is { Visible: true } dg)
-        {
-            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, cam, dg, width, height, flipY);
-            if (GridSpacing.MinorDbu > 0)
-            {
-                Add(ref Draws, ref DrawCount, Scene3DPipeline.Grid, Scene3DBuffer.None, 0, 6);
-                GridFrames++;
-            }
-        }
-        else Uniforms.AsSpan(GridAt, PlaneGrid.Floats).Clear();
 
         // Translucent objects back to front, one draw each (brief 27 §2.4: per object, not per triangle) — and, 3D editor
         // bugs round 3, an opaque object selected in Object mode, faded, among them.
@@ -747,6 +753,19 @@ public sealed class Scene3DFramePlan
                 }
         // brief-em3d-107 R-em3d107-3 — the ground, after everything opaque (which hides it) and before anything translucent
         if (GroundDrawn) Add(ref Draws, ref DrawCount, Scene3DPipeline.Ground, Scene3DBuffer.None, 0, 6);
+        // the drawing grid, before the lines and overlays (which draw over it) and followed by the hovered object drawn again
+        GridSpacing = default;
+        if (look.Shows(Scene3DChrome.Grid) && view.DrawingGrid is { Visible: true } dg)
+        {
+            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, cam, dg, width, height, flipY);
+            if (GridSpacing.MinorDbu > 0)
+            {
+                Add(ref Draws, ref DrawCount, Scene3DPipeline.Grid, Scene3DBuffer.None, 0, 6);
+                GridFrames++;
+            }
+        }
+        else Uniforms.AsSpan(GridAt, PlaneGrid.Floats).Clear();
+        if (GridSpacing.MinorDbu > 0) HoverOverGrid(scene, view, preview, realistic: true);
         // A wireframe object (no material) is drawn as its edges ALONE — its faces are alpha 0 — so they are its body, not the Edges
         // row: hidden with that row, an imported part with no material vanished but for its hover highlight.
         bool edges = look.Shows(Scene3DChrome.Edges);
@@ -768,17 +787,6 @@ public sealed class Scene3DFramePlan
             if (view.ShowGrid && grid.Lines.Length > 0)
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Lines, Scene3DBuffer.Overlay2, 0, grid.Lines.Length);
         }
-        GridSpacing = default;
-        if (look.Shows(Scene3DChrome.Grid) && view.DrawingGrid is { Visible: true } dg)
-        {
-            GridSpacing = PlaneGrid.Fill(Uniforms.AsSpan(GridAt), scene, cam, dg, width, height, flipY);
-            if (GridSpacing.MinorDbu > 0)
-            {
-                Add(ref Draws, ref DrawCount, Scene3DPipeline.Grid, Scene3DBuffer.None, 0, 6);
-                GridFrames++;
-            }
-        }
-        else Uniforms.AsSpan(GridAt, PlaneGrid.Floats).Clear();
 
         // Translucent, back to front: a material that transmits or states a transparency, a shown chrome object or one with no look
         // that is translucent in the default view, and an object selected in Object mode (faded).
@@ -1136,6 +1144,35 @@ public sealed class Scene3DFramePlan
     }
 
     private bool Faded(uint id) => _fadedCount > 0 && id >= 1 && id <= _faded.Length && _faded[id - 1];
+
+    /// <summary>This frame's hovered object (0 for none, or when the hover draws no tint) and the rest of the group a click on it
+    /// takes (Object mode) — what the uniforms tint. Set by <see cref="Plan"/>.</summary>
+    private uint _hoverId;
+    private uint[] _hoverGroup = [];
+
+    private bool IsHoverTinted(uint id) => id != 0 && (id == _hoverId || Array.IndexOf(_hoverGroup, id) >= 0);
+
+    /// <summary>
+    /// The hovered object's opaque triangles drawn a second time, right after the drawing grid: where the object is the nearest
+    /// surface the second draw lands on its own depth and passes LessEqual, so its tint covers the grid's lines; anywhere
+    /// something else is in front it fails as the first draw did. The grid writes no depth, so nothing else changes. Owner rule
+    /// (2026-10-28): the hover highlight wins over the grid, as the grid wins over a face lying in its plane (fs_grid's bias).
+    /// </summary>
+    private void HoverOverGrid(Scene3DModel scene, Viewer3DViewState view, Scene3DPreview? preview, bool realistic)
+    {
+        if (_hoverId == 0) return;
+        var batches = scene.Batches;
+        for (int k = 0; k < batches.Length; k++)
+        {
+            var b = batches[k];
+            if (!IsHoverTinted(b.ObjectId) || b.Translucent || Faded(b.ObjectId) || !view.IsDrawn(b.ObjectId)) continue;
+            if (b.Element >= 0 && _boxed[b.Element]) continue;
+            if (_surfaceOf[b.ObjectId - 1] >= 0) continue;   // an image sheet's colour is its image
+            if (realistic) OpaqueRealistic(scene, view, preview, b, b.Element);
+            else AddMoved(preview, b.ObjectId, Scene3DPipeline.Opaque, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, identity: true,
+                          b.Element, TieOf(scene, b));
+        }
+    }
 
     private bool AnyFaded(in Scene3DElement el)
     {

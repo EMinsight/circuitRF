@@ -1690,7 +1690,8 @@ computes and the S-parameters it exports — is in <a href="wbond.html">the wBon
 </span><figcaption>Settings, Solvers: one row per program a 3D EM run can need - Palace, Gmsh and openEMS - with a path to name it and a line saying what circuitRF found. Blank means search.</figcaption></figure>
 <p>A 3D EM setup runs one of three separately installed solvers — <strong>Palace</strong> (FEM), <strong>openEMS</strong> (FDTD) or
 <strong>EMerge</strong> (FEM) — and Palace's problems are meshed by <strong>Gmsh</strong>. circuitRF includes none of these
-programs. The tab starts with the <strong>Memory limit</strong>, which holds every solver and mesher alike, then gives each
+programs. The tab starts with the <strong>Memory limit</strong>, which holds every solver and mesher alike, and the
+<strong>Scratch folder</strong>, then gives each
 program a panel of its own, and each says what circuitRF found: the version, whether
 it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where the program is, and how it was found.</p>
 <table>
@@ -1706,6 +1707,11 @@ it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where 
 <td><strong>Memory limit</strong></td>
 <td>blank (this computer's memory)</td>
 <td>The memory a 3D solver or mesher may reach before it is stopped and its run writes nothing, in GB. <strong>Blank is Automatic</strong>, this computer's memory, which the box shows greyed. Only a lower limit can be set; a value at or above this computer's memory is refused and not saved. It belongs to this computer, not to a setup. See <a href="em-setup.html#solver-3d">Solver — planar or 3D</a>.</td>
+</tr>
+<tr>
+<td><strong>Scratch folder</strong></td>
+<td>the system temp folder</td>
+<td>Where Gmsh makes a mesh before it is moved into the run's folder, and where a 3D view that has never been saved runs. A mesh can take several GB while it is being made. <strong>Choose…</strong> picks a folder, for example on an external drive when the startup disk is short of space; <strong>Default</strong> goes back to the system temp folder. If the folder you chose is not there when a run starts (its drive is not connected), the run is refused rather than written to the startup disk. A saved design's results are still written to its workspace's <code>results</code> folder. The command line's <code>em</code> uses the same folder and says which in its output. It belongs to this computer, not to a setup.</td>
 </tr>
 <tr>
 <td><strong>Path</strong> (one per program)</td>

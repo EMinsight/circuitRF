@@ -432,6 +432,11 @@
                                      Commands are RelayCommands / AsyncRelayCommands on the VM,
                                      delegating to ITreeActions (WorkspaceViewModel). -->
                                 <Grid.ContextMenu>
+                                    <!-- Every Separator here carries its condition in Tag, not IsVisible:
+                                         OnNodeContextMenuOpening decides each one with MenuSeparators, which
+                                         also drops one that would sit first, last or against another. Each
+                                         starts hidden, so a menu shown before that has run shows none rather
+                                         than all of them. -->
                                     <ContextMenu Opening="OnNodeContextMenuOpening">
 
                                         <!-- Cell: open primary views at the top for quick access -->
@@ -459,6 +464,14 @@
                                                   Command="{Binding OpenThreeDCommand}"
                                                   IsVisible="{Binding IsCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="CubeOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
+                                        <!-- A cell's schematic/ symbol/ layout/ 3d/ row: that view's primary,
+                                             the same document the cell's own Open item above opens. -->
+                                        <MenuItem Header="Open View"
+                                                  Command="{Binding OpenViewCommand}"
+                                                  IsVisible="{Binding IsViewFolder}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="OpenInApp" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
                                         <!-- Save dirty node — visible only when IsSaveable (resolved at menu-open) -->
@@ -501,7 +514,7 @@
                                                   ToolTip.Tip="Create a cell whose layout view is this design's embedded geometry and whose schematic view holds the wirebond component.">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="FolderPlusOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
-                                        <Separator IsVisible="{Binding IsWBondFile}"/>
+                                        <Separator IsVisible="False" Tag="{Binding IsWBondFile}"/>
 
                                         <!-- railRF (.crail) node action — brief-authored-board-4
                                              R-ab4-4b. Seeding needs a library to seed into, and a
@@ -515,7 +528,7 @@
                                                   ToolTip.Tip="Create a part library in this workspace holding one row per part number this design asks about, and point the document at it. Each row states the part number and nothing else — except where a bill of materials read in its railRF window already said more.">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="FormatListBulletedType" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
-                                        <Separator IsVisible="{Binding IsRailFile}"/>
+                                        <Separator IsVisible="False" Tag="{Binding IsRailFile}"/>
 
                                         <!-- Known File actions -->
                                         <MenuItem Header="Open External…"
@@ -566,7 +579,7 @@
                                                   IsVisible="{Binding IsKnownFile}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="LinkVariantOff" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
-                                        <Separator IsVisible="{Binding IsKnownFile}"/>
+                                        <Separator IsVisible="False" Tag="{Binding IsKnownFile}"/>
 
                                         <!-- View file actions (Make Primary) -->
                                         <MenuItem Header="Make Primary"
@@ -583,7 +596,7 @@
                                              every kind that answers true to it (workspace, library,
                                              user folder) shows no menu item ABOVE this point, so it
                                              was a rule at the very top of the menu. -->
-                                        <Separator IsVisible="{Binding IsOwnCell}"/>
+                                        <Separator IsVisible="False" Tag="{Binding IsOwnCell}"/>
 
                                         <!-- Workspace / Library / user-folder node actions -->
                                         <MenuItem Header="New Cell"
@@ -640,13 +653,13 @@
                                                   IsVisible="{Binding IsOwnCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="FormTextbox" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
-                                        <Separator IsVisible="{Binding IsCell}"/>
+                                        <Separator IsVisible="False" Tag="{Binding IsCell}"/>
                                         <MenuItem Header="Edit Parameters"
                                                   Command="{Binding EditParametersCommand}"
                                                   IsVisible="{Binding IsCell}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="Pencil" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
-                                        <Separator IsVisible="{Binding IsCell}"/>
+                                        <Separator IsVisible="False" Tag="{Binding IsCell}"/>
 
                                         <!-- A cell that lives in ANOTHER workspace, and the Referenced
                                              Workspace row itself — directly above Reveal, since the two
@@ -696,11 +709,28 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="FolderNetworkOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
-                                        <!-- All revealable nodes — the last item that is not a remove. -->
+                                        <!-- Reveal and the two path copies — "where is this?" — set off from
+                                             what is above them, on every kind. -->
+                                        <Separator IsVisible="False"/>
+
+                                        <!-- All revealable nodes. -->
                                         <MenuItem Header="{Binding RevealLabel}"
                                                   Command="{Binding RevealCommand}"
                                                   IsVisible="{Binding CanReveal}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="FolderSearchOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
+                                        <!-- Copy Path is the ENCLOSING folder; Copy Full Path the row's own
+                                             path (PathClipboard). The last items that are not a remove. -->
+                                        <MenuItem Header="Copy Path"
+                                                  Command="{Binding CopyPathCommand}"
+                                                  IsVisible="{Binding CanCopyPath}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="Copy Full Path"
+                                                  Command="{Binding CopyFullPathCommand}"
+                                                  IsVisible="{Binding CanCopyPath}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="ContentCopy" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
                                         <!-- ── Removes ─────────────────────────────────────────────
@@ -715,7 +745,7 @@
                                              be. Computing the one separator from what is actually
                                              visible under it is the only version that cannot do
                                              that. -->
-                                        <Separator IsVisible="{Binding HasRemoveAction}"/>
+                                        <Separator IsVisible="False" Tag="{Binding HasRemoveAction}"/>
 
                                         <!-- Header names the document type ("Remove Layout", "Remove EM
                                              Setup"): one item now covers .cdd, .cem, .charm, .wBond,
@@ -759,6 +789,13 @@
                                         <MenuItem Header="Remove Cell"
                                                   Command="{Binding RemoveCellCommand}"
                                                   IsVisible="{Binding IsOwnCell}">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
+                                        <!-- The whole view sub-folder; the confirmation counts its files. -->
+                                        <MenuItem Header="Remove All Views"
+                                                  Command="{Binding RemoveAllViewsCommand}"
+                                                  IsVisible="{Binding IsOwnViewFolder}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 

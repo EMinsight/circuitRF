@@ -255,6 +255,69 @@ public sealed partial class LayoutEditorViewModel
         ReportOperandOutcome(result, opName, operands);
     }
 
+    // ── Remove All Holes ──────────────────────────────────────────────────────
+
+    /// <summary>The topmost polygon (or curve region — the two kinds that carry holes) under the
+    /// right-click, or null. Decides whether the context menu offers Remove All Holes at all.</summary>
+    public int? FindPolygonUnder(double wx, double wy, long tolDbu)
+    {
+        long px = (long)Math.Round(wx), py = (long)Math.Round(wy);
+        foreach (var idx in LayoutHitTest.HitStack(Model, DrawTechnology, px, py, tolDbu))
+            if (Model.Shapes[idx] is PolygonShape or CurveShape) return idx;
+        return null;
+    }
+
+    private static bool HasHoles(LayoutShape s) =>
+        s is PolygonShape { Holes.Count: > 0 } or CurveShape { Holes.Count: > 0 };
+
+    /// <summary>What Remove All Holes acts on: the polygon under the right-click — or, when that
+    /// polygon is part of the selection, every selected polygon with holes, as the other right-click
+    /// edits treat a selection.</summary>
+    private IReadOnlyList<int> RemoveHolesTargets(double wx, double wy, long tolDbu)
+    {
+        if (FindPolygonUnder(wx, wy, tolDbu) is not { } hit) return [];
+        var selected = ValidSelectedIndices;
+        IEnumerable<int> scope = selected.Contains(hit) ? selected : [hit];
+        return scope.Where(i => HasHoles(Model.Shapes[i])).ToList();
+    }
+
+    public LayoutCommandAvailability RemoveHolesAvailability(double wx, double wy, long tolDbu) =>
+        RemoveHolesTargets(wx, wy, tolDbu).Count > 0
+            ? LayoutCommandAvailability.Enabled
+            : LayoutCommandAvailability.Disabled("This polygon has no holes");
+
+    /// <summary>
+    /// Remove All Holes — each target keeps its outline and loses every inner ring, one undo entry for
+    /// all of them. Each shape is swapped at its own index (<see cref="Commands.Layout.ReplaceShapeCommand"/>),
+    /// so the drawing order is unchanged. The result is the designer's edit, so a generated shape stops
+    /// being generated, as any reshape of one does.
+    /// </summary>
+    public void ApplyRemoveAllHoles(double wx, double wy, long tolDbu)
+    {
+        var targets = RemoveHolesTargets(wx, wy, tolDbu);
+        if (targets.Count == 0) return;
+
+        Commands.IUiCommand? combined = null;
+        int holes = 0;
+        foreach (var i in targets)
+        {
+            var before = Model.Shapes[i];
+            var after  = LayoutGeometry.Clone(before);
+            after.Generated = null;
+            switch (after)
+            {
+                case PolygonShape p: holes += p.Holes!.Count; p.Holes = null; break;
+                case CurveShape c:   holes += c.Holes!.Count; c.Holes = null; break;
+            }
+            var cmd = new Commands.Layout.ReplaceShapeCommand(Model, i, before, after, "Remove All Holes");
+            combined = combined is null ? cmd : new Commands.CompositeCommand(combined, cmd);
+        }
+        Execute(combined!);
+        _messageSink?.Info(
+            $"Remove All Holes: {holes} hole{(holes == 1 ? "" : "s")} removed from "
+          + $"{targets.Count} shape{(targets.Count == 1 ? "" : "s")}.");
+    }
+
     // ── Clip / Cut Out (brief-layout-clip-and-cut-out.md) ─────────────────────
 
     /// <summary>

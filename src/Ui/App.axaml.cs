@@ -93,6 +93,9 @@ public partial class App : Application
         CircuitRF.Ui.Messages.MessageDisplay.Mode =
             prefs.MessageTimestamp ?? CircuitRF.Ui.Messages.MessageTimestampMode.Time;
 
+        // Settings ▸ Solvers ▸ Scratch folder, for every run this process starts.
+        CircuitRF.Design.ScratchFolder.Chosen = prefs.ScratchFolder;
+
         // Wire CrfWarningBrush to the active color theme so Project Tree warning nodes
         // use System.Warning from the theme rather than a literal color value.
         // Also keeps ThemeService.CurrentVariant in sync so ClipboardRenderPolicy.FollowSystem works.

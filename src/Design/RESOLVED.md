@@ -24290,3 +24290,30 @@ that length a Z0 is a number about a lump, not a line, and the minimum is what k
 The note is given only when the layer's regions chose NO trace, one per copper island (a pad reads as a short chain
 along and one across), at most three per layer. The editor now posts the run's notes to Messages — until now only
 the CLI (stderr) and the PDF's first page carried them.
+
+## The scratch folder (2026-10-28)
+
+`CircuitRF.Design.ScratchFolder` is where Gmsh stages a mesh (`PalaceRun.Mesh`) and where an unsaved 3D view's scratch
+workspace is made (`WorkspaceViewModel.ScratchC3dWorkspace`), so a run of one writes its results there too. Settings ▸
+Solvers ▸ Scratch folder sets it (`ScratchFolderPreference`, per machine); unset it is `Path.GetTempPath()`, so a
+headless process behaves as before and still follows `TMPDIR`/`TMP`. It is process-wide rather than an argument
+because its consumers sit under call chains that carry no run options (the DC row's mesh, a thermal mesh). A chosen
+folder that is missing is a REFUSAL naming it, never a fallback to the temp folder: the usual cause is an external
+drive that is not connected, and writing to the startup disk is what the setting exists to avoid. The large outputs
+of Palace, openEMS, EMerge and the thermal solver are not scratch: they are the run directory under the workspace's
+`results/` (`Em3dRunService.RunDirectory`), kept for mesh reuse and the field viewer, and they follow the workspace.
+
+Checked with real runs (a 3-point via-through-a-plane setup, the scratch folder set as the GUI sets it, the CLI's
+`em` verb in-process, both temp folders polled every 0.1 s): Palace staged Gmsh in the chosen folder and removed it
+after; EMerge wrote nothing outside its run directory (it meshes in its own Python process, in the run directory). The
+one thing still written to the SYSTEM temp folder is OpenMPI's session directory for Palace's processes (`ompi.<pid>`,
+168 MB at peak on 10 cores — shared-memory backing files, sized by the process count, not the problem). It follows
+`TMPDIR`, which circuitRF does not set for the solver; pointing it at the scratch folder is undecided, because
+OpenMPI puts Unix sockets there (about 104 characters of path on macOS) and maps the backing files as shared memory.
+A chosen folder that is missing refused the Palace run before meshing, exit 1.
+
+**`circuitrf em` reads the setting too** (`ScratchFolder.FromPreferences`, the key `scratch_folder`, the reader shape of
+`RevisionIdentity`), read on every run so an MCP server that outlives a Settings change follows it. It prints
+`Scratch:` beside the solver and puts `result.scratch` (`folder`, `source`, `exists`, `systemTemp`) in `--json`, refused
+run included, so an agent can tell which disk a run filled. Checked with the real CLI on Palace and EMerge, a test
+state directory via `CRF_STATE_DIR` (which also moves where installed solvers are looked for: link its `solvers`).

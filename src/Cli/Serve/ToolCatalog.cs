@@ -632,7 +632,8 @@ internal static class ToolCatalog
                     "Electromagnetic extraction of the layout the .cem names, a .c3d's embedded setup, or one "
                   + "component's drawn part. Writes a Touchstone and a .npy; a 3D setup run with several solvers "
                   + "writes each one's and a comparison .npy; a static, eigenmode or thermal setup writes the "
-                  + ".npy only."),
+                  + ".npy only. result.scratch says where the run made its temporary files (the Scratch folder Settings ▸ "
+                  + "Solvers names, or the system temp folder) and whether that folder exists, refused run or not."),
             ]),
 
         new("check",

@@ -41170,3 +41170,13 @@ until Escape like the other tools. Each box dragged with it becomes `ScopeRect`:
 picture, a drag with no tool armed no longer sets the scope. That was an invisible gesture, and it is the Crop tool's
 job now. A plot or schematic picture keeps its own drag. `tools/UiSnapshot --strip-geometry` arms Crop too, and the
 strip is identical in every state.
+
+## Project tree menu: separators decided by MenuSeparators (2026-10-28)
+
+Every separator in the tree's node menu carries its condition in `Tag` and starts hidden; `MenuSeparators.Track` (from
+`Opening`) shows one only when its condition holds and a visible item sits on each side. **The first open of a row's menu
+has no DataContext at `Opening`** — it arrives as the popup attaches — and the handler's `DataContext: ProjectTreeNodeViewModel`
+pattern returned early, so nothing decided the separators and all of them showed (seven in a row on a cell folder,
+owner report). `Track` now runs regardless, and re-decides on every item's `IsVisible` change, each separator's `Tag`
+change, the menu's `DataContextChanged` and `Opened`; the dynamic menu state is refreshed when the node arrives.
+`ReferencedCellTreeTests` applies the same rule (`MenuSeparators.Shown`) to every row kind.

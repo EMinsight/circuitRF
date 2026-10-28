@@ -109,6 +109,17 @@ public interface ITreeActions
     /// <summary>Open (or activate) the cell's primary 3D view in the 3D editor.</summary>
     void OpenCellThreeD(ProjectTreeNodeViewModel cellNode);
 
+    /// <summary>Open View on a cell's <c>schematic/</c>, <c>symbol/</c>, <c>layout/</c> or <c>3d/</c>
+    /// row — opens (or activates) that view's primary, exactly as the cell's own Open item does.</summary>
+    void OpenViewFolder(ProjectTreeNodeViewModel folderNode);
+
+    /// <summary>
+    /// Remove All Views on a cell's view sub-folder — the whole folder to the Trash, after a
+    /// confirmation that states how many files go with it. The <c>.ccell</c>'s primary for that view
+    /// is cleared in the same operation, since nothing of that type is left to name.
+    /// </summary>
+    Task RemoveAllViewsAsync(ProjectTreeNodeViewModel folderNode);
+
     /// <summary>Edit Parameters — open (or activate) the cell's <c>.ccell</c>. A double-click on a
     /// cell opens one of its views instead (<see cref="CellOpenOrder"/>).</summary>
     void OpenCellParameters(ProjectTreeNodeViewModel cellNode);

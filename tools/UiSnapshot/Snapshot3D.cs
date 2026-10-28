@@ -9,6 +9,7 @@ using CircuitRF.Ui.Viewer3D;
 
 // UiSnapshot --c3d <file.c3d> -o <out.png> [--size WxH] [--realistic] [--fit] [--ortho|--perspective]
 //            [--yaw deg] [--pitch deg] [--distance mm] [--target x,y,z] [--only a+b] [--hide a+b] [--list]
+//            [--hover name] [--live]
 //
 // Opens a .c3d in the 3D editor's own view model, on the platform's own GPU backend (Metal, D3D11 or Vulkan, as
 // Viewer3DBackends.Create picks for the application), and writes what Export Picture writes: Viewer3DViewModel's
@@ -22,7 +23,8 @@ internal static class Snapshot3D
 {
     public static int Run(string[] args)
     {
-        string? path = null, output = null, only = null, hide = null;
+        string? path = null, output = null, only = null, hide = null, hover = null;
+        bool live = false;
         int w = 1200, h = 800;
         bool realistic = false, fit = false, list = false;
         bool? ortho = null;
@@ -53,6 +55,8 @@ internal static class Snapshot3D
                 case "--only" when i + 1 < args.Length: only = args[++i]; break;
                 case "--hide" when i + 1 < args.Length: hide = args[++i]; break;
                 case "--list": list = true; break;
+                case "--hover" when i + 1 < args.Length: hover = args[++i]; break;
+                case "--live": live = true; break;
                 default: Console.Error.WriteLine($"unknown option {args[i]}"); return 2;
             }
         }
@@ -115,7 +119,15 @@ internal static class Snapshot3D
                 Pump(() => view.Environment is not null, "made the realistic view's environment");
             }
 
-            var shot = vm.Viewer.CapturePicture(w, h, 1, out string? error, supersample: 1);
+            if (hover is not null)
+            {
+                var hovered = scene.Objects.FirstOrDefault(o => o.Name.Contains(hover, StringComparison.Ordinal));
+                if (hovered is null) { Console.Error.WriteLine($"no object named like '{hover}' (--list names them)"); return 2; }
+                view.Hovered = hovered.Id;
+                Console.WriteLine($"Hovering {hovered.Name} ({hovered.Kind})");
+            }
+
+            var shot = vm.Viewer.CapturePicture(w, h, 1, out string? error, supersample: 1, live: live);
             if (shot is null) { Console.Error.WriteLine($"no picture: {error}"); return 1; }
             File.WriteAllBytes(output!, shot.Png());
             var c = view.Camera;

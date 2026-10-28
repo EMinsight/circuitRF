@@ -282,7 +282,7 @@ convention behind both.</p>
 <td><code>review</code></td>
 <td>a <code>.clay</code>, a cell folder, or a workspace with <code>--cell</code></td>
 <td>The <a href="layout-editor.html#layout-review">Layout Review</a>'s built-in checks</td>
-<td><strong>Nothing</strong> — the findings, grouped per check and layer, to stdout</td>
+<td><strong>Nothing</strong> — the findings, grouped per check and layer, to stdout; <code>-o</code> writes the review as a PDF</td>
 </tr>
 <tr>
 <td><code>convert</code></td>
@@ -750,6 +750,11 @@ otherwise.
 the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits <strong>1</strong>.
 <code>--force</code> lifts the memory limit, never the disk floor. <code>explain</code> on a 3D setup reports both, and takes
 <code>--memory-limit</code> too.</p>
+<p>A 3D or thermal run makes its mesh in the <strong>Scratch folder</strong> that <strong>Settings ▸ Solvers</strong> names, the system temp folder
+when none is named, and prints it as a <code>Scratch:</code> line beside the solver. <code>--json</code> carries it on every run, refused or
+not, as <code>result.scratch</code>: <code>folder</code>, <code>source</code> (<code>preference</code> or <code>system</code>), <code>exists</code>, and <code>systemTemp</code>, which a solver's
+own helpers still use (the parallel runtime's session files for a Palace run on several processes). A named folder
+that is not there, such as a drive that is not connected, refuses the run before meshing and exits <strong>1</strong>.</p>
 <p>A <code>.c3d</code> runs too — <code>circuitrf em &lt;view.c3d&gt; --setup &lt;name&gt;</code> — and a <strong>thermal</strong> setup embedded in it runs through the
 same verb with circuitRF's own thermal solver (Gmsh meshes it). It writes <code>&lt;cell&gt; &lt;setup&gt;.thermal.npy</code> and the temperature
 field beside it, and prints the probes, the measures and, when the setup asks for one, the Rth matrix. See
@@ -1946,7 +1951,7 @@ A column that cannot answer one row is a warning.</p>
 <h2 id="review"><code>review</code> — a reviewer's checklist over the board</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf review &lt;layout&gt; [--cell &lt;name&gt;] [--checks id,id] [--skip id,id]
 <span class="prompt">  </span>[--set &lt;check&gt;.&lt;threshold&gt;=&lt;value&gt;]… [--defaults] [--ignore-accepted] [--as pcb|mmic] [--all]
-<span class="prompt">  </span>[--severity warning|none]
+<span class="prompt">  </span>[--severity warning|none] [-o report.pdf]
 <span class="prompt">$ </span>circuitrf review [&lt;layout&gt;] [--as pcb|mmic] --list-checks</code></pre>
 <p><code>review</code> runs the <a href="layout-editor.html#layout-review">Layout Review</a>: the built-in checks a person
 reviewing a board runs by eye, each marking the places worth a look with a sentence saying why. It is
@@ -2081,8 +2086,23 @@ was changed from its default. <code>--set</code> overrides one for this run; <co
 <td><code>--list-checks</code></td>
 <td>List the checks of this kind of review with their thresholds, their defaults and the layout's saved values, and run nothing. With no path it lists the defaults.</td>
 </tr>
+<tr>
+<td><code>-o report.pdf</code></td>
+<td>Also write the review as a PDF — the report the Review panel's <strong>Export PDF</strong> writes. The path must end in <code>.pdf</code>.</td>
+</tr>
 </tbody>
 </table>
+<p><strong>The PDF</strong> is short whatever the board: a summary page, then for each check with findings one map page and
+one page of findings. The summary page names the layout, its technology and
+the date, and has one row per check: the thresholds it ran with (a threshold changed from its default is
+starred and says the default), its findings and accepted counts, and what it came to — <em>No findings</em>, the
+layers its findings are on, or <em>Not run</em> with the sentence that fixes it. The map page has a map of each layer the check found
+something on — the whole page for one layer, side by side for several — each drawing the board outline
+and that layer's copper, faded, in the technology's colour, with each finding outlined and numbered; findings too
+close to draw apart are one badge carrying their count. A <code>stacked-traces</code> map is of the upper layer, with the
+lower layer's copper outlined. A findings page lists the first 20 findings with where each is and its sentence, then
+<em>… and N more</em>, and after them the accepted findings with their reasons; <code>--all</code> or <code>--json</code> has every one. A
+cancelled run's PDF holds the checks that finished and says on its first page that the run was cancelled.</p>
 <p>stdout gives, per check, a line with its count — accepted findings counted separately — and the
 findings grouped by layer under it, each with where it is in the layout's own unit. Lengths and areas are said in
 that unit too (an area in it squared), in the sentences and in <code>--list-checks</code>. A check that cannot
@@ -2106,7 +2126,7 @@ and <code>date</code>), then <code>staleAcceptances</code>. With <code>--list-ch
 <code>impedance</code> carries its Impedance review settings as <code>settings</code>.</p>
 <p><strong>Exit codes:</strong> <strong>0</strong> when it ran, whatever it found; <strong>1</strong> on a refusal, or with <code>--severity warning</code> when
 an unaccepted finding remains; <strong>130</strong> on a cancellation, reporting the checks that finished. <code>review</code>
-writes nothing.</p>
+writes nothing but <code>-o</code>'s PDF.</p>
 <h2 id="smith"><code>smith</code> — a matching network, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf smith &lt;match.csmith&gt; [--at &lt;freq&gt;] [-o out.{s1p,svg,pdf,png}]</code></pre>
 <p><code>smith</code> evaluates a <strong><code>.csmith</code></strong> — the document the Smith Chart window edits. It

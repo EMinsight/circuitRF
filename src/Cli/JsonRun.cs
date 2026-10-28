@@ -173,6 +173,10 @@ internal static class JsonRun
     /// <summary>What <c>solver list</c> found — each external solver and what its build can do.</summary>
     public static IReadOnlyList<SolverJson>? Solvers;
 
+    /// <summary>Where an <c>em</c> run put its temporary files (<see cref="ScratchJson"/>). Carried with the cubes, and
+    /// on a refused run too — the refusal is often the reason to ask.</summary>
+    public static ScratchJson? Scratch;
+
     /// <summary>What <c>opt</c> found (brief-tuneopt-11 R-to11-2). Its cubes travel only in the
     /// <c>-o</c>/<c>--history</c> file: the document is the answer, not the data.</summary>
     public static OptimizeReportJson? Optimize;
@@ -255,6 +259,7 @@ internal static class JsonRun
         ImpedanceLine       = null;
         FieldPlots          = null;
         Solvers             = null;
+        Scratch             = null;
         Optimize            = null;
         Yield               = null;
         Corners             = null;
@@ -507,7 +512,7 @@ internal static class JsonRun
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its
         // report rather than with nothing at all.
         if (Data is not { } ds)
-            return Rail is null ? null : new ResultPayload(null, null, Rail: Rail);
+            return Rail is null && Scratch is null ? null : new ResultPayload(null, null, Rail: Rail, Scratch: Scratch);
 
         // R-aut9-9's axis narrowing. It runs FIRST, so everything below — the shape, the loadpull
         // projection and the cubes alike — describes what the caller asked for rather than what the
@@ -533,7 +538,7 @@ internal static class JsonRun
             // The SHAPE still goes back, because it is the answer to "what could I have asked for" —
             // and returning the un-narrowed values instead would hand the caller a document it did
             // not ask for, at exactly the size this requirement exists to avoid.
-            return new ResultPayload(null, null, Shape: ResultDocumentWriter.Shape(ds));
+            return new ResultPayload(null, null, Shape: ResultDocumentWriter.Shape(ds), Scratch: Scratch);
         }
 
         var summary = ResultDocumentWriter.SummarizeLoadpull(ds);
@@ -560,7 +565,7 @@ internal static class JsonRun
         // either schema to say which — so a caller now always learns what the run produced and can
         // then decide what to ask for.
         return new ResultPayload(summary, groups, Shape: ResultDocumentWriter.Shape(ds),
-                                 Narrowed: narrowed, Wsprobes: Wsprobes, Ndf: Ndf, Rail: Rail);
+                                 Narrowed: narrowed, Wsprobes: Wsprobes, Ndf: Ndf, Rail: Rail, Scratch: Scratch);
     }
 
     /// <summary>

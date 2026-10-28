@@ -1125,7 +1125,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     private void PresetFsk(double fcHz, double rateBps, double devHz, double? bt)
         => PresetAt(fcHz, new CarrierSpec { Standard = CarrierStandard.Fsk, BitRateBps = rateBps, DeviationHz = devHz, GaussianBt = bt, Data = "PN9" });
 
-    /// <summary>C1 / C2, meter to other: 868.95 MHz, 100 kchip/s, ±45 kHz, 2-FSK with no Gaussian filter.</summary>
+    /// <summary>C1, meter to other: 868.95 MHz, 100 kchip/s, ±45 kHz, 2-FSK with no Gaussian filter.</summary>
     [RelayCommand] private void PresetWmbusC1() => PresetFsk(868.95e6, 100e3, 45e3, null);
     /// <summary>C2, other to meter: 869.525 MHz, 50 kchip/s, ±25 kHz, GFSK BT 0.5.</summary>
     [RelayCommand] private void PresetWmbusC2() => PresetFsk(869.525e6, 50e3, 25e3, 0.5);

@@ -359,7 +359,10 @@ public class ProjectTreeNodeViewModelTests : IDisposable
     [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csch",    "Remove Schematic")]
     [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csym",    "Remove Symbol")]
     [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.clay",    "Remove Layout")]
-    [InlineData(NodeKind.OtherFile,       "/tmp/x/foo.npy",     "Remove")]
+    [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.c3d",     "Remove 3D View")]
+    [InlineData(NodeKind.PartLibraryFile, "/tmp/x/parts.crlib", "Remove Part Library")]
+    [InlineData(NodeKind.UserFolder,      "/tmp/x/results",     "Remove Folder")]
+    [InlineData(NodeKind.OtherFile,       "/tmp/x/foo.npy",     "Remove File")]
     public void RemoveHeader_NamesTheDocumentType(NodeKind kind, string absPath, string expected)
         => Assert.Equal(expected, MakeVm(kind, absPath).RemoveHeader);
 
@@ -373,12 +376,25 @@ public class ProjectTreeNodeViewModelTests : IDisposable
     [InlineData(NodeKind.TechFile,        "/tmp/x/pcb.ctech",   true)]
     [InlineData(NodeKind.ViewFile,        "/tmp/x/Amp.csch",    true)]
     [InlineData(NodeKind.EmSetupFile,     "/tmp/x/em.cem",      true)]
-    [InlineData(NodeKind.CellViewFolder,  "/tmp/x/Amp/layout",  false)]
+    [InlineData(NodeKind.CellViewFolder,  "/tmp/x/Amp/layout",  true)]    // Remove All Views
+    [InlineData(NodeKind.CellViewFolder,  "/tmp/x/Amp/notes",   false)]
     [InlineData(NodeKind.LibrariesGroup,  "/tmp/x",             false)]
     [InlineData(NodeKind.Workspace,       "/tmp/x",             false)]
     public void HasRemoveAction_MatchesWhatIsShownBelowTheSeparator(
         NodeKind kind, string absPath, bool expected)
         => Assert.Equal(expected, MakeVm(kind, absPath).HasRemoveAction);
+
+    /// <summary>Open View / Remove All Views ride the view type the sub-folder's name stands for.</summary>
+    [Theory]
+    [InlineData("/tmp/x/Amp/schematic", ViewType.Schematic)]
+    [InlineData("/tmp/x/Amp/3d",        ViewType.ThreeD)]
+    [InlineData("/tmp/x/Amp/notes",     null)]
+    public void ViewFolderType_IsTheSubFoldersView(string absPath, ViewType? expected)
+    {
+        var vm = MakeVm(NodeKind.CellViewFolder, absPath);
+        Assert.Equal(expected, vm.ViewFolderType);
+        Assert.Equal(expected is not null, vm.IsViewFolder);
+    }
 
 }
 

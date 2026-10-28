@@ -122,10 +122,16 @@ public partial class ProjectTreeView
             return;
         }
 
-        // File ▸'s own two commands, handed THIS panel's window as the dialog owner (see the header).
+        // File ▸'s own commands, handed THIS panel's window as the dialog owner (see the header).
         var owner = TopLevel.GetTopLevel(this) as Window;
         menu.ItemsSource = new List<object>
         {
+            new MenuItem
+            {
+                Header = "New _Workspace…", Command = ws.NewWorkspaceCommand, CommandParameter = owner,
+                Icon   = new MaterialIcon { Kind = MaterialIconKind.FolderPlus, Width = 14, Height = 14 },
+            },
+            new Separator(),
             new MenuItem
             {
                 Header = "Open _Workspace…", Command = ws.OpenWorkspaceCommand, CommandParameter = owner,

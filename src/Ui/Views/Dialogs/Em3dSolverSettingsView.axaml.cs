@@ -106,6 +106,7 @@ public partial class Em3dSolverSettingsView : UserControl
             MemoryLimitBox.PlaceholderText = CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.AutomaticText;
             MemoryLimitBox.Text = CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.Preferred is { } gb
                 ? gb.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "";
+            ShowScratchFolder();
         }
         finally { _loading = false; }
     }
@@ -553,6 +554,42 @@ public partial class Em3dSolverSettingsView : UserControl
                 : $"A memory limit for a solver is a number of GB, not '{text}'.";
         MemoryLimitStatus.Text = refused ?? "";
         MemoryLimitStatus.IsVisible = refused is not null;
+    }
+
+    /// <summary>The scratch folder in use: the chosen one, or the system temp folder (said so); and, when the chosen one is
+    /// missing, the sentence a run would be refused with.</summary>
+    private void ShowScratchFolder()
+    {
+        string? chosen = CircuitRF.Design.ScratchFolder.Chosen;
+        ScratchFolderText.Text = chosen ?? CircuitRF.Ui.Layout.Em.ScratchFolderPreference.SystemDefault + "  (system temp folder)";
+        ScratchDefaultButton.IsEnabled = chosen is not null;
+        string? refused = CircuitRF.Design.ScratchFolder.Refusal();
+        ScratchFolderStatus.Text = refused ?? "";
+        ScratchFolderStatus.IsVisible = refused is not null;
+    }
+
+    private async void OnChooseScratchFolder(object? sender, RoutedEventArgs e)
+    {
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is null) return;
+        try
+        {
+            var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title         = "Choose the scratch folder",
+                AllowMultiple = false,
+            });
+            if (folders.Count != 1 || folders[0].TryGetLocalPath() is not { Length: > 0 } path) return;
+            CircuitRF.Ui.Layout.Em.ScratchFolderPreference.Set(path);
+            ShowScratchFolder();
+        }
+        catch (Exception) { /* a cancelled or unavailable picker is not an error */ }
+    }
+
+    private void OnDefaultScratchFolder(object? sender, RoutedEventArgs e)
+    {
+        CircuitRF.Ui.Layout.Em.ScratchFolderPreference.Set(null);
+        ShowScratchFolder();
     }
 
     private async void OnBrowse(object? sender, RoutedEventArgs e)

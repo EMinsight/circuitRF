@@ -5632,3 +5632,41 @@ impedance-9 had done it for Summary only. A Full report of a 10-layer board revi
 22 pages, 18 of them the empty map and empty table of the eight inner layers and of Bottom Copper (whose region
 selected no trace); it is 4. The summary page's By layer table
 still has a row per layer, with its pours and out-of-scope counts.
+
+## The hover tint at a coincident face — investigated, not changed (2026-10-28)
+
+Report: hovering a face or object of a board in the 3D view breaks the highlight up as the view zooms, the way the
+board-side copper did before brief-em3d-138. The hover is a tint in the shader by object id; it moves nothing, so any
+fight it shows is one that already exists between two equal-coloured surfaces. Measured on a 10-layer imported board
+with `tools/UiSnapshot --c3d … --hover <name> --live` (added for this: `--live` plans the picture as the live view does,
+so the realistic view draws the hover), comparing pixels the hover tints against an unhovered render:
+
+- A colour-pass-only tie for the hovered object (`Hovered`, between `Via` and `FaceImage`; the ID pass unchanged) with
+  the decal's clamped slope removed the few specks a hovered copper band showed at 1× (4–8 px), but brought back the
+  hidden copper top along the band as a dotted white line, and added 55–179 speck pixels to a hovered slab's rim.
+- The same tie with the constant only was pixel-identical to no change in every view tried.
+- Both were reverted. A layer's copper on this board is disjoint islands (zone-fill pieces do not overlap), so
+  same-tie coplanar copper is not the mechanism here; at 1× a copper band is about one pixel tall and its specks are
+  coverage, not depth. The owner's own view of it is needed before changing the tie order.
+
+**Resolved, by geometry (2026-10-28).** The owner's screenshot found it: a via the board edge cuts through (DFR28-1) is
+built as an extruded clipped disc, not a cylinder, so `Scene3DBores` never saw it as a bore and the pads, planes and
+slabs it passes through were drawn whole — on every layer a straight side face lay on the via's flat face. One colour
+unhovered; tinted, the copper broke through the via differently at each zoom, from above and below and in both views.
+`Scene3DBores.Of` now takes the via barrels by name (`Scene3DBuilder` passes the origins) and treats an edge-cut barrel
+as a SHAPED bore: its outline is cut out of every conductor and slab it passes right through, as a round barrel's
+outside already was. Counted on the owner's board, via hovered, two pitches × six zooms, realistic: 1,052–8,979
+untinted pixels on the via's face before, 169–515 after, which are the grid's lines and the measure's own edges. The
+bias variants are not needed; `Scene3DFaceImages` still calls `Of(problem)` without the via names (a face image on a
+pad an edge via passes through would still be drawn uncut).
+
+## The drawing grid wins over a face in its plane; the hover wins over the grid (2026-10-28)
+
+`fs_grid` solves the plane's depth per pixel while a face lying in the plane (a board's bottom copper on the XY plane at
+0, seen from below) is rasterised, so the two fought with the zoom. The grid's depth now comes towards the eye by two
+pixels' worth of the plane's own depth slope (`fwidth`) plus 4e-7: a face in the plane loses to it, geometry genuinely
+in front still hides it, and only a two-pixel sliver where a solid passes through the plane shows lines past its edge.
+Regenerated with `tools/ShaderGen`. The hovered object is then drawn a second time right after the grid
+(`Scene3DFramePlan.HoverOverGrid`): it lands on its own depth and passes LessEqual, so its tint covers the grid's lines
+wherever it is the nearest surface; the grid writes no depth, so nothing else changes. The grid moved before the lines
+and overlays in both colour passes so they still draw over it and over the second draw.

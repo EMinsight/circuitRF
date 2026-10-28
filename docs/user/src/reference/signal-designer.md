@@ -240,9 +240,9 @@ The **Wireless M-Bus** menu (EN 13757-4) sets one FSK carrier on PN9 for a meter
 
 | Mode | Direction | Fc | Chip rate | Deviation | Filter |
 |---|---|---|---|---|---|
-| C1 / C2 | meter → other | 868.95 MHz | 100 kchip/s | ±45 kHz | none (2-FSK) |
+| C1 | meter → other | 868.95 MHz | 100 kchip/s | ±45 kHz | none (2-FSK) |
 | C2 | other → meter | 869.525 MHz | 50 kchip/s | ±25 kHz | Gaussian, BT 0.5 |
-| T1 / T2 | meter → other | 868.95 MHz | 100 kchip/s | ±50 kHz | none |
+| T1 | meter → other | 868.95 MHz | 100 kchip/s | ±50 kHz | none |
 | T2 | other → meter | 868.3 MHz | 32.768 kchip/s | ±50 kHz | none |
 
 C1 meters only transmit; C2 meters also listen, on the other-to-meter link. Only that link is Gaussian

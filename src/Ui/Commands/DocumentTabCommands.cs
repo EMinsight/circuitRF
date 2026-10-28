@@ -28,6 +28,17 @@ public static class DocumentTabCommands
     public static IRelayCommand<object?> Reveal { get; } = new RelayCommand<object?>(
         dockable => FileReveal.Reveal((dockable as IFileBackedDocument)?.FilePath));
 
+    /// <summary>Copy Path — the folder holding the right-clicked document's file, onto the clipboard.
+    /// Hidden, like <see cref="Reveal"/>, on a document with no file.</summary>
+    public static IAsyncRelayCommand<object?> CopyPath { get; } = new AsyncRelayCommand<object?>(
+        dockable => PathClipboard.CopyAsync((dockable as IFileBackedDocument)?.FilePath, full: false),
+        AsyncRelayCommandOptions.AllowConcurrentExecutions);
+
+    /// <summary>Copy Full Path — the right-clicked document's file path, onto the clipboard.</summary>
+    public static IAsyncRelayCommand<object?> CopyFullPath { get; } = new AsyncRelayCommand<object?>(
+        dockable => PathClipboard.CopyAsync((dockable as IFileBackedDocument)?.FilePath, full: true),
+        AsyncRelayCommandOptions.AllowConcurrentExecutions);
+
     /// <summary>
     /// Saves the right-clicked document — the tab it was invoked on, never the active one, which is
     /// the whole difference between this and File ▸ Save.

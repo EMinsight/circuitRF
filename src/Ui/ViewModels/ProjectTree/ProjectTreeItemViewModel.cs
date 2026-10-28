@@ -221,7 +221,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// </summary>
     public bool IsRemovableFile =>
         (Kind == NodeKind.ViewFile &&
-            Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay")
+            Path.GetExtension(AbsolutePath).ToLowerInvariant() is ".csch" or ".csym" or ".clay" or ".c3d")
         || Kind is NodeKind.OtherFile
                 or NodeKind.UserFolder
                 or NodeKind.DataDisplayFile
@@ -231,6 +231,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
                 or NodeKind.RailFile
                 or NodeKind.SmithFile
                 or NodeKind.ModelComposerFile
+                or NodeKind.PartLibraryFile
+                or NodeKind.MaterialLibraryFile
                 or NodeKind.ColorThemeFile;
 
     /// <summary>
@@ -248,14 +250,18 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         NodeKind.SmithFile       => "Remove Smith Chart",
         NodeKind.ModelComposerFile => "Remove Model Composer Document",
         NodeKind.ColorThemeFile  => "Remove Color Theme",
+        NodeKind.PartLibraryFile => "Remove Part Library",
+        NodeKind.MaterialLibraryFile => "Remove Material Library",
+        NodeKind.UserFolder      => "Remove Folder",
         NodeKind.ViewFile        => Path.GetExtension(AbsolutePath).ToLowerInvariant() switch
         {
             ".csch" => "Remove Schematic",
             ".csym" => "Remove Symbol",
             ".clay" => "Remove Layout",
-            _       => "Remove",
+            ".c3d"  => "Remove 3D View",
+            _       => "Remove File",
         },
-        _                        => "Remove",
+        _                        => "Remove File",
     };
 
     /// <summary>
@@ -268,7 +274,36 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// exactly what the owner saw above "Reveal in Finder" on a technology.</para>
     /// </summary>
     public bool HasRemoveAction =>
-        IsRemovableFile || IsTechFile || IsReferencedWorkspace || IsReferencedCell || IsOwnCell;
+        IsRemovableFile || IsTechFile || IsReferencedWorkspace || IsReferencedCell || IsOwnCell
+        || IsOwnViewFolder;
+
+    /// <summary>
+    /// The view type a cell's <c>schematic/</c>, <c>symbol/</c>, <c>layout/</c> or <c>3d/</c> row
+    /// stands for, or null on any other row.
+    /// </summary>
+    public ViewType? ViewFolderType => Kind != NodeKind.CellViewFolder
+        ? null
+        : Path.GetFileName(Path.TrimEndingDirectorySeparator(AbsolutePath)).ToLowerInvariant() switch
+        {
+            CellFolder.SchematicSubFolder => ViewType.Schematic,
+            CellFolder.SymbolSubFolder    => ViewType.Symbol,
+            CellFolder.LayoutSubFolder    => ViewType.Layout,
+            CellFolder.ThreeDSubFolder    => ViewType.ThreeD,
+            _                             => null,
+        };
+
+    /// <summary>A cell's view sub-folder — drives "Open View", which opens that view's primary.</summary>
+    public bool IsViewFolder => ViewFolderType is not null;
+
+    /// <summary>
+    /// A view sub-folder of a cell this workspace owns — drives "Remove All Views". Never offered
+    /// inside a referenced workspace, library or cell: those folders are another project's files.
+    /// </summary>
+    public bool IsOwnViewFolder => IsViewFolder && ReferenceScope is null;
+
+    /// <summary>Drives "Copy Path" / "Copy Full Path": every row Reveal is offered on, when its path
+    /// is a real one — an unresolved reference carries the text the <c>.cws</c> holds instead.</summary>
+    public bool CanCopyPath => CanReveal && Path.IsPathRooted(AbsolutePath);
 
     /// <summary>True for openable leaf files (.csch / .csym / .clay / .cdd / .charm / .ctech) — drives
     /// the "Open" context item.</summary>
@@ -489,6 +524,19 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
 
     /// <summary>Reveal in OS file manager.</summary>
     public IRelayCommand RevealCommand { get; }
+
+    /// <summary>Copy Path — the folder holding this row's file or folder, onto the clipboard.</summary>
+    public IAsyncRelayCommand CopyPathCommand { get; }
+
+    /// <summary>Copy Full Path — this row's own path, onto the clipboard.</summary>
+    public IAsyncRelayCommand CopyFullPathCommand { get; }
+
+    /// <summary>Open View — on a cell's view sub-folder, opens that view's primary document.</summary>
+    public IRelayCommand OpenViewCommand { get; }
+
+    /// <summary>Remove All Views — moves a cell's whole view sub-folder to the Trash, after a
+    /// confirmation that counts the files going with it.</summary>
+    public IAsyncRelayCommand RemoveAllViewsCommand { get; }
 
     /// <summary>Opens the workspace a foreign cell belongs to, in a window of its own.</summary>
     public IRelayCommand OpenReferencedWorkspaceCommand { get; }
@@ -770,6 +818,19 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         RevealCommand = new RelayCommand(
             () => _actions?.Reveal(this),
             () => _actions is not null && CanReveal);
+
+        CopyPathCommand     = new AsyncRelayCommand(() => PathClipboard.CopyAsync(AbsolutePath, full: false),
+                                                    () => CanCopyPath);
+        CopyFullPathCommand = new AsyncRelayCommand(() => PathClipboard.CopyAsync(AbsolutePath, full: true),
+                                                    () => CanCopyPath);
+
+        OpenViewCommand = new RelayCommand(
+            () => _actions?.OpenViewFolder(this),
+            () => _actions is not null && IsViewFolder);
+
+        RemoveAllViewsCommand = new AsyncRelayCommand(
+            () => _actions?.RemoveAllViewsAsync(this) ?? Task.CompletedTask,
+            () => _actions is not null && IsOwnViewFolder);
 
         OpenReferencedWorkspaceCommand = new RelayCommand(
             () => { if (ForeignWorkspaceCws is { } cws) _actions?.OpenWorkspacePathInNewWindow(cws); },

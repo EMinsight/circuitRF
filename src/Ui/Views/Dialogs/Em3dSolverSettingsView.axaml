@@ -67,6 +67,29 @@
       </StackPanel>
     </Border>
 
+    <!-- ── The scratch folder (CircuitRF.Design.ScratchFolder): where Gmsh stages a mesh and an unsaved 3D view runs ──────
+         Per machine (ScratchFolderPreference). A folder picker, not a text box: a mistyped path would only show up as a
+         refused run. Default keeps its slot when the default is already in use, disabled, so the row never shifts. -->
+    <Border Classes="group">
+      <StackPanel>
+        <SelectableTextBlock Text="Scratch folder" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <Grid ColumnDefinitions="*,Auto,Auto">
+          <SelectableTextBlock Grid.Column="0" Name="ScratchFolderText" FontSize="12" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis">
+            <ToolTip.Tip>
+              <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                         Text="Where meshes are made before they are moved into the run's folder, and where an unsaved 3D view runs. A mesh can take several GB while it is being made. Choose a folder on another drive if the startup disk is short of space; if that drive is not connected, a run is refused rather than written to the startup disk."/>
+            </ToolTip.Tip>
+          </SelectableTextBlock>
+          <Button Grid.Column="1" Content="Choose…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                  Click="OnChooseScratchFolder" ToolTip.Tip="Pick the scratch folder"/>
+          <Button Grid.Column="2" Name="ScratchDefaultButton" Content="Default" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                  Click="OnDefaultScratchFolder" ToolTip.Tip="Use the system temp folder"/>
+        </Grid>
+        <SelectableTextBlock Name="ScratchFolderStatus" FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,4,0,0" IsVisible="False"/>
+      </StackPanel>
+    </Border>
+
     <!-- ── Palace ─────────────────────────────────────────────────────── -->
     <Border Classes="group">
       <StackPanel>

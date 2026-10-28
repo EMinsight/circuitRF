@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
 using CircuitRF.Ui.Docking;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
@@ -15,14 +14,13 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// Owner request, 2026-09-02: the layout editor's Technology ▾ ▸ Edit… opens the <c>.ctech</c> in the
-/// document area to the RIGHT of the <c>.clay</c>, only as wide as the layer table's Name / Vis / Sel /
-/// Color columns — so layers can be toggled with the artwork still on screen beside them.
+/// The layout editor's Technology ▾ ▸ Edit… opens the <c>.ctech</c> as an ordinary document, with no
+/// placement of its own (owner request, 2026-10-28). It used to open in a narrow pane right of the
+/// layout so layers could be toggled beside the artwork; visibility left the technology on 2026-10-15.
 ///
-/// <para>These run headlessly for the reason <see cref="SplitDocumentAreaLayoutTests"/> records: the
-/// Dock MVVM model types are plain C#. The two halves that need a real Window — the flyout item and the
-/// view's own call into the workspace — are pinned by source scan, the idiom this suite already uses
-/// for every other dialog and menu.</para>
+/// <para>The rest of this file pins <see cref="CircuitRfDockFactory.SplitDocumentRightOf"/>, the
+/// factory's own split, which other tests build their arrangements with. These run headlessly for the
+/// reason <see cref="SplitDocumentAreaLayoutTests"/> records: the Dock MVVM model types are plain C#.</para>
 /// </summary>
 public class TechEditPaneTests
 {
@@ -51,71 +49,18 @@ public class TechEditPaneTests
         Assert.DoesNotContain("<MenuItem Header=\"Edit\" Click=\"OnEditTechnologyClick\"/>", axaml);
     }
 
-    /// <summary>
-    /// The layout editor asks for the BESIDE-the-layout open, not the plain one. A view that quietly
-    /// went back to <c>OpenTechnologyDocument</c> would still work — it would just open a tab, which is
-    /// the behaviour this change exists to replace, and nothing would fail.
-    /// </summary>
+    /// <summary>The view asks for the plain open — the same one the project tree and the EM setup
+    /// editor use — and hands over no width to split by.</summary>
     [Fact]
-    public void TheLayoutEditorAsksForThePane_AndHandsOverItsOwnWidth()
+    public void TheLayoutEditorOpensTheTechnologyAsAnOrdinaryDocument()
     {
         var src = RepoFile("src", "Ui", "Views", "Layout", "LayoutEditorView.axaml.cs");
         var body = src[src.IndexOf("private void OnEditTechnologyClick", StringComparison.Ordinal)..];
         body = body[..body.IndexOf("private void OnOpenSourceWorkspaceClick", StringComparison.Ordinal)];
 
-        Assert.Contains("OpenTechnologyDocumentBesideLayout(techPath, doc, Bounds.Width)", body);
+        Assert.Contains("OpenTechnologyDocument(techPath)", body);
+        Assert.DoesNotContain("Bounds.Width", body);
     }
-
-    // ── The width ─────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// The columns the owner named, read back out of the view that declares them — Name and Color, since
-    /// Vis and Sel moved to the layout editor's Layers list. This is the half of the width that is
-    /// arithmetic: if the layer table's columns are ever re-cut, the constant the pane opens at has to
-    /// be re-measured, and this is what says so.
-    /// </summary>
-    [Fact]
-    public void TheColumnFloorMatchesTheLayerTablesOwnColumnWidths()
-    {
-        var axaml = RepoFile("src", "Ui", "Views", "Layout", "TechEditorView.axaml");
-
-        // Name and Color — the first two of the column list the header row and every data row both
-        // declare, read from the header row itself so another table's list cannot answer instead.
-        var header = axaml[axaml.IndexOf("x:Name=\"LayerHeaderColumns\"", StringComparison.Ordinal)..];
-        var m = Regex.Match(header,
-            @"<ColumnDefinition Width=""\*"" MinWidth=""(?<name>\d+)""/>\s*" +
-            @"<ColumnDefinition Width=""(?<color>\d+)""/>");
-        Assert.True(m.Success, "the layer table's column list changed — re-measure the Edit… pane width");
-
-        double columns = double.Parse(m.Groups["name"].Value)
-                       + double.Parse(m.Groups["color"].Value);
-
-        // Plus the 4-unit gap between them and the grid's own 4-unit margin each side.
-        Assert.Equal(WorkspaceViewModel.TechEditPaneColumnFloor, columns + 1 * 4 + 2 * 4);
-    }
-
-    /// <summary>And the width the pane actually opens at clears that floor — with room left over for a
-    /// readable layer NAME, which is the column that would otherwise sit at its 110-unit minimum.</summary>
-    [Fact]
-    public void ThePaneIsWideEnoughForThoseColumns()
-    {
-        Assert.True(WorkspaceViewModel.TechEditPaneWidth >= WorkspaceViewModel.TechEditPaneColumnFloor,
-            $"{WorkspaceViewModel.TechEditPaneWidth} is narrower than the columns it must show " +
-            $"({WorkspaceViewModel.TechEditPaneColumnFloor}).");
-    }
-
-    /// <summary>
-    /// A pane is sized as a SHARE of its parent, so the requested pixel width only means anything
-    /// against a measured one — and the clamp is what keeps a narrow window from giving the layout less
-    /// than half the room, which is the thing the request was actually about.
-    /// </summary>
-    [Theory]
-    [InlineData(1600, 340.0 / 1600)]   // an ordinary window: exactly the width asked for
-    [InlineData(600,  0.5)]            // narrow: the layout keeps half rather than shrinking to a sliver
-    [InlineData(4000, 0.15)]           // very wide: a floor, so the pane cannot open as a hairline
-    [InlineData(0,    0.3)]            // never laid out — a plain share rather than a divide by zero
-    public void TheProportionIsTheAskedWidth_Clamped(double available, double expected)
-        => Assert.Equal(expected, WorkspaceViewModel.TechEditPaneProportion(available), 6);
 
     // ── The split itself ──────────────────────────────────────────────────────
 
@@ -191,47 +136,6 @@ public class TechEditPaneTests
     }
 
     /// <summary>
-    /// Field report, 2026-09-27: Edit… sometimes showed nothing. A layout in a SIDE pane (or a torn-off
-    /// window) had its technology opened in the PRIMARY strip — somewhere else, with no split because
-    /// the strips differ. It opens beside the layout wherever the layout is.
-    /// </summary>
-    [Fact]
-    public void ALayoutInASidePane_GetsItsTechnologyBesideIt_NotInThePrimaryStrip()
-    {
-        var ws = new WorkspaceViewModel();
-        var f = ws.Factory;
-        var primary = f.DocumentDock!;
-        var other  = new StubDocument("other", StubDocument.StubKind.Welcome);
-        var layout = new StubDocument("board", StubDocument.StubKind.Welcome);
-        f.OpenDocument(other);
-        f.OpenDocument(layout);
-        Assert.True(f.SplitDocumentRightOf(layout, other, 0.5));
-        var layoutPane = Assert.IsAssignableFrom<IDocumentDock>(layout.Owner);
-        Assert.NotSame(primary, layoutPane);
-
-        string dir = Path.Combine(Path.GetTempPath(), "crf-techedit-" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(dir);
-        try
-        {
-            string techPath = Path.Combine(dir, "pcb.ctech");
-            File.Copy(Path.Combine(RepoRoot(), "examples", "Patch Antenna", "tech",
-                                   "pcb-2layer_RO4350B_30mil_1oz.ctech"), techPath);
-
-            ws.OpenTechnologyDocumentBesideLayout(techPath, layout, 1000);
-
-            var tech = ws.FindOpenDocument(techPath);
-            Assert.NotNull(tech);
-            Assert.NotSame(primary, tech!.Owner);
-            var techPane = Assert.IsAssignableFrom<IDocumentDock>(tech.Owner);
-            // Immediately right of the layout's pane, in the same row.
-            var wrapper = Assert.IsAssignableFrom<IProportionalDock>(layoutPane.Owner);
-            var panes = wrapper.VisibleDockables!.Where(d => d is not IProportionalDockSplitter).ToList();
-            Assert.Equal(panes.IndexOf(layoutPane) + 1, panes.IndexOf(techPane));
-        }
-        finally { Directory.Delete(dir, recursive: true); }
-    }
-
-    /// <summary>
     /// Field report, 2026-09-29: the technology beside a layout could vanish, and Reset Layout did not
     /// bring it back. Reset (and the launch Window Layout preset, and Hide/Show Dockers) re-host only
     /// the PRIMARY strip, so the side pane Edit… had put it in was left out of the new tree — while the
@@ -252,7 +156,7 @@ public class TechEditPaneTests
     }
 
     /// <summary>The real shell, with a layout and a technology open as two tabs of the one strip —
-    /// which is exactly where Edit… finds them before it splits.</summary>
+    /// which is where a split starts from.</summary>
     private static (CircuitRfDockFactory Factory, IRootDock Root, IDocumentDock Host,
                     IDockable Layout, IDockable Tech) Shell()
     {

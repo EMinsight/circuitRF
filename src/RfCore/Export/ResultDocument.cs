@@ -188,7 +188,21 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ReviewReportJson? Review = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<ReviewCheckJson>? ReviewChecks = null);
+        IReadOnlyList<ReviewCheckJson>? ReviewChecks = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ScratchJson? Scratch = null);
+
+    /// <summary>
+    /// Where an <c>em</c> run put its temporary files — so a caller can tell which disk a run filled, or why it was refused.
+    /// </summary>
+    /// <param name="Folder">The scratch folder: where Gmsh stages a mesh before it is moved into the run directory.</param>
+    /// <param name="Source"><c>preference</c> (Settings ▸ Solvers ▸ Scratch folder) or <c>system</c> (none set: the
+    /// system temp folder).</param>
+    /// <param name="Exists">Whether <paramref name="Folder"/> was there when the run started. A chosen folder that is
+    /// not refuses any run that meshes.</param>
+    /// <param name="SystemTemp">The system temp folder, which a solver's own helpers still use whatever is chosen
+    /// (OpenMPI's session files for a Palace run on several processes).</param>
+    public sealed record ScratchJson(string Folder, string Source, bool Exists, string SystemTemp);
 
     /// <summary>What a <c>model</c> noun did (brief-modelcomposer-13 R-mc13-3): the same lines stdout carries, one item
     /// each, with what each is about.</summary>

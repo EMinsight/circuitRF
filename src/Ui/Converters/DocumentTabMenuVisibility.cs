@@ -34,7 +34,11 @@ public sealed class DocumentTabMenuVisibility : IValueConverter
     /// above it is, so no rule is ever left stranded at the top of Dock's own menu.</summary>
     public static readonly DocumentTabMenuVisibility Any = new(Kind.Any);
 
-    private enum Kind { Save, SaveAs, Any }
+    /// <summary>The separator under Copy Path / Copy Full Path — shown when those are AND a save item
+    /// follows them; otherwise the <see cref="Any"/> separator is the next rule and two would stack.</summary>
+    public static readonly DocumentTabMenuVisibility AfterPaths = new(Kind.AfterPaths);
+
+    private enum Kind { Save, SaveAs, Any, AfterPaths }
 
     private readonly Kind _kind;
 
@@ -47,6 +51,10 @@ public sealed class DocumentTabMenuVisibility : IValueConverter
         {
             Kind.Save   => WorkspaceViewModel.HasSaveRoute(dockable),
             Kind.SaveAs => WorkspaceViewModel.HasSaveAsRoute(dockable),
+            Kind.AfterPaths => FileBackedDocumentConverter.Instance.Convert(
+                                   value, targetType, parameter, culture) is true
+                               && (WorkspaceViewModel.HasSaveRoute(dockable)
+                                   || WorkspaceViewModel.HasSaveAsRoute(dockable)),
             _           => WorkspaceViewModel.HasSaveRoute(dockable)
                            || WorkspaceViewModel.HasSaveAsRoute(dockable)
                            // the Reveal item's own rule, asked of the converter that states it

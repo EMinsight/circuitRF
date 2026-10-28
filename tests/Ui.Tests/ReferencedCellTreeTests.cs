@@ -380,10 +380,11 @@ public class ReferencedCellTreeTests : IDisposable
         {
             string name = child.Name.LocalName;
             if (name is not ("Separator" or "MenuItem")) continue;
+            // A separator's condition rides its Tag (MenuSeparators sets its IsVisible); an item's, IsVisible.
             entries.Add(new MenuEntry(
                 name == "Separator",
                 (string?)child.Attribute("Header") ?? "",
-                (string?)child.Attribute("IsVisible")));
+                (string?)child.Attribute(name == "Separator" ? "Tag" : "IsVisible")));
         }
         Assert.NotEmpty(entries);
         return entries;
@@ -410,7 +411,11 @@ public class ReferencedCellTreeTests : IDisposable
 
     private static void AssertNoDoubleSeparators(ProjectTreeNodeViewModel vm, string what)
     {
-        var shown = NodeContextMenu().Where(e => Visible(e, vm)).ToList();
+        // What the menu shows when it opens: items by their bindings, separators by MenuSeparators — the view's own rule.
+        var menu = NodeContextMenu();
+        var visible = menu.Select(e => (e.IsSeparator, Visible(e, vm))).ToList();
+        var separatorShown = CircuitRF.Ui.Controls.MenuSeparators.Shown(visible);
+        var shown = menu.Where((e, i) => e.IsSeparator ? separatorShown[i] : visible[i].Item2).ToList();
 
         for (int i = 1; i < shown.Count; i++)
             Assert.False(shown[i].IsSeparator && shown[i - 1].IsSeparator,
@@ -454,12 +459,21 @@ public class ReferencedCellTreeTests : IDisposable
     [Fact]
     public void TheOtherNodeMenus_HaveNoTwoAdjacentSeparators()
     {
+        File.WriteAllText(Path.Combine(_mine, "notes.txt"), "");
+        File.WriteAllText(Path.Combine(_mine, "board.ctech"), "");
         var root = RootVm();
 
         AssertNoDoubleSeparators(root.Children.Single(c => c.Name == "MyCell"), "own cell");
         AssertNoDoubleSeparators(root.Children.Single(c => c.Kind == NodeKind.ReferencedWorkspace),
                                  "referenced workspace");
         AssertNoDoubleSeparators(root.Children.Single(c => c.Kind == NodeKind.UserFolder), "user folder");
+
+        // Every row kind below a cell, and the loose files beside it (owner report, 2026-10-28: two separators together).
+        var cell = root.Children.Single(c => c.Name == "MyCell");
+        foreach (var node in cell.Children.Concat(cell.Children.SelectMany(c => c.Children)))
+            AssertNoDoubleSeparators(node, $"{node.Kind} {node.Name}");
+        foreach (var node in root.Children.Where(c => c.Kind is NodeKind.OtherFile or NodeKind.TechFile or NodeKind.KnownFilesGroup))
+            AssertNoDoubleSeparators(node, $"{node.Kind} {node.Name}");
 
         // The workspace ROOT is deliberately absent: the TreeView binds to its children and the panel
         // header names the workspace, so that node is never rendered and its menu never opens.

@@ -22,10 +22,12 @@ internal sealed class ReplaceShapeCommand : IUiCommand
     private readonly LayoutShape _before;
     private readonly LayoutShape _after;
 
-    public string Description => "Edit Shape";
+    public string Description { get; }
 
-    public ReplaceShapeCommand(LayoutView view, int index, LayoutShape before, LayoutShape after)
+    public ReplaceShapeCommand(LayoutView view, int index, LayoutShape before, LayoutShape after,
+                               string description = "Edit Shape")
     {
+        Description = description;
         _view = view;
         _index = index;
         _before = before;

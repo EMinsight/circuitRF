@@ -735,8 +735,22 @@ public partial class ProjectTreeView : UserControl
     // Fires INPC on IsSaveable/SaveHeader so the menu shows the real live state.
     private void OnNodeContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        if (sender is ContextMenu { DataContext: ProjectTreeNodeViewModel vm })
-            vm.RefreshDynamicMenuState();
+        if (sender is not ContextMenu menu) return;
+        // NOT gated on the DataContext: the first time a row's menu opens it has none yet (it arrives as the popup attaches),
+        // and returning here left every separator showing — seven in a row on a cell folder (owner report, 2026-10-28).
+        // The dynamic state is refreshed once the node is there, and the separators follow every binding as it lands.
+        if (menu.DataContext is ProjectTreeNodeViewModel vm) vm.RefreshDynamicMenuState();
+        else
+        {
+            void Arrived(object? s, EventArgs a)
+            {
+                if (menu.DataContext is not ProjectTreeNodeViewModel late) return;
+                menu.DataContextChanged -= Arrived;
+                late.RefreshDynamicMenuState();
+            }
+            menu.DataContextChanged += Arrived;
+        }
+        CircuitRF.Ui.Controls.MenuSeparators.Track(menu);
     }
 
     // ── On-focus refresh (Layer 4) ─────────────────────────────────────────────

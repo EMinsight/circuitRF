@@ -97,7 +97,7 @@ starts no Avalonia platform at all:
 ```
 dotnet run --project tools/UiSnapshot --no-build -- --c3d <file.c3d> -o out.png [--size WxH] [--realistic] \
     [--fit] [--ortho|--perspective] [--yaw deg] [--pitch deg] [--distance mm] [--target x,y,z] \
-    [--only a+b] [--hide a+b] [--list]
+    [--only a+b] [--hide a+b] [--list] [--hover name] [--live]
 ```
 
 | Option | Means |
@@ -110,6 +110,8 @@ dotnet run --project tools/UiSnapshot --no-build -- --c3d <file.c3d> -o out.png 
 | `--realistic` | The realistic view, once its environment is made. |
 | `--only`, `--hide` | Objects by substring of their name, `+` between several — what unticking them in the tree does. |
 | `--list` | Every object's name, kind and scene-local bounds (mm). Alone, it writes no picture. |
+| `--hover` | The first object whose name contains this is drawn hovered, as the pointer over it draws it. |
+| `--live` | Plan the picture as the live view is planned rather than as Export Picture: the realistic view then draws the hover and the selection too. |
 
 Every run prints the camera it drew from, so a picture can be reproduced and nudged. The default size is 1200x800.
 

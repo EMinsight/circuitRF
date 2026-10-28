@@ -460,6 +460,10 @@ fn grid_on(p: vec2f, pf: vec2f, s: f32, ph: vec2f) -> f32 {
     let pv = dot(w, u.gv.xyz);
     let p = vec2f(pu, pv);
     let pf = max(fwidth(p), vec2f(1e-30, 1e-30));
+    // The plane's depth here, and how fast it changes from one pixel to the next (a derivative, so before any discard).
+    let c = u.vp * vec4f(w, 1.0);
+    let z = c.z / c.w;
+    let dz = fwidth(z);
     let cosine = abs(dn) / max(length(rd), 1e-30);
     // 3D editor bugs round 2 — the clip plane cuts the MODEL, not the drawing grid: the grid is a drawing aid, and with
     // the plane at an extreme it vanished across half the view with nothing in it to cut.
@@ -491,8 +495,12 @@ fn grid_on(p: vec2f, pf: vec2f, s: f32, ph: vec2f) -> f32 {
     if (alpha <= 0.002) { discard; }
     var o: GOut;
     o.col = vec4f(rgb, alpha);
-    let c = u.vp * vec4f(w, 1.0);
-    o.depth = clamp(c.z / c.w, 0.0, 1.0);
+    // A face lying IN the grid's plane (a board's bottom copper on the XY plane at 0) is drawn by rasterising its triangles,
+    // the grid by solving the plane here: the two depths differ by rounding, so they fought and the lines came and went with
+    // the zoom (owner report, 2026-10-28). The grid is drawn over such a face: two pixels' worth of the plane's own depth slope
+    // towards the eye, plus a few depth steps for a face seen square on. Geometry genuinely in front still hides it; only a
+    // sliver where a solid passes through the plane, two pixels wide, shows the lines past its edge.
+    o.depth = clamp(z - 2.0 * dz - 4e-7, 0.0, 1.0);
     return o;
 }
 

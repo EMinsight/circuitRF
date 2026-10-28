@@ -7688,8 +7688,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// Opens (or focuses) a <c>.ctech</c> as an ordinary editor document. Public so a surface that
     /// is not the project tree can offer it — the Layout Editor's own Technology ▾ ▸ Edit, which
     /// reaches this through the desktop-windows scan since its DataContext is a LayoutDocument.
+    ///
+    /// <para>It opens where any document opens, with no placement of its own (owner request,
+    /// 2026-10-28 — the narrow pane beside the layout existed to toggle layer visibility, which left
+    /// the technology on 2026-10-15). The window showing it comes forward, so a caller in a torn-off
+    /// window still sees it appear.</para>
     /// </summary>
-    public void OpenTechnologyDocument(string absolutePath) => OpenOrActivateTech(absolutePath);
+    public void OpenTechnologyDocument(string absolutePath)
+    {
+        OpenOrActivateTech(absolutePath);
+        if (_openDocsByPath.TryGetValue(absolutePath, out var tech)) BringDockableWindowToFront(tech);
+    }
 
     /// <summary>
     /// Applies a <see cref="TechFix"/> to the <c>.ctech</c> at <paramref name="absolutePath"/> through
@@ -7714,69 +7723,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (wasClean) doc.ViewModel.SaveCommand.Execute(null);
         return wasClean;
     }
-
-    /// <summary>
-    /// How wide the Technology ▾ ▸ Edit… pane opens, in logical units. Owner request, 2026-09-02: wide
-    /// enough for the layer table's <b>Name, Vis, Sel and Color</b> columns and no wider, so layers can
-    /// be toggled with the artwork still on screen beside them.
-    ///
-    /// <para>Vis and Sel left the technology for the layout editor's own Layers list on 2026-10-15
-    /// (brief-layout-layers-panel.md), so the columns this width must show are now <b>Name and
-    /// Color</b>, declared in <c>TechEditorView.axaml</c> as <c>* (MinWidth 110), 48</c> with a 4-unit
-    /// <c>ColumnSpacing</c> and a 4-unit margin each side: 170 units at the Name column's floor. The
-    /// width itself is unchanged — the rest of this number is what makes Name readable rather than
-    /// merely present, and keeps the header row's Undo/Redo/Save from being pushed off the right edge.
-    /// <see cref="TechEditPaneColumnFloor"/> is the part that is arithmetic and is pinned to the XAML
-    /// by a test; this is the judgement on top of it.</para>
-    /// </summary>
-    public const double TechEditPaneWidth = 340;
-
-    /// <summary>The Name and Color columns' own width — see <see cref="TechEditPaneWidth"/>, which must
-    /// not go below it or the command stops delivering what it promises.</summary>
-    public const double TechEditPaneColumnFloor = 110 + 4 + 48 + 8;
-
-    /// <summary>
-    /// Technology ▾ ▸ Edit… — opens the <c>.ctech</c> in its OWN document pane, immediately right of
-    /// the pane holding the layout and only <see cref="TechEditPaneWidth"/> wide.
-    ///
-    /// <para><paramref name="layoutDocument"/> is the layout's own dockable and
-    /// <paramref name="availableWidth"/> the width it currently occupies — a pane's size is a
-    /// PROPORTION of its parent, so the pixel width the owner asked for can only be honoured against
-    /// a measured one.</para>
-    ///
-    /// <para><b>The split happens only when the technology lands in the same tab strip as the
-    /// layout.</b> A <c>.ctech</c> already open in a pane of its own, or in a torn-off window, is
-    /// where the user put it, and this command re-arranging it would be undoing their own work.</para>
-    /// </summary>
-    public void OpenTechnologyDocumentBesideLayout(
-        string absolutePath, IDockable layoutDocument, double availableWidth)
-    {
-        // A technology not yet open opens in the LAYOUT's own strip (field report, 2026-09-27: Edit…
-        // sometimes showed nothing). It used to open in the PRIMARY strip, so a layout sitting in a
-        // side pane or a torn-off window got its technology somewhere else entirely — no split, since
-        // the strips differ, and in the torn-off case in the shell window BEHIND the one being used,
-        // with nothing brought forward because only an ALREADY-open document was raised.
-        var strip = layoutDocument.Owner;
-        OpenOrActivateTech(absolutePath, strip as IDocumentDock);
-
-        if (!_openDocsByPath.TryGetValue(absolutePath, out var tech)) return;
-        if (ReferenceEquals(tech.Owner, strip))
-            _factory.SplitDocumentRightOf(tech, layoutDocument, TechEditPaneProportion(availableWidth));
-
-        // Wherever it ended up, the window showing it comes forward — it was asked for by name.
-        BringDockableWindowToFront(tech);
-    }
-
-    /// <summary>
-    /// <see cref="TechEditPaneWidth"/> as a share of the space the two panes will divide, clamped so a
-    /// very narrow window still leaves the layout half the room and a very wide one does not open a
-    /// sliver. Falls back to a plain share when the layout has not been measured (width 0 or NaN),
-    /// which is the case before its first layout pass.
-    /// </summary>
-    internal static double TechEditPaneProportion(double availableWidth)
-        => availableWidth > 0
-            ? Math.Clamp(TechEditPaneWidth / availableWidth, 0.15, 0.5)
-            : 0.3;
 
     /// <summary>The absolute <c>.ctech</c> path a given <c>.clay</c> resolves to, or null when it
     /// resolves to none. Exposed so the EM setup panel's "Edit technology…" link can reach the ONE
@@ -11486,6 +11432,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <inheritdoc/>
+    public void OpenViewFolder(ProjectTreeNodeViewModel folderNode)
+    {
+        if (folderNode.ViewFolderType is not { } viewType) return;
+        var cellDir = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folderNode.AbsolutePath));
+        if (cellDir is null) return;
+        var pr = CellFolder.ResolvePrimary(cellDir, viewType);
+        if (pr.State is not (PrimaryState.SoleFile or PrimaryState.NamedPresent) || pr.ResolvedName is null)
+        {
+            Messages.Info($"Cell '{Path.GetFileName(cellDir)}' has no primary {CellFolder.ViewNoun(viewType)}.");
+            return;
+        }
+        OpenCellViewFile(viewType, Path.Combine(CellFolder.SubFolderPath(cellDir, viewType), pr.ResolvedName));
+    }
+
+    /// <inheritdoc/>
     public void OpenCellParameters(ProjectTreeNodeViewModel cellNode)
         => OpenOrActivateCellPlaceholder(cellNode.AbsolutePath, cellNode.Name);
 
@@ -14902,6 +14863,80 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         Messages.Info($"Removed cell (moved to Trash): {cellPath}");
+        _factory.ProjectTreeTool?.Refresh();
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveAllViewsAsync(ProjectTreeNodeViewModel folderNode)
+    {
+        if (CurrentWorkspacePath is null || folderNode.ViewFolderType is not { } viewType) return;
+        var workspaceRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        var folder  = Path.TrimEndingDirectorySeparator(folderNode.AbsolutePath);
+        var cellDir = Path.GetDirectoryName(folder);
+        if (cellDir is null || !OwnedByThisWorkspace(cellDir, workspaceRoot, "change")) return;
+
+        var window = ResolveOwner(null);
+        if (window is null) return;
+
+        int fileCount;
+        try   { fileCount = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).Count(); }
+        catch (Exception ex) { Messages.Error($"Could not read '{folder}': {ex.Message}"); return; }
+
+        string cellName = Path.GetFileName(cellDir);
+        string noun     = CellFolder.ViewNoun(viewType);
+        var msg = $"Remove all {noun} views of cell '{cellName}'?\n\n"
+                + $"This moves the '{Path.GetFileName(folder)}' folder and the "
+                + (fileCount == 1 ? "1 file" : $"{fileCount} files")
+                + " in it to the Trash/Recycle Bin. There is no in-app undo.";
+
+        // A cell other cells PLACE resolves through its schematic and symbol, so those two removals
+        // say who will be left with a broken reference — the question Remove Cell asks.
+        if (viewType is ViewType.Schematic or ViewType.Symbol)
+        {
+            var usage = CellUsageScanner.CountReferencingCells(workspaceRoot, cellDir, OtherOpenWorkspaceRoots());
+            if (usage.Count > 0)
+                msg += $"\n\n⚠ '{cellName}' is placed in {usage.Count} cell{(usage.Count == 1 ? "" : "s")}.";
+        }
+
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            msg,
+            saveLabel:     "Remove All Views",
+            dontSaveLabel: null,
+            cancelLabel:   "Cancel",
+            title:         "Remove All Views",
+            destructive:   true);
+        await dlg.ShowDialog(window);
+        if (dlg.Result != SaveChangesResult.Save) return;
+
+        if (!TrashClosingDocuments(folder, retireSessions: true, out var err))
+        {
+            Messages.Error($"Remove failed: {err}");
+            return;
+        }
+        Messages.Info($"Removed (moved to Trash): {folder}");
+
+        // Nothing of that type is left, so the .ccell names nothing for it — the state a cell that
+        // never had the view is in, rather than a primary pointing into the Trash.
+        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        if (File.Exists(ccellPath))
+        {
+            try
+            {
+                var ccell = CellPersistence.LoadFromFile(ccellPath);
+                ccell.SetPrimary(viewType, null);
+                CellPersistence.SaveToFile(ccellPath, ccell);
+            }
+            catch (Exception ex)
+            {
+                Messages.Warning($"The cell's .ccell still names a primary {noun}: {ex.Message}");
+            }
+        }
+        if (viewType == ViewType.Symbol)
+        {
+            CellSymbolResolver.Invalidate(cellDir);
+            RebuildOpenSchematics();
+        }
+
         _factory.ProjectTreeTool?.Refresh();
     }
 

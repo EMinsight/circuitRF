@@ -358,7 +358,7 @@ public static class Scene3DBuilder
         // brief-em3d-101 Phase B — the objects face images are on, and each one's triangles once it is tessellated.
         var faceImageObjects = new HashSet<string>(options.FaceImages?.Select(u => u.Object) ?? [], StringComparer.Ordinal);
         var faceMeshes = new Dictionary<string, (Em3dTriangleMesh Mesh, IReadOnlyList<string> Faces, bool Sheet, bool Dim)>(StringComparer.Ordinal);
-        var bores = Scene3DBores.Of(problem);
+        var bores = Scene3DBores.Of(problem, name => origins.TryGetValue(name, out var o) && o.Kind == Em3dObjectKind.Via);
         var walls = Scene3DWalls.Of(problem);
         var solidRuns = new RunTracker(b);
         var sheetRuns = new RunTracker(b);

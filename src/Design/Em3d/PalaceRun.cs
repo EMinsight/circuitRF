@@ -185,7 +185,9 @@ public static class PalaceRun
             // script writes the entity table one Printf at a time, each opening and closing the file, and in
             // a workspace on a network drive some of those opens failed ("Unable to open file
             // 'entities.txt'", field report): Gmsh then wrote the mesh, exited 1 and the run stopped.
-            string stage = Path.Combine(Path.GetTempPath(), "crf-gmsh-" + Guid.NewGuid().ToString("N")[..12]);
+            // The folder is the user's scratch folder (ScratchFolder), the system temp folder by default.
+            if (ScratchFolder.Refusal() is { } noScratch) return new(false, false, true, noScratch);
+            string stage = ScratchFolder.NewPath("crf-gmsh-");
             try
             {
                 Directory.CreateDirectory(stage);

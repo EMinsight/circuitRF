@@ -157,7 +157,9 @@ automatically on GDSII export.
 **Edit operations:** boolean **Union** (grouped per layer — one result per distinct layer in the
 selection), **Intersect / Difference / XOR** (which need a same-layer pair to enable), **Size**
 (grow or shrink by a signed offset), **Scale** (a numeric factor or a target size, plus bounding-box
-handles: corner for uniform, side for one axis), **Clip** and **Cut Out** (and their **All** forms),
+handles: corner for uniform, side for one axis), **Remove All Holes** (right-click a polygon: it keeps
+its outline and loses every hole; a selected polygon takes the rest of the selection with it),
+**Clip** and **Cut Out** (and their **All** forms),
 **Align and distribute**, **Move to layer**,
 **Set net**, **Flatten to Polygon…**, **Flatten Hierarchy** and **Group into cell**.
 

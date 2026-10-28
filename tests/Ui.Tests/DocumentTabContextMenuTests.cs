@@ -102,10 +102,37 @@ public class DocumentTabContextMenuTests
         string ours = src[menu..firstDock];
 
         const string guard = "IsVisible=\"{Binding Converter={x:Static conv:FileBackedDocumentConverter.Instance}}\"";
-        Assert.Equal(1, ours.Split(guard).Length - 1);   // the Reveal item, and only it
+        Assert.Equal(3, ours.Split(guard).Length - 1);   // Reveal, Copy Path and Copy Full Path, and only they
 
         const string block = "IsVisible=\"{Binding Converter={x:Static conv:DocumentTabMenuVisibility.Any}}\"";
         Assert.Equal(1, ours.Split(block).Length - 1);   // the separator that closes our block
+    }
+
+    /// <summary>Owner request, 2026-10-28: Copy Path and Copy Full Path directly under Reveal, then a
+    /// separator — one that shows only when a save item follows, so it never stacks on the block's.</summary>
+    [Fact]
+    public void CopyPathItemsFollowReveal_ThenTheirOwnSeparator()
+    {
+        string src  = Menu();
+        int menu    = src.IndexOf("<ContextMenu x:Key=", StringComparison.Ordinal);
+        int reveal  = src.IndexOf("cmds:DocumentTabCommands.Reveal}", menu, StringComparison.Ordinal);
+        int path    = src.IndexOf("cmds:DocumentTabCommands.CopyPath}", menu, StringComparison.Ordinal);
+        int full    = src.IndexOf("cmds:DocumentTabCommands.CopyFullPath}", menu, StringComparison.Ordinal);
+        int sep     = src.IndexOf("<Separator", menu, StringComparison.Ordinal);
+        int save    = src.IndexOf("cmds:DocumentTabCommands.Save}", menu, StringComparison.Ordinal);
+
+        Assert.True(reveal < path && path < full && full < sep && sep < save);
+        Assert.Contains("DocumentTabMenuVisibility.AfterPaths", src[sep..save], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CopyPath_IsTheEnclosingFolder_CopyFullPath_ThePathItself()
+    {
+        string file = Path.Combine(Path.GetTempPath(), "ws", "Amp", "schematic", "Amp.csch");
+        Assert.Equal(Path.Combine(Path.GetTempPath(), "ws", "Amp", "schematic"), PathClipboard.EnclosingFolder(file));
+        // A folder's own name is the last part too: a cell row copies the folder the cell sits in.
+        string cell = Path.Combine(Path.GetTempPath(), "ws", "Amp") + Path.DirectorySeparatorChar;
+        Assert.Equal(Path.Combine(Path.GetTempPath(), "ws"), PathClipboard.EnclosingFolder(cell));
     }
 
     [Fact]
@@ -295,7 +322,8 @@ public class DocumentTabContextMenuTests
         int reveal    = src.IndexOf("cmds:DocumentTabCommands.Reveal}", menu, StringComparison.Ordinal);
         int save      = src.IndexOf("cmds:DocumentTabCommands.Save}", menu, StringComparison.Ordinal);
         int saveAs    = src.IndexOf("cmds:DocumentTabCommands.SaveAs}", menu, StringComparison.Ordinal);
-        int separator = src.IndexOf("<Separator", menu, StringComparison.Ordinal);
+        // The separator that closes the block — not the one under Copy Path / Copy Full Path, which sits above Save.
+        int separator = src.IndexOf("<Separator IsVisible=\"{Binding Converter={x:Static conv:DocumentTabMenuVisibility.Any}}", menu, StringComparison.Ordinal);
         int firstDock = src.IndexOf("DocumentTabStripItemFloatString", menu, StringComparison.Ordinal);
 
         Assert.True(reveal > menu,       "Reveal is not inside the ContextMenu.");
