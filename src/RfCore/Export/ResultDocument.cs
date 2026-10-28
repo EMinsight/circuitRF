@@ -1464,6 +1464,10 @@ namespace RfCore.Export
 
     /// <param name="State"><c>ran</c>, <c>not-run</c> or <c>cancelled</c>; <c>listed</c> under
     /// <c>--list-checks</c>, which runs nothing.</param>
+    /// <param name="Summary">What the check says of its run beyond its findings — the impedance check's
+    /// scope and how many traces passed.</param>
+    /// <param name="Settings">For a check whose settings are not the review's (<c>impedance</c>), those
+    /// settings in one read-only line, saying where they are changed.</param>
     public sealed record ReviewCheckJson(
         string                               Id,
         string                               Title,
@@ -1474,7 +1478,11 @@ namespace RfCore.Export
         int                                  Accepted,
         IReadOnlyList<ReviewThresholdJson>   Thresholds,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string?                              Description = null);
+        string?                              Description = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Summary = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Settings = null);
 
     /// <param name="Kind"><c>length</c>, <c>count</c> or <c>density</c>.</param>
     /// <param name="Text">The value as a reviewer reads it, in the layout's display unit.</param>

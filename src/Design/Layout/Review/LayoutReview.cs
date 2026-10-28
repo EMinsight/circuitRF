@@ -17,7 +17,7 @@ namespace CircuitRF.Design.Layout.Review;
 public static class LayoutReview
 {
     /// <summary>Every built-in check, in the order a review runs and reports them (the series
-    /// overview's table order). Briefs 3–5 add theirs in their place.</summary>
+    /// overview's table order).</summary>
     private static readonly ReviewCheck[] Registry =
     [
         new ViaInPadCheck(),
@@ -28,10 +28,16 @@ public static class LayoutReview
         new EdgeCopperCheck(),
         new EdgeTraceCheck(),
         new EdgeStitchingCheck(),
+        new ImpedanceCheck(),
     ];
 
     /// <summary>The checks' definitions — the one table the panel, the CLI and MCP list.</summary>
     public static IReadOnlyList<ReviewCheckDef> Checks { get; } = [.. Registry.Select(c => c.Def)];
+
+    /// <summary>The settings of a check whose settings are not the review's (<see cref="ReviewCheckDef.SettingsOwner"/>),
+    /// as <paramref name="view"/> saves them, in one read-only line; null for any other check.</summary>
+    public static string? SettingsText(string checkId, LayoutView? view) =>
+        checkId == ImpedanceCheck.Id ? ImpedanceCheck.SettingsText(view?.ImpedanceReview) : null;
 
     public static ReviewCheckDef? FindCheck(string id) =>
         Checks.FirstOrDefault(c => string.Equals(c.Id, id, StringComparison.Ordinal));
@@ -61,7 +67,7 @@ public static class LayoutReview
                 $"'{Path.GetFileName(source.Path)}' resolves no technology, so the review cannot tell copper from "
               + "the board outline. Give the layout a technology, or open it in a workspace that has one.");
 
-        var ctx = new ReviewContext(source, tech, settings, control?.Token ?? CancellationToken.None);
+        var ctx = new ReviewContext(source, tech, settings, control?.Token ?? CancellationToken.None) { Control = control };
         var enabled = Registry.Where(c => settings.IsEnabled(c.Def.Id)).ToList();
         var rows = new List<ReviewCheckRow>();
         var findings = new List<(int Check, ReviewFinding Finding)>();
@@ -98,6 +104,14 @@ public static class LayoutReview
             }
 
             int order = Array.IndexOf(Registry, check);
+            if (run.Cancelled)
+            {
+                // A check that keeps what it finished before the cancel (impedance: the layers it solved).
+                cancelled = true;
+                rows.Add(new ReviewCheckRow(def.Id, def.Title, ReviewCheckState.Cancelled, null, run.Findings.Count, 0) { Summary = run.Summary });
+                findings.AddRange(run.Findings.Select(f => (order, f)));
+                continue;
+            }
             if (run.NotRunReason is { } why)
             {
                 rows.Add(new ReviewCheckRow(def.Id, def.Title, ReviewCheckState.NotRun, why, 0, 0));
@@ -110,7 +124,7 @@ public static class LayoutReview
                 }
                 continue;
             }
-            rows.Add(new ReviewCheckRow(def.Id, def.Title, ReviewCheckState.Ran, null, run.Findings.Count, 0));
+            rows.Add(new ReviewCheckRow(def.Id, def.Title, ReviewCheckState.Ran, null, run.Findings.Count, 0) { Summary = run.Summary });
             findings.AddRange(run.Findings.Select(f => (order, f)));
         }
 
@@ -131,6 +145,7 @@ public static class LayoutReview
         {
             DisplayUnit = source.View.DisplayUnit,
             DbuPerMicron = source.View.DbuPerMicron,
+            Impedance = ctx.Impedance,
         };
     }
 }
@@ -151,6 +166,13 @@ internal sealed class ReviewContext
     public LayoutUnit Unit => Source.View.DisplayUnit;
     public CancellationToken Token { get; }
     public List<string> Diagnostics { get; } = [];
+
+    /// <summary>The run's control, or null — a check running an analysis of its own forwards that
+    /// analysis's progress through it (brief-review-5 R-rev5-6).</summary>
+    public RunControl? Control { get; init; }
+
+    /// <summary>The Impedance analysis the impedance check ran, acceptances applied, or null.</summary>
+    public TraceImpedanceReport? Impedance { get; set; }
 
     private Dictionary<LayerKey, Paths64>? _regions;
     private ConnectivityPartition? _partition;
@@ -229,6 +251,12 @@ internal sealed class ReviewCheckRun(ReviewCheckDef def, ReviewSettings settings
     public List<ReviewFinding> Findings { get; } = [];
     public string? NotRunReason { get; private set; }
 
+    /// <summary>The check's line beyond its findings (<see cref="ReviewCheckRow.Summary"/>), or null.</summary>
+    public string? Summary { get; set; }
+
+    /// <summary>The check was cancelled part-way and keeps the findings it finished.</summary>
+    public bool Cancelled { get; set; }
+
     /// <summary>A length threshold, DBU.</summary>
     public long Length(string thresholdId) =>
         (long)Math.Round(settings.Value(def, def.Threshold(thresholdId)
@@ -247,13 +275,20 @@ internal sealed class ReviewCheckRun(ReviewCheckDef def, ReviewSettings settings
     }
 
     /// <param name="region">The marker. A two-point path in it is a LINE (a pad to its nearest via).</param>
-    public void Add(LayerKey? layer, string sentence, string? measured, Paths64 region)
+    public void Add(LayerKey? layer, string sentence, string? measured, Paths64 region) =>
+        Add(layer, sentence, measured, region, null, null);
+
+    /// <param name="key">The finding's key, when it is not the review's place key — an impedance finding
+    /// is keyed by its trace, as the Impedance review keys it.</param>
+    /// <param name="accepted">The acceptance the check's own run applied (<see cref="ReviewFinding.RunAccepted"/>).</param>
+    public void Add(LayerKey? layer, string sentence, string? measured, Paths64 region, string? key, ReviewAcceptance? accepted)
     {
         var bounds = DrcRegions.BoundsOf(region);
         Findings.Add(new ReviewFinding(def.Id, layer, ReviewSeverity.Warning, sentence, measured,
-                                       DrcRegions.ToRings(region), bounds, ReviewFinding.KeyOf(def.Id, layer, bounds))
+                                       DrcRegions.ToRings(region), bounds, key ?? ReviewFinding.KeyOf(def.Id, layer, bounds))
         {
             LayerName = layer is { } l ? ctx.Layers.NameOf(l) : null,
+            RunAccepted = accepted,
         });
     }
 }

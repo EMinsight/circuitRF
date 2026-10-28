@@ -1174,6 +1174,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "review.args.multiple-paths",
         "review.args.path-required",
         "review.args.set-needs-unit",
+        "review.args.settings-elsewhere",
         "review.args.unknown-check",
         "review.args.unknown-option",
         "review.args.unknown-severity",

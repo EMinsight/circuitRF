@@ -225,7 +225,9 @@ internal static class Review
             {
                 string checkId = key[..key.LastIndexOf('.')];
                 JsonRun.Fail(LayoutReview.FindCheck(checkId) is { } c
-                    ? CliDiagnostics.ReviewUnknownThreshold(c.Id, key[(checkId.Length + 1)..], string.Join(", ", c.Thresholds.Select(t => t.Id)))
+                    ? c.SettingsOwner is { } owner
+                        ? CliDiagnostics.ReviewSettingsElsewhere(c.Id, owner)
+                        : CliDiagnostics.ReviewUnknownThreshold(c.Id, key[(checkId.Length + 1)..], string.Join(", ", c.Thresholds.Select(t => t.Id)))
                     : CliDiagnostics.ReviewUnknownCheck(checkId, KnownChecks()));
                 return null;
             }
@@ -284,8 +286,11 @@ internal static class Review
                     line += $"; saved {ReviewSettings.Display(t, s, unit, dpm)}";
                 text.AppendLine(line + ")");
             }
+            // R-rev5-5: a check whose settings are another review's shows them read-only, with where to change them.
+            string? elsewhere = c.SettingsOwner is null ? null : LayoutReview.SettingsText(c.Id, view);
+            if (elsewhere is not null) text.AppendLine($"  {elsewhere}");
             rows.Add(new ReviewCheckJson(c.Id, c.Title, "listed", on ? null : "turned off", 0, 0,
-                                         Thresholds(c, settings, saved, unit, dpm), c.Description));
+                                         Thresholds(c, settings, saved, unit, dpm), c.Description, Settings: elsewhere));
         }
         Console.Write(text.ToString());
         JsonRun.ReviewChecks = rows;
@@ -312,6 +317,7 @@ internal static class Review
             int open = check.FindingCount - check.AcceptedCount;
             sb.AppendLine($"{check.Id}: {open} finding(s)" + (check.AcceptedCount > 0 ? $", {check.AcceptedCount} accepted" : "")
                         + $" — {check.Title}");
+            if (check.Summary is { } summary) sb.AppendLine($"  {summary}");
             foreach (var group in r.Findings.Where(f => f.CheckId == check.Id && f.Severity == ReviewSeverity.Warning)
                                             .GroupBy(f => f.Layer))
             {
@@ -355,7 +361,8 @@ internal static class Review
                     _ => "cancelled",
                 },
                 c.NotRunReason, c.FindingCount, c.AcceptedCount,
-                LayoutReview.FindCheck(c.Id) is { } def ? Thresholds(def, settings, null, r.DisplayUnit, r.DbuPerMicron) : []))],
+                LayoutReview.FindCheck(c.Id) is { } def ? Thresholds(def, settings, null, r.DisplayUnit, r.DbuPerMicron) : [],
+                Summary: c.Summary))],
             [.. r.Findings.Select(f => new ReviewFindingJson(
                 f.CheckId, f.LayerName,
                 f.Severity == ReviewSeverity.Note ? "note" : "warning",

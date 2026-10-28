@@ -24136,3 +24136,38 @@ layer whose net is ground (`GroundNets`). That is the same selection, and the fi
 none on bottom, no stitching via, each one 540 mm loop). Its ground pours and stitching vias start between 1 and
 2 mm in from the edge. A 2 mm band gives 59 findings and a 4 mm one 106, mostly stitching gaps of about 3 mm.
 That is the board as drawn, not a defect of the check, so the default was not moved.
+
+## brief review-5 — the saved Impedance review's verdicts as review findings (2026-10-28)
+
+**The options-from-saved-review step lived only in `src/Cli/Impedance.cs`**, interleaved with the flag
+overrides. It is now `TraceImpedanceReview.OptionsFor(saved, tech, skippedLayer)` (with `CopperLayerNames` and
+`CopperLayer`, which moved with it), and the verb starts from it and overrides per flag with `with`. Behaviour is
+unchanged: a saved layer the technology lacks is still said on stderr only when `--layers` was not given, and an
+absent saved scope is still an empty one unless `--no-scope`. The Impedance panel still builds its own options,
+because its layers come from its ticked rows, not from the saved names.
+
+**The issue-kind names lived in the PDF writer** (`TraceImpedanceReportDocument.KindText`, `src/Render`), which
+`src/Design` cannot reference. They are `TraceImpedanceReport.IssueKindText` now and the writer calls it, so the
+review's sentence and the Summary's group rows say the same words.
+
+**A trace's verdict after `TraceImpedanceAcceptance.Apply` cannot decide whether it is a finding**: a trace whose
+every finding is accepted reads PASS, and would vanish instead of being reported ACCEPTED. The check takes a trace
+with no Z0 or any finding as a finding, and states the verdict as the analysis found it (`VerdictOf` over the
+findings with their acceptances cleared). The report's `VerdictText` has no word for unsolved (it prints "—"), so
+the sentence says UNSOLVED, the report's own `VerdictSentence` word in capitals.
+
+**Review acceptances and impedance acceptances could not be allowed to meet.** `ReviewAcceptance.Apply` rebuilt
+every finding's `Accepted` from the review's own list, which would have erased the Impedance review's acceptance
+and let a `ReviewAcceptances` entry with the same key accept a trace the Impedance panel still shows failing.
+`ReviewCheckDef.SettingsOwner` marks a check whose settings and acceptances live elsewhere; for such a check
+`Apply` keeps `ReviewFinding.RunAccepted` and matches nothing against it. A review acceptance naming one is listed
+stale, which is true: it matched nothing.
+
+**A cancelled impedance run is not a cancelled check with nothing in it.** The analysis catches the cancel per
+layer and returns the layers it finished, as the panel shows them. The review's loop only knew a check that THREW
+on cancellation, so `ReviewCheckRun.Cancelled` was added: the row is `cancelled` and keeps those findings.
+
+**By hand on the large board** (Release; saved review: one lasso region on Top Copper): the check alone ran
+in 7.9 s with a 1.4 GB peak, 27 cross-sections. It solved 8 traces, 7 passed, and the one finding is a FAIL
+(worst Z0 96.7 Ω, out of tolerance and return path broken). `circuitrf impedance` on the same file reported the
+same 8 traces with the same single FAIL and no WARN, and the trace's end points give the same key.

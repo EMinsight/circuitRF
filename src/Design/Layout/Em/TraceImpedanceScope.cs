@@ -238,6 +238,55 @@ public sealed class TraceImpedanceReview
     /// <summary>Which traces are reviewed; null for every trace.</summary>
     public TraceImpedanceScope? Scope { get; set; }
 
+    /// <summary>
+    /// The options a run of <paramref name="saved"/> uses — the defaults where nothing is saved — against
+    /// <paramref name="tech"/>: the ONE function <c>circuitrf impedance</c> builds its options from before its
+    /// flags override them, and the Layout Review's impedance check runs them as they are (brief-review-5
+    /// R-rev5-1). A saved layer name the technology no longer has as copper is handed to
+    /// <paramref name="skippedLayer"/> and skipped; with none left, every copper layer is analysed. The scope
+    /// is a copy, so a caller may narrow it for one run.
+    /// </summary>
+    public static TraceImpedanceOptions OptionsFor(TraceImpedanceReview? saved, Technology tech, Action<string>? skippedLayer = null)
+    {
+        ArgumentNullException.ThrowIfNull(tech);
+        IReadOnlyList<LayerKey>? layers = null;
+        if (saved?.Layers is { Count: > 0 } names)
+        {
+            var copper = CopperLayerNames(tech);
+            var keys = new List<LayerKey>();
+            foreach (string name in names)
+            {
+                if (CopperLayer(tech, copper, name) is { } def) keys.Add(def.Key);
+                else skippedLayer?.Invoke(name);
+            }
+            if (keys.Count > 0) layers = keys;
+        }
+        return new TraceImpedanceOptions
+        {
+            TargetOhms = saved?.TargetOhms ?? TraceImpedanceOptions.DefaultTargetOhms,
+            TolerancePercent = saved?.TolerancePercent ?? TraceImpedanceOptions.DefaultTolerancePercent,
+            WarningPercent = saved?.WarningPercent ?? TraceImpedanceOptions.DefaultWarningPercent,
+            MaxFrequencyHz = saved?.MaxFrequencyHz,
+            Layers = layers,
+            ViaTransitionMicrons = saved?.ViaTransitionOrDefault() ?? TraceImpedanceOptions.DefaultViaTransitionMicrons,
+            Scope = saved?.Scope?.Clone(),
+        };
+    }
+
+    /// <summary>The names of <paramref name="tech"/>'s copper layers: the drawing layers bound to a stackup conductor.</summary>
+    public static List<string> CopperLayerNames(Technology tech)
+    {
+        var bound = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).SelectMany(l => l.DrawingLayers).ToHashSet();
+        return [.. tech.Layers.Where(l => bound.Contains(l.Key)).Select(l => l.Name)];
+    }
+
+    /// <summary>The copper layer <paramref name="name"/> names, ignoring case, or null.</summary>
+    public static LayerDef? CopperLayer(Technology tech, IReadOnlyCollection<string> copperNames, string name)
+    {
+        var def = tech.Layers.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
+        return def is not null && copperNames.Contains(def.Name) ? def : null;
+    }
+
     public TraceImpedanceReview Clone() => new()
     {
         TargetOhms = TargetOhms, TolerancePercent = TolerancePercent, WarningPercent = WarningPercent,

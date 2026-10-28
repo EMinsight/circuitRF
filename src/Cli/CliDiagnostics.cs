@@ -4322,6 +4322,11 @@ internal static class CliDiagnostics
         "review.args.unknown-check", DiagnosticSeverity.Error,
         "review: '{id}' is not a review check. The checks are: {known}.", ("id", id), ("known", known));
 
+    public static Diagnostic ReviewSettingsElsewhere(string check, string owner) => Diagnostic.Create(
+        "review.args.settings-elsewhere", DiagnosticSeverity.Error,
+        "review: the check '{check}' has no thresholds of its own: its target, bands and scope are the Impedance review's, set in {owner} or with circuitrf impedance.",
+        ("check", check), ("owner", owner));
+
     public static Diagnostic ReviewUnknownThreshold(string check, string id, string known) => Diagnostic.Create(
         "review.args.unknown-threshold", DiagnosticSeverity.Error,
         "review: the check '{check}' has no threshold '{id}'. Its thresholds are: {known}.",

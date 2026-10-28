@@ -4345,3 +4345,21 @@ of `ReviewPads`), so a through-hole pin's hole stitches nothing. Its ground copp
 against every piece on its layer. An outline whose strokes do not close is refused
 with the largest gap's location: `BoardRegions` keeps a hole-less strip as a region, and the review drops one as
 thin as a line. Gate: `tests/Ui.Tests/Review/CopperEdgeChecksTests.cs`.
+
+### 32.7 Impedance in the review (brief-review-5)
+
+`impedance` is a reading, not a rule: it builds its options with `TraceImpedanceReview.OptionsFor` — the
+function `circuitrf impedance` now starts from before its flags override it, factored out of `src/Cli/Impedance.cs`
+so the two cannot build different options from one saved review — and calls `TraceImpedanceAnalysis.Analyze` on
+the run's `LayoutSource`. **No saved scope (or an empty one) is not run**, and nothing is solved: a whole-board
+impedance run is minutes on a large board. One finding per trace that is not PASS; its sentence uses the report's
+own helpers (`VerdictText`, `OhmsText`, `TypeSummary`/`ShortType`, and `IssueKindText`, which moved from the PDF
+writer into `TraceImpedanceReport` so the review could use it), its key is `TraceImpedanceAcceptance.TraceKeyOf`.
+`TraceImpedanceAcceptance.Apply` runs first; a trace whose every finding is accepted is reported accepted with
+the reasons, carried on `ReviewFinding.RunAccepted`. `ReviewCheckDef.SettingsOwner` marks a check whose settings
+and acceptances live elsewhere: `ReviewAcceptance.Apply` keeps its run's acceptance and matches no review
+acceptance against it, and `--set impedance.*` is `review.args.settings-elsewhere`. The row's `Summary` says the
+scope (`ScopeText`) and how many traces passed. The analysis gets its own `RunControl` on the review's token whose
+stages are forwarded, prefixed, as the review's progress; a cancelled analysis keeps its finished layers, so the
+row is `cancelled` WITH those findings. `LayoutReviewResult.Impedance` keeps the report for the Review panel's
+Accept, which writes a `TraceImpedanceAcceptance`. Gate: `tests/Ui.Tests/Review/ImpedanceCheckTests.cs`.

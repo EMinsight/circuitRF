@@ -1414,10 +1414,17 @@ technology, an imported board's and one you built. A check whose layer the techn
 | Copper at the board edge | Copper on any copper layer closer to the board edge than the pullback, marked where it lies inside that strip. The edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board, whose centre line is the edge &mdash; and cut-outs in the board (slots, milled openings) are edges too. | Pullback (0.25 mm) |
 | Traces at the board edge | A trace on any copper layer closer to the board edge than the distance, marked where it is. A pour pulled to the edge is not a trace and is left to the pullback check. A trace that runs to an edge-launch connector on purpose is a finding to accept. | Minimum distance (1.0 mm) |
 | Edge stitching | A stretch of board edge with no ground copper along it, on the top and bottom copper; and a stretch with no ground via along it, between two vias further apart than the gap. Both are measured along the middle of a band along the edge, so a pour pulled back by the pullback still covers the edge. | Band width (1.0 mm), maximum gap (2.0 mm) |
+| Impedance of the RF traces | Each trace in the [Impedance](#impedance-analysis) panel's saved choice of traces that does not pass &mdash; FAIL, WARN or unsolved &mdash; with its worst Z₀ against the target and what was found on it, marked where. Its line also says which traces were reviewed and how many passed. | None here: the target, bands, layers and traces are the Impedance panel's |
 
 **Traces.** A trace is what [Impedance Analysis](#impedance-traces) reads as one: copper with
 two long parallel edges facing each other, outside a pour, with its nominal width. The two trace checks
 find traces exactly as that review does.
+
+**Impedance.** Which traces are RF is the Impedance panel's question, so the review asks it there: it runs
+the panel's saved review and lists its failing and warning traces beside the other checks. With no traces
+chosen in the Impedance panel the check is not run &mdash; the review never analyses every trace on the
+board, which on a large board takes minutes. A finding accepted in the Impedance panel is accepted here
+with its reason, and a trace is accepted when every finding on it is.
 
 **Pads, vias and ground.** A pad is copper exposed by a soldermask opening, on the top and bottom
 copper; parts placed in the layout name a pad in a finding ("C209 pad 2") but do not decide which pads

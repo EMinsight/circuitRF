@@ -117,9 +117,10 @@ internal static partial class Impedance
 
         // The review saved on the layout applies by default, so a headless run reports what the
         // editor reports (brief-impedance-2 R-imp2-4c); a flag overrides it, and it overrides the
-        // defaults.
+        // defaults. The saved half is TraceImpedanceReview.OptionsFor — the function the Layout
+        // Review's impedance check builds its options with (brief-review-5 R-rev5-1).
         var saved = source.View.ImpedanceReview;
-        var copperNames = CopperLayers(tech);
+        var copperNames = TraceImpedanceReview.CopperLayerNames(tech);
 
         // The layer names, against the technology the layout resolves — a name that is not one of its
         // copper layers is a refusal listing the ones that are, never a silent skip. A SAVED name the
@@ -137,21 +138,14 @@ internal static partial class Impedance
             }
             layers = keys;
         }
-        else if (saved?.Layers is { Count: > 0 } savedLayers)
-        {
-            var keys = new List<LayerKey>();
-            foreach (string name in savedLayers)
-            {
-                if (CopperLayer(tech, copperNames, name) is { } def) keys.Add(def.Key);
-                else Console.Error.WriteLine($"[circuitRF] The saved review names '{name}', which is not a copper layer of this technology now; it was skipped.");
-            }
-            if (keys.Count > 0) layers = keys;
-        }
+        var savedOptions = TraceImpedanceReview.OptionsFor(saved, tech, o.Layers.Count > 0 ? null : name =>
+            Console.Error.WriteLine($"[circuitRF] The saved review names '{name}', which is not a copper layer of this technology now; it was skipped."));
+        layers ??= savedOptions.Layers;
 
         TraceImpedanceScope? scope = null;
         if (!o.NoScope)
         {
-            scope = saved?.Scope?.Clone() ?? new TraceImpedanceScope();
+            scope = savedOptions.Scope ?? new TraceImpedanceScope();
             foreach (var (layerName, microns) in o.Widths)
             {
                 if (CopperLayer(tech, copperNames, layerName) is not { } def)
@@ -228,15 +222,15 @@ internal static partial class Impedance
             }
         }
 
-        var options = new TraceImpedanceOptions
+        var options = savedOptions with
         {
-            TargetOhms = o.Target ?? saved?.TargetOhms ?? TraceImpedanceOptions.DefaultTargetOhms,
-            TolerancePercent = o.Tolerance ?? saved?.TolerancePercent ?? TraceImpedanceOptions.DefaultTolerancePercent,
-            WarningPercent = o.Warn ?? saved?.WarningPercent ?? TraceImpedanceOptions.DefaultWarningPercent,
-            MaxFrequencyHz = o.MaxFrequencyHz ?? saved?.MaxFrequencyHz,
+            TargetOhms = o.Target ?? savedOptions.TargetOhms,
+            TolerancePercent = o.Tolerance ?? savedOptions.TolerancePercent,
+            WarningPercent = o.Warn ?? savedOptions.WarningPercent,
+            MaxFrequencyHz = o.MaxFrequencyHz ?? savedOptions.MaxFrequencyHz,
             Layers = layers,
             MaxWidthMicrons = o.MaxWidthMicrons,
-            ViaTransitionMicrons = o.ViaTransitionMicrons ?? saved?.ViaTransitionOrDefault() ?? TraceImpedanceOptions.DefaultViaTransitionMicrons,
+            ViaTransitionMicrons = o.ViaTransitionMicrons ?? savedOptions.ViaTransitionMicrons,
             Scope = scope,
         };
 
@@ -584,18 +578,9 @@ internal static partial class Impedance
     }
 
     /// <summary>The names of the technology's drawing layers bound to a conductor of the stackup.</summary>
-    private static List<string> CopperLayers(Technology tech)
-    {
-        var bound = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).SelectMany(l => l.DrawingLayers).ToHashSet();
-        return [.. tech.Layers.Where(l => bound.Contains(l.Key)).Select(l => l.Name)];
-    }
-
     /// <summary>The copper layer <paramref name="name"/> names, ignoring case, or null.</summary>
-    private static LayerDef? CopperLayer(Technology tech, List<string> copperNames, string name)
-    {
-        var def = tech.Layers.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
-        return def is not null && copperNames.Contains(def.Name) ? def : null;
-    }
+    private static LayerDef? CopperLayer(Technology tech, List<string> copperNames, string name) =>
+        TraceImpedanceReview.CopperLayer(tech, copperNames, name);
 
     // ── --survey ─────────────────────────────────────────────────────────────────────────────
 

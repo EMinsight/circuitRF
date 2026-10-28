@@ -39,6 +39,12 @@ public sealed record ReviewFinding(
 
     public bool IsAccepted => Accepted is not null;
 
+    /// <summary>The acceptance the check's own run applied, for a check whose findings are accepted
+    /// elsewhere (<see cref="ReviewCheckDef.SettingsOwner"/>) — an impedance finding's, made from the
+    /// Impedance review's acceptances of its trace. <see cref="ReviewAcceptance.Apply"/> keeps it as
+    /// <see cref="Accepted"/>; null for every other check.</summary>
+    public ReviewAcceptance? RunAccepted { get; init; }
+
     /// <summary>The technology's name for <see cref="Layer"/>, or null for a Note.</summary>
     public string? LayerName { get; init; }
 
@@ -63,7 +69,12 @@ public sealed record ReviewCheckRow(
     ReviewCheckState State,
     string?          NotRunReason,
     int              FindingCount,
-    int              AcceptedCount);
+    int              AcceptedCount)
+{
+    /// <summary>What the check says of its run beyond its findings, or null — the impedance check's scope
+    /// and how many traces passed, so a clean result reads as a result rather than as nothing.</summary>
+    public string? Summary { get; init; }
+}
 
 /// <summary>
 /// What one review found (R-rev2-4). <see cref="Findings"/> are ordered by check (the overview's table
@@ -87,6 +98,11 @@ public sealed record LayoutReviewResult(
     /// <summary>Acceptances saved on the layout that matched no finding of a check that ran. Listed,
     /// never dropped.</summary>
     public IReadOnlyList<ReviewAcceptance> StaleAcceptances { get; init; } = [];
+
+    /// <summary>The Impedance analysis the <c>impedance</c> check ran, its acceptances applied, or null when
+    /// it did not run — what an Accept in the Review panel writes a <c>TraceImpedanceAcceptance</c> from,
+    /// finding the trace by <see cref="ReviewFinding.Key"/> (brief-review-5 R-rev5-4).</summary>
+    public CircuitRF.Design.Layout.Em.TraceImpedanceReport? Impedance { get; init; }
 
     public int WarningCount  => Findings.Count(f => f.Severity == ReviewSeverity.Warning && !f.IsAccepted);
     public int AcceptedCount => Findings.Count(f => f.IsAccepted);

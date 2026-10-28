@@ -590,6 +590,19 @@ public sealed record TraceImpedanceReport
         _                                               => configuration,
     };
 
+    /// <summary>A finding kind as the report names it — the Summary's group rows and the Layout Review's
+    /// impedance findings (brief-review-5) say the same words.</summary>
+    public static string IssueKindText(TraceIssueKind kind) => kind switch
+    {
+        TraceIssueKind.OutOfTolerance   => "Z0 outside the pass band",
+        TraceIssueKind.ReturnBroken     => "Return path broken",
+        TraceIssueKind.PartialReference => "Reference covers part of the width",
+        TraceIssueKind.ReferenceStep    => "Reference steps to another layer",
+        TraceIssueKind.NoReference      => "No return path",
+        TraceIssueKind.PadShunt         => "Test pad loads the line",
+        _                               => "Not solved",
+    };
+
     /// <summary>What the short names stand for, for a legend.</summary>
     public static readonly IReadOnlyList<(string Short, string Long)> TypeLegend =
     [

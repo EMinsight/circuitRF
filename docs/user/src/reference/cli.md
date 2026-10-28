@@ -1331,9 +1331,12 @@ The board is read once and every check shares that one copy.
 | `edge-copper` | Copper on any copper layer closer to the board edge than the pullback. The board edge is read off the board-outline layer &mdash; a closed outline, or a line drawn round the board &mdash; and cut-outs in the board are edges too. | `pullback` (0.25 mm) |
 | `edge-trace` | A trace on any copper layer closer to the board edge than `min-distance`. Copper that is not a trace is `edge-copper`'s alone. | `min-distance` (1.0 mm) |
 | `edge-stitching` | Within `band-width` of the edge: a stretch at least `max-gap` long with no ground copper on the top or bottom copper (one finding per layer), and a gap of at least `max-gap` between ground vias (a finding on no layer). Measured along the middle of the band. | `band-width` (1.0 mm), `max-gap` (2.0 mm) |
+| `impedance` | Each trace in the layout's saved [Impedance review](layout-editor.html#impedance-analysis) scope that does not pass it &mdash; FAIL, WARN or unsolved &mdash; with its verdict, worst Z0 against the target band, line type and finding kinds, marked where its findings are. Its line also says the scope and how many traces passed. With no scope saved it is **not run**: the review never analyses every trace on the board. | None of its own: target, bands, layers and scope are the Impedance review's |
 
 **The review saved in the layout applies by default** &mdash; which checks run, and each threshold that
 was changed from its default. `--set` overrides one for this run; `--defaults` ignores what was saved.
+`impedance` has no thresholds here: its settings are changed in the Impedance panel or with
+[`impedance`](#impedance), and `--list-checks` shows them read-only.
 
 | Option | Meaning |
 |---|---|
@@ -1356,14 +1359,19 @@ says which check is running.
 **Accepted findings apply by default.** An accepted finding is reported `ACCEPTED` with its reason and
 does not count. A saved acceptance that matched nothing is listed as stale. There is no `--accept`: a
 script that must accept a finding headlessly adds it to the `.clay`'s `ReviewAcceptances` with the
-finding's `key`; [`reference layout`](#reference) documents the fields.
+finding's `key`; [`reference layout`](#reference) documents the fields. An `impedance` finding is the
+exception: it is accepted in the Impedance review (the `.clay`'s `ImpedanceAcceptances`), and is reported
+`ACCEPTED` when every finding on its trace is; a `ReviewAcceptances` entry never covers it. Its `key` is the
+Impedance review's trace key, `layer|x,y|x,y` with the trace's end points in whole µm.
 
 With `--json` the result is `review`: `technology`, `displayUnit`, `warnings` (unaccepted), `accepted`,
 `notes` (checks not run), `checks` (each `id`, `title`, `state` &mdash; `ran`, `not-run` or `cancelled`
-&mdash; `reason`, `findings`, `accepted` and its `thresholds` with `value`, `default` and `text`), and
+&mdash; `reason`, `findings`, `accepted`, its `thresholds` with `value`, `default` and `text`, and a
+`summary` where the check states one), and
 `findings` (each `check`, `layer`, `severity` &mdash; `warning`, or `note` for a check not run &mdash;
 `sentence`, `measured`, `key`, `marker` as a bounding box in **µm**, and `accepted` with its `reason`
-and `date`), then `staleAcceptances`. With `--list-checks` the result is `reviewChecks` instead.
+and `date`), then `staleAcceptances`. With `--list-checks` the result is `reviewChecks` instead, where
+`impedance` carries its Impedance review settings as `settings`.
 
 **Exit codes:** **0** when it ran, whatever it found; **1** on a refusal, or with `--severity warning` when
 an unaccepted finding remains; **130** on a cancellation, reporting the checks that finished. `review`

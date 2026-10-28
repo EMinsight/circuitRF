@@ -57,8 +57,11 @@ public sealed class ReviewAcceptance
         var findings = new List<ReviewFinding>(result.Findings.Count);
         foreach (var found in result.Findings)
         {
-            var f = found with { Accepted = null };
-            if (f.Severity == ReviewSeverity.Warning && byKey.TryGetValue(f.Key, out var a))
+            // A check whose findings are accepted elsewhere keeps what its run applied, and a review
+            // acceptance never covers one of them (brief-review-5 R-rev5-4).
+            bool elsewhere = LayoutReview.FindCheck(found.CheckId)?.SettingsOwner is not null;
+            var f = found with { Accepted = elsewhere ? found.RunAccepted : null };
+            if (!elsewhere && f.Severity == ReviewSeverity.Warning && byKey.TryGetValue(f.Key, out var a))
             {
                 matched.Add(a);
                 f = f with { Accepted = a };

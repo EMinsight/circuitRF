@@ -28,6 +28,12 @@ public sealed record ReviewThresholdDef(string Id, string Title, ReviewThreshold
 /// <summary>One built-in check: its id, the words a reviewer reads, and its thresholds.</summary>
 public sealed record ReviewCheckDef(string Id, string Title, string Description, IReadOnlyList<ReviewThresholdDef> Thresholds)
 {
+    /// <summary>Where this check's settings and acceptances live when they are not the review's — the
+    /// Impedance review's, for <c>impedance</c> (brief-review-5 R-rev5-4/5) — or null. Such a check has no
+    /// thresholds of its own, only the enable flag is the review's, and its findings are accepted there:
+    /// <see cref="ReviewAcceptance.Apply"/> never matches a review acceptance against them.</summary>
+    public string? SettingsOwner { get; init; }
+
     public ReviewThresholdDef? Threshold(string id) =>
         Thresholds.FirstOrDefault(t => string.Equals(t.Id, id, StringComparison.Ordinal));
 }

@@ -1259,16 +1259,7 @@ public static class TraceImpedanceReportDocument
         internal const int WorstInFull = 20;
 
         /// <summary>A finding kind as a group's row names it.</summary>
-        internal static string KindText(TraceIssueKind kind) => kind switch
-        {
-            TraceIssueKind.OutOfTolerance   => "Z0 outside the pass band",
-            TraceIssueKind.ReturnBroken     => "Return path broken",
-            TraceIssueKind.PartialReference => "Reference covers part of the width",
-            TraceIssueKind.ReferenceStep    => "Reference steps to another layer",
-            TraceIssueKind.NoReference      => "No return path",
-            TraceIssueKind.PadShunt         => "Test pad loads the line",
-            _                               => "Not solved",
-        };
+        internal static string KindText(TraceIssueKind kind) => TraceImpedanceReport.IssueKindText(kind);
 
         /// <summary>
         /// The layer's findings grouped by kind × severity × width class (owner decision D2 (a)) — the class the
