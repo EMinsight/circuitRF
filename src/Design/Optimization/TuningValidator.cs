@@ -27,8 +27,12 @@ public static class TuningValidator
             string who = $"tune {e.Key}";
             KeyRule(e.Key, who, f, catalog, inPreset: false);
 
+            // A placed vendor part's candidates (brief vendorlib-4 R-vl4-1c/6a); kind= and parts= mean nothing elsewhere.
+            if (catalog.Find(e.Key) is { VendorPart: { } part }) PartRules(e, part, who, f);
+            else if (e.PartKind is not null || e.Parts is not null) f.Add(TuningDiagnostics.PartSelectionNotAPart(who));
+
             // A part is continuous, and preferred needs a ladder (brief-tuneopt-8 R-to8-2/7).
-            if (e.Discrete != TuneDiscrete.None && catalog.Find(e.Key) is { } t
+            if (e.Discrete != TuneDiscrete.None && catalog.Find(e.Key) is { VendorPart: null } t
                 && !TunableValue.DiscreteChoices(t).Contains(e.Discrete))
                 f.Add(t.Part is not null
                     ? OptimizationDiagnostics.DiscreteOnPart(e.Key, TunableValue.DiscreteToken(e.Discrete))
@@ -126,6 +130,27 @@ public static class TuningValidator
         // The statistical part — tolerances, correlations, statistics settings, corners (docs/design/yield.md).
         f.AddRange(Statistics.StatisticsValidator.Validate(tb, catalog, netlist));
         return f;
+    }
+
+    /// <summary>
+    /// A vendor part entry (R-vl4-1c, R-vl4-3d, R-vl4-6a): it needs a candidate and at most the cap of them, an
+    /// unreadable candidate is said, and its levels are its candidates — never a series, a step or a tolerance.
+    /// </summary>
+    private static void PartRules(TunableEntry e, CircuitRF.Design.VendorLibraries.VendorPartTunable part, string who,
+                                  List<Diagnostic> f)
+    {
+        if (part.OverCap)
+            f.Add(TuningDiagnostics.PartOverCap(who, part.Selection, part.Found,
+                                                CircuitRF.Design.VendorLibraries.VendorPartTunable.MaxCandidates));
+        else if (part.Candidates.Count == 0)
+            f.Add(TuningDiagnostics.PartNoCandidates(who, part.Selection,
+                part.RemovedForPorts > 0 ? $"; {part.RemovedForPorts} found have another port count than {part.PlacedPart}" : ""));
+        if (part.Unreadable.Count > 0)
+            f.Add(TuningDiagnostics.PartUnreadable(who, string.Join(", ", part.Unreadable)));
+        if (e.Distribution != StatDistribution.None)
+            f.Add(TuningDiagnostics.PartNotStatistical(who));
+        if (e.Discrete != TuneDiscrete.None || e.Step is not null || e.Scale != TuneScale.Auto)
+            f.Add(TuningDiagnostics.PartLevelsAreCandidates(who));
     }
 
     /// <summary>A <c>timelimit</c> in seconds — a number with an optional s, ms, min or h — or null.</summary>

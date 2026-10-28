@@ -428,6 +428,28 @@
             <Setter Property="FontSize" Value="{DynamicResource FontSize}"/>
         </Style>
 
+        <!-- ══ A COMPACT MENU: NO SPACE AT THE SIDES IT DOES NOT USE ═══════════════════════════
+             Opt in with <MenuFlyout FlyoutPresenterClasses="compact">. Fluent's MenuItem reserves a 16 px icon
+             column with 12 px after it, and gives its input-gesture text a 24 px left margin that it keeps when
+             there is NO gesture — measured on the live template (Avalonia 12.0.3), the empty TextBlock still sits
+             24 px right of the header, which was most of a short menu's trailing whitespace. Opt-in, never
+             global, because a menu that does show shortcuts needs that gap: a compact menu carries none. -->
+        <Style Selector="MenuFlyoutPresenter.compact MenuItem">
+            <Setter Property="Padding" Value="6,4,6,4"/>
+        </Style>
+        <Style Selector="MenuFlyoutPresenter.compact MenuItem /template/ ContentControl#PART_IconPresenter">
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+        <Style Selector="MenuFlyoutPresenter.compact MenuItem /template/ ContentControl#PART_ToggleIconPresenter">
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+        <Style Selector="MenuFlyoutPresenter.compact MenuItem /template/ TextBlock#PART_InputGestureText">
+            <Setter Property="Margin" Value="0"/>
+        </Style>
+        <Style Selector="MenuFlyoutPresenter.compact MenuItem /template/ Path#PART_ChevronPath">
+            <Setter Property="Margin" Value="8,0,0,0"/>
+        </Style>
+
         <!-- ══ A SCROLLBAR NO LONGER SITS ON TOP OF THE ONE INSIDE IT ═══════════════════════
              Owner-reported, 2026-09-20, against railRF's Results ▸ Breakdown: with a long breakdown
              and a short window there are two scrollbars, and the inner one is "hard to scroll".

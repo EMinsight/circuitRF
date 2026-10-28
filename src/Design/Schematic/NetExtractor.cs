@@ -94,6 +94,14 @@ public static class NetExtractor
         /// headless run says on stderr, so a skipped part is never silent there either.
         /// </summary>
         public IReadOnlyList<string> PartRefusals { get; init; } = [];
+
+        /// <summary>
+        /// Every placed vendor part as a tunable — its key, and the candidate parts its <c>Part</c> entry chooses
+        /// among (brief vendorlib-4 R-vl4-1/2). Kept here because the netlist cannot say it: a <c>.cnl</c> holds the
+        /// cell an instance binds to, never the library part it came from. When the tuning setup tunes or
+        /// optimizes a part, its candidates' cells are in <see cref="Library"/> too.
+        /// </summary>
+        public IReadOnlyList<VendorLibraries.VendorPartTunable> PartTunables { get; init; } = [];
     }
 
     /// <summary>One <see cref="ExtractionResult.HostCellChoices"/> entry. <see cref="IsWarning"/>
@@ -206,7 +214,76 @@ public static class NetExtractor
             HostCellChoices = scope.HostCellChoices,
             PartRangeWarnings = VendorLibraries.VendorPartRange.Warnings(tb, imports.VendorParts),
             PartRefusals = imports.VendorRefusals,
+            PartTunables = PartTunablesOf(model, tb.Tuning, imports, lib, conflicts),
         };
+    }
+
+    /// <summary>
+    /// Every placed vendor part as a tunable (brief vendorlib-4 R-vl4-1/2). Its candidates come from the index
+    /// alone; when the tuning setup TUNES or OPTIMIZES the part, each candidate's circuit is read from its own
+    /// byte block and emitted as a cell under the part's own name, exactly as the placed part was (R-vl4-2a) —
+    /// so an evaluation rebinds the instance to another cell and the elaborator sees an ordinary netlist. A
+    /// candidate that does not read is left out and reported, one line per entry naming the parts; an entry
+    /// over the cap emits nothing (the validator refuses it by count, never by truncating).
+    /// </summary>
+    private static IReadOnlyList<VendorLibraries.VendorPartTunable> PartTunablesOf(
+        SchematicEditModel top, TuningSetup? setup, NetlistImports imports, Library lib, List<string> conflicts)
+    {
+        var result = new List<VendorLibraries.VendorPartTunable>();
+        var seen   = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var placed in imports.PlacedVendorParts)
+        {
+            string? cell = ReferenceEquals(placed.Model, top) ? null : imports.ModelCellNames.GetValueOrDefault(placed.Model);
+            if (cell is null && !ReferenceEquals(placed.Model, top)) continue;
+            string key = (cell is null ? "" : cell + ":") + placed.Instance + "." + TunableKey.PartParameter;
+            if (!seen.Add(key)) continue;
+
+            var entry    = setup?.Variables.FirstOrDefault(e => e.Key == key);
+            var selected = VendorLibraries.VendorPartCandidates.Select(entry, placed.Part, out int removed, out string selection);
+            bool emit    = entry is { } e0 && (e0.Tune || e0.Opt) && selected.Count <= VendorLibraries.VendorPartTunable.MaxCandidates;
+
+            var candidates = new List<VendorLibraries.VendorPartCandidate>();
+            var unreadable = new List<string>();
+            foreach (var e in selected.Take(VendorLibraries.VendorPartTunable.MaxCandidates))
+            {
+                if (!emit) { candidates.Add(VendorLibraries.VendorPartCandidates.Candidate(e, "")); continue; }
+                if (e.Part.Equals(placed.Part.Entry.Part, StringComparison.OrdinalIgnoreCase))
+                {
+                    candidates.Add(VendorLibraries.VendorPartCandidates.Candidate(e, placed.Cell));
+                    continue;
+                }
+                string? emitted = EmitCandidate(e, placed, lib, imports, out string? why);
+                if (emitted is null) unreadable.Add($"{e.Part} ({why})");
+                else candidates.Add(VendorLibraries.VendorPartCandidates.Candidate(e, emitted));
+            }
+            if (unreadable.Count > 0)
+                conflicts.Add($"{key}: {unreadable.Count} candidate part{(unreadable.Count == 1 ? "" : "s")} could not be " +
+                              $"read and {(unreadable.Count == 1 ? "was" : "were")} left out: {string.Join(", ", unreadable)}.");
+
+            result.Add(new VendorLibraries.VendorPartTunable(
+                key, cell, placed.Instance, placed.Part.LibraryName, placed.Part.Entry, placed.Cell, placed.Glyph,
+                selection, candidates, selected.Count, removed, unreadable, emit));
+        }
+        return result;
+    }
+
+    /// <summary>One candidate's circuit, read from its own block and emitted as the placed part's was. The cell
+    /// name, or null with why.</summary>
+    private static string? EmitCandidate(VendorLibraries.VendorLibraryEntry e, PlacedVendorPart placed, Library lib,
+                                         NetlistImports imports, out string? why)
+    {
+        var src  = placed.Part;
+        var part = new VendorLibraries.VendorPartSource.Resolved(src.WorkspaceRoot, src.LibraryName, src.LibraryRoot,
+            System.IO.Path.GetFullPath(System.IO.Path.Combine(src.LibraryRoot, CircuitRF.Core.RefPath.ToNative(e.File))), e);
+        var peeked = VendorLibraries.VendorPartSource.Read(part);
+        if (peeked.Error is { } error) { why = error; return null; }
+        if (SpiceModelPeek.Select(peeked, e.Part) is not { } definition) { why = "its block defines no such subcircuit"; return null; }
+        var emission = SpiceModelNetlist.Build(definition, peeked.Scan, part.FilePath, lib, imports.SpiceCells);
+        if (emission.Refusal is { } refusal) { why = refusal; return null; }
+        if (emission.CellName is null) { why = "it is not a subcircuit"; return null; }
+        if (emission.Ports.Count != placed.Ports) { why = $"it has {emission.Ports.Count} ports"; return null; }
+        why = null;
+        return emission.CellName;
     }
 
     /// <summary>
@@ -801,6 +878,12 @@ public static class NetExtractor
     /// single definition of every cell in the run — reading the same file twice would put two Cell
     /// objects with one name into the library and leave which one wins to list order.</para>
     /// </summary>
+    /// <summary>One vendor part as it was placed: the drawing, the instance, the part, its glyph, the cell it
+    /// was emitted under and its port count.</summary>
+    private sealed record PlacedVendorPart(
+        SchematicEditModel Model, string Instance, VendorLibraries.VendorPartSource.Resolved Part,
+        string Glyph, string Cell, int Ports);
+
     private sealed class NetlistImports
     {
         /// <summary>
@@ -842,6 +925,14 @@ public static class NetExtractor
 
         /// <summary>The vendor parts this extraction refused, each as the conflict it added.</summary>
         public List<string> VendorRefusals { get; } = [];
+
+        /// <summary>Every vendor part this extraction placed, with the drawing it is in — what
+        /// <see cref="PartTunablesOf"/> turns into tunables once the whole hierarchy is known.</summary>
+        public List<PlacedVendorPart> PlacedVendorParts { get; } = [];
+
+        /// <summary>The library name each sub-cell DRAWING was extracted under, so a part placed inside one is
+        /// keyed <c>Cell:Instance.Part</c> as the catalog keys every other value of that cell.</summary>
+        public Dictionary<SchematicEditModel, string> ModelCellNames { get; } = new(ReferenceEqualityComparer.Instance);
         private readonly List<UserFunction> _functions = [];
         private readonly List<Variable>     _variables = [];
         private readonly HashSet<string>    _merged    = new(StringComparer.OrdinalIgnoreCase);
@@ -1218,6 +1309,7 @@ public static class NetExtractor
         // read is the file path's own: the same Select, the same Build, the same claimed cells.
         string? path;
         SpiceModelFile peeked;
+        VendorLibraries.VendorPartSource.Resolved? vendorPart = null;
         if (VendorLibraries.VendorLibraryRefs.IsVendorRef(file))
         {
             if (VendorLibraries.VendorPartSource.Resolve(file, wanted, model.SchematicDirectory, out string? vendorRefusal)
@@ -1230,6 +1322,7 @@ public static class NetExtractor
             path   = part.FilePath;
             peeked = VendorLibraries.VendorPartSource.Read(part);
             if (peeked.Error is null) imports.VendorParts.Add(part.Entry);
+            vendorPart = part;
         }
         else
         {
@@ -1321,6 +1414,11 @@ public static class NetExtractor
         // the card, and ten instances of one part would otherwise post the same line ten times.
         foreach (var note in emission.Notes)
             if (!conflicts.Contains(note)) conflicts.Add(note);
+
+        if (vendorPart is not null && emission.CellName is not null)
+            imports.PlacedVendorParts.Add(new PlacedVendorPart(model, comp.InstanceName, vendorPart,
+                (comp.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.GlyphParameter)?.Expression ?? "").Trim(),
+                emission.CellName, emission.Ports.Count));
 
         return new Instance(comp.InstanceName,
                             emission.CellName ?? emission.PrimitiveReference!,
@@ -1588,6 +1686,7 @@ public static class NetExtractor
         // Identity is the cell FOLDER; the leaf name is only what it is CALLED. See CellScope.
         var cellKey  = res.Key;
         var cellName = scope.NameFor(cellKey, res.CellName, lib);
+        imports.ModelCellNames.TryAdd(res.Schematic, cellName);
 
         // Cycle guard: a cell currently being extracted up the stack instantiates itself. Asked of
         // the KEY, so A/Amp instancing B/Amp is not mistaken for a self-instantiation — and so a

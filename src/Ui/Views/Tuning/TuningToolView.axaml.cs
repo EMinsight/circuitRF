@@ -236,6 +236,7 @@ public partial class TuningToolView : UserControl
             case "min":  row.CommitMinText();  break;
             case "max":  row.CommitMaxText();  break;
             case "step": row.CommitStepText(); break;
+            case "query": row.CommitQueryText(); break;
         }
     }
 
@@ -251,7 +252,10 @@ public partial class TuningToolView : UserControl
                 break;
             case TextBox { DataContext: TuningRowViewModel row } box when box.Classes.Contains("tuningBound"):
                 string? which = box.Tag as string;
-                bool open = which switch { "min" => row.IsEditingMin, "max" => row.IsEditingMax, _ => row.IsEditingStep };
+                bool open = which switch
+                {
+                    "min" => row.IsEditingMin, "max" => row.IsEditingMax, "query" => row.IsEditingQuery, _ => row.IsEditingStep,
+                };
                 if (open) CommitBound(row, which);
                 break;
         }

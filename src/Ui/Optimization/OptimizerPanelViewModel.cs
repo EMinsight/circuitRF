@@ -30,8 +30,23 @@ using CircuitRF.Ui.ViewModels;
 namespace CircuitRF.Ui.Optimization;
 
 /// <summary>One entry of the algorithm menu (the TO-7 registry).</summary>
-public sealed record OptimizerAlgorithmItem(string Id, string Label, string UseWhen)
+public sealed partial class OptimizerAlgorithmItem(string id, string label, string useWhen) : ObservableObject
 {
+    public string Id      { get; } = id;
+    public string Label   { get; } = label;
+    public string UseWhen { get; } = useWhen;
+
+    /// <summary>Why the design's variables rule it out — every optimized value a vendor part, and this a
+    /// continuous-only method (brief vendorlib-4 R-vl4-5b); null when it can run. The entry is greyed and says why.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAvailable), nameof(Tip))]
+    private string? _disabledReason;
+
+    public bool IsAvailable => DisabledReason is null;
+
+    /// <summary>The menu entry's tooltip: when to use it, or why it cannot be used here.</summary>
+    public string Tip => DisabledReason ?? UseWhen;
+
     public override string ToString() => Label;
 }
 
@@ -244,6 +259,14 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
         OnPropertyChanged(nameof(Digits));
         OnPropertyChanged(nameof(DigitsChoices));
 
+        // Continuous-only methods are greyed, with the reason, when every optimized value is a vendor part (R-vl4-5b).
+        var optimized = entries.Where(e => e.Opt).Select(e => _catalog?.Find(e.Key)).ToList();
+        bool partsOnly = optimized.Count > 0 && optimized.All(t => t?.IsVendorPart == true);
+        foreach (var a in Algorithms)
+            a.DisabledReason = partsOnly && a.Id != OptimizerAlgorithms.Auto && a.Id != CircuitRF.Engine.Optimization.Discrete.AlgorithmId
+                ? $"Every optimized value is a vendor part, whose levels are real parts with nothing between them; {a.Label} searches continuous values. Choose Discrete or Auto."
+                : null;
+
         // The algorithm the document names.
         _syncingAlgorithm = true;
         string id = Settings?.Algorithm ?? OptimizerAlgorithms.Auto;
@@ -297,7 +320,11 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
 
     // ---- Variables (R-to10-2) -------------------------------------------------
 
-    bool ITunableAddHost.IsActive(string key) => Setup?.Variables.Any(v => v.Key == key && v.Opt) == true;
+    bool ITunableAddHost.IsActive(string key) => IsOptimized(key);
+
+    /// <summary>Whether the entry for <paramref name="key"/> has its opt flag set — what the Inspector's optimize
+    /// toggle shows (<see cref="IOptimizeSurface"/>).</summary>
+    public bool IsOptimized(string key) => Setup?.Variables.Any(v => v.Key == key && v.Opt) == true;
 
     void ITunableAddHost.Activate(IReadOnlyCollection<string> keys) => SetOptimized(keys, on: true);
 
@@ -369,6 +396,15 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
         var entry  = Setup?.Variables.FirstOrDefault(v => v.Key == key);
         var t      = catalog.Find(key);
         if (entry is null || t is null) return;
+
+        // A vendor part at the end of its candidates: the value bound on that side goes, so the candidates reach
+        // further (brief vendorlib-4). With no bound there, the part is the library's own end and nothing widens.
+        if (t.IsVendorPart)
+        {
+            EditRange(row, e => { if (end == RailEnd.Min) e.Min = null; else e.Max = null; },
+                      $"Widen {key}'s candidates");
+            return;
+        }
 
         string u  = t.Unit;
         double lo = TunableValue.InUnit(entry.Min, u) ?? TunableValue.InUnit(t.DefaultMin, u) ?? 0;

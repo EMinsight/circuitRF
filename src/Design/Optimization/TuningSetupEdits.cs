@@ -33,8 +33,9 @@ public static class TuningSetupEdits
             entry = NewEntry(tunable);
             next.Variables.Add(entry);
         }
-        // A tolerance-only entry carries no range (WithStat); the first tune or opt gives it the D4 default.
-        if (on && entry.Min is null && entry.Max is null) { entry.Min = tunable.DefaultMin; entry.Max = tunable.DefaultMax; }
+        // A tolerance-only entry carries no range (WithStat); the first tune or opt gives it the D4 default. A vendor
+        // part's min/max bound its candidates' value, and it starts with none (brief vendorlib-4 R-vl4-5c).
+        if (on && entry.Min is null && entry.Max is null && !tunable.IsVendorPart) { entry.Min = tunable.DefaultMin; entry.Max = tunable.DefaultMax; }
         set(entry, on);
         if (!entry.Tune && !entry.Opt && IsDefaultShaped(entry, tunable)) next.Variables.Remove(entry);
         return next;
@@ -42,7 +43,10 @@ public static class TuningSetupEdits
 
     /// <summary>A first activation's entry: the D4 default range, everything else default — except a
     /// phase, which is linear: an angle's range is not a ratio (overview D18).</summary>
-    public static TunableEntry NewEntry(Tunable tunable) => new()
+    public static TunableEntry NewEntry(Tunable tunable) => tunable.IsVendorPart
+        // A placed vendor part: the parts of the same kind, unbounded (brief vendorlib-4 R-vl4-5c, D1).
+        ? new() { Key = tunable.Key, PartKind = "same" }
+        : new()
     {
         Key      = tunable.Key,
         Min      = tunable.DefaultMin,
@@ -83,7 +87,8 @@ public static class TuningSetupEdits
 
     // A tolerance is the user's too (yield overview D1): an entry carrying one is never dropped for being otherwise default.
     private static bool IsDefaultShaped(TunableEntry e, Tunable t)
-        => (e.Min is null || e.Min == t.DefaultMin) && (e.Max is null || e.Max == t.DefaultMax) && e.Scale == DefaultScale(t) && e.Step is null
+        => t.IsVendorPart ? e.Min is null && e.Max is null && e.Parts is null && e.Extra is null
+        : (e.Min is null || e.Min == t.DefaultMin) && (e.Max is null || e.Max == t.DefaultMax) && e.Scale == DefaultScale(t) && e.Step is null
            && e.Discrete == (t.IsInteger ? TuneDiscrete.Integer : TuneDiscrete.None) && e.Extra is null
            && !e.Stat && e.Distribution == StatDistribution.None && e.Spread is null;
 

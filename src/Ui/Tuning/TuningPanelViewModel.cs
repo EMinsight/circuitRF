@@ -383,6 +383,9 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         EditCommitted?.Invoke(_tuned);
     }
 
+    /// <summary>The tuned schematic's entry for <paramref name="key"/>, or null.</summary>
+    internal TunableEntry? EntryOf(string key) => _tuned?.EditModel.Tuning?.Variables.FirstOrDefault(v => v.Key == key);
+
     /// <summary>A change to one row's entry — range, scale, step — as one undo step (R-to4-10).</summary>
     internal void EditEntry(TuningRowViewModel row, Action<TunableEntry> change, string description)
     {
@@ -790,6 +793,10 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
                 ? c.Symbol == SymbolKind.Var && c.Parameters.Any(p => p.Name.Trim() == t.Owner)
                 : c.InstanceName == t.Owner;
             if (!owner) continue;
+
+            // A vendor part's tuned value is a PART: it is drawn where the part number is, the type label (row 0).
+            if (t.VendorPart is { } vp)
+                return c.ShowTypeLabel ? (c.Id, 0, vp.CandidateOfCell(valueText)?.Part ?? valueText) : null;
 
             string name = t.Parameter ?? t.Owner;
             int row = 2;

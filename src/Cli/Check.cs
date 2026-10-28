@@ -1528,7 +1528,7 @@ internal static class Check
         if (findings.Any(d => d.Severity == DiagnosticSeverity.Error)) return;
         if (setup.Optimizer is not null)
         {
-            var run = OptimizationRun.Create(PreparedCircuit.FromBench(lib, tb, null));
+            var run = OptimizationRun.Create(PreparedCircuit.FromBench(lib, tb, null, catalog.PartTunables));
             if (run.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
         }
 

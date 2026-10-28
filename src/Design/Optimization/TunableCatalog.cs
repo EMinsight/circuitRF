@@ -6,9 +6,9 @@ using CircuitRF.Design.Schematic;
 
 namespace CircuitRF.Design.Optimization;
 
-/// <summary>What a tunable is: a component's parameter, a VAR row, or a sub-circuit instance's own
-/// declared cell parameter.</summary>
-public enum TunableKind { Parameter, Variable, CellParameter }
+/// <summary>What a tunable is: a component's parameter, a VAR row, a sub-circuit instance's own
+/// declared cell parameter, or a placed vendor part's choice of part (brief vendorlib-4).</summary>
+public enum TunableKind { Parameter, Variable, CellParameter, Part }
 
 /// <summary>
 /// One value of a design that can be tuned (overview D1/D2).
@@ -41,6 +41,9 @@ public enum TunableKind { Parameter, Variable, CellParameter }
 /// <param name="Whole">The whole value as the design holds it, in <paramref name="WholeUnit"/>.</param>
 /// <param name="WholeUnit">The whole value's unit, "" for none.</param>
 /// <param name="Form">How the design writes it, which is how Push writes it back.</param>
+/// <param name="VendorPart">A placed vendor part's <c>Part</c> tunable (<see cref="TunableKind.Part"/>): the part
+/// and its candidates. <paramref name="ValueText"/> is then the part number, <paramref name="Value"/> its stated
+/// value in SI and <paramref name="Unit"/> that value's unit; the bounds are the candidates' value span.</param>
 public sealed record Tunable(
     string      Key,
     string      Location,
@@ -63,8 +66,12 @@ public sealed record Tunable(
     string?     WholeKey   = null,
     Complex     Whole      = default,
     string      WholeUnit  = "",
-    ComplexForm Form       = ComplexForm.Rect)
+    ComplexForm Form       = ComplexForm.Rect,
+    CircuitRF.Design.VendorLibraries.VendorPartTunable? VendorPart = null)
 {
+    /// <summary>A placed vendor part's choice of part, not a number.</summary>
+    public bool IsVendorPart => VendorPart is not null;
+
     /// <summary>The key a value is written under — in a preset, a session request, a Push: the whole
     /// value's for a part, since a schematic holds a complex value whole.</summary>
     public string ValueKey => WholeKey ?? Key;
@@ -115,6 +122,10 @@ public sealed class TunableCatalog
 
     /// <summary>Every tunable, top level first, then each cell in the netlist's own order.</summary>
     public IReadOnlyList<Tunable> Tunables { get; }
+
+    /// <summary>The placed vendor parts the catalog was built with — what a run prepared from the same bench is
+    /// handed (<see cref="Circuit.PreparedCircuit.FromBench"/>) so it offers the same <c>Instance.Part</c> keys.</summary>
+    public IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable> PartTunables { get; private set; } = [];
 
     /// <summary>Keys the design's tuning setup names (entries and preset values) that resolve to
     /// nothing at all — a warning, never an error (overview D3).</summary>
@@ -215,7 +226,8 @@ public sealed class TunableCatalog
 
         // A disabled component is not in the netlist; one excluded from it (a probe, a MEAS block) has
         // nothing to tune. Instances the extraction emitted are exactly the rest.
-        var catalog = FromNetlist(extracted.TestBench, extracted.Library, varRows, extracted.CellKeys, workspaceRoot, Stored);
+        var catalog = FromNetlist(extracted.TestBench, extracted.Library, varRows, extracted.CellKeys, workspaceRoot, Stored,
+                                  extracted.PartTunables);
         catalog._drawings = drawings;
         return catalog;
     }
@@ -243,11 +255,18 @@ public sealed class TunableCatalog
     /// Null when unknown — then nothing is reported read-only.</param>
     /// <param name="stored">Whether the drawing of a scope (null cell = the top) holds a parameter on an
     /// instance. Null when there is no drawing — a <c>.cnl</c> holds every value it states.</param>
+    /// <param name="parts">The placed vendor parts (<see cref="NetExtractor.ExtractionResult.PartTunables"/>,
+    /// <see cref="Circuit.PreparedCircuit.PartTunables"/>): each is offered as ONE tunable, <c>Instance.Part</c>,
+    /// and never as the hidden parameters it was placed with (brief vendorlib-4 R-vl4-1a). Null for a netlist,
+    /// which cannot place one.</param>
     public static TunableCatalog FromNetlist(
         TestBench tb, Library lib, IReadOnlyCollection<string>? variableNames = null,
         IReadOnlyDictionary<string, string>? cellKeys = null, string? workspaceRoot = null,
-        Func<string?, string, string, bool>? stored = null)
+        Func<string?, string, string, bool>? stored = null,
+        IReadOnlyList<CircuitRF.Design.VendorLibraries.VendorPartTunable>? parts = null)
     {
+        var partsByKey = (parts ?? []).GroupBy(p => p.Key, StringComparer.Ordinal)
+                                      .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var tunables   = new List<Tunable>();
         var notOffered = new Dictionary<string, string>(StringComparer.Ordinal);
         var counts     = InstanceCounts(tb, lib);
@@ -260,15 +279,21 @@ public sealed class TunableCatalog
         var topVars = tb.GlobalVariables.Where(v => variableNames is null || variableNames.Contains(v.Name));
         Scope(null, 1, null, tb.Instances, topVars);
 
+        // A vendor part's own circuit is the library's statement of the part, not a value of this design: the part
+        // offers ONE tunable, its choice of part (brief vendorlib-4 R-vl4-1a), and its internals none.
+        var partCells = new HashSet<string>(
+            (parts ?? []).SelectMany(p => p.Candidates.Select(c => c.Cell).Append(p.PlacedCell)).Where(c => c.Length > 0),
+            StringComparer.Ordinal);
+
         // Cells in the library's own (leaf-first) order; one the hierarchy never reaches is not part
         // of this design, however much a kit's netlist brought along.
         foreach (var cell in lib.Cells)
         {
-            if (!counts.TryGetValue(cell.Name, out int n)) continue;
+            if (!counts.TryGetValue(cell.Name, out int n) || partCells.Contains(cell.Name)) continue;
             Scope(cell.Name, n, ReadOnlyReason(cell.Name, cellKeys, workspaceRoot), cell.Instances, cell.Variables);
         }
 
-        var catalog    = new TunableCatalog(tunables, notOffered);
+        var catalog    = new TunableCatalog(tunables, notOffered) { PartTunables = parts ?? [] };
         var unresolved = new List<string>();
         if (tb.Tuning is { } setup)
         {
@@ -289,6 +314,11 @@ public sealed class TunableCatalog
 
             foreach (var inst in instances)
             {
+                if (partsByKey.TryGetValue($"{prefix}{inst.InstanceName}.{TunableKey.PartParameter}", out var part))
+                {
+                    tunables.Add(PartTunable(part, location, cell, count, readOnly));
+                    continue;
+                }
                 if (lib.Find(inst.Reference) is { } def)
                 {
                     // A sub-circuit instance: its cell's DECLARED parameters, per instance, whether
@@ -371,6 +401,20 @@ public sealed class TunableCatalog
                     readOnly, disabled, min, max, guessed));
             }
         }
+    }
+
+    /// <summary>A placed vendor part's one tunable: the part number as its value text, the stated value as its
+    /// number, the candidates' value span as its default range.</summary>
+    private static Tunable PartTunable(CircuitRF.Design.VendorLibraries.VendorPartTunable part, string location,
+                                       string? cell, int count, string? readOnly)
+    {
+        string unit = part.Unit;
+        var values = part.Candidates.Select(c => c.Value).OfType<double>().ToList();
+        string min = values.Count > 0 ? TunableValue.Format(values.Min(), unit, "G6") : "";
+        string max = values.Count > 0 ? TunableValue.Format(values.Max(), unit, "G6") : "";
+        return new Tunable(part.Key, location, cell, count, part.Instance, TunableKey.PartParameter, TunableKind.Part,
+                           part.PlacedPart, part.Placed.Header.Value ?? 0, unit, false, false, readOnly, null,
+                           min, max, false, VendorPart: part);
     }
 
     /// <summary>How many instances of each cell the flattened hierarchy holds. Cells no instance

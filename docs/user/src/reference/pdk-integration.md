@@ -316,6 +316,46 @@ still completes. A DC operating point never warns.
 usually licensed for your own use. The recipient adds their own copy. Ticked, the library is copied into
 the archive and the archived workspace points at the copy.
 
+### Letting the optimizer choose the part {#vendor-optimize}
+
+A placed vendor part can be an optimizer variable. What varies is the **part** itself, so each candidate
+is simulated with its own model, parasitics and self-resonance included. A real 10 pF part is not an
+ideal 10 pF capacitor, and the difference between the two is often why you placed a real part.
+
+Beside Value ▼ / ▲ in the Parameter Editor are the toggles every parameter row has.
+<span class="ui">Tune</span> adds the part to the Tuning panel and <span class="ui">Optimize</span> adds it
+to the Optimizer, each with the parts of the same kind as its candidates. Click a toggle again to remove
+the part. It appears in those panels as `C1.Part`, showing its part number and value:
+
+- **Candidates.** By default these are the parts of the same kind: the same file and the same
+  description except the value. Size, dielectric, voltage and series stay as they are and only the value
+  moves. **⋮ ▸ Search the library…** chooses them with the palette's search instead (`0603 C0G 50V`),
+  which can cross series but keeps whatever the search names. The **min** and **max** under the slider
+  bound the candidates' stated value (`1 pF` to `47 pF`), and the line below says how many candidates
+  there are, their value span and the series they come from.
+- **The Tuning slider** steps through the candidates in value order. The box takes a part number, or a
+  value, which picks the nearest candidate.
+- **An entry chooses among at most 200 parts.** More is an error naming the count. Narrow it with
+  min/max or a longer search.
+
+When every optimized value is a vendor part, **Auto** searches the candidates directly with
+**Discrete**, and the methods that move values continuously are greyed in the algorithm menu. With other
+variables too, the optimizer first puts an **ideal** capacitor or inductor in the part's place and moves
+its value continuously. It then tries the real candidates either side of that value, keeps the better
+one, and polishes the other variables with it. The status line shows both costs, the cost with ideal
+components and the cost with the real parts; the gap is what the parts' own parasitics do. A part with
+no C or L glyph has no ideal stand-in and is always searched on its candidates.
+
+**Push** writes the chosen part to the instance as choosing it in the Part field would. The footprint
+follows only when it came from the part, and the whole Push is one Undo. A part is chosen, never given a
+tolerance: a static model states none, so a Monte Carlo or yield run leaves it as placed. The
+frequency-range warning is given once, for each chosen part whose range the analyses leave.
+
+Headless, the same line is written `tune C1.Part kind=same min=1 pF max=47 pF opt=1`, or
+`tune C1.Part parts="0603 C0G 50V" opt=1`. `circuitrf explain --tunables` lists each part with its
+candidates, `circuitrf check` reports an entry with no candidate or too many, and `circuitrf opt`
+reports the chosen part for each entry.
+
 Headless, `circuitrf import library <folder> --into <workspace>` adds one,
 `circuitrf find <workspace> --parts "<query>"` searches them, `circuitrf check <workspace>` reports a
 missing library or a vanished part as an error, and `circuitrf explain <file> --ref vendorlib://…`

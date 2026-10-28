@@ -12,6 +12,12 @@
 //  row of it shows its own view of that one number. Moving the row
 //  asks the panel, which moves the value along this part's path and
 //  stops it at the edge of the ranges of all its parts.
+//
+//  A placed vendor part's row (brief vendorlib-4 R-vl4-5a) steps
+//  through its CANDIDATE parts in value order: its value is the
+//  candidate's index, its text the part number, and its range is the
+//  candidate list itself — chosen as the same kind or by a search,
+//  narrowed by min/max on the stated value.
 // ================================================================
 
 using System;
@@ -51,6 +57,45 @@ public sealed partial class TuningRowViewModel : ObservableObject
 
     public string Unit => Tunable?.Unit ?? "";
 
+    // ---- A placed vendor part (brief vendorlib-4 R-vl4-5a) ---------------------
+
+    /// <summary>The part and its candidates when this row is a vendor part's <c>Part</c>; null otherwise.</summary>
+    public CircuitRF.Design.VendorLibraries.VendorPartTunable? VendorPart => Tunable?.VendorPart;
+
+    public bool IsPart => VendorPart is not null;
+
+    /// <summary>A number row — every row but a vendor part's.</summary>
+    public bool IsNumeric => !IsPart;
+
+    /// <summary>The candidate the slider rests on, or null.</summary>
+    public CircuitRF.Design.VendorLibraries.VendorPartCandidate? Candidate
+        => VendorPart is { Candidates.Count: > 0 } vp ? vp.Candidates[Math.Clamp((int)Math.Round(_value), 0, vp.Candidates.Count - 1)] : null;
+
+    /// <summary>What sits after the number box: the unit, or for a part its stated value (<c>10 pF</c>).</summary>
+    public string UnitText => IsPart ? Candidate?.ValueText ?? "" : Unit;
+
+    /// <summary>The part's candidates in one line — <c>12 candidates, 1 pF – 47 pF, series …</c>.</summary>
+    public string CandidatesText => VendorPart?.Summary ?? "";
+
+    /// <summary>How the candidates are chosen: <c>same kind</c>, or the search.</summary>
+    public string SelectionText => _entryParts is { } q ? $"search: {q}" : "same kind";
+
+    /// <summary>The candidates are the same kind as the placed part (no search).</summary>
+    public bool IsSameKind => _entryParts is null;
+
+    /// <summary>The value box's width: a part number is longer than a number.</summary>
+    public double ValueBoxWidth => IsPart ? 116 : 64;
+
+    /// <summary>The candidate under the slider in full — number, value, Description — for the tooltip.</summary>
+    public string? CandidateTip => Candidate is { } c
+        ? CircuitRF.Design.VendorLibraries.VendorPartTunable.Describe(c.Part, c.ValueText, c.Description) : null;
+
+    private string? _entryParts;
+
+    /// <summary>The part search under the row, editable in place.</summary>
+    [ObservableProperty] private string _queryText = "";
+    [ObservableProperty] private bool   _isEditingQuery;
+
     public bool IsInteger { get; private set; }
 
     /// <summary>Why the slider cannot move (a parametric sweep sweeps it, or the key names nothing);
@@ -75,7 +120,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     public bool RangeGuessed { get; private set; }
 
     /// <summary>"log", "lin" or the series (<c>E24</c>) — what the slider is actually doing.</summary>
-    public string ScaleLabel => IsSeries ? TunableValue.DiscreteLabel(Discrete) : IsLog ? "log" : "lin";
+    public string ScaleLabel => IsPart ? SelectionText : IsSeries ? TunableValue.DiscreteLabel(Discrete) : IsLog ? "log" : "lin";
 
     public bool IsLog => TunableValue.Effective(Scale, Min, Max) == TuneScale.Log;
 
@@ -100,7 +145,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     public bool IsPreferred  => Discrete == TuneDiscrete.Preferred;
 
     /// <summary>A series is offered: the row is a whole value, not a part (overview D18).</summary>
-    public bool CanSeries => Tunable is { Part: null };
+    public bool CanSeries => Tunable is { Part: null, IsVendorPart: false };
 
     /// <summary>The Preferences ladder is offered: the unit names a capacitance, inductance or resistance.</summary>
     public bool CanPreferred => Tunable is { } t && TunableValue.DiscreteChoices(t).Contains(TuneDiscrete.Preferred);
@@ -129,7 +174,9 @@ public sealed partial class TuningRowViewModel : ObservableObject
 
     /// <summary>The tuned value differs from the schematic's — for a part row, the WHOLE value does,
     /// since moving the real part changes what the magnitude row's parameter holds too.</summary>
-    public bool DiffersFromSchematic => Tunable is { Part: not null } p
+    public bool DiffersFromSchematic => VendorPart is { } vp
+        ? Candidate is { } c && !c.Part.Equals(vp.PlacedPart, StringComparison.OrdinalIgnoreCase)
+        : Tunable is { Part: not null } p
         ? WholeValue is { } z && z != p.Whole
         : Tunable is not null && _value != Tunable.Value;
 
@@ -137,7 +184,11 @@ public sealed partial class TuningRowViewModel : ObservableObject
     private double Centre => (Min + Max) / 2;
 
     /// <summary>The value as the session and Push spell it, to the panel's digits: <c>1.8 pF</c>.</summary>
-    public string ValueText => Spell(_value, Unit);
+    public string ValueText => IsPart ? PartValueText : Spell(_value, Unit);
+
+    /// <summary>A part row's value as the session evaluates it and Push writes it: the candidate's cell (the
+    /// instance is rebound to it), or its part number when it was not emitted.</summary>
+    private string PartValueText => Candidate is { } c ? (c.Cell.Length > 0 ? c.Cell : c.Part) : "";
 
     private string Spell(double v, string unit) => TuningDigits.Format(v, unit, _panel.Digits);
 
@@ -166,6 +217,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     /// show, or null to start from the schematic's.</summary>
     internal void Bind(TunableEntry entry, Tunable? tunable, double? value, Complex? whole = null)
     {
+        if (tunable?.VendorPart is { } vendorPart) { BindPart(entry, tunable, vendorPart, value); return; }
         Tunable   = tunable;
         string u  = tunable?.Unit ?? "";
         IsInteger = tunable?.IsInteger == true || entry.Discrete == TuneDiscrete.Integer;
@@ -194,9 +246,42 @@ public sealed partial class TuningRowViewModel : ObservableObject
         OnPropertyChanged(string.Empty);
     }
 
+    /// <summary>
+    /// A vendor part's row: the slider runs over the candidates' indices, the value is an index, and the bounds
+    /// under it are the entry's own value bounds on the stated value — blank for none.
+    /// </summary>
+    private void BindPart(TunableEntry entry, Tunable tunable, CircuitRF.Design.VendorLibraries.VendorPartTunable part, double? value)
+    {
+        Tunable   = tunable;
+        IsInteger = true;
+        int k = part.Candidates.Count;
+        DisabledReason = part.OverCap ? $"{part.Found:N0} candidates — over the cap of {CircuitRF.Design.VendorLibraries.VendorPartTunable.MaxCandidates}; narrow them"
+                       : k == 0 ? "no candidate part — widen the bounds or the search"
+                       : tunable.DisabledReason;
+        Min = 0;
+        Max = Math.Max(1, k - 1);
+        Scale = TuneScale.Lin;
+        Step = null;
+        Discrete = TuneDiscrete.None;
+        Levels = null;
+        RangeGuessed = false;
+        WholeValue = null;
+        _entryParts = entry.Parts;
+        _value = Math.Clamp(Math.Round(value ?? part.StartIndex), 0, Math.Max(0, k - 1));
+        _syncing = true;
+        MinText      = entry.Min ?? "no min";
+        MaxText      = entry.Max ?? "no max";
+        StepText     = "";
+        QueryText    = entry.Parts ?? "";
+        ValueBoxText = Candidate?.Part ?? "";
+        _syncing = false;
+        OnPropertyChanged(string.Empty);
+    }
+
     /// <summary>Returns to the schematic's value without sending anything (Revert, a Push's echo).</summary>
     internal void ResetToSchematic()
     {
+        if (VendorPart is { } vp) { _value = vp.StartIndex; RaiseValue(); return; }
         if (Tunable is null) return;
         WholeValue = null;
         _value = Tunable.Part is { } part ? ComplexValue.Get(Tunable.Whole, part, phaseNear: Centre) : Tunable.Value;
@@ -228,10 +313,12 @@ public sealed partial class TuningRowViewModel : ObservableObject
     private void RaiseValue()
     {
         _syncing = true;
-        ValueBoxText = Spell(_value, "");
+        ValueBoxText = IsPart ? Candidate?.Part ?? "" : Spell(_value, "");
         _syncing = false;
         OnPropertyChanged(nameof(Value));
         OnPropertyChanged(nameof(ValueText));
+        OnPropertyChanged(nameof(UnitText));
+        OnPropertyChanged(nameof(CandidateTip));
         OnPropertyChanged(nameof(Position));
         OnPropertyChanged(nameof(DiffersFromSchematic));
     }
@@ -243,6 +330,13 @@ public sealed partial class TuningRowViewModel : ObservableObject
     public void CommitValueText()
     {
         if (IsDisabled) return;
+        if (VendorPart is { } vp)
+        {
+            // A part number, or a value — the candidate nearest it by value.
+            if (PartIndexOf(vp, ValueBoxText) is { } at) SetValue(at, final: true);
+            else RevertValueText();
+            return;
+        }
         if (ParseInUnit(ValueBoxText, Unit) is { } v)
             SetValue(IsInteger ? Math.Round(v) : Levels is { } lv ? CircuitRF.Design.Matching.PreferredValues.Snap(v, lv) : v, final: true);
         else
@@ -250,12 +344,36 @@ public sealed partial class TuningRowViewModel : ObservableObject
     }
 
     /// <summary>Esc in the number box.</summary>
-    public void RevertValueText() => ValueBoxText = Spell(_value, "");
+    public void RevertValueText() => ValueBoxText = IsPart ? Candidate?.Part ?? "" : Spell(_value, "");
+
+    /// <summary>The candidate a typed part number names, or the one nearest a typed value; null for neither.</summary>
+    private static int? PartIndexOf(CircuitRF.Design.VendorLibraries.VendorPartTunable vp, string text)
+    {
+        string t = text.Trim();
+        for (int i = 0; i < vp.Candidates.Count; i++)
+            if (vp.Candidates[i].Part.Equals(t, StringComparison.OrdinalIgnoreCase)) return i;
+        double? want = CircuitRF.Design.VendorLibraries.VendorLibrarySearch.TryReadValue(t.Replace(" ", ""), out double v) ? v
+                     : TunableValue.InUnit(t, vp.Unit) is { } n && vp.Unit.Length > 0 ? n * (Units.Scale(vp.Unit) ?? 1) : null;
+        if (want is not { } w || w <= 0) return null;
+        int best = -1;
+        for (int i = 0; i < vp.Candidates.Count; i++)
+            if (vp.Candidates[i].Value is > 0 and var cv
+                && (best < 0 || Math.Abs(Math.Log(cv / w)) < Math.Abs(Math.Log(vp.Candidates[best].Value!.Value / w))))
+                best = i;
+        return best < 0 ? null : best;
+    }
 
     /// <summary>An arrow, Shift+arrow or Page key on the focused slider.</summary>
     public void Nudge(int direction, TuningNudge size)
     {
         if (IsDisabled) return;
+        if (IsPart)
+        {
+            // One candidate a step; ten for a large step; a tenth of the list a page.
+            int by = size switch { TuningNudge.TenSteps => 10, TuningNudge.Page => Math.Max(1, (int)Math.Round((Max - Min) / 10)), _ => 1 };
+            SetValue(Math.Clamp(_value + Math.Sign(direction) * by, Min, Max), final: true);
+            return;
+        }
         SetValue(TuningSliderMapping.Nudge(_value, direction, size, Min, Max, Scale, IsInteger, Step, Levels), final: true);
     }
 
@@ -264,6 +382,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     public void CommitMinText()
     {
         IsEditingMin = false;
+        if (IsPart) { CommitPartBound(MinText, (e, v) => e.Min = v); return; }
         if (ParseInUnit(MinText, Unit) is { } v && v < Max) _panel.EditEntry(this, e => e.Min = FormatValue(v, Unit), "Set tuning range");
         else MinText = FormatValue(Min, "");
     }
@@ -271,6 +390,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     public void CommitMaxText()
     {
         IsEditingMax = false;
+        if (IsPart) { CommitPartBound(MaxText, (e, v) => e.Max = v); return; }
         if (ParseInUnit(MaxText, Unit) is { } v && v > Min) _panel.EditEntry(this, e => e.Max = FormatValue(v, Unit), "Set tuning range");
         else MaxText = FormatValue(Max, "");
     }
@@ -285,9 +405,56 @@ public sealed partial class TuningRowViewModel : ObservableObject
         else StepText = Step is { } st ? FormatValue(st, "") : "";
     }
 
+    /// <summary>
+    /// A part's min or max: a bound on the candidates' STATED value, in the part's unit (<c>1 pF</c>; a bare
+    /// number is in it). Blank removes the bound; anything else puts the box back.
+    /// </summary>
+    private void CommitPartBound(string text, Action<TunableEntry, string?> set)
+    {
+        string t = text.Trim();
+        if (t.Length == 0 || t is "no min" or "no max") { _panel.EditEntry(this, e => set(e, null), "Clear part bound"); return; }
+        if (ParseInUnit(t, VendorPart!.Unit) is { } v && v > 0)
+        {
+            string written = TunableValue.TryParse(t, out _, out string u, out _) && u.Length > 0 ? t : FormatValue(v, VendorPart.Unit);
+            _panel.EditEntry(this, e => set(e, written), "Set part bound");
+        }
+        else CancelRangeEdit();
+    }
+
+    /// <summary>Enter in the search box: a search over the part's own library (<c>parts=</c>), or blank for the
+    /// same kind.</summary>
+    public void CommitQueryText()
+    {
+        IsEditingQuery = false;
+        string q = QueryText.Trim();
+        if (q == (_entryParts ?? "")) return;
+        _panel.EditEntry(this, e => { e.Parts = q.Length == 0 ? null : q; e.PartKind = null; },
+                         q.Length == 0 ? "Tune over parts of the same kind" : "Tune over a part search");
+    }
+
+    /// <summary>The ⋮ menu's Same kind: the candidates are the parts like the placed one (D1).</summary>
+    [RelayCommand]
+    private void SetSameKind()
+    {
+        if (_entryParts is null) return;
+        _panel.EditEntry(this, e => { e.Parts = null; e.PartKind = null; }, "Tune over parts of the same kind");
+    }
+
+    [RelayCommand] private void EditQuery() => IsEditingQuery = true;
+
     /// <summary>Esc in a min, max or step box: the box closes and shows the entry's value again.</summary>
     public void CancelRangeEdit()
     {
+        IsEditingQuery = false;
+        if (IsPart)
+        {
+            IsEditingMin = IsEditingMax = false;
+            var entry = _panel.EntryOf(Key);
+            MinText = entry?.Min ?? "no min";
+            MaxText = entry?.Max ?? "no max";
+            QueryText = _entryParts ?? "";
+            return;
+        }
         IsEditingMin = IsEditingMax = IsEditingStep = false;
         MinText  = FormatValue(Min, "");
         MaxText  = FormatValue(Max, "");
@@ -347,6 +514,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     [RelayCommand]
     private void ResetRange()
     {
+        if (IsPart) { _panel.EditEntry(this, e => { e.Min = null; e.Max = null; }, "Clear part bounds"); return; }
         if (Tunable is not { } t) return;
         _panel.EditEntry(this, e => { e.Min = t.DefaultMin; e.Max = t.DefaultMax; }, "Reset tuning range");
     }

@@ -659,6 +659,38 @@ goal met only when met everywhere, and its report the BINDING corner's. The Tuni
 evaluates the sliders at a corner; Push still writes the values alone. The design and its rules are
 `docs/design/yield.md` §11.
 
+## 18b. A vendor part as a variable (brief vendorlib-4)
+
+A placed vendor part offers one tunable, `<Instance>.Part` (`TunableKey.PartParameter`), whose value is a
+PART. Its candidates are chosen by the `tune` line: `kind=same` (the default, D1) is
+`VendorPartChange.SameKind`; `parts="<query>"` is `VendorLibrarySearch` over the part's own library;
+`min=`/`max=` bound the stated value in the part's unit. `VendorPartCandidates.Select` is that one rule,
+from the index alone; a candidate of another port count is removed and counted, and more than
+`VendorPartTunable.MaxCandidates` (200, D2) is a `check` error, never a truncation.
+
+**A part change is a change of the instance's CELL.** `NetExtractor.PartTunablesOf` describes every placed
+part, and when the setup tunes or optimizes one, emits a cell per candidate from its own byte block
+(`VendorPartSource`, `SpiceModelNetlist.Build`) under the part's own name. The description rides on
+`ExtractionResult.PartTunables` → `PreparedCircuit.PartTunables` → `TunableCatalog.FromNetlist(parts:)`,
+because a `.cnl` cannot say which library part an instance came from. An evaluation's override for
+`C1.Part` is a cell name, and `TunableOverrides` rebinds the instance to it, keeping only the overrides
+that cell declares; the elaborator sees an ordinary netlist.
+
+**The search.** A part is an `OptimizationCoordinate` over the candidates' INDEX in value order
+(`VendorPart`, `Levels` 0 … k−1). Discrete searches it as it searches any levelled coordinate, and Auto
+runs Discrete alone when every coordinate is levelled and one is a part. Every continuous search relaxes
+a part with a C/L glyph to an IDEAL stand-in (D3): `Decode(…, snapParts: false)` gives the fractional
+index, the value is the candidates' values interpolated on a log scale, and the override is that value
+with a unit, which `TunableOverrides` binds as the primitive `C` or `L` on the part's two nets. A
+continuous run over a part always ends in the snap (as a standard-value row does), where the part takes
+the candidates either side; `SnapResult.Parts` and `opt.part.snap-report` carry the ideal cost and the
+real one. A part with no glyph has no stand-in and decodes to a candidate in every stage. A continuous-only
+algorithm on parts alone is refused (`opt.part.discrete-only`), and the Optimizer greys it with that reason.
+
+**Write-back** is `SchematicViewModel.VendorPartChangeCommand` — the edit `ChangeVendorPart` makes —
+inside Push's one undo batch, so the footprint rule of brief 3 holds. A part is never statistical; its
+footprint is not evaluated in a search (D4).
+
 ## 19. For the yield series — the seams overview §5 reserved
 
 The yield series' design note is **`docs/design/yield.md`**; each seam below says which of its phases took it.

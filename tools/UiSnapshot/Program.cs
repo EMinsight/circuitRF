@@ -29,6 +29,7 @@ using CircuitRF.Design.Layout;
 // UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
 // UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
+// UiSnapshot --optimizer <file.csch> -o <out.png> [--optimize] [--size WxH] [steps]
 // UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]
 //            [--rclick x,y] [--menu <header>] [--type <text>] [--button <label>]
 //            [--impedance <freq|none>] [--impedance-layer <name>]... [--finding <kind>] [--impedance-panel]
@@ -42,6 +43,10 @@ using CircuitRF.Design.Layout;
 //
 // --tuning opens the Tuning window on a schematic, its rows the ones the file has ticked Tune; after each step it
 // prints what holds the keyboard and every row's value, so a key's effect is read rather than guessed from pixels.
+//
+// --optimizer opens the Optimizer window on a schematic as the shell hosts it, its circuit prepared as the workspace's
+// own PrepareTunedCircuit prepares it; --optimize presses Run and waits for the run to finish before the capture. It
+// prints the algorithm menu (a greyed entry with its reason), every variable row and the status line.
 //
 // --signal opens the Signal Designer window itself on a MOD_Source carrying those carriers (netlist form,
 // Carrier[i]), waits for its preview — generated through the cache a simulation reads — and photographs the
@@ -87,6 +92,8 @@ string? impedance = null, finding = null;
 var impedanceLayers = new List<string>();
 bool impedancePanel = false;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
+string? optimizer = null;
+bool optimize = false;
 string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
 string? image = null, imageTech = null;
 bool digitise = false, makeSchematic = false;
@@ -113,6 +120,8 @@ for (int i = 0; i < args.Length; i++)
         case "--standalone": standalone = true; break;
         case "--iq" when i + 1 < args.Length: iq = Path.GetFullPath(args[++i]); break;
         case "--tuning" when i + 1 < args.Length: tuning = Path.GetFullPath(args[++i]); break;
+        case "--optimizer" when i + 1 < args.Length: optimizer = Path.GetFullPath(args[++i]); break;
+        case "--optimize": optimize = true; break;
         case "--clay" when i + 1 < args.Length: clay = Path.GetFullPath(args[++i]); break;
         case "--cem" when i + 1 < args.Length: cem = Path.GetFullPath(args[++i]); break;
         case "--cmc" when i + 1 < args.Length: cmc = args[++i]; break;
@@ -152,13 +161,14 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null;
-if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null && cem is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && optimizer is null && clay is null && cem is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
                           + "       UiSnapshot --signal \"<carrier>\" ... -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]\n"
                           + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]\n"
+                          + "       UiSnapshot --optimizer <file.csch> -o <out.png> [--optimize] [--size WxH] [steps]\n"
                           + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--size WxH] [steps]\n"
@@ -177,6 +187,8 @@ Window host;
 PaletteTool? paletteTool = null;
 CircuitRF.Ui.Recognition.ImageSourceViewModel? imageVm = null;
 TuningTool? tuningTool = null;
+ParameterEditorViewModel? parameterEditor = null;
+OptimizerTool? optimizerTool = null;
 LayoutCanvas? layoutCanvas = null;
 LayoutEditorViewModel? layoutVm = null;
 if (vendorMode)
@@ -328,6 +340,41 @@ else if (tuning is not null)
     host = new Window { Width = sizeGiven ? width : 420, Height = sizeGiven ? height : 500,
                         Content = new TuningToolView { DataContext = tuningTool } };
     host.Show();
+}
+else if (optimizer is not null)
+{
+    // The Optimizer window as the shell hosts it, its circuit prepared as WorkspaceViewModel.PrepareTunedCircuit
+    // prepares it: the extraction, its netlist text, and the extraction's vendor parts beside it.
+    var (model, _, _) = SchematicPersistence.LoadFromFile(optimizer);
+    var vm = new SchematicViewModel(model, messageSink: null);
+    optimizerTool = new OptimizerTool();
+    var panel = optimizerTool.Panel;
+    panel.PostToUi = a => Dispatcher.UIThread.Post(a);
+    panel.PrepareCircuit = t =>
+    {
+        string name = Path.GetFileNameWithoutExtension(optimizer);
+        var extracted = NetExtractor.Extract(t.EditModel, name, DiskCellResolver.Instance);
+        string text = CircuitRF.Core.Netlist.CnlWriter.Write(extracted.TestBench, extracted.Library, "optimizer snapshot");
+        string? ws = CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(optimizer));
+        return CircuitRF.Design.Circuit.PreparedCircuit.FromText(text, ws ?? Path.GetDirectoryName(optimizer), ws, name, extracted);
+    };
+    panel.SetActiveSchematic(vm, Path.GetFileName(optimizer));
+    host = new Window { Width = sizeGiven ? width : 520, Height = sizeGiven ? height : 640,
+                        Content = new CircuitRF.Ui.Views.Optimization.OptimizerToolView { DataContext = optimizerTool } };
+    host.Show();
+    Pump();
+    if (optimize)
+    {
+        panel.RunCommand.Execute(null);
+        var until = DateTime.UtcNow.AddSeconds(300);
+        while (panel.IsRunActive && DateTime.UtcNow < until) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+        Pump();
+    }
+    Console.WriteLine("algorithms: " + string.Join(", ", panel.Algorithms.Select(a => a.IsAvailable ? a.Label : $"[{a.Label}: greyed]")));
+    if (panel.Algorithms.FirstOrDefault(a => !a.IsAvailable) is { } greyed) Console.WriteLine($"greyed because: {greyed.DisabledReason}");
+    foreach (var r in panel.Variables)
+        Console.WriteLine($"variable {r.Key}: {r.DiscreteText} | {r.MinText} .. {r.MaxText} | best {r.BestText} {r.UnitText}");
+    Console.WriteLine($"status: {panel.StatusText} | {panel.RunStatusText}");
 }
 else if (standalone)
 {
@@ -493,6 +540,8 @@ foreach (var (kind, arg) in steps)
         Console.Write($"{kind} {arg}: ");
         PrintImage();
     }
+    if (parameterEditor is { IsVendorPart: true } pev)
+        Console.WriteLine($"{kind} {arg}: vendor part tuned {pev.IsVendorPartTuned}, optimized {pev.IsVendorPartOptimized}");
     if (paletteTool is not null)
         Console.WriteLine($"{kind} {arg}: focus {host.FocusManager?.GetFocusedElement()?.GetType().Name ?? "none"}; armed "
                         + (paletteTool.VendorRows.FirstOrDefault(r => r.IsArmed)?.Part ?? "none")
@@ -601,7 +650,19 @@ Window VendorView()
     {
         var (model, _, _) = SchematicPersistence.LoadFromFile(schematic);
         var vm = new SchematicViewModel(model, messageSink: new ConsoleSink());
+        // The surfaces the shell gives every session (WorkspaceViewModel): the Tuning, Yield and Optimizer panels
+        // following this schematic, so the Inspector shows the Tune, Tolerance and Optimize toggles it shows there.
+        var tuningPanel = new CircuitRF.Ui.Tuning.TuningPanelViewModel();
+        var yieldPanel  = new CircuitRF.Ui.Yield.YieldPanelViewModel();
+        var optPanel    = new CircuitRF.Ui.Optimization.OptimizerPanelViewModel();
+        tuningPanel.SetActiveSchematic(vm, Path.GetFileName(schematic));
+        yieldPanel.SetActiveSchematic(vm, Path.GetFileName(schematic));
+        optPanel.SetActiveSchematic(vm, Path.GetFileName(schematic));
+        vm.Tuning    = new CircuitRF.Ui.Tuning.TuningSurfaceRelay(() => tuningPanel);
+        vm.Tolerance = new CircuitRF.Ui.Yield.ToleranceSurfaceRelay(() => yieldPanel);
+        vm.Optimize  = new CircuitRF.Ui.Optimization.OptimizeSurfaceRelay(() => optPanel);
         var editor = new ParameterEditorViewModel();
+        parameterEditor = editor;
         var target = select is null ? null : model.Components.FirstOrDefault(c => c.InstanceName == select)
             ?? throw new InvalidOperationException($"--select '{select}': {string.Join(", ", model.Components.Select(c => c.InstanceName))}");
         if (target is not null) editor.SetTargetDirect(vm, target, showClose: false);

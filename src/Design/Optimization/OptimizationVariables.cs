@@ -36,6 +36,13 @@ public sealed record OptimizationCoordinate(
     /// <summary>The most levels a coordinate lists.</summary>
     public const int MaxLevels = 100_000;
 
+    /// <summary>
+    /// A placed vendor part (brief vendorlib-4 R-vl4-3a): the coordinate is the candidate's INDEX in value order,
+    /// its <see cref="Levels"/> are 0 … k−1, and a decoded index names the candidate whose cell the instance is
+    /// rebound to. Null for every other coordinate.
+    /// </summary>
+    public CircuitRF.Design.VendorLibraries.VendorPartTunable? VendorPart { get; init; }
+
     /// <summary>The value a unit coordinate decodes to: linear or logarithmic across the range, then
     /// snapped to an integer or a step — so the cache and the history see the value simulated.</summary>
     public double Decode(double u) => Decode(u, snapPreferred: false);
@@ -45,9 +52,21 @@ public sealed record OptimizationCoordinate(
     /// lands on its nearest preferred value by ratio. A continuous algorithm searches a preferred value
     /// continuously; Discrete puts it on a rung throughout, and every other run ends with the snap stage.
     /// </summary>
-    public double Decode(double u, bool snapPreferred)
+    public double Decode(double u, bool snapPreferred) => Decode(u, snapPreferred, snapParts: true);
+
+    /// <summary>
+    /// <see cref="Decode(double, bool)"/>, and for a vendor part a FRACTIONAL candidate index unless
+    /// <paramref name="snapParts"/> — the position the continuous stage of a mixed search places an ideal
+    /// stand-in at (R-vl4-3b). A part with no stand-in is always on a candidate.
+    /// </summary>
+    public double Decode(double u, bool snapPreferred, bool snapParts)
     {
         u = Math.Clamp(u, 0, 1);
+        if (VendorPart is { } part)
+        {
+            double f = u * (Max - Min);
+            return snapParts || !part.HasProxy ? Math.Round(f) : f;
+        }
         double v = Scale == TuneScale.Log ? Min * Math.Pow(Max / Min, u) : Min + u * (Max - Min);
         if (Preferred)
             return snapPreferred && Levels is { Count: > 0 } ladder ? PreferredValues.Snap(v, ladder) : v;
@@ -72,8 +91,25 @@ public sealed record OptimizationCoordinate(
         return double.IsFinite(u) ? Math.Clamp(u, 0, 1) : 0;
     }
 
-    /// <summary>A number of this coordinate as its value text.</summary>
-    public string Text(double v) => TunableValue.Format(v, Unit);
+    /// <summary>A number of this coordinate as its value text — for a vendor part, the candidate's part number.</summary>
+    public string Text(double v)
+        => VendorPart is { Candidates.Count: > 0 } part
+            ? part.Candidates[Math.Clamp((int)Math.Round(v), 0, part.Candidates.Count - 1)].Part
+            : TunableValue.Format(v, Unit);
+
+    /// <summary>
+    /// The value an ideal stand-in has at fractional candidate index <paramref name="f"/>: the candidates' stated
+    /// values interpolated on a log scale, so the proxy runs smoothly across the candidates' value span in their
+    /// own order (R-vl4-3b). NaN for a coordinate with no stand-in.
+    /// </summary>
+    public double ProxyValue(double f)
+    {
+        if (VendorPart is not { HasProxy: true } part) return double.NaN;
+        var c = part.Candidates;
+        int i0 = Math.Clamp((int)Math.Floor(f), 0, c.Count - 1), i1 = Math.Min(i0 + 1, c.Count - 1);
+        double t = Math.Clamp(f - i0, 0, 1), v0 = c[i0].Value!.Value, v1 = c[i1].Value!.Value;
+        return Math.Exp(Math.Log(v0) + t * (Math.Log(v1) - Math.Log(v0)));
+    }
 }
 
 /// <summary>Which end of a range a value has railed against (overview D17).</summary>
@@ -174,6 +210,28 @@ public sealed class OptimizationVariables
         {
             if (catalog.Find(e.Key) is not { } t) continue;   // resolves to nothing: a note, never an error (D3)
             if (t.DisabledReason is { } why) { refusal = OptimizationDiagnostics.VariableSwept(e.Key, why); return null; }
+
+            // A placed vendor part: its levels are its candidates (brief vendorlib-4 R-vl4-3a).
+            if (t.VendorPart is { } part)
+            {
+                if (part.OverCap || part.Candidates.Count == 0 || !part.Emitted)
+                {
+                    refusal = OptimizationDiagnostics.PartNoCandidates(e.Key, part.Selection, part.Summary);
+                    return null;
+                }
+                int k = part.Candidates.Count;
+                var pc = new OptimizationCoordinate(e.Key, t.ValueKey, null, t.Unit, 0, k - 1, TuneScale.Lin, null, false)
+                {
+                    Levels = [.. Enumerable.Range(0, k).Select(i => (double)i)], VendorPart = part,
+                };
+                coords.Add(pc);
+                keys.Add(t.ValueKey);
+                int start = part.StartIndex;
+                if (part.PlacedIndex < 0)
+                    notes.Add(OptimizationDiagnostics.PartStartMoved(e.Key, part.PlacedPart, part.Candidates[start].Part));
+                starts.Add(pc.Encode(start));
+                continue;
+            }
 
             double? min = TunableValue.InUnit(e.Min, t.Unit), max = TunableValue.InUnit(e.Max, t.Unit);
             if (min is null || max is null)
@@ -390,6 +448,24 @@ public sealed class OptimizationVariables
         return Math.Abs(c) < 1e-12 ? Math.Abs(rect.Value) / Width(rect.Key) : Math.Abs(rect.Value / c) / Width(rect.Key);
     }
 
+    /// <summary>The coordinates that are placed vendor parts.</summary>
+    public IEnumerable<int> PartCoordinates
+        => Enumerable.Range(0, Coordinates.Count).Where(i => Coordinates[i].VendorPart is not null);
+
+    /// <summary>Every optimized value is a vendor part — a problem only Discrete searches (R-vl4-3c).</summary>
+    public bool PartsOnly => Coordinates.Count > 0 && Coordinates.All(c => c.VendorPart is not null);
+
+    /// <summary>
+    /// Why a continuous-only algorithm cannot run on these variables — every optimized value is a vendor part,
+    /// whose levels are real parts with nothing between them (R-vl4-5b). Null otherwise, and for Discrete and
+    /// Auto, which search parts. The Optimizer's menu shows it on the greyed entry; a run refuses with it.
+    /// </summary>
+    public Diagnostic? ContinuousUnavailable(string algorithmId)
+        => !PartsOnly || algorithmId is OptimizerAlgorithms.Auto || algorithmId == CircuitRF.Engine.Optimization.Discrete.AlgorithmId
+            ? null
+            : OptimizationDiagnostics.PartsOnlyDiscrete(OptimizerAlgorithms.Find(algorithmId)?.Label ?? algorithmId,
+                                                        string.Join(", ", Coordinates.Select(c => c.Key)));
+
     /// <summary>The coordinates that take only listed values (<see cref="OptimizationCoordinate.Levels"/>).</summary>
     public IEnumerable<int> DiscreteCoordinates
         => Enumerable.Range(0, Coordinates.Count).Where(i => Coordinates[i].Levels is not null);
@@ -412,7 +488,14 @@ public sealed class OptimizationVariables
 
     /// <summary>The design's view of point <paramref name="u"/>, preferred values snapped when
     /// <paramref name="snapPreferred"/> (see <see cref="OptimizationCoordinate.Decode(double, bool)"/>).</summary>
-    public DecodedPoint Decode(double[] u, bool snapPreferred)
+    public DecodedPoint Decode(double[] u, bool snapPreferred) => Decode(u, snapPreferred, snapParts: true);
+
+    /// <summary>
+    /// The design's view of point <paramref name="u"/>. A vendor part decodes to the CELL of the candidate at its
+    /// index (an evaluation rebinds the instance to it) — or, unless <paramref name="snapParts"/>, to the ideal
+    /// C or L stand-in at its fractional index (R-vl4-3b).
+    /// </summary>
+    public DecodedPoint Decode(double[] u, bool snapPreferred, bool snapParts)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var quantities = new Dictionary<string, Complex>(StringComparer.Ordinal);
@@ -433,6 +516,23 @@ public sealed class OptimizationVariables
                 continue;
             }
             int c = Index(key);
+            if (Coordinates[c].VendorPart is { } part)
+            {
+                double f = Coordinates[c].Decode(u[c], snapPreferred, snapParts);
+                if (!snapParts && part.HasProxy)
+                {
+                    double proxy = Coordinates[c].ProxyValue(f);
+                    quantities[key] = proxy;
+                    values[key] = CircuitRF.Design.VendorLibraries.VendorPartCandidates.ProxyText(proxy, part.GlyphKind!);
+                }
+                else
+                {
+                    var cand = part.Candidates[Math.Clamp((int)Math.Round(f), 0, part.Candidates.Count - 1)];
+                    quantities[key] = cand.Value ?? double.NaN;
+                    values[key] = cand.Cell;
+                }
+                continue;
+            }
             double x = Coordinates[c].Decode(u[c], snapPreferred);
             quantities[key] = x;
             values[key] = Coordinates[c].Text(x);

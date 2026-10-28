@@ -4509,6 +4509,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.CellResolverProvider         = () => this;
         vm.Tuning                       = TuningSurface;
         vm.Tolerance                    = ToleranceSurface;
+        vm.Optimize                     = OptimizeSurface;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
         vm.NewWBondMaterial             = NewWBondMaterial;
         vm.DocumentName                 = title;   // no file yet; the tab's title is what it is called
@@ -12136,6 +12137,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.CellResolverProvider         = () => this;
         vm.Tuning                       = TuningSurface;
         vm.Tolerance                    = ToleranceSurface;
+        vm.Optimize                     = OptimizeSurface;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
         vm.NewWBondMaterial             = NewWBondMaterial;
         vm.OpenSiblingLayoutDesignators = OpenLayoutDesignatorsFor;
@@ -18288,6 +18290,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 vm.CellResolverProvider  = () => this;
                 vm.Tuning                = TuningSurface;
                 vm.Tolerance             = ToleranceSurface;
+                vm.Optimize              = OptimizeSurface;
                 vm.DocumentName          = name;
                 var doc = new SchematicDocument(name, vm) { Messages = Messages, Hierarchy = this };
                 HookSchematicCanvasFocus(doc);

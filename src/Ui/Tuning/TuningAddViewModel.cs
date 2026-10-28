@@ -34,6 +34,10 @@ public interface ITunableAddHost
 
     /// <summary>Sets this panel's flag on every key, as one undo step.</summary>
     void Activate(IReadOnlyCollection<string> keys);
+
+    /// <summary>Whether this panel offers <paramref name="t"/> at all — the Yield panel never offers a vendor part,
+    /// which is chosen and never toleranced (brief vendorlib-4 R-vl4-3d).</summary>
+    bool Offers(Tunable t) => true;
 }
 
 public sealed partial class TuningAddViewModel(ITunableAddHost panel) : ObservableObject
@@ -59,7 +63,7 @@ public sealed partial class TuningAddViewModel(ITunableAddHost panel) : Observab
         foreach (var t in catalog.Tunables)
         {
             if (t.Cell is not null && !IncludeSubCells) continue;
-            if (panel.IsActive(t.Key)) continue;
+            if (panel.IsActive(t.Key) || !panel.Offers(t)) continue;
             if (q.Length > 0 && !Matches(t, q)) continue;
             Results.Add(new TuningAddRow(t));
         }

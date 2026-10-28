@@ -154,7 +154,7 @@ internal static class Optimize
             };
         }
 
-        var catalog = TunableCatalog.FromNetlist(tb, lib);
+        var catalog = TunableCatalog.FromNetlist(tb, lib, parts: circuit.PartTunables);
         if (vars is not null && NarrowVariables(setup, catalog, vars) is { } varRefusal) return JsonRun.Fail(varRefusal);
         if (goals is not null && NarrowGoals(setup, goals) is { } goalRefusal) return JsonRun.Fail(goalRefusal);
 
@@ -384,6 +384,13 @@ internal static class Optimize
             }
             if (c.Part is not null && t is not null) wholeStart = ComplexValue.Format(t.Whole, t.WholeUnit, t.Form);
             var railed = r.Railed.FirstOrDefault(x => x.Key == c.Key);
+            if (c.VendorPart is { } vp)
+            {
+                // A part's row reads as parts: the chosen part number, and the candidates' value span as its range.
+                best = best is null ? null : vp.CandidateOfCell(best)?.Part ?? best;
+                rows.Add(new OptimizeVariableJson(c.Key, start, best, vp.Candidates[0].ValueText, vp.Candidates[^1].ValueText));
+                continue;
+            }
             rows.Add(new OptimizeVariableJson(c.Key, start, best, c.Text(c.Min), c.Text(c.Max),
                 railed is null ? null : railed.End == RailEnd.Min ? "min" : "max", railed?.Against, whole, wholeStart));
         }
@@ -397,12 +404,16 @@ internal static class Optimize
         return new OptimizeReportJson(
             input, r.Algorithm, r.Stages, OutcomeWord(r.Outcome), r.FinishReason, r.BestCost,
             r.Iterations, r.Evaluations, r.Failures, r.Infeasible, r.CacheHits, rows, goals,
-            r.Snap is { } s ? new OptimizeSnapJson(s.Snapped, s.Neighbours, s.CostBefore, s.CostSnapped, s.CostAfter, s.Polished) : null,
+            r.Snap is { } s ? new OptimizeSnapJson(s.Snapped, s.Neighbours, s.CostBefore, s.CostSnapped, s.CostAfter, s.Polished,
+                                                   s.Parts > 0 ? s.Parts : null) : null,
             sens is null ? null : new OptimizeSensitivityJson(sens.Cost,
                 [.. sens.Variables.Select(v => new OptimizeSensitivityVariableJson(v.Key, v.PerRange, v.Share))],
                 [.. sens.Goals.Select(g => new OptimizeSensitivityGoalJson(g.Goal, g.MostSensitive, g.PerRange))]),
             saved, perIteration,
-            across ? run.CornerNames : null, across ? run.EvaluationsPerPoint : null);
+            across ? run.CornerNames : null, across ? run.EvaluationsPerPoint : null,
+            r.Parts.Count == 0 ? null : [.. r.Parts.Select(p => new OptimizePartJson(
+                p.Key, catalog.Find(p.Key)?.ValueText ?? "", p.Part, p.ValueText, p.Description,
+                Design.VendorLibraries.VendorLibraryRefs.RefFor(p.Library, p.File), p.Changed))]);
     }
 
     private static double? Finite(double v) => double.IsFinite(v) ? v : null;
@@ -453,9 +464,20 @@ internal static class Optimize
                   g.At is { } at ? $"{g.Axis} = {G(at)}" : "", g.Margin is { } m ? G(m) : "—", g.Corner ?? "",
               }.Take(header.Length).ToArray()));
 
+        if (r.Parts is { Count: > 0 } parts)
+        {
+            // What to write back: each instance's Name becomes the part, File the file it is in (R-vl4-4a).
+            Console.WriteLine();
+            Console.WriteLine("Parts:");
+            Table(["key", "start", "chosen", "value", "description"],
+                  parts.Select(p => new[] { p.Key, p.Start, p.Part + (p.Changed ? "" : " (unchanged)"), p.Value, p.Description ?? "" }));
+        }
         if (r.Snap is { } s)
-            Console.WriteLine($"\nSnap: {s.Snapped} value(s) snapped, cost {G(s.CostBefore)} → {G(s.CostSnapped)}" +
-                              (s.Polished ? $" → {G(s.CostAfter)} after polishing" : ""));
+            Console.WriteLine(s.IdealParts is { } ideal
+                ? $"\nSnap: {s.Snapped} value(s) snapped, cost with ideal components for the {ideal} part(s) {G(s.CostBefore)}" +
+                  $" → with the real parts {G(s.CostSnapped)}" + (s.Polished ? $" → {G(s.CostAfter)} after polishing" : "")
+                : $"\nSnap: {s.Snapped} value(s) snapped, cost {G(s.CostBefore)} → {G(s.CostSnapped)}" +
+                  (s.Polished ? $" → {G(s.CostAfter)} after polishing" : ""));
         if (r.Sensitivity is { } sens)
         {
             Console.WriteLine();

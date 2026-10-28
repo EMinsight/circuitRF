@@ -112,6 +112,7 @@ have seen).
 | Code | Severity | When |
 |---|---|---|
 | `yield.dist.not-tunable` | error | a distribution on a key the catalog does not offer |
+| `tuning.part.not-statistical` | error | a distribution on a vendor part's `Instance.Part` entry — a part is chosen, never drawn: its static model states no tolerance (brief vendorlib-4 R-vl4-3d). A statistical run's catalog holds no part, so a `Part` entry is skipped there, and the part stays as placed |
 | `yield.spread.missing` / `.extra` | error | the spread keys are not exactly the distribution's (`gauss` with `lo`; `tol` without `sigmas`) |
 | `yield.spread.not-a-number` | error | a spread value that resolves to no number |
 | `yield.spread.wrong-unit` | error | a spread value in a unit of another quantity than the parameter's (`sd=3 pF` on a resistance) — it would convert to a meaningless number; a bare SI prefix, a percent or a unitless parameter is never refused |

@@ -94,6 +94,55 @@ public sealed partial class ParameterEditorViewModel
     public IRelayCommand StepVendorValueUpCommand   { get; private set; } = null!;
     public IRelayCommand StepVendorValueDownCommand { get; private set; } = null!;
 
+    /// <summary>The placed part's key in the schematic's tuning setup: <c>C1.Part</c>.</summary>
+    private string? VendorTuneKey => _target is null ? null : $"{_target.InstanceName}.{CircuitRF.Core.Design.TunableKey.PartParameter}";
+
+    // The part's two toggles (brief vendorlib-4 R-vl4-5c), the same toggles every parameter row has and on the same
+    // surfaces: Tune adds the part's Part entry to the Tuning panel, Optimize to the Optimizer — each one undo step,
+    // the entry created with the parts of the same kind (TuningSetupEdits.NewEntry). Absent, not greyed, where the
+    // session has no such panel or the part is not resolved.
+
+    /// <summary>The part carries the Tune toggle.</summary>
+    public bool CanTuneVendorPart => IsVendorPart && _vendorCurrent is not null && _schematicVm?.Tuning is not null;
+
+    /// <summary>The part carries the Optimize toggle.</summary>
+    public bool CanOptimizeVendorPart => IsVendorPart && _vendorCurrent is not null && _schematicVm?.Optimize is not null;
+
+    /// <summary>The Tune toggle: the part's Part entry has its tune flag — its slider in the Tuning panel steps
+    /// through the candidates.</summary>
+    public bool IsVendorPartTuned
+    {
+        get => VendorTuneKey is { } key && _schematicVm?.Tuning?.IsTuned(key) == true;
+        set
+        {
+            if (_isRefreshing || VendorTuneKey is not { } key || value == IsVendorPartTuned) return;
+            _schematicVm?.Tuning?.SetTuned(key, value);
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>The Optimize toggle: the part's Part entry has its opt flag — the optimizer chooses among the
+    /// candidates.</summary>
+    public bool IsVendorPartOptimized
+    {
+        get => VendorTuneKey is { } key && _schematicVm?.Optimize?.IsOptimized(key) == true;
+        set
+        {
+            if (_isRefreshing || VendorTuneKey is not { } key || value == IsVendorPartOptimized) return;
+            _schematicVm?.Optimize?.SetOptimized(key, value);
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Re-reads both toggles — on a refresh and on every model change, since either panel can change them.</summary>
+    internal void NotifyVendorPartFlags()
+    {
+        OnPropertyChanged(nameof(CanTuneVendorPart));
+        OnPropertyChanged(nameof(CanOptimizeVendorPart));
+        OnPropertyChanged(nameof(IsVendorPartTuned));
+        OnPropertyChanged(nameof(IsVendorPartOptimized));
+    }
+
     /// <summary>The placed part's file's index entries, and the placed part among them.</summary>
     private IReadOnlyList<VendorLibraryEntry> _vendorFileEntries = [];
     private VendorLibraryEntry? _vendorCurrent;
@@ -244,6 +293,7 @@ public sealed partial class ParameterEditorViewModel
 
         StepVendorValueUpCommand.NotifyCanExecuteChanged();
         StepVendorValueDownCommand.NotifyCanExecuteChanged();
+        NotifyVendorPartFlags();
         return true;
     }
 }

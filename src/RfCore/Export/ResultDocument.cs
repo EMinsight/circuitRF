@@ -857,7 +857,27 @@ namespace RfCore.Export
         /// <summary>Simulations one candidate cost: one per entry of <see cref="Corners"/> (R-ya7-5); null without
         /// corners, where it is one.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        int?                              EvaluationsPerPoint = null);
+        int?                              EvaluationsPerPoint = null,
+        /// <summary>The part chosen for each optimized vendor part entry (brief vendorlib-4 R-vl4-6b); null when
+        /// none is optimized.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<OptimizePartJson>?  Parts = null);
+
+    /// <summary>The part an optimization chose for one vendor part entry.</summary>
+    /// <param name="Key">The entry (<c>C1.Part</c>).</param>
+    /// <param name="Part">The chosen part number — what the instance's Name is written as.</param>
+    /// <param name="Value">Its stated value (<c>10 pF</c>), or empty.</param>
+    /// <param name="File">The <c>vendorlib://</c> reference of the file it is in — what the instance's File is.</param>
+    /// <param name="Changed">Whether it differs from the part placed.</param>
+    public sealed record OptimizePartJson(
+        string  Key,
+        string  Start,
+        string  Part,
+        string  Value,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Description,
+        string  File,
+        bool    Changed);
 
     /// <summary>One iteration of an optimization, as its progress line reports it.</summary>
     /// <param name="BestCost">The best cost so far; null before any point succeeded.</param>
@@ -930,8 +950,12 @@ namespace RfCore.Export
         double? Margin);
 
     /// <summary>What snap-and-polish did (<c>--snap</c>, or Auto's last stage).</summary>
+    /// <param name="IdealParts">When vendor parts were snapped (brief vendorlib-4 R-vl4-3b): how many — CostBefore is
+    /// then the cost with IDEAL components in their place and CostSnapped the cost with the real parts. Null otherwise.</param>
     public sealed record OptimizeSnapJson(int Snapped, int Neighbours, double CostBefore, double CostSnapped,
-                                          double CostAfter, bool Polished);
+                                          double CostAfter, bool Polished,
+                                          [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+                                          int? IdealParts = null);
 
     /// <summary>A sensitivity pass at the best point (<c>--sensitivity</c>).</summary>
     public sealed record OptimizeSensitivityJson(
@@ -2398,7 +2422,28 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Whole = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainStatJson? Stat = null);
+        ExplainStatJson? Stat = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainPartJson? Part = null);
+
+    /// <summary>
+    /// A placed vendor part's <c>Part</c> tunable (brief vendorlib-4 R-vl4-6a): the part placed, and the candidate
+    /// parts its entry chooses among — counted, with their value span and the series they span.
+    /// </summary>
+    /// <param name="Placed">The part number, its value and its Description, as one line.</param>
+    /// <param name="Selection">How the candidates are chosen, as the <c>tune</c> line spells it.</param>
+    /// <param name="Candidates">How many there are; over the cap, how many the selection found.</param>
+    /// <param name="Span">The candidates' value span (<c>1 pF – 47 pF</c>), or empty.</param>
+    /// <param name="Summary">All of it in one line, with what the selection left out.</param>
+    public sealed record ExplainPartJson(
+        string  Placed,
+        string  Library,
+        string  Selection,
+        int     Candidates,
+        string  Span,
+        IReadOnlyList<string> Series,
+        bool    OverCap,
+        string  Summary);
 
     /// <summary>
     /// A tunable's statistical part (docs/design/yield.md): its distribution in words and numbers. The

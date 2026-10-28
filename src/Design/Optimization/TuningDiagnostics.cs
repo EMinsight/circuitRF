@@ -95,4 +95,36 @@ public static class TuningDiagnostics
     public static Diagnostic TimeLimitInvalid(string limit) => Diagnostic.Create(
         "tuning.optimize.timelimit", DiagnosticSeverity.Error,
         "optimize: timelimit={limit} is not a duration; write a number and s, ms, min or h.", ("limit", limit));
+
+    // ── Vendor parts (brief vendorlib-4) ────────────────────────────────────
+
+    public static Diagnostic PartOverCap(string who, string selection, int found, int cap) => Diagnostic.Create(
+        "tuning.part.over-cap", DiagnosticSeverity.Error,
+        "{who}: {selection} finds {found} parts, and an entry chooses among at most {cap}. Narrow it with min=/max= or a longer parts= search.",
+        ("who", who), ("selection", selection), ("found", found), ("cap", cap));
+
+    public static Diagnostic PartNoCandidates(string who, string selection, string ports) => Diagnostic.Create(
+        "tuning.part.no-candidates", DiagnosticSeverity.Error,
+        "{who}: {selection} finds no part to choose among{ports}.",
+        ("who", who), ("selection", selection), ("ports", ports));
+
+    public static Diagnostic PartUnreadable(string who, string parts) => Diagnostic.Create(
+        "tuning.part.unreadable", DiagnosticSeverity.Warning,
+        "{who}: these candidates could not be read and are left out: {parts}.",
+        ("who", who), ("parts", parts));
+
+    public static Diagnostic PartNotStatistical(string who) => Diagnostic.Create(
+        "tuning.part.not-statistical", DiagnosticSeverity.Error,
+        "{who}: a vendor part is chosen, never drawn — its static model states no tolerance. Remove dist= and its spread.",
+        ("who", who));
+
+    public static Diagnostic PartLevelsAreCandidates(string who) => Diagnostic.Create(
+        "tuning.part.levels", DiagnosticSeverity.Error,
+        "{who}: a vendor part's levels are its candidate parts; discrete=, step= and scale= do not apply. Narrow the candidates with min=/max= instead.",
+        ("who", who));
+
+    public static Diagnostic PartSelectionNotAPart(string who) => Diagnostic.Create(
+        "tuning.part.not-a-part", DiagnosticSeverity.Error,
+        "{who}: kind= and parts= choose a placed vendor part's candidates, and this key is not one (Instance.Part of a vendor library part).",
+        ("who", who));
 }

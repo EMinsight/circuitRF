@@ -49,6 +49,8 @@ public static class OptimizationStages
     public const string PolishLm   = "local polish (Levenberg–Marquardt)";
     public const string PolishMax  = "local polish (Minimax)";
     public const string Snap       = "snap to legal values";
+    /// <summary>Auto on a problem of vendor parts alone (brief vendorlib-4 R-vl4-3c).</summary>
+    public const string PartSearch = "discrete search over the candidate parts";
     public const string SnapPolish = "polish the continuous values";
 }
 
@@ -58,7 +60,20 @@ public static class OptimizationStages
 /// </summary>
 /// <param name="Snapped">The integer, stepped and preferred values snapped.</param>
 /// <param name="Neighbours">The snapped points evaluated: 2^k when k ≤ 6, else the nearest only.</param>
-public sealed record SnapResult(int Snapped, int Neighbours, double CostBefore, double CostSnapped, double CostAfter, bool Polished);
+/// <param name="Parts">How many of the snapped values are vendor parts — when any are, <c>CostBefore</c> is the cost
+/// with IDEAL components in their place and <c>CostSnapped</c> the cost with the real parts (brief vendorlib-4 R-vl4-3b).</param>
+public sealed record SnapResult(int Snapped, int Neighbours, double CostBefore, double CostSnapped, double CostAfter, bool Polished,
+                                int Parts = 0);
+
+/// <summary>The part an optimization chose for one vendor part entry (brief vendorlib-4 R-vl4-4a).</summary>
+/// <param name="Key">The entry's key (<c>C1.Part</c>).</param>
+/// <param name="Instance">The instance, as the key names it.</param>
+/// <param name="Part">The part number.</param>
+/// <param name="ValueText">Its stated value (<c>10 pF</c>), or empty.</param>
+/// <param name="Library">The vendor library it comes from.</param>
+/// <param name="File">The file it is in, relative to the library root.</param>
+public sealed record ChosenPart(string Key, string? Cell, string Instance, string Part, string ValueText, string? Description,
+                                string Library, string File, string Glyph, bool Changed);
 
 /// <summary>One coordinate's sensitivity at a point (R-to8-6).</summary>
 /// <param name="Key">The entry — a part of a complex value is its own coordinate.</param>
@@ -206,6 +221,9 @@ public sealed class OptimizationResult
     /// <summary>What snap-and-polish did; null when it did not run.</summary>
     public SnapResult? Snap { get; init; }
 
+    /// <summary>The part chosen for each vendor part entry, in the setup's order; empty when none is optimized.</summary>
+    public IReadOnlyList<ChosenPart> Parts { get; init; } = [];
+
     public IReadOnlyList<Diagnostic> Notes { get; init; } = [];
 
     /// <summary>The best point's tuned values, value key → text (a complex value whole) — what lock-in
@@ -316,6 +334,8 @@ public sealed class OptimizationRun
     private string? _stage;
     private readonly List<string> _stages = [];
     private SnapResult? _snapResult;
+    // Whether a vendor part decodes to a real candidate (true) or, in a continuous stage, to its ideal stand-in.
+    private bool _snapParts = true;
     private Stopwatch _sw = new();
     private Dictionary<string, string>? _algOptions;
     private ulong _seed = 1;
@@ -348,7 +368,7 @@ public sealed class OptimizationRun
             bench.GlobalVariables.AddRange(tb.GlobalVariables);
             bench.Analyses.AddRange(tb.Analyses);
         }
-        var catalog = TunableCatalog.FromNetlist(bench, lib);
+        var catalog = TunableCatalog.FromNetlist(bench, lib, parts: circuit.PartTunables);
         foreach (var d in TuningValidator.Validate(bench, catalog))
         {
             if (d.Severity == DiagnosticSeverity.Error) { Refusal = d; return; }
@@ -401,6 +421,11 @@ public sealed class OptimizationRun
         if (AlgorithmId == Discrete.AlgorithmId && Variables.DiscreteUnavailable() is { } notDiscrete)
         {
             Refusal = notDiscrete;
+            return;
+        }
+        if (Variables.ContinuousUnavailable(AlgorithmId) is { } partsOnly)
+        {
+            Refusal = partsOnly;
             return;
         }
         // The cost form (R-to7-6, R-to7-7): choosing Minimax sets minimax — least squares is the
@@ -579,14 +604,18 @@ public sealed class OptimizationRun
             else
             {
                 _snapPreferred = SearchesOnSeries(AlgorithmId);
+                // A vendor part is a real candidate for Discrete, and its ideal stand-in for every continuous search,
+                // which then ends on real parts (brief vendorlib-4 R-vl4-3b, owner decision D3).
+                _snapParts = AlgorithmId == Discrete.AlgorithmId;
                 var alg = Create(AlgorithmId, Variables.Start, sub: null);
                 var end = RunStage(alg, null, null, null, firstOfRun: true, ct);
                 if (end.Refusal is { } r) return Refused(r);
                 reason = end.Reason;
                 // A standard-value row is searched continuously and must still END on a rung, whatever the
-                // algorithm: a result between rungs is not the value the row asked for.
-                bool snap = _options.SnapAndPolish || SeriesRows;
-                if (snap && AlgorithmId != Discrete.AlgorithmId && (end.Kind != StageEnd.Stopped || SeriesRows)
+                // algorithm: a result between rungs is not the value the row asked for. An ideal stand-in for a
+                // vendor part is not a part anyone can buy, so the same holds for it.
+                bool snap = _options.SnapAndPolish || SeriesRows || PartRows;
+                if (snap && AlgorithmId != Discrete.AlgorithmId && (end.Kind != StageEnd.Stopped || SeriesRows || PartRows)
                     && _bestIndex >= 0 && Variables.DiscreteCoordinates.Any())
                     reason = SnapStage(ct) ?? reason;
             }
@@ -642,6 +671,10 @@ public sealed class OptimizationRun
     /// </summary>
     private bool SeriesRows => Variables!.Coordinates.Any(c => c.Preferred);
 
+    /// <summary>Whether any optimized value is a vendor part with an ideal stand-in — a continuous search over one
+    /// must end snapped to real parts, Stop or not.</summary>
+    private bool PartRows => Variables!.Coordinates.Any(c => c.VendorPart is { HasProxy: true });
+
     /// <summary>
     /// Whether an algorithm searches a standard-series row ON its series — every point it simulates has that
     /// row on a rung — rather than continuously with the snap at the end. Every algorithm that estimates no
@@ -656,8 +689,8 @@ public sealed class OptimizationRun
     /// continuous search is under way (a gradient algorithm, or Auto's polish); a finished or stopped run is
     /// snapped. What the Optimizer asks before it lets a paused best be kept.</summary>
     public bool BestOffSeries =>
-        Variables is not null && SeriesRows && _bestIndex >= 0 && _bestIndex < _log.Count &&
-        Variables.Decode(_log[_bestIndex].Point, snapPreferred: true).CacheKey != _log[_bestIndex].Decoded.CacheKey;
+        Variables is not null && (SeriesRows || PartRows) && _bestIndex >= 0 && _bestIndex < _log.Count &&
+        Variables.Decode(_log[_bestIndex].Point, snapPreferred: true, snapParts: true).CacheKey != _log[_bestIndex].Decoded.CacheKey;
 
     internal static bool SearchesOnSeries(string algorithmId) =>
         algorithmId == Discrete.AlgorithmId ||
@@ -689,6 +722,18 @@ public sealed class OptimizationRun
     private (string Reason, Diagnostic? Refusal) RunAuto(CancellationToken ct)
     {
         int n = Variables!.Coordinates.Count;
+
+        // Vendor parts alone — or parts with only other listed values — are searched on their candidates by
+        // Discrete, with no new algorithm (brief vendorlib-4 R-vl4-3a/3c).
+        if (Variables.PartCoordinates.Any() && Variables.DiscreteUnavailable() is null)
+        {
+            _snapPreferred = _snapParts = true;
+            var parts = RunStage(Create(Discrete.AlgorithmId, Variables.Start, null), null, OptimizationStages.PartSearch,
+                                 null, firstOfRun: true, ct);
+            return parts.Refusal is { } pr ? ("refused", pr) : (parts.Reason, null);
+        }
+        _snapParts = false;
+
         // Fifty points per coordinate, whatever each point costs: across corners a point is several evaluations.
         long budget = 50L * (n + 1) * EvaluationsPerPoint;
         if (_settings.MaxEvaluations is { } me) budget = Math.Min(budget, Math.Max(1, me / 2));
@@ -711,7 +756,7 @@ public sealed class OptimizationRun
         }
 
         string reason = last.Reason;
-        if ((last.Kind != StageEnd.Stopped || SeriesRows) && _bestIndex >= 0 && Variables.DiscreteCoordinates.Any())
+        if ((last.Kind != StageEnd.Stopped || SeriesRows || PartRows) && _bestIndex >= 0 && Variables.DiscreteCoordinates.Any())
             reason = SnapStage(ct) ?? reason;
         return (reason, null);
     }
@@ -767,8 +812,10 @@ public sealed class OptimizationRun
             batch.Add(x);
         }
 
-        // From here the best is among snapped points only.
+        // From here the best is among snapped points only — real parts included.
         _snapPreferred = true;
+        bool relaxedParts = !_snapParts && discrete.Any(i => vars.Coordinates[i].VendorPart is { HasProxy: true });
+        _snapParts = true;
         _bestIndex = -1;
         _bestData = null;
         _stage = OptimizationStages.Snap;
@@ -780,7 +827,8 @@ public sealed class OptimizationRun
         RecordIteration(_iterations, _sw.Elapsed, first);
         if (_bestIndex < 0)
         {
-            _snapResult = new SnapResult(discrete.Length, batch.Count, before, double.NaN, double.NaN, false);
+            _snapResult = new SnapResult(discrete.Length, batch.Count, before, double.NaN, double.NaN, false,
+                                         vars.PartCoordinates.Count());
             return "no snapped point could be evaluated";
         }
         double snapped = _log[_bestIndex].Cost;
@@ -799,8 +847,10 @@ public sealed class OptimizationRun
             polished = true;
         }
         double after = _log[_bestIndex].Cost;
-        _snapResult = new SnapResult(discrete.Length, batch.Count, before, snapped, after, polished);
+        int partCount = relaxedParts ? vars.PartCoordinates.Count() : 0;
+        _snapResult = new SnapResult(discrete.Length, batch.Count, before, snapped, after, polished, partCount);
         _notes.Add(OptimizationDiagnostics.SnapReport(discrete.Length, before, snapped, after, polished));
+        if (partCount > 0) _notes.Add(OptimizationDiagnostics.PartSnapReport(partCount, before, snapped));
         return reason ?? (snapped == 0 ? "every enabled goal is met" : $"the best of {batch.Count} snapped point(s) was kept");
     }
 
@@ -923,7 +973,7 @@ public sealed class OptimizationRun
         }
         EvaluateBatch(points, ct, record: false);
 
-        var keys = points.Select(p => Variables.Decode(p, _snapPreferred)).ToArray();
+        var keys = points.Select(p => Variables.Decode(p, _snapPreferred, _snapParts)).ToArray();
         if (keys[0].Infeasible || !TryOutcome(keys[0].CacheKey, out var o0) || o0.Failed) return null;
 
         double GoalCost(PointOutcome o, int g)
@@ -1014,7 +1064,7 @@ public sealed class OptimizationRun
     internal IReadOnlyList<Evaluation> EvaluateBatch(IReadOnlyList<double[]> batch, CancellationToken ct = default,
                                                      bool record = true)
     {
-        var decoded = batch.Select(u => Variables!.Decode(u, _snapPreferred)).ToArray();
+        var decoded = batch.Select(u => Variables!.Decode(u, _snapPreferred, _snapParts)).ToArray();
         foreach (var d in decoded) if (d.Infeasible) _infeasible++;
         var core = _corners is null
             ? EvaluateKeyed([.. decoded.Select(d => d.Infeasible ? null : (KeyedPoint?)new KeyedPoint(d.CacheKey, d.Values))],
@@ -1338,6 +1388,7 @@ public sealed class OptimizationRun
         int iterations = _iterations;
         bool cancelled = outcome == OptimizationOutcome.Cancelled;
         var bestRecord = _bestIndex >= 0 && !cancelled ? _log[_bestIndex] : null;
+        var parts = bestRecord is null ? [] : ChosenParts(bestRecord.Decoded.Values);
         return new OptimizationResult
         {
             Outcome      = outcome,
@@ -1346,6 +1397,7 @@ public sealed class OptimizationRun
             Algorithm    = AlgorithmId,
             Stages       = [.. _stages],
             Snap         = _snapResult,
+            Parts        = parts,
             Notes        = _notes,
             BestValues   = bestRecord?.Decoded.Values ?? new Dictionary<string, string>(),
             BestPoint    = bestRecord?.Point,
@@ -1361,6 +1413,30 @@ public sealed class OptimizationRun
             Log          = _log,
             History      = cancelled ? null : History(),
         };
+    }
+
+    /// <summary>
+    /// The part each vendor part entry ended on (R-vl4-4a), and — once — the frequency-range warning for each CHOSEN
+    /// part the analyses leave (R-vl4-4b); a part that was only tried says nothing.
+    /// </summary>
+    private List<ChosenPart> ChosenParts(IReadOnlyDictionary<string, string> best)
+    {
+        var chosen = new List<ChosenPart>();
+        var entries = new List<VendorLibraries.VendorLibraryEntry>();
+        foreach (var c in Variables!.Coordinates)
+        {
+            if (c.VendorPart is not { } vp || !best.TryGetValue(c.ValueKey, out var cell)) continue;
+            if (vp.CandidateOfCell(cell) is not { } cand) continue;
+            entries.Add(cand.Entry);
+            chosen.Add(new ChosenPart(vp.Key, vp.Cell, vp.Instance, cand.Part, cand.ValueText, cand.Description,
+                                      vp.Library, cand.Entry.File, vp.Glyph,
+                                      !cand.Part.Equals(vp.PlacedPart, StringComparison.OrdinalIgnoreCase)));
+        }
+        if (_circuit.Tb is { } tb)
+            foreach (var w in VendorLibraries.VendorPartRange.Warnings(tb, entries))
+                if (!_notes.Any(n => n.Render() == w))
+                    _notes.Add(OptimizationDiagnostics.ChosenPartRange(w));
+        return chosen;
     }
 
     /// <summary>R-to6-10: the run as a <c>DataSet</c> group <c>opt</c>, so a convergence plot is an

@@ -76,7 +76,7 @@ public static partial class AnalysisDirectiveSchema
     private static readonly TuningDirectiveSpec[] _tuning =
     [
         new("tune", TuningTopic,
-            "tune <key> [min=<v> [unit]] [max=<v> [unit]] [scale=…] [step=<v> [unit]] [discrete=…] [tune=1] [opt=1] " +
+            "tune <key> [kind=same | parts=\"<query>\"] [min=<v> [unit]] [max=<v> [unit]] [scale=…] [step=<v> [unit]] [discrete=…] [tune=1] [opt=1] " +
             "[dist=… <spread>] [stat=0]",
             "Makes one value tunable and states its range. <key> is Instance.Parameter (R1.R), a variable's name " +
             "(Wline), or either of those inside a sub-cell as Cell:… (DUT:R3.R, DUT:Wline), where Cell is spelled as " +
@@ -88,9 +88,15 @@ public static partial class AnalysisDirectiveSchema
             "combined; moving one holds its partner (real with imag, mag with phase), and the ranges of all of a " +
             "value's parts always hold together, so ranges that leave no value inside all of them are an error. " +
             "A complex value that reads a name (4+j*X) is an expression. One range serves both tuning and optimizing. " +
-            "dist= and its spread give the value a tolerance for Monte Carlo and yield; reference statistics describes them.",
+            "dist= and its spread give the value a tolerance for Monte Carlo and yield; reference statistics describes them. " +
+            "A placed vendor library part offers one key, Instance.Part, whose value is the part itself: its candidates " +
+            "are the parts of the same kind (kind=same, the default) or a part search over its own library (parts=), " +
+            "narrowed by min/max on the stated value, at most 200 of them; the optimizer chooses among them, and a " +
+            "part is never toleranced.",
             [
-                new("min",      Summary: "Lower bound, in the value's own unit."),
+                new("kind",     Default: "same", Summary: "Instance.Part only: same = the parts of the same kind as the placed one (same file, same Description fields but the value)."),
+                new("parts",    Summary: "Instance.Part only: a part search over the part's own library, quoted (parts=\"0603 C0G 50V\"); the same grammar as the palette's search. Not with kind=."),
+                new("min",      Summary: "Lower bound, in the value's own unit. On Instance.Part: the lowest stated value a candidate may have."),
                 new("max",      Summary: "Upper bound."),
                 new("scale",    Default: "auto", Summary: "auto | lin | log. auto is log when min > 0 and max/min >= 10."),
                 new("step",     Summary: "Slider step. Absent = continuous."),

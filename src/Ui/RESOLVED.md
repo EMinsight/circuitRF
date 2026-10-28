@@ -40936,3 +40936,28 @@ selection changes. **A rebuild asked for while the menu is open is deferred to i
 choosing an entry changes the selection, and replacing the items under an open menu removed the clicked item before
 the menu could close itself, so it stayed open over the palette. `UiSnapshot --palette` now prints the Type menu's
 state, item count and selection after every step.
+
+## brief vendorlib-4 — part rows, the algorithm menu, Tune, compact menus (2026-10-27)
+
+**A part row runs in index space.** The Tuning slider, the Optimizer's range bar and Widen all work on a part's
+candidate index (0 … k−1); the value box and the best column show the part number, the unit column its stated
+value. A part row's min/max are bounds on the stated value, not a slider range, and Widen on a part removes the
+bound on the railed side — it is hidden when there is none, since the part is then at the library's own end.
+
+**`OptimizerAlgorithmItem` became an observable class** so an entry can be greyed with its reason
+(`DisabledReason`, bound to the `ComboBoxItem`'s `IsEnabled` and tooltip, `ShowOnDisabled`). Nothing compared items
+by value; the menu always hands back its own instances.
+
+**The Optimizer has an Inspector surface now.** `IOptimizeSurface` / `OptimizeSurfaceRelay`, served by
+`OptimizerPanelViewModel.SetOptimized` and given to every session beside `Tuning` and `Tolerance`, as those two are.
+A vendor part's Tune (`TuneVertical`) and Optimize (`TargetVariant`, the Optimizer's own menu glyph) toggles go
+through them, so each sets its flag in its panel's own one undo step and creates the entry with the parts of the
+same kind. Parameter rows still carry only Tune and Tolerance.
+
+**Fluent's MenuItem keeps space it does not use** (measured on the live template, Avalonia 12.0.3): the icon column
+is `ContentControl#PART_IconPresenter` (and `#PART_ToggleIconPresenter`), 16 px with a 12 px right margin, and the
+EMPTY `TextBlock#PART_InputGestureText` keeps its 24 px left margin, which is most of a short menu's trailing
+whitespace. `MenuFlyout FlyoutPresenterClasses="compact"` opts a menu out of both (`CircuitRfStyles.axaml`). It is
+opt-in because a menu that shows shortcuts needs the gesture gap; the Tuning and Optimizer row menus and the
+palette's Type menu use it. A menu whose numeric items are all hidden must also hide the separator that served them,
+or two separators sit together.

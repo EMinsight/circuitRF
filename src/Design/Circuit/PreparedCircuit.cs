@@ -55,6 +55,11 @@ public sealed class PreparedCircuit
     /// (<see cref="NetExtractor.ExtractionResult.PartRefusals"/>). Empty for every other input.</summary>
     public IReadOnlyList<string> PartRefusals { get; private set; } = [];
 
+    /// <summary>The placed vendor parts as tunables, with their candidates
+    /// (<see cref="NetExtractor.ExtractionResult.PartTunables"/>) — what the catalog an evaluation of this circuit
+    /// builds offers as <c>Instance.Part</c>. Empty for every other input: a <c>.cnl</c> cannot say it.</summary>
+    public IReadOnlyList<VendorLibraries.VendorPartTunable> PartTunables { get; private set; } = [];
+
     /// <summary>How many times the netlist was parsed and its cell library built: one, for the life of
     /// this object. The counter R-to2-4 asks a test to hold.</summary>
     public int LibraryResolutions { get; }
@@ -112,8 +117,26 @@ public sealed class PreparedCircuit
     /// would start (brief-tuneopt-11 R-to11-7), so the question goes to the run's own constructor
     /// rather than to a second copy of its rules. Nothing is read from disk.
     /// </summary>
-    public static PreparedCircuit FromBench(Library lib, TestBench tb, string? baseDirectory)
-        => new(lib, tb, null, baseDirectory, []);
+    /// <param name="partTunables">The vendor parts of the design the bench came from (<see cref="PartTunables"/>) —
+    /// passed on by a caller that rebuilt the bench from a circuit that had them.</param>
+    public static PreparedCircuit FromBench(Library lib, TestBench tb, string? baseDirectory,
+                                            IReadOnlyList<VendorLibraries.VendorPartTunable>? partTunables = null)
+        => new(lib, tb, null, baseDirectory, []) { PartTunables = partTunables ?? [] };
+
+    /// <summary>
+    /// <see cref="FromText(string, string?, string?, string)"/> for netlist text a caller extracted itself — the
+    /// GUI's tuning and optimizer sessions — keeping what the extraction knows that the text cannot say: the
+    /// vendor parts and their candidates, the range warnings, the refusals.
+    /// </summary>
+    public static PreparedCircuit FromText(string cnlText, string? sourceDirectory, string? baseDirectory,
+                                           string testBenchName, NetExtractor.ExtractionResult extracted)
+    {
+        var prepared = FromText(cnlText, sourceDirectory, baseDirectory, testBenchName, []);
+        prepared.PartRangeWarnings = extracted.PartRangeWarnings;
+        prepared.PartRefusals      = extracted.PartRefusals;
+        prepared.PartTunables      = extracted.PartTunables;
+        return prepared;
+    }
 
     /// <summary>
     /// A schematic, extracted through the resolver Simulate uses and read back as the netlist Simulate
@@ -134,6 +157,7 @@ public sealed class PreparedCircuit
             prepared.HostCellChoices = choices;
             prepared.PartRangeWarnings = extracted.PartRangeWarnings;
             prepared.PartRefusals      = extracted.PartRefusals;
+            prepared.PartTunables      = extracted.PartTunables;
             return prepared;
         }
         catch (Exception ex)

@@ -90,6 +90,35 @@ public static class OptimizationDiagnostics
         "Discrete needs every optimized value to be an integer, a step, a preferred value or an E series; these are continuous: {keys}. Give each discrete= or step=, or choose another algorithm.",
         ("keys", keys));
 
+    // ── Vendor parts (brief vendorlib-4) ────────────────────────────────────
+
+    public static Diagnostic PartNoCandidates(string key, string selection, string summary) => Diagnostic.Create(
+        "opt.part.no-candidates", DiagnosticSeverity.Error,
+        "{key} has no part to choose among ({selection}: {summary}).",
+        ("key", key), ("selection", selection), ("summary", summary));
+
+    public static Diagnostic PartStartMoved(string key, string placed, string start) => Diagnostic.Create(
+        "opt.part.start-moved", DiagnosticSeverity.Info,
+        "{key}: the placed part {placed} is not among its candidates; the search starts from {start}, the nearest by value.",
+        ("key", key), ("placed", placed), ("start", start));
+
+    /// <summary>R-vl4-5b: a continuous-only algorithm on a problem of vendor parts alone.</summary>
+    public static Diagnostic PartsOnlyDiscrete(string algorithm, string keys) => Diagnostic.Create(
+        "opt.part.discrete-only", DiagnosticSeverity.Error,
+        "{algorithm} searches continuous values, and every optimized value here is a vendor part ({keys}), whose levels are real parts with nothing between them. Choose Discrete or Auto.",
+        ("algorithm", algorithm), ("keys", keys));
+
+    /// <summary>R-vl4-4b: a chosen part whose stated frequency range the analyses leave — said once, for the chosen part only.</summary>
+    public static Diagnostic ChosenPartRange(string sentence) => Diagnostic.Create(
+        "opt.part.range", DiagnosticSeverity.Warning, "{sentence}", ("sentence", sentence));
+
+    /// <summary>R-vl4-3b: what the ideal stand-ins hid — the cost with them, and with the real parts snapped in.</summary>
+    public static Diagnostic PartSnapReport(int parts, double ideal, double real) => Diagnostic.Create(
+        "opt.part.snap-report", DiagnosticSeverity.Info,
+        "With ideal components in place of the {parts} vendor part(s) the cost was {ideal}; with the real parts snapped in it is {real}. The difference is what the parts' own parasitics do.",
+        ("parts", parts), ("ideal", ideal.ToString("G4", System.Globalization.CultureInfo.InvariantCulture)),
+        ("real", real.ToString("G4", System.Globalization.CultureInfo.InvariantCulture)));
+
     public static Diagnostic SnapReport(int snapped, double before, double snappedCost, double after, bool polished) => Diagnostic.Create(
         "opt.snap.report", DiagnosticSeverity.Info,
         polished

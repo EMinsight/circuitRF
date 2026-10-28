@@ -770,6 +770,14 @@ Each best value is the text the schematic would hold, at full precision; a part 
 followed by the whole value, in the form the schematic writes it. A met goal reports its tightest
 point and the margin there; an unmet one its worst point, with a negative margin.
 
+A [vendor part](pdk-integration.html#vendor-optimize) (`tune C1.Part … opt=1`) is reported by part:
+its row's best is the chosen part number and its min and max are the candidates' value span, and a
+**Parts** table lists each entry's start, the chosen part, its value and description. With other
+variables, the snap line gives the cost with ideal components in the parts' place and the cost with the
+real parts, the difference the parts' parasitics make. The `--json` document carries the same as `parts`
+(the chosen `part` and the `vendorlib://` reference of its `file`, which is what the instance's Name and
+File are written as) and `snap.idealParts`.
+
 | Flag | |
 |---|---|
 | `--algorithm`, `--max-iter`, `--max-evals`, `--time`, `--cost lsq\|minimax`, `--analyses goals\|all`, `--parallel`, `--seed` | Override the saved settings, for this run only. |
@@ -2573,6 +2581,11 @@ many share it. A sub-circuit instance's own parameters are listed once per insta
 when the instance is using the cell's default. A complex value written with numbers only is listed as
 its four parts — `real(Zsrc)`, `imag(Zsrc)`, `mag(Zsrc)` and `phase(Zsrc)`, the phase in degrees — each
 tuned on its own; a preset still holds the whole value under its own key (`Zsrc=45+10j Ohm`).
+
+A placed [vendor part](pdk-integration.html#vendor-optimize) is one key, `C1.Part`, shown as its part
+number, value and description, with a second line giving how its candidates are chosen (`kind=same`, or
+`parts="…"` and any value bounds) and how many there are, their value span and series. The `--json`
+row carries the same as `part`. Its own subcircuit's values are not listed: the part is chosen whole.
 
 The range is the one the schematic's tuning setup gives the value, or the range it would get when you
 first tune it. A value Push cannot write — in a library cell, or another workspace — says why; it can

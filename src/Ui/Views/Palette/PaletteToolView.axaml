@@ -25,7 +25,7 @@
                     Padding="6,3"
                     ToolTip.Tip="{Binding SelectedCategory.Breadcrumb}">
                 <Button.Flyout>
-                    <MenuFlyout Placement="BottomEdgeAlignedLeft"/>
+                    <MenuFlyout Placement="BottomEdgeAlignedLeft" FlyoutPresenterClasses="compact"/>
                 </Button.Flyout>
                 <Grid ColumnDefinitions="*,Auto">
                     <!-- Text is set in code-behind (FitBreadcrumb): whole leading levels give way

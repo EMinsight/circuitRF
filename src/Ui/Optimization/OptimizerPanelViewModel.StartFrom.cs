@@ -59,6 +59,6 @@ public sealed partial class OptimizerPanelViewModel
             StatusText = $"The start point was not applied: {tuned.Refusal}";
             return circuit;
         }
-        return PreparedCircuit.FromBench(tuned.Library ?? lib, started, circuit.BaseDirectory);
+        return PreparedCircuit.FromBench(tuned.Library ?? lib, started, circuit.BaseDirectory, circuit.PartTunables);
     }
 }

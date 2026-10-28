@@ -129,9 +129,17 @@
                           VerticalAlignment="Center" ToolTip.Tip="Algorithm">
                     <ComboBox.ItemTemplate>
                         <DataTemplate x:DataType="opt:OptimizerAlgorithmItem">
-                            <TextBlock Text="{Binding Label}" FontSize="11" ToolTip.Tip="{Binding UseWhen}"/>
+                            <TextBlock Text="{Binding Label}" FontSize="11" ToolTip.Tip="{Binding Tip}"/>
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
+                    <!-- A method the variables rule out is greyed and says why (brief vendorlib-4 R-vl4-5b). -->
+                    <ComboBox.Styles>
+                        <Style Selector="ComboBoxItem" x:DataType="opt:OptimizerAlgorithmItem">
+                            <Setter Property="IsEnabled" Value="{Binding IsAvailable}"/>
+                            <Setter Property="ToolTip.Tip" Value="{Binding Tip}"/>
+                            <Setter Property="ToolTip.ShowOnDisabled" Value="True"/>
+                        </Style>
+                    </ComboBox.Styles>
                 </ComboBox>
 
                 <!-- ⚙: limits, cost form, analysis scope, parallelism, seed, the algorithm's options. -->
@@ -390,7 +398,8 @@
                                     <TextBlock Text="{Binding Location}" Classes="muted" IsVisible="{Binding HasLocation}"
                                                VerticalAlignment="Center"/>
                                     <TextBlock Text="{Binding DiscreteText}" Classes="muted" IsVisible="{Binding HasDiscreteText}"
-                                               VerticalAlignment="Center" ToolTip.Tip="The values the run may give it — ⋮ to change"/>
+                                               VerticalAlignment="Center" ToolTip.Tip="The values the run may give it — ⋮ to change"
+                                               IsHitTestVisible="{Binding IsNumeric}"/>
                                 </StackPanel>
                                 <TextBox Grid.Column="2" Classes="optBound" Tag="min" Text="{Binding MinText, Mode=OneWay}"
                                          HorizontalContentAlignment="Right" ToolTip.Tip="Minimum"/>
@@ -399,9 +408,9 @@
                                 <TextBox Grid.Column="4" Classes="optBound" Tag="max" Text="{Binding MaxText, Mode=OneWay}"
                                          ToolTip.Tip="Maximum"/>
                                 <TextBlock Grid.Column="5" FontSize="12" VerticalAlignment="Center" Margin="4,0,0,0"
-                                           MinWidth="56" TextAlignment="Right">
+                                           MinWidth="56" TextAlignment="Right" ToolTip.Tip="{Binding BestTip}">
                                     <Run Text="{Binding BestText}"/>
-                                    <Run Text="{Binding Unit}" FontSize="10"/>
+                                    <Run Text="{Binding UnitText}" FontSize="10"/>
                                 </TextBlock>
                                 <TextBlock Grid.Column="6" Text="{Binding SensitivityText}" Classes="muted"
                                            VerticalAlignment="Center" Margin="6,0,0,0"/>
@@ -410,14 +419,14 @@
                                     <mi:MaterialIcon Kind="AlertOutline" Width="12" Height="12" Foreground="#FFFFA000"/>
                                     <TextBlock Text="{Binding RailedText}" FontSize="10" VerticalAlignment="Center"/>
                                     <Button Content="Widen" FontSize="10" Padding="4,0" MinHeight="0"
-                                            Command="{Binding WidenCommand}"
-                                            ToolTip.Tip="Double the range on this side (undoable)"/>
+                                            Command="{Binding WidenCommand}" IsVisible="{Binding ShowWiden}"
+                                            ToolTip.Tip="{Binding WidenTip}"/>
                                 </StackPanel>
                                 <Button Grid.Column="8" Classes="tb" ToolTip.Tip="More">
                                     <mi:MaterialIcon Kind="DotsVertical"/>
                                     <Button.Flyout>
-                                        <MenuFlyout>
-                                            <MenuItem Header="Continuous" Command="{Binding SetContinuousCommand}">
+                                        <MenuFlyout FlyoutPresenterClasses="compact">
+                                            <MenuItem Header="Continuous" Command="{Binding SetContinuousCommand}" IsVisible="{Binding IsNumeric}">
                                                 <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsContinuous}"/></MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Header="Standard values" IsVisible="{Binding CanSeries}">
@@ -441,7 +450,7 @@
                                                     <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsPreferred}"/></MenuItem.Icon>
                                                 </MenuItem>
                                             </MenuItem>
-                                            <Separator/>
+                                            <Separator IsVisible="{Binding IsNumeric}"/>
                                             <MenuItem Header="Remove from optimizer" Command="{Binding RemoveCommand}"/>
                                         </MenuFlyout>
                                     </Button.Flyout>

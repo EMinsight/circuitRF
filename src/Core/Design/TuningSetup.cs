@@ -143,6 +143,18 @@ public sealed class TunableEntry
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public TuneDiscrete Discrete { get; set; }
 
+    /// <summary>
+    /// A placed vendor part's <c>Part</c> entry (brief vendorlib-4 R-vl4-1b): <c>same</c> takes the parts of
+    /// the same kind as the placed one — same file, same Description fields but the value. Null when the line
+    /// does not say; <see cref="Parts"/> null as well then means <c>same</c>. Kept as written, so a line that
+    /// states it reads back stating it.
+    /// </summary>
+    public string? PartKind { get; set; }
+
+    /// <summary>A placed vendor part's <c>Part</c> entry: the part-search query (<c>0603 C0G 50V</c>) whose
+    /// matches in the part's own library are its candidates. Null when the line names none.</summary>
+    public string? Parts { get; set; }
+
     /// <summary>The statistical flag (yield overview D1/D2): the entry's distribution is drawn in a
     /// Monte Carlo trial. Reading <c>dist=</c> sets it unless the line says <c>stat=0</c>; an entry with
     /// no distribution is not statistical whatever this says.</summary>
@@ -169,7 +181,7 @@ public sealed class TunableEntry
     public TunableEntry Clone() => new()
     {
         Key = Key, Tune = Tune, Opt = Opt, Min = Min, Max = Max, Scale = Scale, Step = Step,
-        Discrete = Discrete, Stat = Stat, Distribution = Distribution, Spread = Spread?.Clone(),
+        Discrete = Discrete, PartKind = PartKind, Parts = Parts, Stat = Stat, Distribution = Distribution, Spread = Spread?.Clone(),
         Extra = CloneMap(Extra),
     };
 
@@ -421,7 +433,17 @@ public enum ComplexPart { Real, Imag, Mag, Phase }
 /// </summary>
 public readonly record struct TunableKey(string? Cell, string? Instance, string Name, ComplexPart? Part = null)
 {
+    /// <summary>The parameter name a placed vendor part's one tunable is keyed with: <c>C1.Part</c> (brief
+    /// vendorlib-4 R-vl4-1a). Its value is the part, not a number.</summary>
+    public const string PartParameter = "Part";
+
     public bool IsVariable => Instance is null;
+
+    /// <summary>The key names a placed vendor part's choice of part (<c>C1.Part</c>, <c>DUT:C1.Part</c>).</summary>
+    public bool IsVendorPart => Instance is not null && Part is null && Name == PartParameter;
+
+    /// <summary>Whether <paramref name="key"/> parses as a vendor part's key.</summary>
+    public static bool IsVendorPartKey(string? key) => key is not null && TryParse(key, out var k) && k.IsVendorPart;
 
     /// <summary>The key of the whole value a part key names; the key itself when it names no part.</summary>
     public TunableKey Whole => this with { Part = null };

@@ -1,5 +1,6 @@
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
+using CircuitRF.Core.Expressions;
 
 namespace CircuitRF.Design.Optimization;
 
@@ -96,6 +97,14 @@ public static class TunableOverrides
             int ii = instances.FindIndex(i => i.InstanceName == key.Instance);
             if (ii < 0) { notes.Add($"'{keyText}' names no instance '{key.Instance}'; skipped."); continue; }
             var inst      = instances[ii];
+
+            if (key.IsVendorPart && lib.Find(inst.Reference) is not null)
+            {
+                if (Rebind(inst, value, library) is { } rebound) instances[ii] = rebound;
+                else notes.Add($"'{keyText}': '{value}' is neither a candidate part nor a capacitance or inductance; skipped.");
+                continue;
+            }
+
             var overrides = inst.Overrides.ToList();
             int oi        = overrides.FindIndex(o => o.Name == key.Name);
 
@@ -123,6 +132,32 @@ public static class TunableOverrides
         }
 
         return new TunedDesign(bench, library, notes, null);
+    }
+
+    /// <summary>
+    /// A placed vendor part's <c>Part</c> value (brief vendorlib-4 R-vl4-2b): the instance's CELL is rebound, not
+    /// a value written. A value naming a cell of the library binds the instance to it — a candidate part,
+    /// emitted at extraction — keeping only the overrides that cell declares. A capacitance or an inductance
+    /// (<c>1.2e-11 F</c>) is the IDEAL stand-in a mixed search's continuous stage evaluates in the part's place
+    /// (R-vl4-3b): the primitive C or L on the part's two nets. Null for anything else.
+    /// </summary>
+    private static Instance? Rebind(Instance inst, string value, Library lib)
+    {
+        string v = value.Trim();
+        if (lib.Find(v) is { } cell)
+        {
+            var declared = cell.Parameters.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return new Instance(inst.InstanceName, cell.Name, inst.NetBindings,
+                                [.. inst.Overrides.Where(o => declared.Contains(o.Name))])
+            {
+                RefNetBinding = inst.RefNetBinding,
+            };
+        }
+        if (inst.NetBindings.Count != 2 || !TunableValue.TryParse(v, out _, out string unit, out _)) return null;
+        string? primitive = Units.BaseUnit(unit) switch { "F" => "C", "H" => "L", _ => null };
+        if (primitive is null) return null;
+        var (expr, u) = TunableValue.Split(v, null);
+        return new Instance(inst.InstanceName, primitive, inst.NetBindings, [new ParameterAssignment(primitive, expr, u)]);
     }
 
     /// <summary><paramref name="values"/> with every complex part folded into its whole value.</summary>

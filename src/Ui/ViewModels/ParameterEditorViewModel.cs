@@ -1922,6 +1922,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     private void OnModelChanged(object? sender, System.EventArgs e)
     {
         if (_target is null) return;
+        if (IsVendorPart) NotifyVendorPartFlags();
         // Component deleted? → empty state
         if (_schematicVm is not null && _schematicVm.EditModel.FindComponent(_target.Id) is null)
         {

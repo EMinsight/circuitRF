@@ -279,7 +279,7 @@
                                                 <Button Grid.Column="3" Classes="tb" ToolTip.Tip="More">
                                                     <mi:MaterialIcon Kind="DotsVertical"/>
                                                     <Button.Flyout>
-                                                        <MenuFlyout>
+                                                        <MenuFlyout FlyoutPresenterClasses="compact">
                                                             <MenuItem Header="Recall" Command="{Binding RecallCommand}"/>
                                                             <MenuItem Header="Recall and Push" Command="{Binding RecallAndPushCommand}"/>
                                                             <Separator/>
@@ -378,24 +378,36 @@
                                             ToolTip.Tip="Up/Down: previous or next value · Left/Right: one step (Shift: ten) · Page Up/Down: a tenth of the range"/>
                                     <TextBox Grid.Row="0" Grid.Column="2" Text="{Binding ValueBoxText}"
                                              IsVisible="{Binding IsEnabled}" Classes="tuningValue"
-                                             Width="64" FontSize="12" Padding="4,1" MinHeight="0" Margin="4,0,2,0"
-                                             VerticalAlignment="Center" HorizontalContentAlignment="Right" Tag="{Binding}"/>
-                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding Unit}" FontSize="11"
+                                             Width="{Binding ValueBoxWidth}" FontSize="12" Padding="4,1" MinHeight="0" Margin="4,0,2,0"
+                                             VerticalAlignment="Center" HorizontalContentAlignment="Right" Tag="{Binding}"
+                                             ToolTip.Tip="{Binding CandidateTip}"/>
+                                    <!-- The unit, or for a vendor part its stated value. -->
+                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding UnitText}" FontSize="11"
                                                IsVisible="{Binding IsEnabled}" VerticalAlignment="Center" MinWidth="16"/>
 
                                     <!-- ⋮ -->
                                     <Button Grid.Row="0" Grid.Column="4" Classes="tb" ToolTip.Tip="More">
                                         <mi:MaterialIcon Kind="DotsVertical"/>
                                         <Button.Flyout>
-                                            <MenuFlyout>
+                                            <MenuFlyout FlyoutPresenterClasses="compact">
+                                                <!-- A vendor part: which parts the slider steps through (brief vendorlib-4 R-vl4-5a). -->
+                                                <MenuItem Header="Same kind" Command="{Binding SetSameKindCommand}" IsVisible="{Binding IsPart}"
+                                                          ToolTip.Tip="The parts like the placed one: same file, same description but the value">
+                                                    <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsSameKind}"/></MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="Search the library…" Command="{Binding EditQueryCommand}" IsVisible="{Binding IsPart}"
+                                                          ToolTip.Tip="The parts a search of the part's own library finds — the palette's search">
+                                                    <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding !IsSameKind}"/></MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="Clear value bounds" Command="{Binding ResetRangeCommand}" IsVisible="{Binding IsPart}"/>
                                                 <!-- How the slider moves: ONE choice, ticked. -->
-                                                <MenuItem Header="Linear" Command="{Binding SetLinearCommand}">
+                                                <MenuItem Header="Linear" Command="{Binding SetLinearCommand}" IsVisible="{Binding IsNumeric}">
                                                     <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsModeLinear}"/></MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="Log" Command="{Binding SetLogCommand}">
+                                                <MenuItem Header="Log" Command="{Binding SetLogCommand}" IsVisible="{Binding IsNumeric}">
                                                     <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsModeLog}"/></MenuItem.Icon>
                                                 </MenuItem>
-                                                <MenuItem Header="Step…" Command="{Binding EditStepCommand}">
+                                                <MenuItem Header="Step…" Command="{Binding EditStepCommand}" IsVisible="{Binding IsNumeric}">
                                                     <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsModeStep}"/></MenuItem.Icon>
                                                 </MenuItem>
                                                 <MenuItem Header="Standard values" IsVisible="{Binding CanSeries}">
@@ -420,9 +432,9 @@
                                                     </MenuItem>
                                                 </MenuItem>
                                                 <Separator/>
-                                                <MenuItem Header="Re-centre range on value" Command="{Binding RecentreRangeCommand}"/>
-                                                <MenuItem Header="Reset range to default" Command="{Binding ResetRangeCommand}"/>
-                                                <Separator/>
+                                                <MenuItem Header="Re-centre range on value" Command="{Binding RecentreRangeCommand}" IsVisible="{Binding IsNumeric}"/>
+                                                <MenuItem Header="Reset range to default" Command="{Binding ResetRangeCommand}" IsVisible="{Binding IsNumeric}"/>
+                                                <Separator IsVisible="{Binding IsNumeric}"/>
                                                 <MenuItem Header="Reveal on canvas" Command="{Binding RevealCommand}"/>
                                                 <MenuItem Header="Remove from tuning" Command="{Binding RemoveCommand}"/>
                                             </MenuFlyout>
@@ -446,6 +458,19 @@
                                         </Panel>
                                         <TextBlock Grid.Column="3" Text="{Binding ScaleLabel}" Classes="muted" Margin="6,0,0,0"/>
                                     </Grid>
+
+                                    <!-- A vendor part: its candidates in one line, and the library search when it is edited. -->
+                                    <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Spacing="2" IsVisible="{Binding IsPart}">
+                                        <TextBlock Text="{Binding CandidatesText}" Classes="muted" TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding CandidatesText}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsEditingQuery}">
+                                            <TextBlock Text="search" Classes="muted" VerticalAlignment="Center"/>
+                                            <TextBox Text="{Binding QueryText}" Classes="tuningBound" Tag="query"
+                                                     Width="160" FontSize="10" Padding="2,0" MinHeight="0"
+                                                     PlaceholderText="0603 C0G 50V"
+                                                     ToolTip.Tip="A search of the part's own library, as the palette searches it. Enter applies it; blank goes back to the parts of the same kind."/>
+                                        </StackPanel>
+                                    </StackPanel>
 
                                     <!-- Step… -->
                                     <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="4"

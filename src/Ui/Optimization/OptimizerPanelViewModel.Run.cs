@@ -359,6 +359,10 @@ public sealed partial class OptimizerPanelViewModel
             parts.Add(unmet.Count == 0 ? "all goals met" : $"not met: {string.Join(", ", unmet)}");
             if (r.BestCost is { } c) parts.Add($"best cost {c.ToString("G4", CultureInfo.InvariantCulture)}");
         }
+        // What the ideal stand-ins hid (brief vendorlib-4 R-vl4-3b): said where it is seen, not only in Messages.
+        if (r.Snap is { Parts: > 0 } snap)
+            parts.Add($"ideal parts {snap.CostBefore.ToString("G4", CultureInfo.InvariantCulture)} → real parts " +
+                      snap.CostSnapped.ToString("G4", CultureInfo.InvariantCulture));
         if (r.Infeasible > 0) parts.Add($"{r.Infeasible} infeasible");
         if (r.Failures > 0) parts.Add($"{r.Failures} failed");
 
@@ -496,7 +500,8 @@ public sealed partial class OptimizerPanelViewModel
         foreach (var key in keys)
         {
             if (catalog.FindValue(key) is not { } t) continue;
-            drawn[key] = t.Part is null
+            drawn[key] = t.IsVendorPart ? t.ValueText
+                : t.Part is null
                 ? TunableValue.Format(t.Value, t.Unit)
                 : ComplexValue.Format(t.Whole, t.WholeUnit, t.Form, "G15");
         }

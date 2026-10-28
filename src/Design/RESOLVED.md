@@ -23912,3 +23912,40 @@ there are none rather than jumping to circuitRF's page.
 **The footprint-follows-the-part rule is a comparison, not stored state** (`VendorPartChange.FootprintAfter`): the
 current footprint equal to what the old part's case pair gives → the new part's (possibly None); anything else is
 the user's and stays. None is the absent row, as the footprint picker writes it.
+
+## brief vendorlib-4 — the optimizer chooses the part (2026-10-27)
+
+**A `.cnl` cannot say which library part an instance came from**, so a part's candidates are decided at
+EXTRACTION and carried beside the netlist: `ExtractionResult.PartTunables` → `PreparedCircuit.PartTunables`
+(also through `FromText(…, extracted)` for the GUI's in-memory sessions, and `FromBench(…, parts)` for a bench
+rebuilt from one) → `TunableCatalog.FromNetlist(parts:)`. A catalog built without them — the statistical,
+centering and DoE runs — simply has no `Instance.Part` key, so a part entry is skipped there and the part stays as
+placed, which is what R-vl4-3d asks.
+
+**A part's own subcircuit is not a set of tunables.** Before this brief the catalog walked the placed part's cell
+like any reached cell and offered its internal R, L and C (`TSTC…:C1.C`, read-only). Tuning those would edit the
+library's model, and after a rebind would name a cell the instance no longer uses. Every placed and candidate cell
+is now skipped; the part offers its one `Part` key.
+
+**An evaluation's part override is a CELL name; an ideal stand-in is a value with a unit.** `TunableOverrides`
+rebinds an instance whose reference is a library cell when the key ends `.Part`: a library cell of that name binds
+it (keeping only the overrides the new cell declares), and a capacitance or inductance binds the primitive C or L
+on its two nets. A part number that also parses as a value would be ambiguous; the cell lookup comes first.
+
+**A part coordinate is the candidate INDEX, not the stated value.** Two candidates can state the same value (a
+search across series), and `Discrete` de-duplicates its levels, so value levels would silently merge them. On the
+index the ideal stand-in is the candidates' values interpolated on a log scale — monotone in the index, so the
+snap's floor/ceil bracket in index space is the nearest pair by value.
+
+**Parts relax independently of standard-value rows.** A series row is searched ON its series by every
+derivative-free algorithm (`_snapPreferred`); a part is searched as its ideal stand-in by every continuous stage
+(D3) and as a real part only in Discrete and the snap (`_snapParts`). Tying parts to `_snapPreferred` would have run
+Auto's CMA-ES stage on real parts and its polish on ideal ones, mixing two models in one best-so-far.
+
+**A test network that does not connect passes a grid test vacuously.** The first fixture hung each port's ground on
+the second pin of a vertical part, so S21 was 0 for every pair and every cost tied — and "the chosen pair costs the
+grid minimum" held. The test now also requires the grid's costs to differ.
+
+Measured on the generated 300-part fixture (a 0402 C0G entry and a 6–20 pF search): `explain --tunables` lists 3
+and 10 candidates; Auto on two parts ran Discrete over all 30 pairs; a part plus a resistor reached cost 4.9e-12
+with the ideal capacitor, 0.118 with the real part snapped in, 0.109 after polishing the resistor.

@@ -81,7 +81,24 @@ public static class TuningPush
             if (t.DisabledReason is not null) continue;            // a swept value is the sweep's, not ours
 
             string expr, unit;
-            if (t.Part is null)
+            IUiCommand? partChange = null;
+            SchematicEditModel? partDrawing = null;
+            if (t.VendorPart is { } vp)
+            {
+                // A vendor part's value is a PART (brief vendorlib-4 R-vl4-4a): the candidate's cell, or its part
+                // number. It is written through the part change the Parameter Editor makes — Name, Glyph and the
+                // footprint when that came from the old part — inside this Push's one undo entry.
+                if (vp.CandidateOfCell(text.Trim()) is not { } chosen) { other++; continue; }
+                if (chosen.Part.Equals(vp.PlacedPart, StringComparison.OrdinalIgnoreCase)) continue;
+                if (t.ReadOnlyReason is not null) { readOnly++; continue; }
+                partDrawing = t.Cell is null ? tuned.EditModel : catalog.Drawings.GetValueOrDefault(t.Cell);
+                var comp = partDrawing?.Components.FirstOrDefault(c => c.InstanceName == t.Owner);
+                partChange = partDrawing is null || comp is null ? null
+                    : SchematicViewModel.VendorPartChangeCommand(partDrawing, comp, vp.Placed, chosen.Entry);
+                if (partChange is null) { other++; continue; }
+                expr = unit = "";
+            }
+            else if (t.Part is null)
             {
                 if (!TunableValue.TryParse(text, out double number, out unit, out _)) { other++; continue; }
                 if (number == t.Value && unit == t.Unit) continue;     // already what the schematic says
@@ -95,8 +112,8 @@ public static class TuningPush
             }
             if (t.ReadOnlyReason is not null) { readOnly++; continue; }
 
-            var drawing = t.Cell is null ? tuned.EditModel : catalog.Drawings.GetValueOrDefault(t.Cell);
-            if (drawing is null || CommandFor(drawing, t, expr, unit) is not { } command) { other++; continue; }
+            var drawing = partDrawing ?? (t.Cell is null ? tuned.EditModel : catalog.Drawings.GetValueOrDefault(t.Cell));
+            if (drawing is null || (partChange ?? CommandFor(drawing, t, expr, unit)) is not { } command) { other++; continue; }
 
             if (!byDrawing.TryGetValue(drawing, out var group))
             {

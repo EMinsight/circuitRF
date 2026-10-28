@@ -11,6 +11,10 @@
 //  A part of a complex value (D18) shows its view of the run's ONE
 //  decoded complex value, so a part that only tunes still shows the
 //  value the optimized parts gave it.
+//
+//  A placed vendor part (brief vendorlib-4 R-vl4-5b) reads as parts:
+//  its candidate count beside the key, the candidates' value span as
+//  its range, and the best part's number as its value.
 // ================================================================
 
 using System;
@@ -46,6 +50,21 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
 
     public string Unit => Tunable?.Unit ?? "";
 
+    /// <summary>The part and its candidates when the row is a vendor part's <c>Part</c>; null otherwise.</summary>
+    public CircuitRF.Design.VendorLibraries.VendorPartTunable? VendorPart => Tunable?.VendorPart;
+
+    public bool IsPart => VendorPart is not null;
+
+    public bool IsNumeric => !IsPart;
+
+    /// <summary>What follows the best value: its unit, or nothing for a part (its number says it).</summary>
+    public string UnitText => IsPart ? "" : Unit;
+
+    /// <summary>The best part in full — number, value, Description — for the tooltip; null for a number row.</summary>
+    public string? BestTip { get; private set; }
+
+    private string? _bestPartText;
+
     /// <summary>Why the optimizer cannot move it (a parametric sweep sweeps it, or the key names
     /// nothing); null when it can.</summary>
     public string? DisabledReason { get; private set; }
@@ -64,7 +83,10 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
 
     /// <summary>What values the run may give it, when not any: <c>E24</c>, <c>step 1 nH</c>, <c>integer</c>.
     /// Empty for a continuous value — the Discrete algorithm's refusal names the rows without this.</summary>
-    public string DiscreteText => Discrete switch
+    public string DiscreteText => VendorPart is { } vp
+        ? vp.OverCap ? $"{vp.Found:N0} parts — over {CircuitRF.Design.VendorLibraries.VendorPartTunable.MaxCandidates}"
+                     : vp.Candidates.Count == 1 ? "1 part" : $"{vp.Candidates.Count} parts"
+        : Discrete switch
     {
         TuneDiscrete.None when StepText is { } st => $"step {st}",
         TuneDiscrete.None                         => "",
@@ -84,13 +106,14 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
     public bool IsSeries     => Discrete == TuneDiscrete.Preferred || TunableValue.Series.Contains(Discrete);
 
     /// <summary>A series is offered: the row is a whole value, not a part (overview D18).</summary>
-    public bool CanSeries => Tunable is { Part: null };
+    public bool CanSeries => Tunable is { Part: null, IsVendorPart: false };
 
     /// <summary>The Preferences ladder is offered: the unit names a capacitance, inductance or resistance.</summary>
     public bool CanPreferred => Tunable is { } t && TunableValue.DiscreteChoices(t).Contains(TuneDiscrete.Preferred);
 
-    public string MinText => TuningRowViewModel.FormatValue(Min, "");
-    public string MaxText => TuningRowViewModel.FormatValue(Max, "");
+    // A part's range is its candidates' value span; a bound typed here bounds the stated value.
+    public string MinText => VendorPart is { Candidates.Count: > 0 } vp ? vp.Candidates[0].ValueText : TuningRowViewModel.FormatValue(Min, "");
+    public string MaxText => VendorPart is { Candidates.Count: > 0 } vp ? vp.Candidates[^1].ValueText : TuningRowViewModel.FormatValue(Max, "");
 
     /// <summary>The entry's opt flag.</summary>
     [ObservableProperty] private bool _isOptimized;
@@ -107,7 +130,7 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
     /// <summary>The best point's value, in <see cref="Unit"/> — the schematic's before any run.</summary>
     public double Best => _best;
 
-    public string BestText => TuningDigits.Format(_best, "", _panel.Digits);
+    public string BestText => _bestPartText ?? TuningDigits.Format(_best, "", _panel.Digits);
 
     /// <summary>Where <see cref="Best"/> sits on the range bar, 0..1.</summary>
     public double BestPosition => TuningSliderMapping.ToPosition(_best, Min, Max, Scale);
@@ -135,6 +158,7 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsRailedMin));
         OnPropertyChanged(nameof(IsRailedMax));
         OnPropertyChanged(nameof(RailedText));
+        OnPropertyChanged(nameof(ShowWiden));
         WidenCommand.NotifyCanExecuteChanged();
     }
 
@@ -142,6 +166,25 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
 
     internal void Bind(TunableEntry entry, Tunable? tunable)
     {
+        _entryMin = entry.Min;
+        _entryMax = entry.Max;
+        if (tunable?.VendorPart is { } part)
+        {
+            // The candidates' indices, in value order — what the run's best is placed on the bar by.
+            Tunable = tunable;
+            DisabledReason = tunable.DisabledReason;
+            Min = 0;
+            Max = Math.Max(1, part.Candidates.Count - 1);
+            Scale = TuneScale.Lin;
+            Discrete = TuneDiscrete.None;
+            StepText = null;
+            _syncing = true;
+            IsOptimized = entry.Opt;
+            _syncing = false;
+            ShowBest(null);
+            OnPropertyChanged(string.Empty);
+            return;
+        }
         Tunable = tunable;
         string u = tunable?.Unit ?? "";
         DisabledReason = tunable is null ? "not in the design" : tunable.DisabledReason;
@@ -162,6 +205,30 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
     internal void ShowBest(System.Collections.Generic.IReadOnlyDictionary<string, string>? values)
     {
         if (Tunable is not { } t) return;
+        if (t.VendorPart is { } vp)
+        {
+            // The best part — or, while a continuous stage runs, the IDEAL value standing in for it.
+            string partText = values?.GetValueOrDefault(t.ValueKey) ?? vp.PlacedCell;
+            if (vp.CandidateOfCell(partText) is { } c)
+            {
+                _best = vp.Candidates.ToList().IndexOf(c);
+                _bestPartText = c.Part;
+                BestTip = CircuitRF.Design.VendorLibraries.VendorPartTunable.Describe(c.Part, c.ValueText, c.Description);
+            }
+            else
+            {
+                _best = vp.StartIndex;
+                _bestPartText = $"ideal {CircuitRF.Design.VendorLibraries.VendorPartCandidates.ProxyDisplay(partText)}";
+                BestTip = "An ideal component stands in for the part while the continuous stage runs; the run ends on a real part.";
+            }
+            OnPropertyChanged(nameof(Best));
+            OnPropertyChanged(nameof(BestText));
+            OnPropertyChanged(nameof(BestTip));
+            OnPropertyChanged(nameof(BestPosition));
+            return;
+        }
+        _bestPartText = null;
+        BestTip = null;
         double v = t.Value;
         if (values is not null && values.TryGetValue(t.ValueKey, out var text))
         {
@@ -188,8 +255,21 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
     }
 
     /// <summary>Doubles the span on the railed side — by ratio on a log range — as one undo step.</summary>
-    [RelayCommand(CanExecute = nameof(IsRailed))]
+    [RelayCommand(CanExecute = nameof(CanWiden))]
     private void Widen() => _panel.Widen(this);
+
+    /// <summary>A railed number always widens; a railed part only while a value bound holds it there.</summary>
+    private bool CanWiden() => IsRailed && (!IsPart || (Railed == RailEnd.Min ? _entryMin : _entryMax) is not null);
+
+    private string? _entryMin, _entryMax;
+
+    /// <summary>Widen is shown only when it can act — a part at the end of the library's own candidates has nothing
+    /// to widen, and its railed mark says so alone.</summary>
+    public bool ShowWiden => CanWiden();
+
+    /// <summary>Widen's tooltip: what it does to this row.</summary>
+    public string WidenTip => IsPart ? "Remove the value bound on this side, so the candidates reach further (undoable)"
+                                     : "Double the range on this side (undoable)";
 
     [RelayCommand] private void Remove() => _panel.RemoveVariable(this);
 
@@ -219,6 +299,7 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
 
     public void CommitMin(string text)
     {
+        if (IsPart) { CommitPartBound(text, (e, v) => e.Min = v); return; }
         if (TunableValue.InUnit(text, Unit) is { } v && v < Max)
             _panel.EditRange(this, e => e.Min = TuningRowViewModel.FormatValue(v, Unit), "Set tuning range");
         else OnPropertyChanged(nameof(MinText));
@@ -226,9 +307,21 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
 
     public void CommitMax(string text)
     {
+        if (IsPart) { CommitPartBound(text, (e, v) => e.Max = v); return; }
         if (TunableValue.InUnit(text, Unit) is { } v && v > Min)
             _panel.EditRange(this, e => e.Max = TuningRowViewModel.FormatValue(v, Unit), "Set tuning range");
         else OnPropertyChanged(nameof(MaxText));
+    }
+
+    /// <summary>A part's bound: on its candidates' STATED value, in the part's unit; blank removes it.</summary>
+    private void CommitPartBound(string text, Action<TunableEntry, string?> set)
+    {
+        string t = text.Trim();
+        if (t.Length == 0) { _panel.EditRange(this, e => set(e, null), "Clear part bound"); return; }
+        if (TunableValue.InUnit(t, VendorPart!.Unit) is { } v && v > 0)
+            _panel.EditRange(this, e => set(e, TunableValue.TryParse(t, out _, out string u, out _) && u.Length > 0
+                                                   ? t : TuningRowViewModel.FormatValue(v, VendorPart.Unit)), "Set part bound");
+        else { OnPropertyChanged(nameof(MinText)); OnPropertyChanged(nameof(MaxText)); }
     }
 
     internal static string Share(double share) => "s " + share.ToString("0.00", CultureInfo.InvariantCulture);

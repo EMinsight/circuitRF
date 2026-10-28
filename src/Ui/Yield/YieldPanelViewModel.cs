@@ -301,6 +301,8 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
 
     bool ITunableAddHost.IsActive(string key) => IsToleranced(key);
 
+    bool ITunableAddHost.Offers(Tunable t) => !t.IsVendorPart;
+
     void ITunableAddHost.Activate(IReadOnlyCollection<string> keys) => SetToleranced(keys, on: true);
 
     public bool IsToleranced(string key) => Setup?.Variables.Any(v => v.Key == key && v.IsStatistical) == true;
@@ -320,7 +322,8 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         {
             bool now = setup?.Variables.Any(v => v.Key == key && v.IsStatistical) == true;
             if (now == on) continue;
-            if (catalog.Find(key) is not { } t) continue;
+            // A vendor part is chosen, never drawn: its static model states no tolerance (brief vendorlib-4 R-vl4-3d).
+            if (catalog.Find(key) is not { IsVendorPart: false } t) continue;
             setup = TuningSetupEdits.WithStat(setup, t, on);
             if (on) _unticked.Remove(key); else _unticked.Add(key);
             changed++;

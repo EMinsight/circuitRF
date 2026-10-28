@@ -54,6 +54,17 @@ dotnet run --project tools/UiSnapshot --no-build -- --tuning <file.csch> -o out.
 After every step it prints which control holds the keyboard and each row's value, so what a key did is read
 rather than guessed from pixels. Default size 420x500.
 
+**The Optimizer window** opens on a schematic the way the shell hosts it, its circuit prepared as the workspace prepares
+it (the extraction, its netlist and the extraction's vendor parts):
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --optimizer <file.csch> -o out.png [--optimize] [--size WxH] [steps]
+```
+
+`--optimize` presses Run and waits for the run to finish before the capture. Every run prints the algorithm menu (a
+greyed entry, and why), each variable row's discrete text, range and best value, and the status line. Default size
+520x640.
+
 **The Model Composer** opens on a `.cmc` as File ▸ Open does, or on a new document of a chosen kind:
 
 ```
@@ -171,7 +182,9 @@ dotnet run --project tools/UiSnapshot --no-build -- --add-vendor-library <folder
 Each first indexes the workspace's referenced vendor libraries, as a workspace open starts them, so captions, counts
 and lists are filled in. `--palette` is the Library palette with a placement service (so a row arms), and prints the
 focus and the armed row after every step. `--schematic` is the schematic view beside the Parameter Editor on
-`--select`'s instance; `--type VendorPartBox=<text>` types into the Part field. `--manage-libraries` and
+`--select`'s instance, the session given Tuning, Yield and Optimizer panels as the shell gives every session (so
+the Inspector shows its Tune, Tolerance and Optimize toggles); `--type VendorPartBox=<text>` types into the Part
+field, and a vendor part's two toggle states print after every step. `--manage-libraries` and
 `--add-vendor-library` open their dialog over an empty window (`<out>.dialog.png`). A list drop-down opened by a
 popup is drawn in the window's own frame, and so is a button's menu flyout opened by a real `--click` on the button
 (the palette's Type menu and its sub-menus). `--palette` prints the Type menu's state, item count and the selection

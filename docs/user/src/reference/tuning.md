@@ -88,6 +88,12 @@ Each row has a slider, a box holding the current value, the unit, and the range 
   re-centres the range on the current value, resets the range to its default, reveals the part on the
   canvas, or removes the row.
 
+**A vendor part's row** (`C1.Part`) steps through real parts rather than values: the box holds the part
+number and the value is shown beside it. Under the slider are the bounds on the parts' stated value and
+how they are chosen, the same kind or a search, and below that the number of candidates and their value
+span. **⋮** chooses **Same kind** or **Search the library…**, or clears the bounds. See
+[vendor part libraries](pdk-integration.html#vendor-optimize).
+
 **One range per value, for both panels.** The Optimizer's variables are the same entries: a range
 changed in either panel is changed in both.
 

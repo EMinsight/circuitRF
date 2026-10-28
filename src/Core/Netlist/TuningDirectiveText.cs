@@ -84,6 +84,17 @@ public static class TuningDirectiveText
                 case "step":     e.Step = value; break;
                 case "scale":    e.Scale = Enum<TuneScale>(key, value, AnalysisDirectiveSchema.ScaleTokens); break;
                 case "discrete": e.Discrete = Enum<TuneDiscrete>(key, value, AnalysisDirectiveSchema.DiscreteTokens); break;
+                // A vendor part's candidates (brief vendorlib-4 R-vl4-1d): one of the two ways, never both.
+                case "kind":
+                    if (!value.Equals("same", StringComparison.OrdinalIgnoreCase))
+                        throw Refuse(TuningDirectiveDiagnostics.ValueInvalid(key, value, "same"));
+                    e.PartKind = value;
+                    break;
+                case "parts":
+                    if (string.IsNullOrWhiteSpace(value))
+                        throw Refuse(TuningDirectiveDiagnostics.ValueInvalid(key, value, "a part search, quoted (parts=\"0603 C0G 50V\")"));
+                    e.Parts = value;
+                    break;
                 case "tune":     e.Tune = Bool(key, value); break;
                 case "opt":      e.Opt = Bool(key, value); break;
                 // The statistical part (yield overview D2).
@@ -104,6 +115,9 @@ public static class TuningDirectiveText
         }
         // stat defaults to 1 when a distribution is stated (D2), wherever on the line stat= sits.
         e.Stat = stat ?? e.Distribution != StatDistribution.None;
+        if (e.PartKind is not null && e.Parts is not null)
+            throw Refuse(TuningDirectiveDiagnostics.Malformed("tune",
+                "kind= and parts= are two ways to choose a part's candidates — write one of them"));
         return e;
     }
 
@@ -583,6 +597,8 @@ public static class TuningDirectiveText
     private static string WriteTune(TunableEntry e)
     {
         var sb = new StringBuilder("tune ").Append(e.Key);
+        Opt(sb, "kind", e.PartKind);
+        Opt(sb, "parts", e.Parts);
         Opt(sb, "min", e.Min);
         Opt(sb, "max", e.Max);
         if (e.Scale != TuneScale.Auto) sb.Append(" scale=").Append(AnalysisDirectiveSchema.ScaleTokens[(int)e.Scale]);

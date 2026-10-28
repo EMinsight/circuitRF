@@ -59,7 +59,11 @@ internal static class ExplainTunables
                 entry?.Min ?? t.DefaultMin, entry?.Max ?? t.DefaultMax, entry is null && t.RangeGuessed,
                 entry?.Tune ?? false, entry?.Opt ?? false,
                 t.Part is null ? null : Design.Optimization.ComplexValue.Format(t.Whole, t.WholeUnit, t.Form),
-                ExplainStatistics.Stat(entry, t));
+                t.IsVendorPart ? null : ExplainStatistics.Stat(entry, t),
+                t.VendorPart is { } vp
+                    ? new ExplainPartJson(vp.PlacedText, vp.Library, vp.Selection, vp.OverCap ? vp.Found : vp.Candidates.Count,
+                                          vp.SpanText, vp.Series, vp.OverCap, vp.Summary)
+                    : null);
         }).ToList();
 
         return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys), 0);
@@ -86,9 +90,14 @@ internal static class ExplainTunables
             if (t.Disabled is { } d) flags.Add(d);
             if (t.ReadOnly is { } r) flags.Add("read-only: " + r);
 
-            string line = $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {t.Value,-14}  {t.Min} .. {t.Max}";
+            // A vendor part reads as a part — its number, value and Description — then its candidates (R-vl4-6a).
+            string line = t.Part is { } part
+                ? $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {part.Placed}"
+                : $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {t.Value,-14}  {t.Min} .. {t.Max}";
             if (flags.Count > 0) line += "  [" + string.Join("; ", flags) + "]";
             Console.WriteLine(line);
+            if (t.Part is { } p)
+                Console.WriteLine($"  {"".PadRight(keyWidth)}  {"".PadRight(locWidth)}  {p.Selection}: {p.Summary}");
             if (t.Stat is { } stat) Console.WriteLine($"  {"".PadRight(keyWidth)}  {"".PadRight(locWidth)}  {stat.Text}");
         }
 
@@ -104,6 +113,7 @@ internal static class ExplainTunables
     {
         TunableKind.Variable      => "variable",
         TunableKind.CellParameter => "cellParameter",
+        TunableKind.Part          => "part",
         _                         => "parameter",
     };
 

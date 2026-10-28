@@ -29,6 +29,11 @@ namespace CircuitRF.Ui.ViewModels;
 public partial class WorkspaceViewModel
 {
     private OptimizerPanelViewModel? _wiredOptimizerPanel;
+    private OptimizeSurfaceRelay?    _optimizeSurface;
+
+    /// <summary>What every schematic session's Inspector asks about optimizing — forwarded to the current Optimizer
+    /// panel, so a layout rebuild that replaces the panel does not strand older sessions.</summary>
+    internal IOptimizeSurface OptimizeSurface => _optimizeSurface ??= new OptimizeSurfaceRelay(() => _factory.OptimizerTool?.Panel);
 
     /// <summary>The Tuning panel's rule (<see cref="RouteTuningPanel"/>): a schematic sets the panel, any
     /// other document keeps the last one, and only closing it empties the panel.</summary>

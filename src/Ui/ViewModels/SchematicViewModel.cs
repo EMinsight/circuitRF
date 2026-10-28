@@ -156,6 +156,10 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// (brief-yield-10 R-ya10-3); null where there is no panel. The keys are <see cref="Tuning"/>'s.</summary>
     public Yield.IToleranceSurface? Tolerance { get; set; }
 
+    /// <summary>The Optimizer panel's half of the Inspector's optimize toggle; null where there is no panel. The keys are
+    /// <see cref="Tuning"/>'s.</summary>
+    public Optimization.IOptimizeSurface? Optimize { get; set; }
+
     // ── Tool state ────────────────────────────────────────────────────────────
 
     public enum Tool { Select, Pan, Wire, Place, ZoomBox, MoveLabels, Text }
@@ -4033,10 +4037,24 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// <returns>False when <paramref name="comp"/> is not a vendor part.</returns>
     public bool ChangeVendorPart(EditableComponent comp, VendorLibraryEntry? old, VendorLibraryEntry chosen)
     {
+        if (VendorPartChangeCommand(EditModel, comp, old, chosen) is not { } command) return false;
+        Execute(command);
+        return true;
+    }
+
+    /// <summary>
+    /// The one edit <see cref="ChangeVendorPart"/> makes, unexecuted — so a Push that also moves other values puts
+    /// a part change into its own single undo entry (brief vendorlib-4 R-vl4-4a) through the same rule. Null when
+    /// <paramref name="comp"/> is not a vendor part.
+    /// </summary>
+    public static IUiCommand? VendorPartChangeCommand(SchematicEditModel model, EditableComponent comp,
+                                                      VendorLibraryEntry? old, VendorLibraryEntry chosen)
+    {
+        ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(comp);
         ArgumentNullException.ThrowIfNull(chosen);
         string file = comp.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression ?? "";
-        if (!VendorLibraryRefs.TryParse(file, out string library, out _)) return false;
+        if (!VendorLibraryRefs.TryParse(file, out string library, out _)) return null;
 
         var next = VendorPartRef.For(library, chosen);
         var updated = comp.Parameters.Select(p => p.Clone()).ToList();
@@ -4047,7 +4065,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         {
             var row = updated.FirstOrDefault(p => p.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase));
             string? footprint = VendorPartChange.FootprintAfter(
-                row?.Expression, VendorPartRef.For(library, old), next, SchematicTechnology.Of(EditModel));
+                row?.Expression, VendorPartRef.For(library, old), next, SchematicTechnology.Of(model));
             if (footprint is null && row is not null && !string.IsNullOrWhiteSpace(row.Expression))
                 updated.Remove(row);   // None REMOVES the row, as the footprint picker writes it
             else if (footprint is not null && row is null)
@@ -4057,8 +4075,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                 row!.Expression = footprint;
         }
 
-        Execute(new SetParametersCommand(EditModel, comp, updated));
-        return true;
+        return new SetParametersCommand(model, comp, updated);
 
         void Set(string name, string value)
         {
