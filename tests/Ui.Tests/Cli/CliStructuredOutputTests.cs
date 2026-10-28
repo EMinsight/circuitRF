@@ -511,6 +511,11 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.view.defect",
         "check.wasm.rule-invalid",
         "check.workspace.ref-unresolved",
+        // brief vendorlib-3 R-vl3-4c: a referenced vendor library, through VendorLibraryRefs.Validate.
+        "check.workspace.vendor-library.missing",
+        "check.workspace.vendor-library.note",
+        "check.workspace.vendor-library.part-missing",
+        "check.workspace.vendor-library.unreadable",
         "cli.analysis.not-selected",
         "cli.args.grid-not-for-pursuit",
         "cli.args.input-required",
@@ -682,6 +687,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "explain.ref.file-not-found",
         "explain.ref.not-found",
         "explain.ref.primary-missing",
+        "explain.ref.vendor-unresolved",
         // RC-3's one headless spelling. R-rc0-19 fixes it as a VERB with nouns, so RC-5's `list` and
         // `restore` and RC-7's `commit` add ids here rather than a second verb.
         // AUT-11 R-aut11-3: `find`. What is here — the workspaces, their cells, each cell's views
@@ -1161,6 +1167,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "render.workspace.ambiguous-cell",
         "render.workspace.cell-required",
         "render.workspace.no-such-cell",
+        // brief vendorlib-3 R-vl3-3b: a placed vendor part outside its characterised range.
+        "run.vendor-part.out-of-range",
+        "run.vendor-part.unreadable",
         "schematic.host-cell.ambiguous",
         "schematic.host-cell.used",
         "serve.args.json-not-applicable",

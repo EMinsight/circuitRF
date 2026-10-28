@@ -132,6 +132,9 @@ public sealed partial class PaletteTool
     /// grid gives way to the part list.</summary>
     public bool IsVendorSelection => SelectedCategory?.Kind == PaletteCategoryKind.Vendor;
 
+    /// <summary>The selected library's folder, or null — what its Help button looks in for documents.</summary>
+    public string? SelectedVendorLibraryRoot => IsVendorSelection ? RootOf(SelectedCategory?.VendorLibrary) : null;
+
     /// <summary>The selected library's matching parts, sorted (R-vl2-2a).</summary>
     public IReadOnlyList<VendorPartRowVm> VendorRows { get; private set; } = [];
 
@@ -298,6 +301,22 @@ public sealed partial class PaletteTool
     // ── Arming ────────────────────────────────────────────────────────────────
 
     private void ArmRow(VendorPartRowVm row) => _svc?.Toggle(row.Ref);
+
+    /// <summary>
+    /// ↑/↓ in a library's part list (from the Search box or the list itself): arms the next or
+    /// previous row — the first or last when none is armed — exactly as clicking it would, so the
+    /// filtered list is walked from the keyboard. Returns the armed row's index, or -1 for no rows.
+    /// </summary>
+    public int ArmAdjacentVendorRow(int direction)
+    {
+        var rows = VendorRows;
+        if (rows.Count == 0 || direction == 0) return -1;
+        int at = -1;
+        for (int i = 0; i < rows.Count; i++) if (rows[i].IsArmed) { at = i; break; }
+        int next = at < 0 ? (direction > 0 ? 0 : rows.Count - 1) : Math.Clamp(at + Math.Sign(direction), 0, rows.Count - 1);
+        if (next != at) ArmRow(rows[next]);
+        return next;
+    }
 
     private VendorPartRowVm? _armedRow;
 

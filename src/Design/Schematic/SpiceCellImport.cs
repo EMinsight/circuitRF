@@ -112,6 +112,32 @@ public static class SpiceCellImport
             };
         }
 
+        return FromResult(result, Path.GetFileName(path), section, SectionsDeclaredBy(result, path));
+    }
+
+    /// <summary>
+    /// Reads SPICE TEXT — a vendor library part's own <c>.subckt</c> block, read alone out of a file
+    /// that can hold thousands (brief vendorlib-3 R-vl3-2a) — through the same reader and the same
+    /// translations as <see cref="Scan(string, string?, SpiceDistributions)"/>, so a part read from its
+    /// block and the same part read from its whole file cannot classify differently.
+    /// </summary>
+    /// <param name="sourceDirectory">What an inclusion in the text resolves against: the file's folder.</param>
+    /// <param name="fileLabel">What notes and refusals call the text — the file it came from.</param>
+    public static SpiceCellScan ScanText(string text, string? sourceDirectory, string fileLabel,
+                                         SpiceDistributions distributions = SpiceDistributions.Live)
+    {
+        SpiceNetlistResult result;
+        try { result = SpiceNetlistReader.Read(text, sourceDirectory, fileLabel, null, distributions); }
+        catch (Exception ex)
+        {
+            return new SpiceCellScan([], [], [], $"{fileLabel} could not be read: {ex.Message}");
+        }
+        return FromResult(result, fileLabel, null, []);
+    }
+
+    private static SpiceCellScan FromResult(
+        SpiceNetlistResult result, string label, string? section, IReadOnlyList<string> sectionNames)
+    {
         var subcircuits = SubcircuitTranslator.TranslateAll(result);
         var cards       = SpiceModelCardTranslation.TranslateAll(result.ModelCards);
 
@@ -132,10 +158,10 @@ public static class SpiceCellImport
             candidates, subcircuits, result.Notes,
             candidates.Count > 0
                 ? null
-                : $"{Path.GetFileName(path)} contains no '.model' cards and no '.subckt' definitions.")
+                : $"{label} contains no '.model' cards and no '.subckt' definitions.")
         {
             FilesRead    = result.FilesRead,
-            SectionNames = SectionsDeclaredBy(result, path),
+            SectionNames = sectionNames,
             Section      = section,
         };
     }

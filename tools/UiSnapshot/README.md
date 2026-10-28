@@ -158,6 +158,25 @@ copy the technology's material library (`.cmat`) beside it, or the technology do
 is none. Each step waits for the reading to settle, then prints one line: the title, the kind read, what Make makes,
 the scale, the armed tool and the canvas prompt. `--type`, `--button`, `--click` and `--drag` act on the dialog itself.
 
+## Vendor libraries
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --palette <workspace> [--category <name>] [--search <q>] -o out.png [steps]
+dotnet run --project tools/UiSnapshot --no-build -- --schematic <file.csch> [--select <instance>] -o out.png [steps]
+dotnet run --project tools/UiSnapshot --no-build -- --archive <workspace> -o out.png
+dotnet run --project tools/UiSnapshot --no-build -- --manage-libraries <workspace> -o out.png
+dotnet run --project tools/UiSnapshot --no-build -- --add-vendor-library <folder> -o out.png
+```
+
+Each first indexes the workspace's referenced vendor libraries, as a workspace open starts them, so captions, counts
+and lists are filled in. `--palette` is the Library palette with a placement service (so a row arms), and prints the
+focus and the armed row after every step. `--schematic` is the schematic view beside the Parameter Editor on
+`--select`'s instance; `--type VendorPartBox=<text>` types into the Part field. `--manage-libraries` and
+`--add-vendor-library` open their dialog over an empty window (`<out>.dialog.png`). A list drop-down opened by a
+popup is drawn in the window's own frame, and so is a button's menu flyout opened by a real `--click` on the button
+(the palette's Type menu and its sub-menus). `--palette` prints the Type menu's state, item count and the selection
+after every step — a menu that opens with no items shows up as a near-zero presenter.
+
 ## How it is faithful
 
 - **The display is opened by `DisplayWindowViewModel.LoadAllAsync`** — the GUI's own File ▸ Open — so the plots,

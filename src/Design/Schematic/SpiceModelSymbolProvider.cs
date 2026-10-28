@@ -204,10 +204,21 @@ public static class SpiceModelSymbolProvider
             && VendorLibraries.VendorLibraryRefs.IsVendorRef(r.File))
             return ResolveVendorGlyph(r.File, r.Name, glyphKind, schematicDir);
 
-        string? path = ResolvePath(r.File, schematicDir);
-        if (path is null) return CellSymbolResolution.NotFoundResult;
-
-        var file = SpiceModelPeek.Read(path, r.Section);
+        SpiceModelFile file;
+        if (VendorLibraries.VendorLibraryRefs.IsVendorRef(r.File))
+        {
+            // A vendor part with no C/L glyph is drawn from its own block, never from a whole-file
+            // parse of a library file (brief vendorlib-3 R-vl3-2).
+            if (VendorLibraries.VendorPartSource.Resolve(r.File, r.Name, schematicDir, out _) is not { } part)
+                return CellSymbolResolution.NotFoundResult;
+            file = VendorLibraries.VendorPartSource.Read(part);
+        }
+        else
+        {
+            string? path = ResolvePath(r.File, schematicDir);
+            if (path is null) return CellSymbolResolution.NotFoundResult;
+            file = SpiceModelPeek.Read(path, r.Section);
+        }
         if (file.Error is not null || file.Definitions.Count == 0)
             return CellSymbolResolution.NotFoundResult;
 

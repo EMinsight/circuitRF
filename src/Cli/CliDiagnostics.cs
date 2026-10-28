@@ -868,6 +868,16 @@ internal static class CliDiagnostics
     public static Diagnostic ImportLibraryRefused(string reason) => Diagnostic.Create(
         "import.library.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
 
+    /// <summary>A placed vendor part the run's analyses take outside its characterised frequency range
+    /// (brief vendorlib-3 R-vl3-3) — <c>VendorPartRange</c>'s sentence, whole.</summary>
+    public static Diagnostic VendorPartOutOfRange(string text) => Diagnostic.Create(
+        "run.vendor-part.out-of-range", DiagnosticSeverity.Warning, "{text}", ("text", text));
+
+    /// <summary>A placed vendor part the extraction could not read, so the run goes without it (brief
+    /// vendorlib-3 R-vl3-2c) — the extraction's own sentence, naming the part and the library.</summary>
+    public static Diagnostic VendorPartUnreadable(string text) => Diagnostic.Create(
+        "run.vendor-part.unreadable", DiagnosticSeverity.Warning, "{text}", ("text", text));
+
     public static Diagnostic NewVendorLibraryMalformed(string text) => Diagnostic.Create(
         "new.vendor-library.malformed", DiagnosticSeverity.Error,
         "--vendor-library '{text}' is not <name>=<folder>.", ("text", text));
@@ -1643,6 +1653,26 @@ internal static class CliDiagnostics
 
     /// <summary>A `.cws` entry — a library, a bookmarked file, the default technology — that names
     /// nothing. The GUI shows these as warning nodes in the project tree; this is the same finding.</summary>
+    /// <summary>A referenced vendor library that is missing, or holds nothing readable (brief vendorlib-3 R-vl3-4c).</summary>
+    public static Diagnostic CheckVendorLibraryMissing(string path, string library, string problem) =>
+        Diagnostic.Create("check.workspace.vendor-library.missing", DiagnosticSeverity.Error,
+            "{path}: vendor library '{library}': {problem}", ("path", path), ("library", library), ("problem", problem));
+
+    /// <summary>A part placed in this workspace that its vendor library no longer holds.</summary>
+    public static Diagnostic CheckVendorPartMissing(string path, string library, string problem) =>
+        Diagnostic.Create("check.workspace.vendor-library.part-missing", DiagnosticSeverity.Error,
+            "{path}: vendor library '{library}': {problem}", ("path", path), ("library", library), ("problem", problem));
+
+    /// <summary>Files in a referenced vendor library that could not be read — said once per library.</summary>
+    public static Diagnostic CheckVendorLibraryUnreadable(string path, string library, string note) =>
+        Diagnostic.Create("check.workspace.vendor-library.unreadable", DiagnosticSeverity.Warning,
+            "{path}: vendor library '{library}': {note}", ("path", path), ("library", library), ("note", note));
+
+    /// <summary>Anything else Validate noticed (duplicate part names, header fields that did not parse).</summary>
+    public static Diagnostic CheckVendorLibraryNote(string path, string library, string note) =>
+        Diagnostic.Create("check.workspace.vendor-library.note", DiagnosticSeverity.Info,
+            "{path}: vendor library '{library}': {note}", ("path", path), ("library", library), ("note", note));
+
     public static Diagnostic CheckWorkspaceRefUnresolved(string path, string what, string reference) =>
         Diagnostic.Create(
             "check.workspace.ref-unresolved", DiagnosticSeverity.Warning,
@@ -1792,6 +1822,11 @@ internal static class CliDiagnostics
         "explain.ref.file-not-found", DiagnosticSeverity.Error,
         "'{reference}' resolves to '{resolved}', which does not exist.",
         ("reference", reference), ("resolved", resolved));
+
+    /// <summary>A <c>vendorlib://</c> reference that does not resolve, with the walk's own reason.</summary>
+    public static Diagnostic ExplainRefVendorUnresolved(string reference, string why) => Diagnostic.Create(
+        "explain.ref.vendor-unresolved", DiagnosticSeverity.Error,
+        "'{reference}' does not resolve: {why}", ("reference", reference), ("why", why));
 
     public static Diagnostic ExplainRefNotFound(string reference, string from) => Diagnostic.Create(
         "explain.ref.not-found", DiagnosticSeverity.Error,

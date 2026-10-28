@@ -4327,6 +4327,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             else                  Messages.Info(choice.Text);
         }
 
+        // A placed vendor part this run takes outside its characterised range (brief vendorlib-3
+        // R-vl3-3b): one Messages line per part number, never a refusal.
+        foreach (var warning in result.PartRangeWarnings) Messages.Warning(warning);
+
         // The technology statement is relative to the schematic's own workspace root; restated for where this
         // file actually lands (another workspace's root, or the scratch folder with none open).
         result.TestBench.Technology = SchematicTechnology.Rebase(

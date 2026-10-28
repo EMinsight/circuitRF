@@ -89,7 +89,31 @@ internal static class CircuitSource
     {
         var circuit = PreparedCircuit.FromSchematic(cschPath, CliEntry.HostWorkspace);
         ReportHostCellChoices(circuit.HostCellChoices);
+        ReportVendorParts(circuit.PartRefusals, circuit.PartRangeWarnings);
         return circuit;
+    }
+
+    /// <summary>
+    /// What a RUN says on stderr about its placed vendor parts — the sentences the GUI posts to
+    /// Messages: each part that could not be read (R-vl3-2c: a refusal, never a silent skip) and each
+    /// part the analyses take outside its characterised range (R-vl3-3b). Warnings, as the GUI posts
+    /// them: the exit code is the run's own. Only a run says them — <c>explain</c> and <c>check</c>
+    /// extract too, and report the same facts their own way.
+    /// </summary>
+    public static void ReportVendorParts(IReadOnlyList<string> refusals, IReadOnlyList<string> rangeWarnings)
+    {
+        foreach (var text in refusals)
+        {
+            var d = CliDiagnostics.VendorPartUnreadable(text);
+            Console.Error.WriteLine("warning: " + d.Render());
+            JsonRun.Note(d);
+        }
+        foreach (var text in rangeWarnings)
+        {
+            var d = CliDiagnostics.VendorPartOutOfRange(text);
+            Console.Error.WriteLine("warning: " + d.Render());
+            JsonRun.Note(d);
+        }
     }
 
     /// <summary>
@@ -177,7 +201,11 @@ internal static class CircuitSource
                 return CnlTechnologyBinding.ReadFile(path);
 
             case DocumentKind.Schematic:
-                return FromSchematic(path);
+            {
+                var (extracted, name) = ExtractFile(path);
+                ReportVendorParts(extracted.PartRefusals, extracted.PartRangeWarnings);
+                return SchematicCircuit.FromExtraction(extracted, name, path, CliEntry.HostWorkspace);
+            }
 
             default:
                 refusal = JsonRun.Fail(CliDiagnostics.RunWrongDocumentKind(

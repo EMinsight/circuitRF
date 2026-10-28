@@ -69,6 +69,7 @@ public static class SchematicHitTest
         ComponentName,   // instance-name text label (row 1)
         ComponentParam,  // parameter text label; SubIndex = param index
         ComponentFootprint, // footprint text label — the LAST row, appended after the params (R-fp2-5c)
+        ComponentVendorValue, // a vendor part's value row ("C = 10 pF"), after the params; SubIndex = its row
         Wire,            // whole-wire (returned by TestRect rubber-band only)
         WireSegment,     // single segment of a wire (returned by Test point-click); SubIndex = segment index i (pts[i]→pts[i+1])
         WireEndpoint,    // first or last wire point; SubIndex = point index
@@ -316,16 +317,20 @@ public static class SchematicHitTest
 
         // The footprint label is the LAST row when it is drawn at all, exactly as
         // ToRenderComponent appends it — never a row between the name and the parameters.
+        // A vendor part's value row sits between the parameters and the footprint, as ToRenderComponent
+        // appends it (brief vendorlib-3).
+        int vendorRow = comp.HasVendorValueRow ? 2 + shownParams.Count : -1;
         string footprintText = comp.FootprintLabelText();
-        int footprintRow = footprintText.Length > 0 ? 2 + shownParams.Count : -1;
+        int footprintRow = footprintText.Length > 0 ? 2 + shownParams.Count + (vendorRow >= 0 ? 1 : 0) : -1;
 
-        int totalRows = 2 + shownParams.Count + (footprintRow >= 0 ? 1 : 0);
+        int totalRows = 2 + shownParams.Count + (vendorRow >= 0 ? 1 : 0) + (footprintRow >= 0 ? 1 : 0);
         for (int row = 0; row < totalRows; row++)
         {
             bool suppressed = row switch
             {
                 0 => comp.Symbol == SymbolKind.Ground || !comp.ShowTypeLabel,
                 1 => comp.Symbol == SymbolKind.Ground || !comp.ShowInstanceName,
+                _ when row == vendorRow => !comp.ShowTypeLabel,
                 _ => false,
             };
             if (suppressed) continue;
@@ -353,6 +358,9 @@ public static class SchematicHitTest
                 0 => comp.TypeLabelText(),
                 1 => comp.Symbol == SymbolKind.Ground ? "" : comp.InstanceName,
                 _ when row == footprintRow => footprintText,
+                // The value comes from the library's index, which this test does not consult; a row
+                // as wide as a typical "C = 100 pF" keeps the zone over the text.
+                _ when row == vendorRow => "C = 100.0 pF",
                 _ => ParamLabelText(shownParams[row - 2].Param),
             };
 
@@ -367,6 +375,8 @@ public static class SchematicHitTest
                 1 => new HitResult(HitKind.ComponentName,  comp.Id, 0, baseX, centerY),
                 _ when row == footprintRow
                   => new HitResult(HitKind.ComponentFootprint, comp.Id, row, baseX, centerY),
+                _ when row == vendorRow
+                  => new HitResult(HitKind.ComponentVendorValue, comp.Id, row, baseX, centerY),
                 _ => new HitResult(HitKind.ComponentParam, comp.Id, shownParams[row - 2].FullIndex, baseX, centerY),
             };
         }

@@ -31,6 +31,10 @@ public sealed record VendorLibraryHeader
     /// <summary>The Description line's text as written, or null when there is none.</summary>
     public string? Description { get; init; }
 
+    /// <summary>The Description with its unit brackets dropped (<c>50[V]</c> → <c>50V</c>) — what a search
+    /// token is also matched against, since nobody types the brackets. Null when there is no Description.</summary>
+    public string? DescriptionPlain { get; init; }
+
     /// <summary>The Description split on <c>/</c>, each field trimmed. Empty when there is none.</summary>
     public IReadOnlyList<string> DescriptionFields { get; init; } = [];
 
@@ -163,6 +167,7 @@ public sealed record VendorLibraryHeader
         return new VendorLibraryHeader
         {
             Description       = description,
+            DescriptionPlain  = description?.Replace("[", "").Replace("]", ""),
             DescriptionFields = fields,
             Quantity          = quantity,
             Value             = partValue,

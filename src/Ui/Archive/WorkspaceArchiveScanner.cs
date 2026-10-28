@@ -454,7 +454,36 @@ public static class WorkspaceArchiveScanner
                 SizeBytes   = isDir ? -1 : SizeOf(kit.Path),
             });
         }
+
+        // Brief vendorlib-3 R-vl3-4a: each referenced vendor library is one row beside the kits, on
+        // the same terms — unticked, copied whole under the kits folder when ticked, and the `.cws`
+        // reference repointed at the copy. Off for a stronger reason than a kit's bulk: the library
+        // is usually licensed to the user who downloaded it, and the row says so.
+        foreach (var lib in (cws.VendorLibraries ?? []).OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            string? abs = WorkspaceRefs.ResolveExternalRef(lib.Path, plan.WorkspaceDir);
+            if (abs is null || !Directory.Exists(abs) || IsInside(abs, plan.WorkspaceDir)) continue;
+            if (kits.ContainsKey(abs)) continue;                   // already offered as a kit row
+
+            plan.Options.Add(new ArchiveOption
+            {
+                Kind        = ArchiveOptionKind.Kit,
+                DisplayName = $"{lib.Name} (vendor library)",
+                Detail      = $"Vendor library · {abs}",
+                Note        = VendorLibraryRowSentence,
+                SourcePath  = abs,
+                ArchivePath = $"{KitsFolder}/{UniqueName(used, FolderName(abs) ?? "vendor-library")}",
+                IsDirectory = true,
+                Selected    = false,
+                SizeBytes   = -1,
+            });
+        }
     }
+
+    /// <summary>What a vendor library's row says under its name (R-vl3-4a).</summary>
+    public const string VendorLibraryRowSentence =
+        "Not included by default: a vendor library is usually licensed for your own use. " +
+        "The recipient can add their own copy.";
 
     /// <summary>One referenced kit, and every name this workspace knows it by.</summary>
     private sealed class KitRef(string path)

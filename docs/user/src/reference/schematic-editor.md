@@ -92,17 +92,28 @@ row shows the part number and its value, then its description and frequency rang
 by value. Click **Part**, **Value**, **Description** or **Range** above it to sort by that, and click
 again to reverse.
 
-The search box filters the list. Every word must match. A word matches when it appears in the part
-number, the description, the file or the folder name, or when it reads as a value: `10p`, `10pF`,
-`2.2n` and `4n7` all find the part whose stated value is that, however the library wrote it. So
-`10p C0G 0402` narrows a series to the one part you want. Typing never waits on the disk; while a
-library is still being read after the workspace opens, the list says *Indexing …* instead.
+The search box filters the list. Separate words with spaces; every word must match, in any order. A
+word matches when it appears in the part number, the description (with or without its brackets, so
+`50V` finds `50[V]`), the file or the folder name. Two kinds of word are read more exactly:
+
+- **A value** — `10p`, `10pF`, `2.2n`, `4n7` — finds the part whose stated value is that, however the
+  library wrote it. A unit, when you give one, must match the part: `10nH` finds inductors only.
+- **A case size** — `0603` — is the imperial size the library states, and `1608M` the metric one. The
+  library writes both (`1608M(0603)`), and `0603` never finds a 0201 part through its metric `0603M`.
+
+So `0603 10pF C0G 100V` narrows a library to the parts you want. Typing never waits on the disk; while
+a library is still being read after the workspace opens, the list says *Indexing …* instead.
+
+<kbd>↓</kbd> and <kbd>↑</kbd>, from the search box or the list, arm the next or previous part, so you
+can type, step to the part and click on the schematic without touching the list. The
+<span class="ui">?</span> button at the end of the column headers opens the documents the library
+came with (each in your system's own viewer), then circuitRF's help on vendor libraries.
 
 A row places a part exactly as a tile does: click to arm, or drag onto the schematic. The part is a
 [SPICE Model](components.html#spicemodel) running from the library's own file. A capacitor or inductor
-draws as the ordinary C or L symbol, is named C1, L1, …, and is labelled with its part number and
-value. On a board technology it arrives with the [footprint](footprints.html#imported) of the case
-size its library states.
+draws as the ordinary C or L symbol, is named C1, L1, …, and is labelled with its part number, its name
+and, on a line of its own, its value (`C = 10 pF`). On a board technology it arrives with the
+[footprint](footprints.html#imported) of the case size its library states.
 
 ## Placing a component {#placing}
 

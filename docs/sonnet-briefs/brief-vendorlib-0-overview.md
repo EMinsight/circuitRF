@@ -59,6 +59,7 @@ by default.** The user downloads it and circuitRF references it in place.
 | 1 | [Library reference and index](brief-vendorlib-1-reference-and-index.md) | the `.cws` reference, the `vendorlib://` part reference, the header index, Add / Manage, the per-user list, `import library`, `find --parts` | — |
 | 2 | [The palette](brief-vendorlib-2-palette.md) | the Type menu with sub-menus, a virtualized part list, value-aware search, placing a part, the footprint from the part's case size | 1 |
 | 3 | [The placed part](brief-vendorlib-3-placed-part.md) | the part picker with value stepping (the footprint following the part), one-block extraction, the frequency-range warning, archive, missing-library repair, `check` | 1, 2 |
+| 4 | [Optimizing over real parts](brief-vendorlib-4-optimize-over-parts.md) | a placed part as an optimizer variable whose levels are real candidate parts; Discrete search, snap from an ideal proxy, Apply through the part change | 1–3 |
 
 Build in order.
 
@@ -113,7 +114,7 @@ Build in order.
   SpiceModel today. The user docs say so in one sentence.
 - **Reading a schematic-capture design-kit edition.** Its topology is encrypted (§0).
 - **Optimising over a discrete list of real parts.** Brief 3's value stepping is the manual form, and
-  an optimizer variable over "parts in this series" is a later brief.
+  an optimizer variable over "parts in this series" is [brief 4](brief-vendorlib-4-optimize-over-parts.md).
 - **A `.cnl` spelling for a library part.** A headless design places one through a `.csch`, which
   every run verb accepts. If agents need the `.cnl` form, that is a follow-up.
 - **Touchstone (`.sNp`) part libraries.** The same index could later list a folder of measured

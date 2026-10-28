@@ -69,9 +69,15 @@ public partial class ArchiveWorkspaceDialog : Window
         var roots = new ObservableCollection<ArchiveTreeNode>();
 
         if (plan.Kits.Any())
+        {
+            // A vendor library rides with the kits (brief vendorlib-3 R-vl3-4a); the heading says so.
+            int vendor = plan.Kits.Count(k => k.Note == WorkspaceArchiveScanner.VendorLibraryRowSentence);
+            int kits   = plan.Kits.Count() - vendor;
+            string what = vendor == 0 ? "Referenced Kits" : kits == 0 ? "Referenced Vendor Libraries" : "Referenced Kits and Libraries";
             roots.Add(ArchiveTreeNode.Group(
-                $"Referenced Kits ({plan.Kits.Count()})",
+                $"{what} ({plan.Kits.Count()})",
                 () => plan.Kits.Select(ArchiveTreeNode.Leaf)));
+        }
 
         // MW2 R-mw2-16 — cells this workspace instances out of another one. Its own branch rather
         // than a row among the kits: a kit is the vendor's content and starts unticked, while these

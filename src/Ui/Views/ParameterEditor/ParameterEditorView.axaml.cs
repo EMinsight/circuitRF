@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -18,6 +19,97 @@ public partial class ParameterEditorView : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+
+        // The vendor part picker (brief vendorlib-3 R-vl3-1a): keys in the Part field drive the
+        // drop-down, a click on a row chooses it.
+        VendorPartBox.AddHandler(KeyDownEvent, OnVendorPartBoxKeyDown, RoutingStrategies.Tunnel);
+        // Tunnel: the ListBox claims Enter for itself on the way back up.
+        VendorPartList.AddHandler(KeyDownEvent, OnVendorPartListKeyDown, RoutingStrategies.Tunnel);
+        VendorPartList.AddHandler(PointerReleasedEvent, OnVendorPartListPointerReleased, handledEventsToo: true);
+    }
+
+    /// <summary>
+    /// The drop-down opening scrolls its highlighted row — the placed part, when the whole file is
+    /// listed — into view, and when it was opened by the ▾ button rather than by typing, hands that
+    /// row the keyboard so ↑/↓ and Enter work at once.
+    /// </summary>
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ParameterEditorViewModel.IsVendorPartListOpen) || Vm is not { IsVendorPartListOpen: true }) return;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (VendorPartList.SelectedItem is not { } item) return;
+            VendorPartList.ScrollIntoView(item);
+            if (!VendorPartBox.IsKeyboardFocusWithin) VendorPartList.ContainerFromItem(item)?.Focus();
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// The Part field drives the drop-down without leaving it: ↓/↑ open the list (on the whole file)
+    /// and move its highlight while the caret stays in the box, so typing and stepping mix freely;
+    /// Enter chooses the highlighted row; Escape puts the placed part back.
+    /// </summary>
+    private void OnVendorPartBoxKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (Vm is not { IsVendorPart: true } vm) return;
+        switch (e.Key)
+        {
+            case Key.Down or Key.Up:
+                if (!vm.IsVendorPartListOpen) vm.ShowAllVendorPartsCommand.Execute(null);
+                else if (vm.VendorPartMatches.Count > 0)
+                {
+                    int at = VendorPartList.SelectedIndex;
+                    VendorPartList.SelectedIndex = Math.Clamp(
+                        at < 0 ? 0 : at + (e.Key == Key.Down ? 1 : -1), 0, vm.VendorPartMatches.Count - 1);
+                }
+                if (VendorPartList.SelectedIndex >= 0) VendorPartList.ScrollIntoView(VendorPartList.SelectedIndex);
+                e.Handled = true;
+                break;
+            case Key.Enter when vm.IsVendorPartListOpen && vm.VendorPartMatches.Count > 0:
+                vm.ChooseVendorPart(VendorPartList.SelectedItem as VendorPartChoice ?? vm.VendorPartMatches[0]);
+                CaretToEnd();
+                e.Handled = true;
+                break;
+            case Key.Escape:
+                vm.CancelVendorPartQuery();
+                e.Handled = true;
+                break;
+        }
+    }
+
+    private void OnVendorPartListKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        if (e.Key == Key.Enter && VendorPartList.SelectedItem is VendorPartChoice choice)
+        {
+            vm.ChooseVendorPart(choice);
+            VendorPartBox.Focus();
+            CaretToEnd();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            vm.CancelVendorPartQuery();
+            VendorPartBox.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void OnVendorPartListPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (Vm is not { } vm) return;
+        if ((e.Source as Control)?.DataContext is VendorPartChoice choice)
+        {
+            vm.ChooseVendorPart(choice);
+            CaretToEnd();
+        }
+    }
+
+    /// <summary>After a choice the field reads the chosen part, with nothing of what was typed left selected.</summary>
+    private void CaretToEnd()
+    {
+        VendorPartBox.ClearSelection();
+        VendorPartBox.CaretIndex = VendorPartBox.Text?.Length ?? 0;
     }
 
     private ParameterEditorViewModel? _boundVm;
@@ -26,6 +118,7 @@ public partial class ParameterEditorView : UserControl
     {
         if (_boundVm is not null)
         {
+            _boundVm.PropertyChanged -= OnVmPropertyChanged;
             _boundVm.WBondLayoutUpdated -= OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested -= OnOpenMatchDesigner;
             _boundVm.OpenSignalDesignerRequested -= OnOpenSignalDesigner;
@@ -33,6 +126,7 @@ public partial class ParameterEditorView : UserControl
         _boundVm = DataContext as ParameterEditorViewModel;
         if (_boundVm is not null)
         {
+            _boundVm.PropertyChanged += OnVmPropertyChanged;
             _boundVm.WBondLayoutUpdated += OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested += OnOpenMatchDesigner;
             _boundVm.OpenSignalDesignerRequested += OnOpenSignalDesigner;
@@ -343,8 +437,11 @@ public partial class ParameterEditorView : UserControl
 
     private void OnHelpClick(object? sender, RoutedEventArgs e)
     {
+        // A vendor library part's Help is its LIBRARY's: the documents it came with (brief vendorlib-3).
+        if (DataContext is ParameterEditorViewModel { ShowVendorPartPanel: true } vendor && sender is Control anchor)
+            CircuitRF.Ui.Schematic.VendorLibraryHelp.Open(anchor, vendor.VendorLibraryRoot);
         // Open the Reference Guide section for this component (offline, bundled docs).
-        if (DataContext is ParameterEditorViewModel { Target: { } target })
+        else if (DataContext is ParameterEditorViewModel { Target: { } target })
             DocLauncher.OpenComponent(target.Symbol);
         else
             DocLauncher.Open("reference/components.html");

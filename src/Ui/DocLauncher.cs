@@ -176,6 +176,13 @@ public static class DocLauncher
         _                  => "application/octet-stream",
     };
 
+    /// <summary>Opens a file with the system's own viewer — a vendor library's own documentation.</summary>
+    public static void OpenFile(string path)
+    {
+        try { OpenUrl(path); }
+        catch { /* Help must never throw. */ }
+    }
+
     // ── Cross-platform open (mirrors WorkspaceViewModel.Reveal) ──────────────
     private static void OpenUrl(string url)
     {

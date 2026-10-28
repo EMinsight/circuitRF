@@ -11,6 +11,7 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Schematic;
+using CircuitRF.Design.VendorLibraries;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Engine.Mom;
 using Em3dPort = CircuitRF.Engine.Em3d.Em3dPort;
@@ -1185,6 +1186,13 @@ internal static class Explain
             ? Path.GetFullPath(path)
             : Path.GetDirectoryName(Path.GetFullPath(path))!;
 
+        // A vendor library reference walks the nearest .cws, its library entry and that entry's folder
+        // (brief vendorlib-3 R-vl3-4d) — the walk VendorLibraryRefs.ResolveFile takes for the editor and
+        // the extractor alike, reported step by step because which .cws answered is the part a caller
+        // cannot see.
+        if (VendorLibraryRefs.IsVendorRef(reference))
+            return ExplainVendorReference(reference, from);
+
         // A ComposedFET's model file resolves by the elaborator's own rule (brief-modelcomposer-13 R-mc13-5), never by the
         // cell walk: a .cmodel is a file, and the walk would answer a question elaboration never asks.
         if (reference.EndsWith(".cmodel", StringComparison.OrdinalIgnoreCase))
@@ -1233,6 +1241,40 @@ internal static class Explain
 
         return (new ExplainReferenceJson(
             reference, from, resolved, state, outside, res.Redirect?.To), exit);
+    }
+
+    private static (ExplainReferenceJson?, int) ExplainVendorReference(string reference, string from)
+    {
+        var via = new List<string>();
+        string? cws = WorkspaceRootFinder.FindAncestorCws(from);
+        string? wsRoot = cws is null ? null : Path.GetDirectoryName(cws);
+        via.Add(cws is null ? "no .cws above the document" : $"workspace {cws}");
+
+        string? file = null;
+        string? why = null;
+        bool? outside = null;
+        if (!VendorLibraryRefs.TryParse(reference, out string name, out string rel))
+            why = $"'{reference}' is not a vendor-library reference (vendorlib://<library>/<file>).";
+        else if (wsRoot is not null)
+        {
+            var entry = (WorkspacePersistence.LoadFromFile(cws!).VendorLibraries ?? [])
+                .FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
+            via.Add(entry is null ? $"no vendor library named '{name}' in it"
+                                  : $"library '{entry.Name}' → '{entry.Path}'");
+            string? root = VendorLibraryRefs.ResolveLibraryRoot(wsRoot, name, out why);
+            if (root is not null)
+            {
+                via.Add($"folder {root}");
+                outside = WorkspaceRootFinder.IsOutside(root, wsRoot);
+                file = VendorLibraryRefs.ResolveFile(reference, from, out why);
+                if (file is not null && !File.Exists(file)) why = $"'{rel}' is not in the library folder.";
+            }
+        }
+        else why = $"'{reference}' names a vendor library, and this document belongs to no workspace to look it up in.";
+
+        int exit = why is null ? 0 : JsonRun.Fail(CliDiagnostics.ExplainRefVendorUnresolved(reference, why));
+        return (new ExplainReferenceJson(reference, from, file, why is null ? "resolved" : "not-found",
+                                         outside, null, via), exit);
     }
 
     // ── --analysis ───────────────────────────────────────────────────────────
@@ -1723,6 +1765,8 @@ internal static class Explain
                               (reference.OutsideWorkspace == true ? "  (outside its workspace)" : ""));
             if (reference.Redirect is { } moved)
                 Console.WriteLine($"  {"",-12} via a recorded move to '{moved}'");
+            foreach (var step in reference.Via ?? [])
+                Console.WriteLine($"  {"",-12} via {step}");
         }
 
         if (value is not null)

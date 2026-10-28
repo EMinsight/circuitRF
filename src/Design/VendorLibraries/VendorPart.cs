@@ -128,3 +128,93 @@ public static class VendorPartPlacement
     public static string? Footprint(VendorPartRef part, Technology? technology)
         => FootprintDefaults.ForCaseCodes(part.CaseMetric, part.CaseImperial, technology);
 }
+
+/// <summary>
+/// Choosing a different part for an instance already placed (brief vendorlib-3 R-vl3-1): the
+/// parameters the change writes, the footprint rule, and Value ▲/▼'s idea of "the same kind of part".
+/// One definition, called by the Parameter Editor's part picker and by an in-place edit of the
+/// instance's label.
+/// </summary>
+public static class VendorPartChange
+{
+    /// <summary>
+    /// The instance's <c>Footprint</c> after the part changes from <paramref name="old"/> to
+    /// <paramref name="new"/> (R-vl3-1d). The footprint follows the part only when it CAME from the
+    /// part — when <paramref name="current"/> equals what <see cref="FootprintDefaults.ForCaseCodes"/>
+    /// gives the old part — and is otherwise the user's choice and comes back unchanged. No state is
+    /// stored to remember which: the comparison is the record. Null and blank both mean None.
+    /// </summary>
+    public static string? FootprintAfter(string? current, VendorPartRef old, VendorPartRef @new, Technology? technology)
+    {
+        ArgumentNullException.ThrowIfNull(old);
+        ArgumentNullException.ThrowIfNull(@new);
+        string? cur = string.IsNullOrWhiteSpace(current) ? null : current.Trim();
+        string? fromOld = VendorPartPlacement.Footprint(old, technology);
+        return string.Equals(cur, fromOld, StringComparison.Ordinal)
+            ? VendorPartPlacement.Footprint(@new, technology)
+            : cur;
+    }
+
+    /// <summary>
+    /// The parts of <paramref name="fileEntries"/> (one file's index entries) that are the same kind
+    /// as <paramref name="current"/>, ordered by value and then by part name (R-vl3-1b). The same kind
+    /// is the same file and the same Description fields except the value; for a part with no
+    /// Description it is the same file only.
+    /// </summary>
+    public static IReadOnlyList<VendorLibraryEntry> SameKind(
+        IReadOnlyList<VendorLibraryEntry> fileEntries, VendorLibraryEntry current)
+    {
+        ArgumentNullException.ThrowIfNull(fileEntries);
+        ArgumentNullException.ThrowIfNull(current);
+        string? key = KindKey(current);
+        return [.. fileEntries
+            .Where(e => string.Equals(e.File, current.File, StringComparison.OrdinalIgnoreCase)
+                     && (key is null || string.Equals(KindKey(e), key, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(e => e.Header.Value ?? double.PositiveInfinity)
+            .ThenBy(e => e.Part, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>The next (<paramref name="direction"/> &gt; 0) or previous part of the same kind, or
+    /// null at either end and for a part not in <paramref name="fileEntries"/>.</summary>
+    public static VendorLibraryEntry? Step(
+        IReadOnlyList<VendorLibraryEntry> fileEntries, VendorLibraryEntry current, int direction)
+    {
+        var kind = SameKind(fileEntries, current);
+        int at = -1;
+        for (int i = 0; i < kind.Count; i++)
+            if (kind[i].Part.Equals(current.Part, StringComparison.OrdinalIgnoreCase)) { at = i; break; }
+        if (at < 0 || direction == 0) return null;
+        int next = at + Math.Sign(direction);
+        return (uint)next < (uint)kind.Count ? kind[next] : null;
+    }
+
+    /// <summary>
+    /// The Description fields that say what KIND of part this is — every field but the value — or
+    /// null for a part with no Description. The value field is the one that reads as a value equal to
+    /// the part's stated <c>Property</c> value; a header that states none keeps every field.
+    /// </summary>
+    internal static string? KindKey(VendorLibraryEntry e)
+    {
+        var fields = e.Header.DescriptionFields;
+        if (e.Header.Description is null || fields.Count == 0) return null;
+        int value = ValueFieldIndex(e);
+        return string.Join("/", fields.Where((_, i) => i != value));
+    }
+
+    private static int ValueFieldIndex(VendorLibraryEntry e)
+    {
+        if (e.Header.Value is not { } have || have == 0) return -1;
+        var fields = e.Header.DescriptionFields;
+        for (int i = 0; i < fields.Count; i++)
+        {
+            // "1.5[pF]", "1.5pF" and "1.00e-05[uF]" are all spellings a header uses: the header's own
+            // value reader takes every one of them, and the search grammar's is a fallback.
+            string token = fields[i].Replace(" ", "");
+            bool read = VendorLibraryHeader.TryParseValue(token, out double v)
+                     || VendorLibrarySearch.TryReadValue(token.Replace("[", "").Replace("]", ""), out v);
+            if (read && Math.Abs(v - have) <= VendorLibrarySearch.ValueTolerance * Math.Abs(have))
+                return i;
+        }
+        return -1;
+    }
+}

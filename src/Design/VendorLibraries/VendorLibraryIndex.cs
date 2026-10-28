@@ -216,7 +216,13 @@ public static class VendorLibraryIndex
         if (entries.Count == 0)
             refusal = encrypted > 0
                 ? EncryptedSentence(encrypted)
-                : $"'{full}' holds no readable .subckt part.";
+                // Said with what a readable library looks like: the usual way here is picking a
+                // manufacturer's design-kit edition for a schematic-capture tool, whose circuits sit in
+                // that tool's own database and look nothing like a SPICE file.
+                : $"'{full}' holds no readable .subckt part. A vendor library is the plain-text SPICE " +
+                  "edition: a folder of model files (.lib, .sub, .cir …) with one .subckt per part. A " +
+                  "design kit made for another tool keeps its circuits in that tool's own format and " +
+                  "cannot be read.";
 
         return new VendorLibraryBuild(full, entries, files.Count, read, encrypted, empty, unreadable,
                                       unparsed, duplicates, refusal);
@@ -224,6 +230,28 @@ public static class VendorLibraryIndex
 
     private static VendorLibraryBuild Refused(string root, string why)
         => new(root, [], 0, 0, 0, 0, 0, 0, [], why);
+
+    /// <summary>
+    /// The entries of ONE file of the library at <paramref name="root"/> — what a run asks for the files
+    /// its placed parts name, so a headless extraction scans those files' headers and not the whole
+    /// library (brief vendorlib-3 R-vl3-2b). Served from the same per-file cache a build fills, keyed
+    /// on the file's time and length, so a file that changed since it was indexed is re-scanned first
+    /// and a stale byte block is never read (R-vl3-2a).
+    /// </summary>
+    /// <returns>The file's entries, or null when it is missing, encrypted, empty or unreadable.</returns>
+    public static IReadOnlyList<VendorLibraryEntry>? ScanFile(string root, string relFile)
+    {
+        string full = KeyOf(root);
+        string rel  = relFile.Replace('\\', '/').TrimStart('/');
+        string abs;
+        try { abs = Path.GetFullPath(Path.Combine(full, CircuitRF.Core.RefPath.ToNative(rel))); }
+        catch { return null; }
+        if (!File.Exists(abs)) return null;
+
+        int read = 0;
+        var scan = ScanCached(full, abs, rel, ref read);
+        return scan.Kind == FileKind.Readable ? scan.Entries : null;
+    }
 
     /// <summary>Every library file under <paramref name="root"/>, in ordinal relative-path order.
     /// Hidden files and folders (a leading dot) are skipped.</summary>

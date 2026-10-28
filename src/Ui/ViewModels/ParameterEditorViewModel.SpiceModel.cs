@@ -308,6 +308,9 @@ public sealed partial class ParameterEditorViewModel
     {
         peeked = SpiceModelFile.Empty;
         if (string.IsNullOrWhiteSpace(file)) return null;
+        // Never a whole-file parse of a vendor library file: a static part declares no parameters
+        // for the rows to adopt, and selecting it must parse nothing (brief vendorlib-3 §5.1).
+        if (VendorLibraryRefs.IsVendorRef(file)) return null;
 
         string? path = SpiceModelSymbolProvider.ResolvePath(
             file, _schematicVm?.EditModel.SchematicDirectory);
@@ -324,6 +327,9 @@ public sealed partial class ParameterEditorViewModel
         string file    = ParamValue(_target, SpiceModelSymbolProvider.FileParameter);
         string name    = ParamValue(_target, SpiceModelSymbolProvider.NameParameter);
         string section = ParamValue(_target, SpiceModelSymbolProvider.SectionParameter);
+
+        // A vendor library part is described from the index alone (brief vendorlib-3 R-vl3-1a).
+        if (RefreshVendorPart(file, name)) return;
 
         var def = ResolveDefinition(file, name, section, out var peeked);
 

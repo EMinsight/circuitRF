@@ -28,8 +28,13 @@ public partial class PaletteToolView : UserControl
         // Activating the panel (clicking its tab) must also put focus in here — see below.
         DataContextChanged += OnDataContextChangedForActivation;
 
-        // The Type menu is built when it opens, from the tool's menu tree as it stands then.
-        TypeFlyout.Opening += OnTypeMenuOpening;
+        // The Type menu's items are built AHEAD of opening — whenever the tool's menu tree or its selection
+        // changes (OnToolPropertyChanged). Filling them in the flyout's Opening event left the menu
+        // EMPTY: its presenter is already laid out by then, so it opened as a two-pixel strip and the
+        // button looked dead. A rebuild asked for while the menu is open (choosing an entry changes the
+        // selection) waits for it to close: replacing the items under an open menu removes the item that
+        // was clicked before the menu can close itself, and the menu stayed open over the palette.
+        TypeFlyout.Closed += (_, _) => { if (_typeMenuStale) RebuildTypeMenu(); };
 
         // The breadcrumb is fitted to the button's width whenever either changes.
         TypeButton.SizeChanged += (_, _) => FitBreadcrumb();
@@ -46,11 +51,13 @@ public partial class PaletteToolView : UserControl
         _breadcrumbTool = DataContext as PaletteTool;
         if (_breadcrumbTool is not null) _breadcrumbTool.PropertyChanged += OnToolPropertyChanged;
         FitBreadcrumb();
+        RebuildTypeMenu();
     }
 
     private void OnToolPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(PaletteTool.SelectedCategory)) FitBreadcrumb();
+        if (e.PropertyName == nameof(PaletteTool.SelectedCategory)) { FitBreadcrumb(); RebuildTypeMenu(); }
+        else if (e.PropertyName == nameof(PaletteTool.TypeMenu)) RebuildTypeMenu();
     }
 
     /// <summary>
@@ -91,8 +98,17 @@ public partial class PaletteToolView : UserControl
 
     // ── Type menu (brief vendorlib-2 R-vl2-1) ─────────────────────────────────
 
-    private void OnTypeMenuOpening(object? sender, EventArgs e)
+    private bool _typeMenuStale;
+
+    private void RebuildTypeMenu()
     {
+        if (TypeFlyout.IsOpen)
+        {
+            _typeMenuStale = true;
+            TypeFlyout.Hide();
+            return;
+        }
+        _typeMenuStale = false;
         TypeFlyout.Items.Clear();
         if (DataContext is not PaletteTool tool) return;
         foreach (var node in tool.TypeMenu)
@@ -201,11 +217,25 @@ public partial class PaletteToolView : UserControl
             TileScroll.Focus();
         }, Avalonia.Threading.DispatcherPriority.Input);
 
+    private void OnVendorHelpClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is PaletteTool tool)
+            CircuitRF.Ui.Schematic.VendorLibraryHelp.Open(VendorHelpButton, tool.SelectedVendorLibraryRoot);
+    }
+
     private void OnScrollKeyDown(object? sender, KeyEventArgs e)
     {
-        // The Type menu is a popup with its own root, so its keys never pass through here. The part
-        // list is a ListBox, which scrolls itself — and the tile grid behind it is hidden.
-        if (DataContext is PaletteTool { IsVendorSelection: true }) return;
+        // The Type menu is a popup with its own root, so its keys never pass through here. In a
+        // library's part list, ↑/↓ — from the Search box too — arm the next or previous row, so the
+        // filtered list is walked from the keyboard; the tile grid behind it is hidden.
+        if (DataContext is PaletteTool { IsVendorSelection: true } tool)
+        {
+            if (e.Key is not (Key.Down or Key.Up)) return;
+            int at = tool.ArmAdjacentVendorRow(e.Key == Key.Down ? 1 : -1);
+            if (at >= 0) VendorList.ScrollIntoView(at);
+            e.Handled = true;
+            return;
+        }
 
         var action = PanelScrollKeys.ActionFor(e.Key, e.Source is TextBox);
         if (action is null) return;

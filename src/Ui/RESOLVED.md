@@ -40867,3 +40867,72 @@ unchanged. `SchematicViewModel.VendorPartPlaced` records the PART, since `Compon
 **A vendor part's File/Name/Glyph rows are placed with `ShowOnSchematic = false`**: the type label already
 reads the part number and the value, and `File = vendorlib://…` on the sheet would say nothing a reader
 needs.
+
+## brief vendorlib-3 — the placed part's panel, keyboard, Help, archive row (2026-10-27)
+
+**The vendor panel parses nothing.** `RefreshSpiceModelProperties` hands a `vendorlib://` part to
+`RefreshVendorPart`, which reads only `VendorPartSource.IndexedFileEntries` (the last finished index, filtered to
+the part's file); `ResolveDefinition` refuses a vendor file outright, so the declared-parameter adoption on
+selection cannot parse it either. Gated on `SpiceModelPeek.ReadsOnThisThread`, `SpiceNetlistReader` and `FileReads`.
+A panel opened while the library indexes says so and refreshes on `VendorLibraryIndex.Built` (held weakly — the
+event is static).
+
+**A part change is `SchematicViewModel.ChangeVendorPart`**, one `SetParametersCommand` for Name, Glyph and Footprint,
+shared by the picker, Value ▲/▼ and an in-place edit of the label (`TryChangeSpiceModelDefinition`), which used to
+parse the library file to check the name.
+
+**The Part field keeps the keyboard.** ↓/↑ open the drop-down and move its highlight while the caret stays in the
+box; Enter chooses. The `ListBox` claims Enter on the way up, so its own key handler must be a TUNNEL handler or a
+keyboard choice in the list does nothing.
+
+**A palette row never showed its armed (or hover) background.** `VendorPartRow`'s Border set
+`Background="Transparent"` as a local value, which outranks every style setter, so the `.armed` style applied its
+class and painted nothing. The resting background is now a style. On the accent colour both lines turn white; the
+dimmed second line is a style class for the same reason.
+
+**↓/↑ arm the adjacent part** in a library selection (`PaletteTool.ArmAdjacentVendorRow`), from the search box or
+the list — the palette's tunnel key handler takes them before the ListBox does.
+
+**Port names were drawn twice on a box-drawn SpiceModel**: the generated box writes each name inside it, and the
+render model also named every pin whose name the symbol states. `ShowName` now defaults off for
+`SymbolKind.SpiceModel` (an explicit per-instance override still wins).
+
+**The editor's title for a vendor part is the part number**, as a cell reference's is its cell — not "SPICE": how
+the part is simulated is not the user's concern. The value is a label row of its own on the canvas (`C = 10 pF`),
+appended after the parameter rows and held while the index builds, so no stored label offset moves.
+
+**Help is the ? glyph and opens the library's own documents** (`VendorLibraryHelp`, shared by the palette and the
+Parameter Editor): a context menu of the documents with the OS's default viewer (`DocLauncher.OpenFile`), then
+circuitRF's page; "came with no documents" when there are none.
+
+**Archive Workspace:** a vendor library is a `Kit`-kind row with a visible `Note` (a second line under the title).
+The tree scrolled sideways, so rows had no width to wrap or trim at; horizontal scrolling is now off, and the
+heading names what it holds (Kits / Vendor Libraries / Kits and Libraries). `DocumentFileRefs.TryResolve`
+refuses any string carrying `vendorlib://`, which also covers the `spicemodel://` symbol reference.
+
+**A `MenuFlyout` that "lays out at zero size" headlessly was the real defect, not the platform** — see the Type
+menu entry below: its items were added too late. A `Popup`'s list, a `ContextMenu` and a correctly filled menu flyout
+all draw in the window's own frame and can be photographed.
+
+**The value row is double-clickable** (`SchematicHitTest.HitKind.ComponentVendorValue`, its row counted between the
+parameters and the footprint in the hit-test, Move Labels and Reset Label Position — all three had to learn it or the
+footprint row would be taken for it). Double-clicking it, or the part number, opens the ordinary inline box as
+`InlineEditKind.VendorPart` (`SchematicViewModel.VendorInline`) with a `Popup` list under it: seeded with the value,
+the list is the same-kind parts with the placed part highlighted; typing searches the file. The box's text reaches
+`InlineEditValue` on every keystroke for this kind only (other kinds take it at commit). The list is never
+focusable — ↑/↓ are a tunnel handler on the box, a row is chosen on its tunnel PointerPressed before the press can
+take focus — so the box's LostFocus commit never races a click. A commit reads the highlighted row it captured
+BEFORE `CancelInlineEdit` clears the list. An unfocused ListBox's selection is barely visible, so the highlight is
+styled as a focused one; `ScrollIntoView` is posted after each selection change, since the rows are realized after
+it lands. Under the headless platform an overlay popup that runs off the window is clipped rather than resized, so
+`ResizeY` was dropped from its constraint (FlipY, SlideX).
+
+**The palette's Type button opened an EMPTY menu, so no library could be chosen** (VL-2 defect, found by the owner
+after VL-3). The `MenuFlyout`'s items were added in its `Opening` event; under Avalonia 12 the presenter is already
+laid out by then and opened as a two-pixel strip — the button looked dead. The headless snapshot showed exactly this
+(a 2×32 presenter) and was wrongly put down to the headless platform; a REAL click on the button in `tools/UiSnapshot`
+reproduces it and is how the fix was verified. The items are now built whenever `PaletteTool.TypeMenu` or the
+selection changes. **A rebuild asked for while the menu is open is deferred to its `Closed`** (and the menu hidden):
+choosing an entry changes the selection, and replacing the items under an open menu removed the clicked item before
+the menu could close itself, so it stayed open over the palette. `UiSnapshot --palette` now prints the Type menu's
+state, item count and selection after every step.

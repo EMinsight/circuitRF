@@ -31,6 +31,11 @@ public sealed partial class ArchiveTreeNode : ObservableObject
     /// <summary>Full path, shown as the row's tooltip. Empty for a heading.</summary>
     public string Detail { get; init; } = "";
 
+    /// <summary>A second line under the title, or empty (<see cref="ArchiveOption.Note"/>).</summary>
+    public string Note { get; init; } = "";
+
+    public bool HasNote => Note.Length > 0;
+
     /// <summary>The option this row ticks, or null for a heading.</summary>
     public ArchiveOption? Option { get; init; }
 
@@ -56,6 +61,7 @@ public sealed partial class ArchiveTreeNode : ObservableObject
     {
         Title    = option.DisplayName,
         Detail   = option.Detail.Length > 0 ? option.Detail : option.SourcePath,
+        Note     = option.Note,
         Option   = option,
         SizeText = WorkspaceArchivePlan.FormatSize(option.SizeBytes),
         IsChecked = option.Selected,

@@ -68,6 +68,18 @@ using CircuitRF.Design.Layout;
 // placed as a new marker's is. --import opens the Import Data dialog on the document instead — for an
 // unsaved one the importer works against its provisional .cmc beside the data — after choosing <data> as its source.
 
+//
+// Vendor libraries (brief vendorlib-1…3). Each indexes the workspace's referenced vendor libraries first, as a
+// workspace open starts them, so captions, counts and lists are filled in:
+//   --palette <workspace> [--category <name>] [--search <q>]   the Library palette, a Type entry and a query chosen
+//   --schematic <file.csch> [--select <instance>]             the schematic beside the Parameter Editor on one part;
+//                                                              --type Name=VendorPartBox types into the Part field
+//   --archive <workspace>                                     the Archive Workspace dialog
+//   --manage-libraries <workspace>                            File ▸ Manage Libraries… (written to <out>.dialog.png)
+//   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
+// A list drop-down, a context menu and a button's menu flyout are drawn in the window's own frame; a popup that opens
+// as a top level of its own instead is written to <out>.popup.png.
+
 // --c3d is the 3D editor's picture: no Avalonia window, so it branches off before the headless platform starts (Snapshot3D.cs).
 if (args.Contains("--c3d")) return Snapshot3D.Run(args);
 
@@ -79,6 +91,8 @@ string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
 string? image = null, imageTech = null;
 bool digitise = false, makeSchematic = false;
 int cmcMarkers = 0;
+string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
+string? archive = null, manageLibraries = null, addVendorLibrary = null;
 var layerToggles = new List<(string Name, bool Hide)>();
 bool standalone = false;
 var signal = new List<string>();
@@ -117,6 +131,14 @@ for (int i = 0; i < args.Length; i++)
         case "--impedance-panel": impedancePanel = true; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
+        case "--palette" when i + 1 < args.Length: palette = Path.GetFullPath(args[++i]); break;
+        case "--category" when i + 1 < args.Length: paletteCategory = args[++i]; break;
+        case "--search" when i + 1 < args.Length: paletteSearch = args[++i]; break;
+        case "--schematic" when i + 1 < args.Length: schematic = Path.GetFullPath(args[++i]); break;
+        case "--select" when i + 1 < args.Length: select = args[++i]; break;
+        case "--archive" when i + 1 < args.Length: archive = Path.GetFullPath(args[++i]); break;
+        case "--manage-libraries" when i + 1 < args.Length: manageLibraries = Path.GetFullPath(args[++i]); break;
+        case "--add-vendor-library" when i + 1 < args.Length: addVendorLibrary = Path.GetFullPath(args[++i]); break;
         case "--size" when i + 1 < args.Length:
             var wh = args[++i].Split('x');
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
@@ -129,7 +151,8 @@ for (int i = 0; i < args.Length; i++)
         default: cdd = args[i]; break;
     }
 }
-if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null && cem is null && cmc is null && image is null) || output is null || view is not ("canvas" or "inspector" or "display"))
+bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null;
+if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && clay is null && cem is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -151,11 +174,20 @@ AppBuilder.Configure<SnapshotApp>()
     .SetupWithoutStarting();
 
 Window host;
+PaletteTool? paletteTool = null;
 CircuitRF.Ui.Recognition.ImageSourceViewModel? imageVm = null;
 TuningTool? tuningTool = null;
 LayoutCanvas? layoutCanvas = null;
 LayoutEditorViewModel? layoutVm = null;
-if (clay is not null)
+if (vendorMode)
+{
+    host = VendorView();
+    host.Show();
+    Pump();
+    if (manageLibraries is not null) OpenManageLibraries(manageLibraries);
+    if (addVendorLibrary is not null) OpenAddVendorLibrary(addVendorLibrary);
+}
+else if (clay is not null)
 {
     // The layout editor as the workspace opens a path-backed layout: the view model on the file, its technology
     // resolved from the document's TechRef, the layer list's own rows for hide and lock, the real LayoutEditorView.
@@ -429,7 +461,7 @@ foreach (var (kind, arg) in steps)
         }
         case "--type":
         {
-            var dialog = TopDialog() ?? (imageVm is not null ? host : throw new InvalidOperationException("--type: no dialog is open"));
+            var dialog = TopDialog() ?? (imageVm is not null || vendorMode ? host : throw new InvalidOperationException("--type: no dialog is open"));
             // Name=text types into the text box of that x:Name (an inline box: SizeInput, DistanceInput); else the dialog's
             // first text box.
             int eq = arg.IndexOf('=');
@@ -444,7 +476,7 @@ foreach (var (kind, arg) in steps)
         case "--button":
         {
             // A real press and release on the button's centre, in the dialog's own window.
-            var dialog = TopDialog() ?? (imageVm is not null ? host : throw new InvalidOperationException("--button: no dialog is open"));
+            var dialog = TopDialog() ?? (imageVm is not null || vendorMode ? host : throw new InvalidOperationException("--button: no dialog is open"));
             var buttons = dialog.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).ToList();
             var button = buttons.FirstOrDefault(b => b.Content is string c && c == arg)
                 ?? throw new InvalidOperationException($"--button '{arg}': the dialog has {string.Join(" | ", buttons.Select(b => b.Content))}");
@@ -461,6 +493,10 @@ foreach (var (kind, arg) in steps)
         Console.Write($"{kind} {arg}: ");
         PrintImage();
     }
+    if (paletteTool is not null)
+        Console.WriteLine($"{kind} {arg}: focus {host.FocusManager?.GetFocusedElement()?.GetType().Name ?? "none"}; armed "
+                        + (paletteTool.VendorRows.FirstOrDefault(r => r.IsArmed)?.Part ?? "none")
+                        + "; Type menu " + TypeMenuState() + "; selected " + (paletteTool.SelectedCategory?.Breadcrumb ?? "none"));
     if (tuningTool is not null)
     {
         var focused = host.FocusManager?.GetFocusedElement();
@@ -515,6 +551,112 @@ void Capture(string path)
         string d = Path.ChangeExtension(path, ".dialog.png");
         dialog.CaptureRenderedFrame()!.Save(d);
         Console.WriteLine($"wrote {d} ({dialog.Title})");
+    }
+    // A popup that opened as a top level of its own (rather than in the window's overlay layer).
+    var popups = new List<TopLevel>();
+    foreach (var w in new Window[] { host }.Concat(host.OwnedWindows))
+        foreach (var root in w.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.Popup>()
+                              .Where(p => p.IsOpen && p.Child is not null).Select(p => TopLevel.GetTopLevel(p.Child)).OfType<TopLevel>())
+            if (!popups.Contains(root) && !ReferenceEquals(root, w)) popups.Add(root);
+    foreach (var (root, k) in popups.Select((r, k) => (r, k)))
+    {
+        string pp = Path.ChangeExtension(path, k == 0 ? ".popup.png" : $".popup{k + 1}.png");
+        root.CaptureRenderedFrame()!.Save(pp);
+        Console.WriteLine($"wrote {pp}");
+    }
+}
+
+// The palette's Type menu: open or not, and the size its presenter laid out at — a menu that opens with no
+// items lays out a couple of pixels wide, which is how an empty menu shows up here.
+string TypeMenuState()
+{
+    var button = host.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.Name == "TypeButton");
+    if (button?.Flyout is not MenuFlyout flyout) return "absent";
+    var popup = typeof(Avalonia.Controls.Primitives.PopupFlyoutBase).GetProperty("Popup",
+        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)?.GetValue(flyout) as Avalonia.Controls.Primitives.Popup;
+    var size = popup?.Child?.Bounds.Size;
+    return $"{(flyout.IsOpen ? "open" : "closed")}, {flyout.Items.Count} items, presenter {size?.Width:0}x{size?.Height:0}";
+}
+
+// The vendor-library views, built as the workspace builds them (see the usage note at the top).
+Window VendorView()
+{
+    string? ws = palette ?? archive ?? manageLibraries
+              ?? (schematic is not null ? CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(schematic)) : null);
+    if (ws is not null) IndexVendorLibraries(ws);
+
+    if (palette is not null)
+    {
+        var tool = paletteTool = new PaletteTool();
+        tool.SetPlacementService(new CircuitRF.Ui.Schematic.PlacementService());   // so a row arms, as in the shell
+        tool.SetVendorLibraries(VendorLibrariesOf(palette));
+        if (paletteCategory is not null)
+            tool.SelectedCategory = tool.Categories.FirstOrDefault(c => c.DisplayName == paletteCategory)
+                ?? throw new InvalidOperationException($"--category '{paletteCategory}': {string.Join(", ", tool.Categories.Select(c => c.DisplayName))}");
+        if (paletteSearch is not null) tool.SearchQuery = paletteSearch;
+        return new Window { Width = sizeGiven ? width : 300, Height = sizeGiven ? height : 640,
+                            Content = new CircuitRF.Ui.Views.Palette.PaletteToolView { DataContext = tool } };
+    }
+    if (schematic is not null)
+    {
+        var (model, _, _) = SchematicPersistence.LoadFromFile(schematic);
+        var vm = new SchematicViewModel(model, messageSink: new ConsoleSink());
+        var editor = new ParameterEditorViewModel();
+        var target = select is null ? null : model.Components.FirstOrDefault(c => c.InstanceName == select)
+            ?? throw new InvalidOperationException($"--select '{select}': {string.Join(", ", model.Components.Select(c => c.InstanceName))}");
+        if (target is not null) editor.SetTargetDirect(vm, target, showClose: false);
+        var doc = new CircuitRF.Ui.Schematic.SchematicDocument(Path.GetFileNameWithoutExtension(schematic), vm, schematic);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,360") };
+        grid.Children.Add(new CircuitRF.Ui.Views.Content.SchematicView { DataContext = doc });
+        var pe = new CircuitRF.Ui.Views.ParameterEditor.ParameterEditorView { DataContext = editor };
+        Grid.SetColumn(pe, 1);
+        grid.Children.Add(pe);
+        var window = new Window { Width = sizeGiven ? width : 1200, Height = sizeGiven ? height : 720, Content = grid };
+        window.Opened += (_, _) => Dispatcher.UIThread.Post(doc.RequestZoomToFit);
+        return window;
+    }
+    if (archive is not null)
+    {
+        var dialog = new CircuitRF.Ui.Views.Dialogs.ArchiveWorkspaceDialog(CircuitRF.Ui.Archive.WorkspaceArchiveScanner.Scan(archive), new ConsoleSink());
+        if (sizeGiven) { dialog.Width = width; dialog.Height = height; }
+        return dialog;
+    }
+    return new Window { Width = sizeGiven ? width : 900, Height = sizeGiven ? height : 600 };
+}
+
+void OpenManageLibraries(string ws)
+{
+    var cws = CircuitRF.Design.Workspace.WorkspacePersistence.LoadFromFile(Path.Combine(ws, ".cws"));
+    var ctx = new CircuitRF.Ui.Views.Dialogs.ManagePdksDialog.Context(
+        ws, cws.PdkRefs ?? [], [], () => { }, _ => { }, () => { }, (l, t) => Console.WriteLine($"[{l}] {t}"),
+        VendorRefs: cws.VendorLibraries ?? []);
+    _ = CircuitRF.Ui.Views.Dialogs.ManagePdksDialog.ShowAsync(host, ctx);
+    Pump();
+}
+
+void OpenAddVendorLibrary(string folder)
+{
+    var build = CircuitRF.Design.VendorLibraries.VendorLibraryIndex.Build(folder);
+    _ = CircuitRF.Ui.Views.Dialogs.AddVendorLibraryDialog.AskAsync(host, folder,
+            CircuitRF.Design.VendorLibraries.VendorLibraryRefs.DefaultName(folder), build.SummaryLines());
+    Pump();
+}
+
+static IReadOnlyList<(string Name, string? Root)> VendorLibrariesOf(string ws)
+{
+    var cws = CircuitRF.Design.Workspace.WorkspacePersistence.LoadFromFile(Path.Combine(ws, ".cws"));
+    return [.. (cws.VendorLibraries ?? []).Select(r =>
+        (r.Name, CircuitRF.Design.VendorLibraries.VendorLibraryRefs.ResolveLibraryRoot(ws, r.Name, out _)))];
+}
+
+static void IndexVendorLibraries(string ws)
+{
+    foreach (var (name, root) in VendorLibrariesOf(ws))
+    {
+        if (root is null) { Console.WriteLine($"vendor library '{name}': does not resolve"); continue; }
+        var build = CircuitRF.Design.VendorLibraries.VendorLibraryIndex.StartBuild(root);
+        Await(build);
+        Console.WriteLine($"vendor library '{name}': {build.Result.Entries.Count} parts");
     }
 }
 

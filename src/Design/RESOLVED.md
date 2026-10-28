@@ -23858,3 +23858,57 @@ collision. No pair, no row, or no board → None.
 
 **`VendorLibraryIndex.FileReads(root)` counts every read of a library's bytes** (a scan or one block),
 per library root so a gate is not disturbed by another test reading a different library in parallel.
+
+## brief vendorlib-3 — the placed part: one block per run, the range warning, the picker's rules (2026-10-27)
+
+**A run reads one block per placed part, through the one SPICE path.** `VendorPartSource.Resolve` walks the
+nearest `.cws` to the library and asks the index for the ONE file the part names (`VendorLibraryIndex.ScanFile`,
+served from the per-file cache a background build fills and re-scanned when the file's time or length changed, so
+a stale offset is never read). `VendorPartSource.Read` reads the entry's byte block and hands it to
+`SpiceModelPeek.FromText` → `SpiceCellImport.ScanText` → `SpiceNetlistReader.Read(text, dir, label)`; the
+translations after that are `Scan`'s own (`FromResult` is shared), so a block and the whole file cannot classify a
+part differently. Readings are cached per file + part on mtime/length. Headless with no index, a run placing two
+parts from one file costs one header scan and two block reads (`FileReads` 3), and the reader runs twice
+(`SpiceNetlistReader.ReadsOnThisThread`). A box-drawn (no C/L glyph) part's SYMBOL now comes from its block too —
+it used to parse the whole file on every model rebuild.
+
+**A refusal is never a silent skip headlessly.** Run verbs wrote no extraction conflict to stderr, so a part whose
+library was missing was simply left out of a CLI run with nothing said. Vendor refusals now ride
+`ExtractionResult.PartRefusals` (and still the conflicts, which the GUI posts) and the run verbs write them as
+warnings. Only run verbs: `explain` extracts too, and repeated each warning once per extraction.
+
+**The range warning is judged at extraction, from the analyses' own fields at nominal globals**
+(`VendorPartRange`): S-parameter points, an HB/loadpull tone and tone × highest harmonic, the small-signal sweep,
+a fields frequency. A field that does not evaluate contributes nothing; a parametric sweep's axis is not walked.
+`ExtractionResult.PartRangeWarnings` carries it to Messages and stderr; it is kept out of the conflicts because it
+is about the answer, not the drawing.
+
+**Search defects a real library exposed, all in `VendorLibrarySearch` (shared by the palette, the Part field and
+`find --parts`):**
+- A header writes a size as `<metric>M(<imperial>)`, so a substring match let `0603` find every imperial 0201 part
+  through its metric twin `0603M`. A case-code word now matches the stated pair exactly: bare digits the imperial
+  code, a trailing `M` the metric one. A part that states no pair falls back to the text match.
+- A value matched regardless of quantity: `10nH` found 10 nF capacitors. A unit, when the word states one, must be
+  the part's `Quantity`.
+- Descriptions write `100[V]`; nobody types the brackets. `VendorLibraryHeader.DescriptionPlain` drops them and a
+  word is matched against both spellings — but a word that reads as a VALUE is matched by value only, or `2pF`
+  is found inside `32pF`.
+
+**Value stepping must read the value field the way the header does.** A Description writes the value as
+`1.00e-05[uF]`, which the search grammar's value reader does not take, so no field was recognised as the value,
+it stayed in the kind key, and every part was a kind of its own (▲/▼ always disabled). `VendorPartChange` reads
+the field with `VendorLibraryHeader.TryParseValue` first.
+
+**An edition can ship a schematic symbol per part beside its models** — one small file per part, named after it.
+`Classify` (Manage Libraries' Add) counted any file that is neither a model nor documentation as kit structure, so
+such a library went to the kit import. Per-part companion files (stem = an indexed part name) are now set aside;
+the manifest is checked first and the index is built before the other files are judged.
+
+**Editions can ship no documentation at all** — only model and symbol files, their notes published beside the
+download. `VendorLibraryDocs.Find` lists documents by type (PDF, HTML, Markdown, rich text, word-processor,
+internet shortcut; a `.txt` only when the index found no part in it), nearest the root first, and Help says when
+there are none rather than jumping to circuitRF's page.
+
+**The footprint-follows-the-part rule is a comparison, not stored state** (`VendorPartChange.FootprintAfter`): the
+current footprint equal to what the old part's case pair gives → the new part's (possibly None); anything else is
+the user's and stays. None is the absent row, as the footprint picker writes it.

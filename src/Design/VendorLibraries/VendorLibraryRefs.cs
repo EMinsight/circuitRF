@@ -271,10 +271,17 @@ public static class VendorLibraryRefs
     /// any file that is neither a SPICE model file nor documentation (symbols, catalogs, artwork,
     /// compiled models, layer data). The index then decides between a library and a refusal.</para>
     /// </summary>
+    /// <remarks><b>A file named after one of the library's own parts is not kit structure.</b> An edition
+    /// can ship a schematic symbol per part beside its models — tens of thousands of small files, each
+    /// named after the part it draws — and counting those as "a file that is neither a model nor
+    /// documentation" sent the whole library to the kit import. So the manifest is checked first, the
+    /// index is built, and only then are the other files judged, with each part's own companion files
+    /// set aside by name.</remarks>
     public static (FolderKind Kind, VendorLibraryBuild? Build) Classify(string folder)
     {
-        if (HasKitStructure(folder)) return (FolderKind.Kit, null);
+        if (HasManifest(folder)) return (FolderKind.Kit, null);
         var build = VendorLibraryIndex.Build(folder);
+        if (HasKitStructure(folder, build)) return (FolderKind.Kit, null);
         if (build.Entries.Count > 0) return (FolderKind.VendorLibrary, build);
         if (build.EncryptedFiles > 0) return (FolderKind.UnreadableLibrary, build);
         return (FolderKind.Kit, null);
@@ -286,19 +293,22 @@ public static class VendorLibraryRefs
         ".png", ".jpg", ".jpeg", ".gif", ".zip",
     };
 
-    private static bool HasKitStructure(string folder)
+    private static bool HasManifest(string folder)
+        => File.Exists(Path.Combine(folder, CircuitRF.Core.Devices.External.DeviceWorkerManifest.FileName));
+
+    private static bool HasKitStructure(string folder, VendorLibraryBuild build)
     {
         var spice = new HashSet<string>(Schematic.SpiceModelPeek.FileExtensions, StringComparer.OrdinalIgnoreCase);
         try
         {
-            if (File.Exists(Path.Combine(folder, CircuitRF.Core.Devices.External.DeviceWorkerManifest.FileName)))
-                return true;
             foreach (string f in Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories))
             {
                 string name = Path.GetFileName(f);
                 if (name.StartsWith('.')) continue;
                 string ext = Path.GetExtension(f);
-                if (!spice.Contains(ext) && !DocumentationExtensions.Contains(ext)) return true;
+                if (spice.Contains(ext) || DocumentationExtensions.Contains(ext)) continue;
+                if (build.Find(Path.GetFileNameWithoutExtension(f)) is not null) continue;   // a part's own companion
+                return true;
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
@@ -317,6 +327,11 @@ public static class VendorLibraryRefs
         IReadOnlyList<string> Problems, IReadOnlyList<string> Notes)
     {
         public bool IsClean => Problems.Count == 0;
+
+        /// <summary>The library-wide sentence about files that could not be read, or null — one of
+        /// <see cref="Notes"/>, held apart because <c>check</c> reports it as a warning and the rest
+        /// as information (brief vendorlib-3 R-vl3-4c).</summary>
+        public string? UnreadableNote { get; init; }
 
         /// <summary>One line saying what was CHECKED, not merely whether it passed.</summary>
         public string Summary => PartsIndexed < 0
@@ -381,6 +396,7 @@ public static class VendorLibraryRefs
                       "did not parse and were left empty.");
 
         return new ValidationResult(reference.Name, root, build.Entries.Count, unreadable,
-                                    placed.Count, missing, problems, notes);
+                                    placed.Count, missing, problems, notes)
+            { UnreadableNote = build.UnreadableSentence };
     }
 }

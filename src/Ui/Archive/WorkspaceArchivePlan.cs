@@ -73,6 +73,10 @@ public sealed class ArchiveOption
     /// <summary>The row's tooltip — where the thing actually is. Falls back to <see cref="SourcePath"/>.</summary>
     public string Detail { get; init; } = "";
 
+    /// <summary>A sentence the row shows under its name, or empty — what a vendor library's row says
+    /// about why it starts unticked.</summary>
+    public string Note { get; init; } = "";
+
     /// <summary>Absolute path of the file or folder to copy.</summary>
     public required string SourcePath { get; init; }
 

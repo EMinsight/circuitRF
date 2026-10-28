@@ -1116,5 +1116,29 @@ by `SubcircuitTranslation` / `SpiceModelNetlist` like any other.
   on-disk cache.
 - **The reader drops nothing.** An inductor's `Rser` is the inductor's `R`, and any other override a
   native inductor does not take is a note rather than a silently ignored parameter (§2 property 2).
-- **Search** is `VendorLibrarySearch`, shared by the palette and `circuitrf find --parts`.
+- **Search** is `VendorLibrarySearch`, shared by the palette, the Parameter Editor's Part field and
+  `circuitrf find --parts`. A case-code word (`0603`, `1608M`) matches the stated case pair exactly; a
+  value word matches by value, and its unit (if any) must be the part's quantity; any other word is a
+  substring of the name, file, folder or the Description with or without its unit brackets.
+
+**The placed part (brief vendorlib-3).**
+
+- **One block per part.** `NetExtractor.EmitSpiceModelInstance` takes a `vendorlib://` part through
+  `VendorPartSource.Resolve` (nearest `.cws` → library → `VendorLibraryIndex.ScanFile` for the ONE
+  file named, which re-scans on an mtime/length change) and `VendorPartSource.Read` (the entry's
+  byte block → `SpiceModelPeek.FromText` → `SpiceCellImport.ScanText` → `SpiceNetlistReader.Read`).
+  From there it is the file path's own `Select` and `SpiceModelNetlist.Build`. A box-drawn (no C/L
+  glyph) part's symbol is resolved from the same block. A refusal names the part and the library and
+  is also returned in `ExtractionResult.PartRefusals`, which a headless run writes to stderr.
+- **Frequency range.** `VendorPartRange.Warnings` judges every emitted part against the enabled
+  analyses' reach at nominal globals (S-parameter points, HB/loadpull tone × highest harmonic, the
+  small-signal sweep, a fields frequency; 0 Hz exempt) and returns one sentence per part number in
+  `ExtractionResult.PartRangeWarnings`.
+- **Choosing another part** is `VendorPartChange`: `SameKind`/`Step` (the same file and the same
+  Description fields but the value, by stated value then name) and `FootprintAfter` (the footprint
+  follows the part only when it equals what the old part's case pair gives). The GUI writes both
+  through `SchematicViewModel.ChangeVendorPart` as one undo entry. The panel reads only the index
+  (`VendorPartSource.IndexedFileEntries`); `SpiceModelPeek.ReadsOnThisThread` gates it.
+- **Documents.** `VendorLibraryDocs.Find` lists what a library shipped by file type, nearest the root
+  first; a `.txt` counts only when the index found no part in it.
 

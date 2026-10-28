@@ -35,7 +35,10 @@
 
         <Border Grid.Row="2" BorderThickness="1" CornerRadius="3"
                 BorderBrush="{DynamicResource SystemBaseLowColor}">
-            <TreeView x:Name="Tree" FontSize="12" Padding="2">
+            <!-- No horizontal scrolling: a row is given the tree's width, so a long title trims from
+                 the end and a row's note wraps under it instead of running off the side. -->
+            <TreeView x:Name="Tree" FontSize="12" Padding="2"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                 <TreeView.ItemTemplate>
                     <TreeDataTemplate x:DataType="arc:ArchiveTreeNode" ItemsSource="{Binding Children}">
                         <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,1">
@@ -43,11 +46,15 @@
                                       IsThreeState="True"
                                       IsChecked="{Binding IsChecked, Mode=TwoWay}"
                                       MinWidth="0" Margin="0,0,4,0"/>
-                            <TextBlock Grid.Column="1"
-                                       Text="{Binding Title}"
-                                       VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
-                                       ToolTip.Tip="{Binding Detail}"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center"
+                                        ToolTip.Tip="{Binding Detail}">
+                                <TextBlock Text="{Binding Title}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Note}"
+                                           IsVisible="{Binding HasNote}"
+                                           FontSize="11" Opacity="0.7"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
                             <TextBlock Grid.Column="2"
                                        Text="{Binding SizeText}"
                                        VerticalAlignment="Center"

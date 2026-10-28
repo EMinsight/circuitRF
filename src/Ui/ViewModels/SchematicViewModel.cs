@@ -360,7 +360,7 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     // ── Inline editing ────────────────────────────────────────────────────────
 
-    public enum InlineEditKind { None, ComponentType, ComponentName, ComponentParam, WireNetLabel, CanvasText }
+    public enum InlineEditKind { None, ComponentType, ComponentName, ComponentParam, WireNetLabel, CanvasText, VendorPart }
 
     [ObservableProperty] private bool   _isInlineEditing;
     [ObservableProperty] private double _inlineEditScreenX;
@@ -754,7 +754,7 @@ public sealed partial class SchematicViewModel : ObservableObject
 
         if (targets.Count == 0) return;
 
-        int LabelCount(EditableComponent c) => 2 + c.LabelParameters().Count();
+        int LabelCount(EditableComponent c) => 2 + c.LabelParameters().Count() + (c.HasVendorValueRow ? 1 : 0);
 
         var snaps = targets.Select(c =>
         {
@@ -3565,6 +3565,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                     or SchematicHitTest.HitKind.ComponentType
                     or SchematicHitTest.HitKind.ComponentName
                     or SchematicHitTest.HitKind.ComponentParam
+                    or SchematicHitTest.HitKind.ComponentVendorValue
                     or SchematicHitTest.HitKind.ComponentFootprint))
                 {
                     _messageSink?.Info("Click on a component or its label to move labels, Esc to cancel");
@@ -3607,7 +3608,8 @@ public sealed partial class SchematicViewModel : ObservableObject
             // The footprint row (R-fp2-5c) is the last one when it is drawn, so it is part of the
             // block the Move Labels gesture moves. Left out, it would stay where it was while
             // everything else moved.
-            int labelCount = 2 + c.LabelParameters().Count() + (c.FootprintLabelText().Length > 0 ? 1 : 0);
+            int labelCount = 2 + c.LabelParameters().Count() + (c.HasVendorValueRow ? 1 : 0)
+                           + (c.FootprintLabelText().Length > 0 ? 1 : 0);
             var oldOffsets = new List<(double DX, double DY)>(c.LabelOffsets);
             // Pad a row added since the last move with the LAST stored offset, not (0,0) — that is
             // where it is already being drawn, and padding with zero would snap it back to the
@@ -4018,6 +4020,52 @@ public sealed partial class SchematicViewModel : ObservableObject
         Execute(WithSeriesWireCuts(new PlaceComponentCommand(EditModel, comp), comp));
         SelectPlacedPart(comp.Id);
         VendorPartPlaced?.Invoke(part);
+    }
+
+    /// <summary>
+    /// Points a placed vendor part at another part of its library (brief vendorlib-3 R-vl3-1): its
+    /// <c>Name</c> and <c>Glyph</c>, and its <c>Footprint</c> when that came from the old part
+    /// (<see cref="VendorPartChange.FootprintAfter"/>) — <b>one undo entry for all three</b>. The
+    /// instance, its wires, its rotation and its label placement are untouched; nothing is parsed.
+    /// </summary>
+    /// <param name="old">The instance's current part's index entry, or null when the library no
+    /// longer holds it (the footprint is then the user's to keep).</param>
+    /// <returns>False when <paramref name="comp"/> is not a vendor part.</returns>
+    public bool ChangeVendorPart(EditableComponent comp, VendorLibraryEntry? old, VendorLibraryEntry chosen)
+    {
+        ArgumentNullException.ThrowIfNull(comp);
+        ArgumentNullException.ThrowIfNull(chosen);
+        string file = comp.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression ?? "";
+        if (!VendorLibraryRefs.TryParse(file, out string library, out _)) return false;
+
+        var next = VendorPartRef.For(library, chosen);
+        var updated = comp.Parameters.Select(p => p.Clone()).ToList();
+        Set(SpiceModelSymbolProvider.NameParameter,  next.Part);
+        Set(SpiceModelSymbolProvider.GlyphParameter, next.Glyph);
+
+        if (old is not null)
+        {
+            var row = updated.FirstOrDefault(p => p.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase));
+            string? footprint = VendorPartChange.FootprintAfter(
+                row?.Expression, VendorPartRef.For(library, old), next, SchematicTechnology.Of(EditModel));
+            if (footprint is null && row is not null && !string.IsNullOrWhiteSpace(row.Expression))
+                updated.Remove(row);   // None REMOVES the row, as the footprint picker writes it
+            else if (footprint is not null && row is null)
+                updated.Add(new EditableParameter
+                    { Name = ArtworkParameters.FootprintName, Expression = footprint, ShowOnSchematic = false });
+            else if (footprint is not null)
+                row!.Expression = footprint;
+        }
+
+        Execute(new SetParametersCommand(EditModel, comp, updated));
+        return true;
+
+        void Set(string name, string value)
+        {
+            var p = updated.FirstOrDefault(q => q.Name == name);
+            if (p is null) updated.Add(p = new EditableParameter { Name = name, ShowOnSchematic = false });
+            p.Expression = value;
+        }
     }
 
     /// <summary>
@@ -4559,6 +4607,17 @@ public sealed partial class SchematicViewModel : ObservableObject
             .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression?.Trim() ?? "";
         if (file.Length == 0) return false;
 
+        // A vendor part changes part by the index, never by parsing its library file, and carries its
+        // glyph and footprint with it (brief vendorlib-3 R-vl3-1).
+        if (VendorLibraryRefs.IsVendorRef(file))
+        {
+            var entries = VendorPartSource.IndexedFileEntries(file, EditModel.SchematicDirectory, out _, out _);
+            var chosen  = entries?.FirstOrDefault(e => e.Part.Equals(want, StringComparison.OrdinalIgnoreCase));
+            if (chosen is null) return false;
+            string current = comp.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)?.Expression?.Trim() ?? "";
+            return ChangeVendorPart(comp, entries!.FirstOrDefault(e => e.Part.Equals(current, StringComparison.OrdinalIgnoreCase)), chosen);
+        }
+
         if (want.Length > 0)
         {
             string? path = SpiceModelSymbolProvider.ResolvePath(file, EditModel.SchematicDirectory);
@@ -5093,6 +5152,13 @@ public sealed partial class SchematicViewModel : ObservableObject
 
         switch (hit.Kind)
         {
+            // A vendor part's part number and value row open the library search (SchematicViewModel.VendorInline).
+            case SchematicHitTest.HitKind.ComponentType when IsVendorPart(comp)
+                                                             && BeginVendorInlineEdit(comp, valueRow: false, screenX, screenY):
+                break;
+            case SchematicHitTest.HitKind.ComponentVendorValue:
+                if (IsVendorPart(comp)) BeginVendorInlineEdit(comp, valueRow: true, screenX, screenY);
+                break;
             case SchematicHitTest.HitKind.ComponentType:
                 InlineEditIncludesName = false; InlineEditSelStart = 0; InlineEditSelLength = -1;
                 // Seed with the text that is actually on screen — the cell name for a cell
@@ -5245,11 +5311,16 @@ public sealed partial class SchematicViewModel : ObservableObject
         var worldY       = _inlineEditWorldY;
         var includesName = InlineEditIncludesName;
         string newVal    = InlineEditValue.Trim();
+        var vendorPick   = SelectedVendorInlineMatch;
 
         CancelInlineEdit();  // zero out all fields now — deferred call hits None guard above
 
         switch (kind)
         {
+            case InlineEditKind.VendorPart:
+                CommitVendorInline(targetId ?? "", newVal, vendorPick);
+                break;
+
             case InlineEditKind.ComponentType:
             {
                 var comp = EditModel.FindComponent(targetId ?? "");
@@ -5431,6 +5502,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         InlineEditIncludesName      = false;
         InlineEditSelStart          = 0;
         InlineEditSelLength         = -1;
+        ClearVendorInline();
     }
 
     /// <summary>

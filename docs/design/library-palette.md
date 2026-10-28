@@ -356,7 +356,7 @@ Brief vendorlib-1 provides the index, the search, **File ▸ Add Vendor Library�
 in the palette:
 
 - **The category combo became the Type menu** — a button showing `PaletteCategoryEntry.Breadcrumb`
-  and a `MenuFlyout` built from `PaletteTool.TypeMenu` (`PaletteMenuNode`s) each time it opens. Kits
+  and a `MenuFlyout` built from `PaletteTool.TypeMenu` (`PaletteMenuNode`s) whenever the tree or the selection changes — never in its Opening event, which opened it empty. Kits
   move into sub-menus; each library's sub-menu is `VendorMenuTree.Build` over its index (folders,
   file leaves with counts, an "All in" item first, single-child folders collapsed, a single top folder
   skipped). `Categories` stays the flat list of top-level entries; a library's folders and files live
@@ -374,4 +374,10 @@ in the palette:
   `SchematicViewModel.CommitVendorPlacement`.
 - **Recently Used holds `RecentPlacement`s** — a `SymbolKind` or a `VendorPartRef`, one list, persisted
   as strings in `AppPreferences.RecentlyPlaced` (a kind's name exactly as before).
+- **Keyboard and Help (brief vendorlib-3).** <kbd>↓</kbd>/<kbd>↑</kbd> in a library selection — from the
+  search box or the list — arm the adjacent row (`PaletteTool.ArmAdjacentVendorRow`), so the filtered
+  list is walked without the mouse. The **?** button beside the column headers is `VendorLibraryHelp`:
+  the library's own documents (`VendorLibraryDocs.Find`), then circuitRF's page.
+- **A placed part's value** is a label row of its own (`C = 10 pF`), appended after the parameter rows
+  so stored label offsets keep their rows, and held while the index builds (`EditableComponent.HasVendorCaptionRow`).
 

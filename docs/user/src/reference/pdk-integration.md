@@ -276,8 +276,50 @@ have that library somewhere else under the same name, the message offers **Repai
 **Validate** on a vendor library re-reads it and reports parts indexed, files it could not read, placed
 parts checked, and any placed part the library no longer holds.
 
-Headless, `circuitrf import library <folder> --into <workspace>` adds one, and
-`circuitrf find <workspace> --parts "<query>"` searches them; see [CLI](cli.html).
+### A placed part {#vendor-placed}
+
+Selecting a placed vendor part shows its library and file, a **Part** field and the part's value,
+frequency range and description in the Parameter Editor. The editor's title is the part number.
+
+- **Choose another part** by typing in the Part field: it searches that file's parts with the
+  palette's search, and <kbd>↓</kbd>/<kbd>↑</kbd> move through the matches while you type.
+  <kbd>Enter</kbd> takes the highlighted one and <kbd>Esc</kbd> puts the placed part back. The
+  <span class="ui">▾</span> button lists the whole file with the placed part highlighted.
+- **Value ▼ / ▲** step to the next lower or higher value of the same kind: the same file and the same
+  description except the value, so the size, dielectric and voltage stay as they are.
+
+- **On the schematic**, double-click the value line (`C = 10 pF`). The value opens for editing with
+  the parts of the same kind listed under it, in value order, and the placed part highlighted:
+  <kbd>↓</kbd>/<kbd>↑</kbd> and <kbd>Enter</kbd> step the value, or type to search the whole file — a
+  value, a part number or words of the description (`22p 100V`) — and take a match with
+  <kbd>Enter</kbd> or a click. <kbd>Esc</kbd> changes nothing.
+  Double-clicking the part number does the same over the whole file.
+
+Either way the instance keeps its place, wires and labels. The footprint follows the part only when it
+came from the part: a footprint you chose yourself stays. One Undo puts both back. Selecting a part reads
+nothing from the library file.
+
+**The <span class="ui">?</span> button** opens the documents the library came with, if any, each in
+your system's own viewer. Some editions ship nothing but model files, and publish their notes beside
+the download instead. The menu then says the library came with no documents.
+
+**A run reads only the placed parts.** Each part's circuit is read from its own few lines of its file,
+so a run placing three parts from a 15 MB file reads three small blocks. A part whose library is
+missing, or that the library no longer holds, is reported by name and left out of the run.
+
+**Frequency range.** A part's model is valid over the range its library states. When a run's analyses
+go outside it, the run says so once per part number: *"… is characterised from 100 MHz to 30 GHz; this
+run reaches 1 MHz."* It is a warning in the Messages pane (on stderr from the command line); the run
+still completes. A DC operating point never warns.
+
+**Sharing.** **Archive Workspace** lists each referenced vendor library unticked, because a library is
+usually licensed for your own use. The recipient adds their own copy. Ticked, the library is copied into
+the archive and the archived workspace points at the copy.
+
+Headless, `circuitrf import library <folder> --into <workspace>` adds one,
+`circuitrf find <workspace> --parts "<query>"` searches them, `circuitrf check <workspace>` reports a
+missing library or a vanished part as an error, and `circuitrf explain <file> --ref vendorlib://…`
+shows which workspace, library entry and folder a reference resolves through; see [CLI](cli.html).
 
 ## Authoring a kit {#authoring}
 

@@ -77,6 +77,23 @@ public static class NetExtractor
         /// said wherever the design runs, by surfaces that do not report extraction conflicts at all.
         /// </summary>
         public IReadOnlyList<HostCellChoice> HostCellChoices { get; init; } = [];
+
+        /// <summary>
+        /// One sentence per placed vendor part number whose stated frequency range the analyses leave
+        /// (brief vendorlib-3 R-vl3-3, <see cref="VendorLibraries.VendorPartRange"/>). Kept apart from
+        /// <see cref="Conflicts"/> for the reason <see cref="HostCellChoices"/> is: it is said wherever
+        /// the design RUNS — Messages in the GUI, stderr from the CLI — and it is a warning about the
+        /// answer, not a defect in the drawing.
+        /// </summary>
+        public IReadOnlyList<string> PartRangeWarnings { get; init; } = [];
+
+        /// <summary>
+        /// The placed vendor parts that could not be read — a library the workspace does not name, a
+        /// library folder that is missing, a part or file the library no longer holds (brief vendorlib-3
+        /// R-vl3-2c). Each is ALSO among <see cref="Conflicts"/>, which the GUI posts; this list is what a
+        /// headless run says on stderr, so a skipped part is never silent there either.
+        /// </summary>
+        public IReadOnlyList<string> PartRefusals { get; init; } = [];
     }
 
     /// <summary>One <see cref="ExtractionResult.HostCellChoices"/> entry. <see cref="IsWarning"/>
@@ -187,6 +204,8 @@ public static class NetExtractor
         {
             CellPorts = cellPorts, Library = lib, CellKeys = scope.LibraryNameToKey(),
             HostCellChoices = scope.HostCellChoices,
+            PartRangeWarnings = VendorLibraries.VendorPartRange.Warnings(tb, imports.VendorParts),
+            PartRefusals = imports.VendorRefusals,
         };
     }
 
@@ -816,6 +835,13 @@ public static class NetExtractor
         /// same name must be reported rather than silently bound to whichever was read first.</para>
         /// </summary>
         public Dictionary<string, string> SpiceCells { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Every vendor library part this extraction emitted, in emission order — what the
+        /// frequency-range warning is judged over once the analyses are known.</summary>
+        public List<VendorLibraries.VendorLibraryEntry> VendorParts { get; } = [];
+
+        /// <summary>The vendor parts this extraction refused, each as the conflict it added.</summary>
+        public List<string> VendorRefusals { get; } = [];
         private readonly List<UserFunction> _functions = [];
         private readonly List<Variable>     _variables = [];
         private readonly HashSet<string>    _merged    = new(StringComparer.OrdinalIgnoreCase);
@@ -1184,32 +1210,54 @@ public static class NetExtractor
             return null;
         }
 
-        string? path = SpiceModelSymbolProvider.ResolvePath(file, model.SchematicDirectory, out string? unresolved);
-        if (path is null && unresolved is not null)
+        string wanted = (comp.Parameters
+            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)?.Expression ?? "").Trim();
+
+        // A vendor library part reads ONE block — its own — out of a file holding thousands, through
+        // the index, rather than parsing the whole file (brief vendorlib-3 R-vl3-2). What follows the
+        // read is the file path's own: the same Select, the same Build, the same claimed cells.
+        string? path;
+        SpiceModelFile peeked;
+        if (VendorLibraries.VendorLibraryRefs.IsVendorRef(file))
         {
-            conflicts.Add($"Instance '{comp.InstanceName}': {unresolved}");
-            return null;
+            if (VendorLibraries.VendorPartSource.Resolve(file, wanted, model.SchematicDirectory, out string? vendorRefusal)
+                is not { } part)
+            {
+                conflicts.Add($"Instance '{comp.InstanceName}': {vendorRefusal}");
+                imports.VendorRefusals.Add(conflicts[^1]);
+                return null;
+            }
+            path   = part.FilePath;
+            peeked = VendorLibraries.VendorPartSource.Read(part);
+            if (peeked.Error is null) imports.VendorParts.Add(part.Entry);
         }
-        if (path is null)
+        else
         {
-            conflicts.Add($"Instance '{comp.InstanceName}': '{file}' is a relative path and this " +
-                          "schematic has not been saved, so there is no directory to resolve it " +
-                          "against. Save the schematic, or point it at an absolute path.");
-            return null;
+            path = SpiceModelSymbolProvider.ResolvePath(file, model.SchematicDirectory, out string? unresolved);
+            if (path is null && unresolved is not null)
+            {
+                conflicts.Add($"Instance '{comp.InstanceName}': {unresolved}");
+                return null;
+            }
+            if (path is null)
+            {
+                conflicts.Add($"Instance '{comp.InstanceName}': '{file}' is a relative path and this " +
+                              "schematic has not been saved, so there is no directory to resolve it " +
+                              "against. Save the schematic, or point it at an absolute path.");
+                return null;
+            }
+
+            string section = (comp.Parameters
+                .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.SectionParameter)?.Expression ?? "").Trim();
+
+            peeked = SpiceModelPeek.Read(path, section);
         }
 
-        string section = (comp.Parameters
-            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.SectionParameter)?.Expression ?? "").Trim();
-
-        var peeked = SpiceModelPeek.Read(path, section);
         if (peeked.Error is { } error)
         {
             conflicts.Add($"Instance '{comp.InstanceName}': {error}");
             return null;
         }
-
-        string wanted = (comp.Parameters
-            .FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)?.Expression ?? "").Trim();
 
         var definition = SpiceModelPeek.Select(peeked, wanted);
         if (definition is null)

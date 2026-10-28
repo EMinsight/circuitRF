@@ -18,6 +18,7 @@ using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Smith;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.VendorLibraries;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine.Mom;
@@ -297,6 +298,26 @@ internal static class Check
             foreach (var known in cws.KnownFiles)
                 if (!File.Exists(Resolve(root, known)) && !Directory.Exists(Resolve(root, known)))
                     f.Add(CliDiagnostics.CheckWorkspaceRefUnresolved(cwsPath, "known file", known));
+
+            // Brief vendorlib-3 R-vl3-4c: every referenced vendor library through the one Validate the
+            // Manage Libraries dialog runs — a library that is missing or unreadable as a whole, and a
+            // placed part it no longer holds, are errors; unreadable files in it are a warning.
+            if (cws.VendorLibraries is { Count: > 0 } vendorLibraries)
+            {
+                var placed = PlacedVendorParts(root);
+                foreach (var library in vendorLibraries)
+                {
+                    var v = VendorLibraryRefs.Validate(root, library, placed);
+                    foreach (var problem in v.Problems)
+                        f.Add(v.PartsIndexed < 0
+                            ? CliDiagnostics.CheckVendorLibraryMissing(cwsPath, library.Name, problem)
+                            : CliDiagnostics.CheckVendorPartMissing(cwsPath, library.Name, problem));
+                    foreach (var note in v.Notes)
+                        f.Add(note == v.UnreadableNote
+                            ? CliDiagnostics.CheckVendorLibraryUnreadable(cwsPath, library.Name, note)
+                            : CliDiagnostics.CheckVendorLibraryNote(cwsPath, library.Name, note));
+                }
+            }
         }
 
         f.End();
@@ -304,6 +325,39 @@ internal static class Check
 
         static string Resolve(string root, string reference) =>
             Path.IsPathRooted(reference) ? reference : CircuitRF.Core.RefPath.Resolve(root, reference);
+    }
+
+    /// <summary>
+    /// The File/Name of every vendor part placed in a schematic of the workspace at
+    /// <paramref name="root"/> — the set <see cref="VendorLibraryRefs.Validate"/> checks. Hidden folders
+    /// and <c>results/</c> are not walked; an unreadable schematic contributes nothing here, because
+    /// its own check reports it.
+    /// </summary>
+    private static List<(string File, string Name)> PlacedVendorParts(string root)
+    {
+        var placed = new HashSet<(string, string)>();
+        IEnumerable<string> files;
+        try { files = Directory.EnumerateFiles(root, "*" + CellFolder.ViewExtension(ViewType.Schematic), SearchOption.AllDirectories); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+
+        foreach (string csch in files)
+        {
+            string rel = Path.GetRelativePath(root, csch).Replace('\\', '/');
+            if (rel.Split('/').Any(seg => seg.StartsWith('.')) || rel.StartsWith("results/", StringComparison.Ordinal)) continue;
+            try
+            {
+                var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
+                foreach (var c in model.Components)
+                {
+                    if (c.Symbol != SymbolKind.SpiceModel) continue;
+                    string file = (c.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.FileParameter)?.Expression ?? "").Trim();
+                    if (!VendorLibraryRefs.IsVendorRef(file)) continue;
+                    placed.Add((file, (c.Parameters.FirstOrDefault(p => p.Name == SpiceModelSymbolProvider.NameParameter)?.Expression ?? "").Trim()));
+                }
+            }
+            catch { /* reported by the schematic's own check */ }
+        }
+        return [.. placed];
     }
 
     private static void CheckFolder(string path, Findings f, TechnologyCache cache, bool recursive)

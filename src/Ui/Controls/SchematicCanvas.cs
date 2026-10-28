@@ -642,6 +642,7 @@ public sealed class SchematicCanvas : Control
                     or SchematicHitTest.HitKind.ComponentType
                     or SchematicHitTest.HitKind.ComponentName
                     or SchematicHitTest.HitKind.ComponentParam
+                    or SchematicHitTest.HitKind.ComponentVendorValue
                     or SchematicHitTest.HitKind.ComponentFootprint)
                 {
                     ContextMenuTargetId = hit.Id;
@@ -818,6 +819,8 @@ public sealed class SchematicCanvas : Control
             case SchematicHitTest.HitKind.ComponentType:
             case SchematicHitTest.HitKind.ComponentName:
             case SchematicHitTest.HitKind.ComponentParam:
+            // A vendor part's value row opens the inline editor with the library search under it.
+            case SchematicHitTest.HitKind.ComponentVendorValue:
                 RaiseLabelDoubleTap(hit);
                 break;
             // The footprint label is a READOUT of a choice made from a closed list, so the inline
@@ -886,7 +889,8 @@ public sealed class SchematicCanvas : Control
         var hit = SchematicHitTest.Test(_editContext.EditModel, _model, _index, wx, wy, zoom: _zoom);
         if (hit.Kind is not (SchematicHitTest.HitKind.ComponentType
                           or SchematicHitTest.HitKind.ComponentName
-                          or SchematicHitTest.HitKind.ComponentParam)) return false;
+                          or SchematicHitTest.HitKind.ComponentParam
+                          or SchematicHitTest.HitKind.ComponentVendorValue)) return false;
         return RaiseLabelDoubleTap(hit);
     }
 
@@ -922,6 +926,7 @@ public sealed class SchematicCanvas : Control
                 int row;
                 if (hit.Kind == SchematicHitTest.HitKind.ComponentType) row = 0;
                 else if (hit.Kind == SchematicHitTest.HitKind.ComponentName) row = 1;
+                else if (hit.Kind == SchematicHitTest.HitKind.ComponentVendorValue) row = hit.SubIndex;
                 else
                 {
                     int dispIdx = 0;
@@ -956,6 +961,11 @@ public sealed class SchematicCanvas : Control
                         using var mf = new SKFont(SkiaFonts.PlexRegular, (float)textSize);
                         lx += mf.MeasureText(prefix);
                     }
+                }
+                else if (hit.Kind == SchematicHitTest.HitKind.ComponentVendorValue)
+                {
+                    using var mf = new SKFont(SkiaFonts.PlexRegular, (float)textSize);
+                    lx += mf.MeasureText("C = ");
                 }
         TextLabelDoubleTapped?.Invoke(this, new TextLabelHitArgs(hit, lx, ly));
         return true;

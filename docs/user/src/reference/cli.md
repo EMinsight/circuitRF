@@ -1713,6 +1713,12 @@ Folders: general (8,902), automotive (3,508).
 A folder with no readable part is refused (exit 1) with that sentence. `--json` carries the counts and
 the folder groups as `result.library`.
 
+A run verb given a `.csch` that places vendor parts says two things on stderr, each a warning that leaves
+the exit code alone: a placed part that could not be read (`run.vendor-part.unreadable`, naming the part
+and the library; the run goes without it), and a part the run's analyses take outside its stated
+frequency range (`run.vendor-part.out-of-range`, once per part number). A DC operating point never
+warns about range.
+
 ---
 
 ## `import schematic` — another editor's schematic, as a cell {#import-schematic}
@@ -2183,6 +2189,12 @@ same primacy rule, the same technology walk-up, the same net extractor, the same
 DRC engine. A rule that lived only in `check` would be a rule the application does not enforce, and a
 design would pass here and be refused the moment somebody opened it.
 
+On a workspace, every referenced [vendor library](pdk-integration.html#vendor) is re-read through the
+same Validate the Manage Libraries dialog runs. A library that is missing or holds nothing readable is
+an error (`check.workspace.vendor-library.missing`), and so is a part placed in one of the workspace's
+schematics that the library no longer holds (`check.workspace.vendor-library.part-missing`). Files in
+the library that could not be read are a warning (`check.workspace.vendor-library.unreadable`).
+
 <div class="callout note">
 <span class="label">Warnings are reported and still exit 0</span>
 <p><code>--severity</code> decides the exit code, and it defaults to <code>error</code>. Warnings are
@@ -2422,6 +2434,17 @@ Through the one expression engine, in the design's resolved scope — never by s
 
 Where resolution fails, **that is the answer** — a sentence naming what was looked for and where it
 was looked. You are usually running this verb precisely because something did not resolve.
+
+A [vendor part](pdk-integration.html#vendor-placed) reference reports its walk a step at a time: which
+`.cws`, which library entry and what it stores, and the folder that resolved. A library the workspace
+does not name and a library whose folder is missing say different things.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Stage1.csch --ref vendorlib://Caps/capacitors/series-a.lib
+<span class="output">  reference    'vendorlib://Caps/capacitors/series-a.lib' from /home/you/designs/Amp/Stage1/schematic
+               resolved → /home/you/libraries/caps/capacitors/series-a.lib  (outside its workspace)
+               via workspace /home/you/designs/Amp/.cws
+               via library 'Caps' → '/home/you/libraries/caps'
+               via folder /home/you/libraries/caps</span></code></pre>
 
 <h3 id="explain-cells"><code>--cells</code> — what cells are in here?</h3>
 
@@ -2817,9 +2840,12 @@ workspace the application has open.
 <h3 id="find-parts">Searching vendor libraries: <code>--parts</code></h3>
 
 With `--parts`, `find` searches the workspace's [vendor part libraries](pdk-integration.html#vendor)
-instead of listing documents. Every word of the query must match. A word matches a part when it appears
-in the part's name, its description, its file or its folder, or when it reads as a value (`10p`,
-`10pF`, `2.2n`, `4n7`) equal to the part's stated value within 0.5 %.
+instead of listing documents. Words are separated by spaces and every word must match. A word matches a
+part when it appears in the part's name, its description (its unit brackets dropped, so `50V` finds
+`50[V]`), its file or its folder. A word that reads as a value (`10p`, `10pF`, `2.2n`, `4n7`) matches
+the part's stated value within 0.5 % instead, and a unit, when given, must be the part's (`10nH`
+finds inductors only). A case size matches the stated size exactly: `0603` the imperial code, `1608M`
+the metric one. The palette's search box and the Parameter Editor's Part field use the same rules.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf find ~/designs/Amp --parts "10p C0G"
 <span class="output">Caps	TSTC0402A0018	10 pF	1005M(0402)/C0G(-55~125degC)/10[pF]/50[V]	100 MHz – 30 GHz	File=vendorlib://Caps/capacitors/series-a.lib Name=TSTC0402A0018 Glyph=C Footprint=smt:0402@N</span></code></pre>

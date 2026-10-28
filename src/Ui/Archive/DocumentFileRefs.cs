@@ -165,6 +165,11 @@ public static class DocumentFileRefs
         // names and expressions, and every one of them would otherwise cost a filesystem probe.
         if (storedRef.Length > 4096) return null;
         if (storedRef.IndexOfAny(Path.GetInvalidPathChars()) >= 0) return null;
+        // A vendor library part's `vendorlib://…` is a name looked up in the `.cws`, not a path, and
+        // must never resolve as one: the library travels as its own (unticked) row or not at all
+        // (brief vendorlib-3 R-vl3-4a). Also inside a `spicemodel://` symbol reference.
+        if (storedRef.Contains(CircuitRF.Design.VendorLibraries.VendorLibraryRefs.Scheme, StringComparison.OrdinalIgnoreCase))
+            return null;
         if (Path.GetExtension(storedRef).Length is < 2 or > 12) return null;
 
         var native = RefPath.ToNative(storedRef);

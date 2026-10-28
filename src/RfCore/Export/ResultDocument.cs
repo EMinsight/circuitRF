@@ -2086,7 +2086,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         bool?   OutsideWorkspace,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Redirect);
+        string? Redirect,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Via = null);
 
     // ── the three questions a caller asks BEFORE it can render (RND-3) ───────
     //

@@ -55,6 +55,20 @@ public partial class SchematicView : UserControl
             OnInlineEditWheel,
             RoutingStrategies.Tunnel);
 
+        // A vendor part's inline edit: ↑/↓ move the search list's highlight with the caret left in the
+        // box (tunnel — a single-line TextBox takes Up/Down for its own caret), and a press on a row
+        // chooses it before the press can take the box's focus.
+        InlineEditBox.AddHandler(InputElement.KeyDownEvent, OnVendorInlineKeyDown, RoutingStrategies.Tunnel);
+        VendorInlineList.AddHandler(InputElement.PointerPressedEvent, OnVendorInlinePointerPressed,
+                                    RoutingStrategies.Tunnel);
+        // The highlighted row stays in view — on opening (the placed part, often far down a same-kind
+        // list) and after every ↑/↓. Posted: the rows are realized after the selection lands.
+        VendorInlineList.SelectionChanged += (_, _) =>
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (VendorInlineList.SelectedItem is { } item) VendorInlineList.ScrollIntoView(item);
+            }, DispatcherPriority.Loaded);
+
         // Focus-independent shortcut handler.  Window.KeyBindings marks Escape handled before
         // visual-tree routing begins, so a plain OnKeyDown override never fires after a toolbar
         // click.  Tunnel + handledEventsToo:true lets us intercept the key regardless.
@@ -1059,6 +1073,10 @@ public partial class SchematicView : UserControl
             {
                 row = 1;
             }
+            else if (hit.Kind == SchematicHitTest.HitKind.ComponentVendorValue)
+            {
+                row = hit.SubIndex;   // the value row's own row, after the parameter rows
+            }
             else // ComponentParam
             {
                 int dispIdx = 0;
@@ -1078,7 +1096,12 @@ public partial class SchematicView : UserControl
             // multiplying by zoom at reposition time gives the correct screen offset at any zoom).
             // For name-mode edits (InlineEditIncludesName) the box starts at the label's left edge.
             double prefixWorldUnits = 0;
-            if (hit.Kind == SchematicHitTest.HitKind.ComponentParam
+            if (hit.Kind == SchematicHitTest.HitKind.ComponentVendorValue)
+            {
+                using var mf = new SKFont(SkiaFonts.PlexRegular, 70f);
+                prefixWorldUnits = mf.MeasureText("C = ");
+            }
+            else if (hit.Kind == SchematicHitTest.HitKind.ComponentParam
                 && hit.SubIndex < editComp.Parameters.Count
                 && !(Vm?.InlineEditIncludesName ?? false))
             {
@@ -1313,6 +1336,8 @@ public partial class SchematicView : UserControl
     private void OnInlineEditTextChanged(object? sender, TextChangedEventArgs e)
     {
         string text  = InlineEditBox.Text ?? "";
+        // A vendor part's search filters as it is typed; every other inline edit takes its text at commit.
+        if (Vm is { IsVendorInlineEditing: true } vendorVm) vendorVm.InlineEditValue = text;
         double width = CalcInlineEditWidth(text, InlineEditBox.FontSize);
         InlineEditBox.Width  = width;
         // Keep left edge fixed; box grows to the right as user types.
@@ -1323,6 +1348,24 @@ public partial class SchematicView : UserControl
     // correction ReadoutStripView already took for its own strip editor (RESOLVED.md, 2026-08-13).
     private static double CalcInlineEditWidth(string text, double fontSize) =>
         SchematicInlineEditBox.WidthFor(text, fontSize);
+
+    private void OnVendorInlineKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (Vm is not { IsVendorInlineOpen: true } vm || e.Key is not (Key.Down or Key.Up)) return;
+        vm.MoveVendorInlineSelection(e.Key == Key.Down ? 1 : -1);
+        if (vm.SelectedVendorInlineMatch is { } item) VendorInlineList.ScrollIntoView(item);
+        e.Handled = true;
+    }
+
+    private void OnVendorInlinePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (Vm is not { } vm || (e.Source as Control)?.DataContext is not VendorPartChoice choice) return;
+        vm.SelectedVendorInlineMatch = choice;
+        // The typed text is replaced by the part chosen, so the commit takes the row, not the query.
+        InlineEditBox.Text = choice.Part;
+        CommitAndDismissInlineEdit();
+        e.Handled = true;
+    }
 
     private void OnInlineEditWheel(object? sender, PointerWheelEventArgs e)
     {

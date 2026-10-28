@@ -160,13 +160,14 @@ public static class SchematicCircuit
     /// </summary>
     public static (string Text, IReadOnlyList<string> FilesRead) CnlTextAndFilesOf(string cschPath)
     {
-        var (text, files, _) = CnlTextAndFilesOf(cschPath, null);
+        var (text, files, _, _) = CnlTextAndFilesOf(cschPath, null);
         return (text, files);
     }
 
     /// <inheritdoc cref="CnlTextAndFilesOf(string)"/>
     /// <remarks>With the workspace a loose schematic is run from, and the cells it chose there.</remarks>
-    public static (string Text, IReadOnlyList<string> FilesRead, IReadOnlyList<NetExtractor.HostCellChoice> HostCellChoices)
+    public static (string Text, IReadOnlyList<string> FilesRead, IReadOnlyList<NetExtractor.HostCellChoice> HostCellChoices,
+                   NetExtractor.ExtractionResult Extracted)
         CnlTextAndFilesOf(string cschPath, string? hostWorkspaceRoot)
     {
         var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
@@ -174,7 +175,7 @@ public static class SchematicCircuit
         string name = Path.GetFileNameWithoutExtension(cschPath);
         var watch = new WatchedResolver(Path.GetFullPath(cschPath));
         var extracted = ExtractInWorkspace(model, name, watch, cschPath);
-        return (CnlTextOf(extracted, name), watch.Files, extracted.HostCellChoices);
+        return (CnlTextOf(extracted, name), watch.Files, extracted.HostCellChoices, extracted);
     }
 
     /// <summary>

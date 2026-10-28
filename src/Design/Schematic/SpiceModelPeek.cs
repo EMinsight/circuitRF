@@ -99,6 +99,7 @@ public static class SpiceModelPeek
     /// </param>
     public static SpiceModelFile Read(string? absolutePath, string? section = null)
     {
+        t_reads++;
         if (string.IsNullOrWhiteSpace(absolutePath))
             return SpiceModelFile.Empty with { Error = "No model file is set." };
 
@@ -131,6 +132,23 @@ public static class SpiceModelPeek
         lock (_gate) _cache[key] = new CacheEntry(mtime, length, built);
         return built;
     }
+
+    [ThreadStatic] private static int t_reads;
+
+    /// <summary>
+    /// How many times <see cref="Read"/> has been asked on this thread, cache hits included — the
+    /// counter "selecting a placed vendor part parses nothing" is gated on (brief vendorlib-3 §5.1),
+    /// since a hit costs nothing and a miss parses a whole file and neither should happen there.
+    /// </summary>
+    public static int ReadsOnThisThread => t_reads;
+
+    /// <summary>
+    /// What a SPICE TEXT holds, as a placed component needs to see it — a vendor library part's own
+    /// block (<see cref="SpiceCellImport.ScanText"/>). Not cached here: the caller keys its own cache on
+    /// the file and the part.
+    /// </summary>
+    public static SpiceModelFile FromText(string text, string? sourceDirectory, string fileLabel)
+        => FromScan(SpiceCellImport.ScanText(text, sourceDirectory, fileLabel, SpiceDistributions.Live));
 
     /// <summary>Drops every cached read — called when a workspace is left, as the symbol caches are.</summary>
     public static void InvalidateAll()
@@ -181,6 +199,11 @@ public static class SpiceModelPeek
                 { Error = $"{Path.GetFileName(absolutePath)} could not be read: {ex.Message}" };
         }
 
+        return FromScan(scan);
+    }
+
+    private static SpiceModelFile FromScan(SpiceCellScan scan)
+    {
         if (scan.Error is { } err && scan.Candidates.Count == 0)
             return new SpiceModelFile([], scan, DescribeEmpty(err, scan));
 

@@ -47,6 +47,14 @@ public sealed class PreparedCircuit
     /// (<see cref="NetExtractor.ExtractionResult.HostCellChoices"/>). Empty for every other input.</summary>
     public IReadOnlyList<NetExtractor.HostCellChoice> HostCellChoices { get; private set; } = [];
 
+    /// <summary>The vendor parts whose stated frequency range the analyses leave
+    /// (<see cref="NetExtractor.ExtractionResult.PartRangeWarnings"/>). Empty for every other input.</summary>
+    public IReadOnlyList<string> PartRangeWarnings { get; private set; } = [];
+
+    /// <summary>The placed vendor parts the extraction could not read
+    /// (<see cref="NetExtractor.ExtractionResult.PartRefusals"/>). Empty for every other input.</summary>
+    public IReadOnlyList<string> PartRefusals { get; private set; } = [];
+
     /// <summary>How many times the netlist was parsed and its cell library built: one, for the life of
     /// this object. The counter R-to2-4 asks a test to hold.</summary>
     public int LibraryResolutions { get; }
@@ -120,10 +128,12 @@ public sealed class PreparedCircuit
                       ?? (string.IsNullOrWhiteSpace(hostWorkspaceRoot) ? null : WorkspaceRootFinder.Normalize(hostWorkspaceRoot));
         try
         {
-            var (text, files, choices) = SchematicCircuit.CnlTextAndFilesOf(cschPath, hostWorkspaceRoot);
+            var (text, files, choices, extracted) = SchematicCircuit.CnlTextAndFilesOf(cschPath, hostWorkspaceRoot);
             var prepared = FromText(text, SchematicCircuit.ReferenceBaseOf(cschPath, hostWorkspaceRoot), wsRoot,
                                     Path.GetFileNameWithoutExtension(cschPath), files);
             prepared.HostCellChoices = choices;
+            prepared.PartRangeWarnings = extracted.PartRangeWarnings;
+            prepared.PartRefusals      = extracted.PartRefusals;
             return prepared;
         }
         catch (Exception ex)

@@ -81,6 +81,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
         ToggleMklopfImpedanceEntryCommand = new RelayCommand(ToggleMklopfImpedanceEntry, () => IsMklopfTarget);
         ToggleMklopfLengthEntryCommand    = new RelayCommand(ToggleMklopfLengthEntry,    () => IsMklopfTarget);
+        InitVendorPartCommands();
     }
 
     // Subscribe/unsubscribe PropertyChanged on the target schematic's stack so
@@ -1011,6 +1012,9 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowModelSwitches));
         OnPropertyChanged(nameof(IsSnp));
         OnPropertyChanged(nameof(IsSpiceModel));
+        if (comp.Symbol != SymbolKind.SpiceModel) IsVendorPart = false;
+        OnPropertyChanged(nameof(IsFileSpiceModel));
+        OnPropertyChanged(nameof(ShowVendorPartPanel));
         OnPropertyChanged(nameof(IsWBond));
         NotifyModSourceState();
         OnPropertyChanged(nameof(ShowFootprintRow));
@@ -2311,6 +2315,12 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// </summary>
     private static string TypeDisplayNameFor(EditableComponent comp)
     {
+        // A vendor library part's type is the PART — what the user chose — as a cell reference's is
+        // the cell. How circuitRF simulates it (a SPICE subcircuit) is nothing the user needs told.
+        if (comp.Symbol == SymbolKind.SpiceModel
+            && VendorLibraryRefs.IsVendorRef(ParamValue(comp, SpiceModelSymbolProvider.FileParameter)))
+            return ParamValue(comp, SpiceModelSymbolProvider.NameParameter) is { Length: > 0 } part ? part : "Part";
+
         if (comp.CellRef is not { Length: > 0 } cr)
             return ComponentTypeRegistry.DisplayName(comp.Symbol, comp.PortCount);
 

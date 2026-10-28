@@ -308,7 +308,7 @@ public static class WorkspaceArchiveWriter
         // MW2 R-mw2-4/-16: ReferencedWorkspaces[].Path is the ONE place a cross-workspace path is
         // written, so repointing an archived reference is this single line rather than a rewrite of
         // every document that used the alias — which is the whole reason the reference is an alias.
-        foreach (var listName in new[] { "PdkRefs", "ReferencedWorkspaces" })
+        foreach (var listName in new[] { "PdkRefs", "ReferencedWorkspaces", "VendorLibraries" })
             if (obj[listName] is JsonArray entries)
                 foreach (var entry in entries)
                     if (entry is JsonObject o2 && o2["Path"]?.GetValue<string>() is { } stored2 &&
