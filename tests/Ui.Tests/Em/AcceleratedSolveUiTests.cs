@@ -102,7 +102,7 @@ public class AcceleratedSolveUiTests
         // passed it changes HOW the answer is computed, not WHAT it is — so an .snp produced with it
         // on is not stale for a run with it off. The arrangement (nothing hashed is aware of it) is
         // exactly what a later refactor can quietly undo, so it is asserted rather than arranged.
-        var mesh  = PlanarMeshSettings.Default;
+        var mesh  = EmSetup.DefaultPlanarMesh;      // PM-3: the PRODUCT default (merge on), which is what a setup starts from
         string m0 = EmSnpProvenance.MeshHash(mesh);
 
         foreach (bool on in new[] { false, true })

@@ -126,7 +126,12 @@ public static partial class LayoutRenderer
             // One batched path for every cell boundary — the same batching rule DrawLayer's opaque
             // stroke pass uses, and for the same reason: overlapping identical strokes are idempotent.
             using var path = new SKPath();
-            foreach (var c in cells) AddCell(path, c, ps, toDbu);
+            if (report.Mesh.Merge is { } merge)
+                // PM-3 — the mesh is SOLVED in a merged basis: draw an internal edge only where it is
+                // still the face of its own unknown, so the picture matches the count in the panel.
+                AddMergedCells(path, report.Mesh, merge, ps, toDbu);
+            else
+                foreach (var c in cells) AddCell(path, c, ps, toDbu);
             canvas.DrawPath(path, cellPaint);
             return;
         }
@@ -215,6 +220,65 @@ public static partial class LayoutRenderer
                 path.LineTo(ps.X(piece[k].X * toDbu), ps.Y(piece[k].Y * toDbu));
             path.Close();
         }
+    }
+
+    /// <summary>
+    /// <b>PM-3 — the merged mesh's outline: what is solved, not what is gridded.</b> Under Mesh as
+    /// Merged Shapes the cells and the grid are unchanged, but an interior gridline of a run carries no
+    /// unknown of its own — the current across it is a fixed fraction of the neighbouring merged
+    /// shapes' — so drawing it would show a mesh finer than the one being solved, and the picture
+    /// would disagree with the unknown count beside it. An edge is drawn when it is the rim of the
+    /// metal (no rooftop crosses it) or when the rooftop across it is still the face of its own
+    /// unknown (<see cref="PlanarRooftopMerge.IsSolvedFace"/>); the merge is READ, never re-derived.
+    /// A cut cell is never merged, nor is any neighbour of one, so it is drawn whole exactly as
+    /// <see cref="AddCell"/> draws it. With nothing merged the merge is not attached and this is not
+    /// reached, so that overlay is the plain one to the pixel.
+    /// </summary>
+    internal static void AddMergedCells(SKPath path, PlanarMesh mesh, PlanarRooftopMerge merge,
+                                        PathSpace ps, double toDbu)
+    {
+        var hidden = HiddenSides(mesh, merge);
+        var cells  = mesh.Cells;
+        for (int i = 0; i < cells.Count; i++)
+        {
+            var c = cells[i];
+            if (c.Region is not null) { AddCell(path, c, ps, toDbu); continue; }
+            float x0 = ps.X(c.XMin * toDbu), x1 = ps.X(c.XMax * toDbu);
+            float y0 = ps.Y(c.YMin * toDbu), y1 = ps.Y(c.YMax * toDbu);
+            int h = hidden[i];
+            if ((h & SideLeft)   == 0) { path.MoveTo(x0, y0); path.LineTo(x0, y1); }
+            if ((h & SideRight)  == 0) { path.MoveTo(x1, y0); path.LineTo(x1, y1); }
+            if ((h & SideBottom) == 0) { path.MoveTo(x0, y0); path.LineTo(x1, y0); }
+            if ((h & SideTop)    == 0) { path.MoveTo(x0, y1); path.LineTo(x1, y1); }
+        }
+    }
+
+    private const int SideLeft = 1, SideRight = 2, SideBottom = 4, SideTop = 8;
+
+    /// <summary>Per cell, the sides NOT drawn under the merge: a side whose rooftop is an interior
+    /// gridline of a run. An X rooftop joins <c>CellA</c> (lower x) to <c>CellB</c> across A's right
+    /// side; a Y rooftop joins them across A's top. Vertical bases join nothing in the plane.</summary>
+    internal static int[] HiddenSides(PlanarMesh mesh, PlanarRooftopMerge merge)
+    {
+        var hidden = new int[mesh.Cells.Count];
+        for (int e = 0; e < mesh.Bases.Count; e++)
+        {
+            var b = mesh.Bases[e];
+            if (b.Direction == PlanarBasisDirection.Z || merge.IsSolvedFace(e)) continue;
+            if (b.Direction == PlanarBasisDirection.X) { hidden[b.CellA] |= SideRight; hidden[b.CellB] |= SideLeft; }
+            else                                       { hidden[b.CellA] |= SideTop;   hidden[b.CellB] |= SideBottom; }
+        }
+        return hidden;
+    }
+
+    /// <summary>How many internal edges the merged overlay draws — the rooftops that are still a
+    /// face. The gate: it equals what the merge says is solved.</summary>
+    internal static int MergedOverlayInternalEdgeCount(PlanarMesh mesh, PlanarRooftopMerge merge)
+    {
+        int n = 0;
+        for (int e = 0; e < mesh.Bases.Count; e++)
+            if (mesh.Bases[e].Direction != PlanarBasisDirection.Z && merge.IsSolvedFace(e)) n++;
+        return n;
     }
 
     /// <summary>

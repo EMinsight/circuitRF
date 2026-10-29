@@ -1070,6 +1070,57 @@ reflex vertex owns a cell, refining the mesh cannot reduce the count any further
 **That is why "exact" holds for a bend, a linear taper and a disc but not for a Klopfenstein taper**, and
 why refining does not fix it. It is a property of the artwork, not of the settings.
 
+## Mesh as merged shapes {#merged-shapes}
+
+### What it is
+
+The surface mesh is a tensor-product grid, so every gridline crosses the whole part. The graded fan
+one edge raises — a notch corner, a junction, a bend — runs the length of its gridline, and far from
+that edge the cells it produces are much finer than the field needs. On real artwork over half the
+unknowns can sit in such cells.
+
+**Mesh as Merged Shapes**, in the EM Setup panel's Surface mesh group, keeps that grid and solves it
+in a coarser basis where it is spread: along each row and column, rooftops lying in cells more than
+four times finer than the local field asks for are grouped into runs along their own direction, and
+one merged shape replaces every rooftop between two neighbouring runs. Three things never merge:
+anything near the feature that raised a line, anything within the ports' calibrated end runs, and
+anything within one conductor width of a corner of the artwork — a junction, a step, a bend or a jog —
+and where the mesh knows the current's direction (the transmission-line mesh) only rooftops
+transverse to it merge. The merged basis is a subspace of the elemental one, so current stays
+continuous at every join by construction. The mesh overlay draws what is solved: an internal edge is
+drawn only where it is still the face of its own unknown, so the picture matches the unknown count
+beside it.
+
+**It is on by default.** It applies to a single conductor level solved densely; with the accelerated
+solve on, or on a layout with more than one metal level or a via, the checkbox is greyed, the
+elemental mesh is solved and the mesh notes say so.
+
+### What it buys, and what it costs — measured
+
+| | Elemental unknowns | Merged | Saving | Worst \|ΔS\| against the elemental mesh |
+|---|---|---|---|---|
+| Patch Antenna example, 20 cells/λ | 1,981 | 1,850 | 7 % | 3 × 10⁻⁵ |
+| An internal test geometry, transmission-line mesh | 11,131 | 10,539 | 5 % | < 0.001 in every entry |
+| An edge-coupled bandpass filter | 2,267 | 2,051 | 10 % | < 0.001 |
+| A branch-line coupler | 2,034 | 1,899 | 7 % | < 0.001 |
+| A stepped-impedance lowpass | 4,475 | 4,272 | 5 % | 0.002 |
+
+The corner and direction exclusions are what make the last column read like that. Without them the
+test geometry merged 23 % of its unknowns and paid for it: its two output reflections, near-total at
+|S| ≈ 0.9, turned by 4 to 7° while every transmission moved by under 0.02 — the merged rows inside its
+staircased bends and a shallow jog carried the current itself rather than its transverse part. With
+them, the saving is modest — a few per cent of the unknowns on every geometry measured — and the wall
+clock moves less than that, because the calibration standards and the frequency-independent geometry
+cache are shared and are most of a run below a few thousand unknowns.
+
+<div class="callout warn">
+<span class="label">What to expect</span>
+<p>A smaller matrix, the same answer to the mesh's own accuracy, and a mesh overlay that shows the
+merged basis rather than the grid. If you want the elemental solve for a comparison, turn the setting
+off; the <code>.snp</code> provenance hash carries it, so a result solved one way reads as stale under
+the other.</p>
+</div>
+
 ## Mesh convergence, and how to check it {#mesh-convergence}
 
 A mesh is a discretisation, so **an EM answer is only as good as its mesh, and the only honest test is

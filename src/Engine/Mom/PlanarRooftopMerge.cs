@@ -50,7 +50,9 @@
 //   * Nothing near the feature that raised a line merges in any case — the localised field there is
 //     the fan's own c₀ — which is the brief's "only spread unknowns are candidates".
 //
-// DENSE ONLY, single level only. The accelerator's near correction would have to be exact between
+// DENSE ONLY, single level only. PM-3 added the two exclusions SurfaceMesher.BuildRooftopMerge
+// applies before this map is built: only rooftops transverse to a measured current direction merge,
+// and nothing within CornerZoneWidths of a polygon vertex does (RESOLVED.md §PM-3). The accelerator's near correction would have to be exact between
 // macro pairs, and Part 1 measured the accelerator already slower than dense on the artwork this is
 // for (RESOLVED.md §PM-2 Part 1 §4). A via mesh is excluded until something measures one.
 
@@ -77,6 +79,23 @@ public sealed class PlanarRooftopMerge
     /// </summary>
     public const double SpreadFactor = 4.0;
 
+    /// <summary>
+    /// PM-3 — how closely the current must follow the axis PERPENDICULAR to a run's direction for
+    /// the run to be allowed: |cos| of the angle between the current and that axis, 30° either side.
+    /// A run merges rooftops of one direction along that direction, which is harmless where those
+    /// rooftops carry the transverse current and not where they carry the current itself.
+    /// </summary>
+    public static readonly double TransverseCos = Math.Cos(Math.PI / 6);
+
+    /// <summary>
+    /// PM-3 — the radius, in narrowest-conductor widths, of the zone about every polygon vertex in
+    /// which nothing merges. One width: the current that turns at a junction, a step or along a
+    /// flattened arc settles within about a width of the vertex, and the measured failure (the bends
+    /// and the S-jog of the internal test geometry, RESOLVED.md §PM-3 §1) lies entirely inside that
+    /// zone while the straight output branches, which merge exactly, lie outside it.
+    /// </summary>
+    public const double CornerZoneWidths = 1.0;
+
     /// <summary>Elemental rooftops — the mesh's own basis count.</summary>
     public int ElementalCount { get; }
 
@@ -95,6 +114,11 @@ public sealed class PlanarRooftopMerge
     internal readonly int[]    RowPtr, RowCol;
     internal readonly double[] RowVal;
 
+    // Per elemental rooftop: is its edge the FACE of some macro — the one gridline a macro's ramp
+    // peaks on, weight 1 — or an interior gridline of a run, carrying a fraction of a neighbour's
+    // unknown. PM-3: what the mesh overlay draws, so the picture matches the count.
+    private readonly bool[] _face;
+
     private PlanarRooftopMerge(int elemental, List<List<(int E, double W)>> cols, int mergedRuns,
                                int portProtected)
     {
@@ -109,10 +133,15 @@ public sealed class PlanarRooftopMerge
         ColPtr[Count] = nnz;
         ColRow = new int[nnz]; ColVal = new double[nnz];
         var rowCount = new int[elemental + 1];
+        _face = new bool[elemental];
         for (int m = 0; m < Count; m++)
         {
             int o = ColPtr[m];
-            foreach (var (e, w) in cols[m]) { ColRow[o] = e; ColVal[o] = w; o++; rowCount[e + 1]++; }
+            foreach (var (e, w) in cols[m])
+            {
+                ColRow[o] = e; ColVal[o] = w; o++; rowCount[e + 1]++;
+                if (Math.Abs(w - 1.0) <= FaceWeightTolerance) { _face[e] = true; }
+            }
         }
         RowPtr = new int[elemental + 1];
         for (int e = 0; e < elemental; e++) RowPtr[e + 1] = RowPtr[e] + rowCount[e + 1];
@@ -128,6 +157,42 @@ public sealed class PlanarRooftopMerge
 
     /// <summary>Non-zeros of <c>T</c>.</summary>
     public int NonZeros => ColRow.Length;
+
+    /// <summary>How close to 1 a macro's weight on an elemental rooftop must be for that rooftop to
+    /// count as the macro's face. The face weight is <c>h_r·(1/(H))</c> with <c>h_r = H</c> on a
+    /// single-row run, i.e. 1 up to the division's round-off.</summary>
+    private const double FaceWeightTolerance = 1e-9;
+
+    /// <summary>
+    /// <b>PM-3 — whether elemental rooftop <paramref name="elementalBasis"/>'s edge is still the face
+    /// of its own unknown.</b> True for an unmerged rooftop (its identity column has weight 1) and for
+    /// the one gridline each macro peaks on; false for an interior gridline of a run, where the
+    /// current is a fixed fraction of the neighbouring macros' and nothing is solved for across that
+    /// edge. The mesh overlay draws an internal edge only where this is true, so what is drawn is
+    /// what is solved; it must not re-derive the merge.
+    /// </summary>
+    public bool IsSolvedFace(int elementalBasis) => _face[elementalBasis];
+
+    /// <summary>How many elemental rooftops are a face (<see cref="IsSolvedFace"/>) — one per macro
+    /// on a single-level mesh, so this equals <see cref="Count"/> there.</summary>
+    public int SolvedFaceCount
+    {
+        get { int n = 0; foreach (bool f in _face) if (f) n++; return n; }
+    }
+
+    /// <summary>
+    /// <b>Whether merging can be applied to this problem at all</b> — a single conductor level with no
+    /// vias on the one-slab kernel (see the header: dense and single-level only). <b>The one spelling
+    /// of that question</b>, read by the mesher when it decides whether to build a merge and by the EM
+    /// Setup panel when it decides whether the control is live, so the two cannot disagree (P12's
+    /// lesson about the accelerated ceiling). The accelerated solve is the other exclusion and is a
+    /// setting, not a property of the problem, so it is asked beside this rather than inside it.
+    /// </summary>
+    public static bool CanApplyTo(PlanarProblem problem)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+        return problem.Layers.Count == 1 && problem.ViaList.Count == 0 && !problem.RequiresGeneralKernel;
+    }
 
     /// <summary>Macro <paramref name="macro"/> as (elemental rooftop, weight) pairs, ascending.</summary>
     public IEnumerable<(int Basis, double Weight)> Column(int macro)

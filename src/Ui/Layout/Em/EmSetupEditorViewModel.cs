@@ -914,6 +914,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private PlanarBoundaryCells _planarBoundaryCells =
         PlanarMeshSettings.DefaultBoundaryCells;
 
+    /// <summary>PM-3 — "Mesh as Merged Shapes" (<see cref="PlanarMeshSettings.RooftopMerging"/>),
+    /// ON by default in the product (<see cref="EmSetup.DefaultPlanarMesh"/>) while the engine's own
+    /// default stays off. Committed on toggle like the boundary-cell combo.</summary>
+    [ObservableProperty] private bool _meshAsMergedShapes = EmSetup.DefaultPlanarMesh.RooftopMerging;
+
     /// <summary>Same contract as <see cref="MeshFieldError"/>, for this group's three staged-text
     /// fields (Cells per wavelength, Edge cells, Mesh frequency) — kept separate because the two
     /// groups are never both visible at once (<c>IsPlanarAnalysis</c> toggles which one shows).</summary>
@@ -1514,6 +1519,22 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         Refresh();
     }
 
+    /// <summary>PM-3 — Mesh as Merged Shapes, committed on toggle. One undo entry and
+    /// <see cref="InvalidateMesh"/>, because the unknown count the panel shows is the SOLVED count and
+    /// that is what this changes. <b><see cref="PlanarMeshSettings.Auto"/> is NOT cleared</b>, on
+    /// <see cref="OnPlanarBoundaryCellsChanged"/>'s reasoning: the grid is the same either way, so
+    /// this is not a resolution and Auto has no opinion about it.</summary>
+    partial void OnMeshAsMergedShapesChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.PlanarMesh.RooftopMerging) return;
+        var before = SnapshotJson();
+        Working.PlanarMesh = Working.PlanarMesh with { RooftopMerging = value };
+        CommitEdit(before, "Change mesh as merged shapes");
+        InvalidateMesh();
+        Refresh();
+    }
+
     /// <summary>
     /// <para><b>A null here is the CONTROL talking, never the user.</b> A ComboBox clears its
     /// selection when its item source changes under it, and the two-way binding writes that null
@@ -1648,6 +1669,14 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // be solving is the same one either way. Every mesh control in this panel invalidates; this
         // one is not a mesh control, which is why it sits under Solver options beside the vertical
         // kernel and the core cap rather than in the Surface-mesh group.
+        //
+        // PM-3 — ONE exception, and it is the merge's, not this control's: merged shapes apply to the
+        // dense solve only, so when the displayed mesh WAS merged, the count on screen is not the
+        // count the accelerated run would solve. Invalidate exactly then; a report that merged nothing
+        // (every line fixture) is the same report under either solver and stays.
+        if (PlanarMeshReport?.Mesh.Merge is not null) InvalidateMesh();
+        OnPropertyChanged(nameof(MeshAsMergedShapesDisabledReason));
+        OnPropertyChanged(nameof(MeshAsMergedShapesToolTip));
     }
 
     partial void OnConductorThicknessCorrectionChanged(bool value)
@@ -1788,6 +1817,38 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             ? "The accelerated solve is part of the planar (full-wave) analysis; this setup uses the " +
               "cross-section kernel, whose solve is closed-form per frequency."
             : null;
+
+    /// <summary>
+    /// PM-3 — why Mesh as Merged Shapes cannot apply here, or null when it can. The two exclusions
+    /// are the mesher's own (<see cref="PlanarRooftopMerge.CanApplyTo"/> and the accelerated solve),
+    /// asked here so the checkbox is greyed with the reason rather than ticked and inert — the mesher
+    /// writes the matching "not applied" note either way. <b>Greyed, never hidden</b>: nothing in the
+    /// Surface-mesh group shifts when a user turns the accelerated solve on.
+    /// </summary>
+    public string? MeshAsMergedShapesDisabledReason =>
+        Working.AnalysisKind == EmAnalysisKind.CrossSection
+            ? "Merged shapes are part of the planar (full-wave) analysis; this setup uses the " +
+              "cross-section kernel."
+            : Working.AcceleratedSolve
+                ? "Merged shapes are for the dense solve. This setup uses the accelerated solve, which " +
+                  "solves the elemental mesh; turn the accelerated solve off to use them."
+                : PlanarProblem is { } mp && !PlanarRooftopMerge.CanApplyTo(mp)
+                    ? "This layout carries more than one metal level, or a via. Merged shapes are built " +
+                      "for a single conductor level with no vias, so the elemental mesh is solved here."
+                    : null;
+
+    /// <summary>The checkbox's tooltip: what the setting does and costs when it is live, and why it
+    /// is greyed when it is not — the same control, so the row never changes shape.</summary>
+    public string MeshAsMergedShapesToolTip =>
+        MeshAsMergedShapesDisabledReason ??
+        "Where the mesh is much finer than the field needs — the graded fan one edge raises runs the " +
+        "length of its gridline across the whole part — rooftops along one direction are solved as " +
+        "merged shapes rather than one unknown each, on the same grid, for fewer unknowns and a " +
+        "smaller dense solve. Only rooftops transverse to the current merge, and nothing within one " +
+        "conductor width of a corner does, so the answer stays the elemental mesh's: measured at " +
+        "3e-5 in S11 on the patch example and 0.000 in every entry on an internal test board, for " +
+        "7 and 5 percent fewer unknowns. Applies to a single conductor level solved densely; the " +
+        "mesh notes say what was merged.";
 
     /// <summary>
     /// MIM-13 — what the accelerated solve does and does not buy on THIS layout, or null when there
@@ -1934,6 +1995,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarEdgeMesh               = pm.EdgeMesh;
         PlanarCurrentModel           = pm.CurrentModel;
         PlanarBoundaryCells          = pm.BoundaryCells;
+        MeshAsMergedShapes           = pm.RooftopMerging;
         PlanarMeshFrequencyText      = pm.MeshFrequencyHz is { } mf
             ? (mf / ViewModels.FreqUnitHelper.Multiplier(MeshFrequencyUnit))
                 .ToString("G6", CultureInfo.InvariantCulture)
@@ -1952,6 +2014,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
         OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AcceleratedSolveCeilingNote));
+        OnPropertyChanged(nameof(MeshAsMergedShapesDisabledReason));
+        OnPropertyChanged(nameof(MeshAsMergedShapesToolTip));
         OnPropertyChanged(nameof(DeembedDisabledReason));
         OnPropertyChanged(nameof(DeembedOutsideValidityEnabled));
         OnPropertyChanged(nameof(DeembedOutsideValidityDisabledReason));
@@ -2146,6 +2210,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
         OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AcceleratedSolveCeilingNote));
+        OnPropertyChanged(nameof(MeshAsMergedShapesDisabledReason));
+        OnPropertyChanged(nameof(MeshAsMergedShapesToolTip));
         OnPropertyChanged(nameof(DeembedDisabledReason));
         OnPropertyChanged(nameof(DeembedOutsideValidityEnabled));
         OnPropertyChanged(nameof(DeembedOutsideValidityDisabledReason));
@@ -2322,6 +2388,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(DirectVerticalKernelDisabledReason));
         OnPropertyChanged(nameof(AcceleratedSolveDisabledReason));
         OnPropertyChanged(nameof(AcceleratedSolveCeilingNote));
+        OnPropertyChanged(nameof(MeshAsMergedShapesDisabledReason));
+        OnPropertyChanged(nameof(MeshAsMergedShapesToolTip));
         OnPropertyChanged(nameof(DeembedDisabledReason));
         OnPropertyChanged(nameof(DeembedOutsideValidityEnabled));
         OnPropertyChanged(nameof(DeembedOutsideValidityDisabledReason));

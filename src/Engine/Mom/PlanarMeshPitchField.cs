@@ -111,6 +111,16 @@ public sealed record PlanarPitchField(
 
     /// <summary>The y bulk cap at ordinate y.</summary>
     public Func<double, double> AtY { get; init; } = _ => double.PositiveInfinity;
+
+    /// <summary>
+    /// <b>PM-3 — the current's direction at a point, as the field already measured it</b>: the angle
+    /// in [0, π) of the longest local chord through the nearest field sample, or NaN off the metal.
+    /// Null under <see cref="PlanarCurrentModel.Sheet"/>, which has no direction by construction, and
+    /// for a declined field. Exposed so rooftop merging can ask which rooftops are TRANSVERSE to the
+    /// current — merging the along-current's own rooftops is what turned the test geometry's output
+    /// reflections (RESOLVED.md §PM-3 Part 1). Nearest sample, no interpolation: an angle has no mean.
+    /// </summary>
+    public Func<double, double, double>? AlongAngle { get; init; }
 }
 
 public static class PlanarMeshPitchField
@@ -207,6 +217,8 @@ public static class PlanarMeshPitchField
         double worstAspect = 1.0;
         bool capped = false, anyMetal = false;
         int perp = DirectionSamples / 2;                     // half of 180° is a quarter turn
+        var angle = sheet ? null : new double[n * n];        // PM-3 — the per-sample along direction
+        if (angle is not null) Array.Fill(angle, double.NaN);
         int metalSamples = 0, floorSamples = 0;              // ANT-3's "where did the floor bind"
 
         // The finest pitch the per-axis rule would have used, in either axis — the floor for the
@@ -271,6 +283,7 @@ public static class PlanarMeshPitchField
                 }
 
                 double theta = Math.PI * best / DirectionSamples;
+                angle![idx] = theta;
 
                 // THE FLOOR IS APPLIED HERE, BEFORE THE ASPECT CAP, AND THE ORDER IS LOAD-BEARING.
                 // A field sample sitting on a rim has a short across-chord — a fraction of the
@@ -348,6 +361,21 @@ public static class PlanarMeshPitchField
         double SampleX(double at) => fx[Math.Clamp((int)((at - x0) / dx), 0, n - 1)];
         double SampleY(double at) => fy[Math.Clamp((int)((at - y0) / dy), 0, n - 1)];
 
+        // PM-3 — the along direction at a point: the nearest metal sample's, looking one sample out
+        // in each direction when the nearest one is off the metal (a cell a few µm tall beside a rim
+        // routinely straddles a sample that is not).
+        double AngleAt(double x, double y)
+        {
+            int ix = Math.Clamp((int)((x - x0) / dx), 0, n - 1), iy = Math.Clamp((int)((y - y0) / dy), 0, n - 1);
+            double a = angle![iy * n + ix];
+            if (!double.IsNaN(a)) return a;
+            for (int r = 1; r <= 2; r++)
+                for (int jy = Math.Max(0, iy - r); jy <= Math.Min(n - 1, iy + r); jy++)
+                    for (int jx = Math.Max(0, ix - r); jx <= Math.Min(n - 1, ix + r); jx++)
+                        if (!double.IsNaN(angle[jy * n + jx])) return angle[jy * n + jx];
+            return double.NaN;
+        }
+
         // ONE LINE OF NUMBERS, not a paragraph of reasoning. Owner instruction, 2026-09-09: an
         // engineer does not read a paragraph in a side panel, and the reasoning belongs in the source
         // — which is the top of this file — rather than in front of someone trying to read a pitch.
@@ -397,6 +425,7 @@ public static class PlanarMeshPitchField
         {
             AtX = SampleX,
             AtY = SampleY,
+            AlongAngle = sheet ? null : AngleAt,
         };
 
         PlanarPitchField Declined(string why) =>

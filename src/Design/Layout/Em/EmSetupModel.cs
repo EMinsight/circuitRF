@@ -114,8 +114,22 @@ public sealed class EmSetup
     /// <see cref="AnalysisKind"/> is <see cref="EmAnalysisKind.Planar"/>. Separate from
     /// <see cref="Mesh"/> because the two meshers' settings mean genuinely different things — see
     /// <see cref="PlanarMeshSettings"/>'s own remarks on why mirroring kernel A's six controls would
-    /// be wrong.</summary>
-    public PlanarMeshSettings PlanarMesh { get; set; } = PlanarMeshSettings.Default;
+    /// be wrong. <b>Defaults to <see cref="DefaultPlanarMesh"/>, not the engine's own default</b> —
+    /// the two differ in one field, below.</summary>
+    public PlanarMeshSettings PlanarMesh { get; set; } = DefaultPlanarMesh;
+
+    /// <summary>
+    /// <b>PM-3 — the PRODUCT's default planar mesh, stated once.</b> The engine's
+    /// <see cref="PlanarMeshSettings.Default"/> keeps <see cref="PlanarMeshSettings.RooftopMerging"/>
+    /// off, so every engine-side number and test stays reproducible; the product turns it on ("Mesh as
+    /// Merged Shapes" in the EM Setup panel) — the same split <see cref="EdgePortReturn"/> makes, where
+    /// the engine's <c>SeriesGap</c> is the product's <c>Ground</c>. This is the one place that
+    /// decision lives: the model's own default, the <c>.cem</c>'s omit-at-default rule and the panel's
+    /// initial state all read it, and <c>EmRunService</c>, <c>circuitrf check</c> and the panel's own
+    /// mesh all take <see cref="PlanarMesh"/> as it stands, so none of them can disagree about it.
+    /// </summary>
+    public static readonly PlanarMeshSettings DefaultPlanarMesh =
+        PlanarMeshSettings.Default with { RooftopMerging = true };
 
     /// <summary>Display name — the file stem by default.</summary>
     public string Name { get; set; } = "";
@@ -622,7 +636,7 @@ public sealed class EmSetup
         if (AnalysisKind != EmAnalysisKind.Auto)                 set.Add("AnalysisKind");
         if (SignalStackupLayerName.Length > 0)                   set.Add("SignalStackupLayerName");
         if (AnalysisLevelNames.Count > 0)                        set.Add("AnalysisLevelNames");
-        if (PlanarMesh != PlanarMeshSettings.Default)            set.Add("PlanarMesh");
+        if (PlanarMesh != DefaultPlanarMesh)                     set.Add("PlanarMesh");
         if (Mesh != EmMeshSettings.Default)                      set.Add("Mesh");
         if (!AdaptiveSampling)                                   set.Add("AdaptiveSampling");
         if (ResonanceSearch)                                     set.Add("ResonanceSearch");

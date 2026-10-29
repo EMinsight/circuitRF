@@ -101,7 +101,7 @@ public class RadiationPatternUiTests
         // `.snp` written with the pattern on is byte-identical to one written with it off. Marking
         // every existing file stale would be a lie about the network. Asserted rather than arranged,
         // because a later refactor can quietly undo an arrangement.
-        string m0 = EmSnpProvenance.MeshHash(PlanarMeshSettings.Default);
+        string m0 = EmSnpProvenance.MeshHash(EmSetup.DefaultPlanarMesh);   // PM-3: the product default, merge on
 
         foreach (bool on in new[] { false, true })
         {

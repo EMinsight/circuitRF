@@ -1068,8 +1068,12 @@ internal static class Check
                 mesh.Verdict.ToString().ToLowerInvariant()));
 
         if (pre.Refusal is { } refusal) f.Add(CliDiagnostics.CheckEmRefused(path, refusal));
+        // UnknownCount is what is SOLVED — the merged count under Mesh as Merged Shapes — which is the
+        // number the panel and an `em` run quote. Bases.Count is the elemental rooftop count, and
+        // quoting it here while the JSON two lines up quoted the other was one verb disagreeing with
+        // itself (PM-3).
         else f.Add(CliDiagnostics.CheckEmWouldRun(
-            path, pre.KernelName, pre.PlanarMesh?.Mesh.Bases.Count ?? 0));
+            path, pre.KernelName, pre.PlanarMesh?.UnknownCount ?? 0));
     }
 
     private static void CheckEm3dSetup(string path, Findings f, EmSetup setup, EmLayoutSource source)

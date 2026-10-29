@@ -12603,3 +12603,157 @@ cells)` understates a merged run's memory** — its vector-pair cores term is si
 Not touched: `DetailFloorTests.WithTheTransmissionLineMeshOn_TheRefusalDoesNotClaimTheWavelengthKnobsAreInert`
 fails on this tree with the flag off (expects Refused, reads Warn). Its fixture sits between the old 5,000 and the
 new 10,000 dense ceiling, so it is the ceiling change of §Ceiling, which did not move it, not this one.
+
+## PM-3 — what the merge removes, and whether merging pays per unknown (R-pm3-1, R-pm3-2, 2026-10-29)
+
+Brief `docs/sonnet-briefs/brief-planar-mesh-3-merge-accuracy.md`. Part 3 (the "Mesh as Merged Shapes"
+setting, product default ON) is in `src/Ui/Layout/Em/RESOLVED.md`. Everything below was measured in
+Release on the 10-core 16 GB machine, every run under a 290 s / 12 GB watchdog, no run over five
+minutes; the internal test geometry's transmission-line setup at 55/60/65 GHz, three de-embedded points,
+is PM-2's own (elemental N = 11,131, merged 8,581). Today's elemental run reproduces PM-2's saved
+30 cells/λ reference to ≤ 0.015 and its merged run reproduces PM-2's gate-2 table to the last digit, so
+the two references are current.
+
+### 1. Ablation by region — the strips are innocent, the staircased sections carry it
+
+The merge was restricted by a region mask (a scratch hook on `mergeable`, not a setting) and solved
+against the same elemental mesh. The input line merges nothing on this board, so the brief's third
+variant (everything except the strips) is the junction-and-bends variant.
+
+| Merged region | N | \|ΔS22\| 55/60/65 GHz | \|ΔS33\| | S22 turn | S11 65 GHz |
+|---|---|---|---|---|---|
+| everything (PM-2) | 8,581 | 0.107 / 0.083 / 0.076 | 0.095 / 0.108 / 0.037 | −6.7° / −5.1° / −5.0° | 0.018 |
+| the two output branches only (y-runs in thin fan rows along the lines) | 10,557 | **0.000 / 0.000 / 0.000** | 0.000 | 0.0° | 0.000 |
+| junction and bends only (x 6.2–8.9 mm) | 9,155 | 0.107 / 0.083 / 0.077 | 0.095 / 0.108 / 0.037 | −6.7° / −5.1° / −5.0° | 0.015 |
+| └ the T junction alone | 10,251 | 0.000 / 0.000 / 0.000 | 0.000 | 0.0° | **0.015** |
+| └ the quarter-ring bends, T2 and its stubs | 10,575 | 0.052 / 0.020 / 0.013 | 0.041 / 0.025 / 0.016 | −3.2° / −1.2° / −0.9° | 0.005 |
+| └ the width step and the S-jog | 10,512 | 0.054 / 0.064 / 0.065 | 0.056 / 0.084 / 0.016 | −3.4° / −3.9° / −4.3° | 0.001 |
+
+The two shares add to the whole. **The thin fan rows that run the length of each output branch — PM-2's
+first suspect, 574 merged edges — change no entry by 0.001.** The same thin rows, where they cross the
+staircased quarter-ring bends and the shallow S-jog, carry the whole turn; the Manhattan T junction
+turns S22/S33 not at all but moves S11 by 0.015 at 65 GHz (1°), five times the elemental mesh's own
+20 → 30 cells/λ movement there.
+
+### 2. The property
+
+In a straight section the merged rooftops are the ones TRANSVERSE to the current: a y-run merges
+y-rooftops along y in a row where the current flows along x, and the transverse current there is
+small and smooth, so a linear ramp over four or five 5–20 µm rows loses nothing. In a bend or a jog the
+same rooftops carry the current itself. The classification asks only whether the cell is finer than
+the LOCALISED size field — a statement about edge singularities — and says nothing about which
+component of the current a rooftop carries; on a straight line the two questions have the same answer,
+and on anything that turns they do not. A straight-line reproduction (a 0.347 mm line with an island
+raising the same rows) was built and is moot: the strips were exonerated by the ablation before it was
+needed, and a line has nothing that turns.
+
+Two classification rules were built and measured, both counted on the same mesh:
+
+| Rule | Board N | Saving | \|ΔS22\| 55/60/65 | \|ΔS33\| | Patch N |
+|---|---|---|---|---|---|
+| PM-2 (none) | 8,581 | 23 % | 0.107 / 0.083 / 0.076 | 0.095 / 0.108 / 0.037 | 1,769 |
+| **transverse only** — a run may merge only rooftops transverse to the current the pitch field measured (`PlanarPitchField.AlongAngle`, within 30° of the axis) | 9,579 | 14 % | 0.021 / 0.021 / 0.019 | 0.041 / 0.041 / 0.037 | 1,769 (Sheet: no direction, unchanged) |
+| **corner zones** — no cell within one narrowest-conductor width of any polygon vertex merges | 10,539 | 5 % | **0.000 / 0.000 / 0.000** | **0.000 / 0.000 / 0.000** | 1,850 |
+| both | 10,545 | 5 % | 0.000 | 0.000 | 1,850 |
+
+The transverse rule removes most of the turn (6.7° → 1.3° on S22, 2.6° on S33) and misses the rest for
+a reason the estimator cannot fix: the S-jog shifts the line by 0.11 mm over 0.74 mm, under the pitch
+field's 15° direction step, and the longest chord through a point in the jog is the straight line on
+either side of it — so the current there reads as along x, the y-runs are allowed, and the jog's share
+(§1, the larger half above 60 GHz) stays. The corner rule, on artwork whose arcs are flattened into
+vertices every step, excludes every bend and the whole jog and leaves essentially the strips — which §1
+measured exact.
+
+### 3. Does merging pay per unknown? (R-pm3-2) — the one table
+
+Every geometry single-level and dense; "merged" is the shipped setting on the shipped grid, the
+elemental rows are the same setup with the merge off and ONE control coarsened, against one refined
+elemental reference per geometry. Worst |ΔS| is over every entry and every point of the band; the phase
+column is the worst turn of any reflection with |S| > 0.3. Wall clock and peak resident set are the
+whole `em` run (DUT, standards, 3–11 points), Release, one run each. Three drawn geometries live in the
+session scratchpad only (branch-line coupler, edge-coupled bandpass, stepped-impedance lowpass, all on
+the test geometry's 127 µm εᵣ = 3.0 laminate — the lines are matched to it); the shipped spiral examples
+are out by construction (`SpiralResonator` is three levels, and the kit cells of both are generated
+files a fresh worktree does not carry).
+
+**Cells per wavelength is INERT on the three drawn geometries and on `separated-pair`** — the per-axis
+rule's pitch is geometry-bound there, exactly as `src/Engine/Mom/CLAUDE.md` §3.2 says — so the
+"coarsen cells/λ first" column exists only for the two geometries with a wavelength-sized pitch (the
+transmission-line board and the Sheet patch); the others coarsen across the conductor or at the edge
+fan. The ±5 % match in N is reachable only where an integer knob happens to land there, and the table
+says what N each row has rather than pretending.
+
+| Geometry (reference) | mesh | N | worst \|ΔS\| | worst refl. turn | wall s | peak GB |
+|---|---|---|---|---|---|---|
+| **Internal test geometry**, TL mesh, 55/60/65 GHz (elemental 30 cells/λ, N 13,064) | merged, shipped | 8,581 | **0.104** | 6.5° | 109 | 7.9 |
+| | elemental, same grid | 11,131 | 0.015 | 1.0° | 144 | 6.8 |
+| | elemental, 10 cells/λ | 9,380 | **0.036** | 2.3° | 94 | 5.2 |
+| | elemental, 3 across | 9,081 | **0.036** | 2.2° | 85 | 7.8 |
+| **Patch Antenna**, Sheet mesh, 5.3–6.3 GHz, 11 pts (elemental 40 cells/λ, N 2,996; its own 28 → 40 step is 0.006) | merged, shipped | 1,769 | **0.020** | 0.8° | 26 | 1.3 |
+| | elemental, same grid | 1,981 | 0.020 | 0.8° | 25 | 1.1 |
+| | elemental, 16 cells/λ | 1,785 | 0.033 | 1.9° | 27 | 1.0 |
+| | elemental, edge cells 2 | 1,775 | **0.020** | 0.8° | 22 | 0.8 |
+| | elemental, 3 across | 1,565 | 0.036 | 1.6° | 19 | 0.9 |
+| `portcal/separated-pair`, accelerated off, 1–7 GHz (elemental 4 across, N 3,679) | merged, shipped | 1,862 | 0.0057 | 0.5° | 9 | 0.6 |
+| | elemental, same grid | 2,012 | 0.0057 | 0.5° | 9 | 0.7 |
+| | elemental, 1 across | 1,196 | 0.016 | 0.7° | 5 | 0.5 |
+| Branch-line coupler, 8–12 GHz (elemental 8 across, N 4,114; 6 across reads 0.0018) | merged, shipped | 1,899 | 0.0026 | 0.3° | 6 | 0.7 |
+| | elemental, same grid | 2,034 | 0.0026 | 0.3° | 6 | 0.5 |
+| | elemental, edge cells 2 | 1,770 | 0.0012 | 0.2° | 10 | 0.5 |
+| | elemental, 3 across | 1,532 | 0.0038 | 0.3° | 5 | 0.4 |
+| Edge-coupled bandpass, 8–12 GHz (elemental 8 across, N 3,068; 6 across reads 0.0003) | merged, shipped | 2,051 | **0.0009** | 0.07° | 12 | 1.3 |
+| | elemental, same grid | 2,267 | 0.0009 | 0.08° | 13 | 0.9 |
+| | elemental, edge cells 2 | 2,000 | 0.0029 | 0.2° | 10 | 0.8 |
+| | elemental, 3 across | 2,000 | 0.0049 | 0.3° | 10 | 0.8 |
+| Stepped-impedance lowpass, 2–8 GHz (elemental 6 across, N 6,817) | merged, shipped | 4,272 | 0.0037 | 0.3° | 32 | 1.8 |
+| | elemental, same grid | 4,475 | 0.0018 | 0.1° | 31 | 1.7 |
+| | elemental, edge cells 2 | 4,180 | **0.0015** | 0.1° | 25 | 1.6 |
+| | elemental, 3 across | 3,184 | 0.0057 | 0.3° | 18 | 1.1 |
+
+**Read per unknown:** merging WINS on the patch (0.020 at 1,769 against 0.033–0.036 for the two
+coarsenings that reach that count; it only ties the edge-cell coarsening, which lands on the same
+error at the same N) and on the bandpass (0.0009 at 2,051 against 0.0029–0.0049 at 2,000); it is
+indistinguishable from the elemental mesh on the coupled pair and the coupler (every variant inside
+the reference's own convergence there); it LOSES on the lowpass (its 0.0037 at 4,272 is twice the same
+grid's 0.0018, and the edge-cell coarsening reads 0.0015 at 4,180) and it loses by a factor of three on
+the test geometry, where an elemental mesh coarsened to 9,100–9,400 unknowns — still fewer than the
+merged run's cost in time — reads 0.036 against the merge's 0.104. The saving in wall clock is 1.3× on
+the board (144 → 109 s; the cores and the standards are shared) and nothing measurable below ~4,000
+unknowns, where the run is the standards and the fixed costs. **Where merging pays is where the merged
+rooftops are transverse to a current that does not turn — a patch's notch fans, a coupled resonator's
+gap rows; where it loses is where the artwork turns under the merged rows.** That is §2's property
+read the other way round, and it is what the two classification rules act on.
+
+### 4. Verdict — go, and both rules ship
+
+The brief's stop-or-go: a classification change only if one rule closes the test geometry to within its
+own 20 → 30 cells/λ movement (≤ 0.015 on S22/S33) and leaves the patch inside PM-2's gate 1. The corner
+zones do both, measured: against the elemental mesh the merged board solve differs by 0.000 in every
+entry at every point (and by 0.004–0.015 from the 30 cells/λ reference, which is the elemental mesh's
+own movement); on the patch the merged solve is 2.6e-5 from the elemental one at 20 cells/λ, 1.4e-5 at
+40, and the 20 → 40 doubling reads 0.0201 merged against 0.0201 elemental. `RooftopMergeTests` is
+untouched and green. The transverse rule is kept beside it because it is measured on its own (§2) and
+covers the one shape the corner rule cannot see — a long oblique line is four vertices and a measured
+direction. Both are unconditional; neither is a setting. `PlanarRooftopMerge.TransverseCos` (30°) and
+`PlanarRooftopMerge.CornerZoneWidths` (1.0) are the two constants, and `PlanarPitchField.AlongAngle`
+is the one new seam — the direction the transmission-line field already measured, exposed rather than
+re-derived. Gate: `RooftopMergeClassificationTests` (2 tests, one claim each).
+
+**What default-on now ships** (Part 3's page and tooltip were re-pointed at these): the patch merges
+1,981 → 1,850 (was 1,769), the test geometry 11,131 → 10,539 (was 8,581), the bandpass 2,267 → 2,051,
+the coupler 2,034 → 1,899, the lowpass 4,475 → 4,272 — a 5–10 % saving in unknowns with the answer the
+elemental mesh's to well inside its own uncertainty. PM-2's 1.5× on the board is gone with the 23 %;
+the rules trade most of the saving for all of the error, which is the trade the stop-or-go asked for.
+The §3 table above is the pre-rule merge and stands as the measurement of what the classification was
+getting wrong.
+
+**Left on the record.** (1) The pre-rule merge WON per unknown on the patch and the bandpass (§3), so
+there is accuracy to be had from merging more than the rules now allow on artwork that does not turn
+under its fan rows; a rule that merges a thin row only where it is far from BOTH a vertex and a
+staircased edge, rather than from any vertex, would keep more of a patch's notch fans. Not measured.
+(2) The T junction alone moved S11 by 0.015 at 65 GHz (§1) — five times the elemental mesh's own
+movement there — and the corner zones exclude it with everything else, so it is not isolated. (3)
+`PlanarSystem.ResidentBytes` at the merged N still understates a merged run's memory (PM-2 §6); with
+the saving at 5 % it is within the estimate's own slack and was not touched. (4) The scratch harness
+(`h/`: `dump`, `line`, `run`), the region-mask and corner-factor hooks, and the three drawn geometries
+live in the session scratchpad only; the hooks were removed from the engine before this landed.

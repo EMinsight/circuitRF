@@ -1738,7 +1738,7 @@
                 <Border Classes="group" Name="SurfaceMeshGroup" IsVisible="{Binding ViewModel.ShowPlanarControls}">
                   <StackPanel Spacing="2">
                 <TextBlock Classes="grouphdr" Text="Surface mesh"/>
-                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                <Grid ColumnDefinitions="180,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                       ColumnSpacing="6" RowSpacing="3">
                     <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Cells per wavelength" VerticalAlignment="Center"/>
                     <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="CellsPerWavelength"
@@ -1828,6 +1828,19 @@
                         <TextBlock FontSize="11" VerticalAlignment="Center" Opacity="0.7"
                                    Text="{Binding ViewModel.MeshFrequencyUnit}"/>
                     </StackPanel>
+                    <!-- PM-3 — "Mesh as Merged Shapes", ON by default in the product (the engine's own
+                         default stays off, EdgePortReturn's pattern). Where it cannot apply — the
+                         accelerated solve, or a multi-level / via layout — it is GREYED with the reason
+                         in its tooltip, never hidden, so nothing in this group shifts (owner rule: UI
+                         controls never shift). The tooltip is one binding that carries either the
+                         description or the reason, so the row is the same control in both states. -->
+                    <TextBlock Grid.Row="8" Grid.Column="0" Classes="colhdr" Text="Merged shapes" VerticalAlignment="Center"/>
+                    <CheckBox  Grid.Row="8" Grid.Column="1" Name="MeshAsMergedShapesCheck" FontSize="11"
+                               Content="Mesh as Merged Shapes"
+                               IsChecked="{Binding ViewModel.MeshAsMergedShapes}"
+                               IsEnabled="{Binding ViewModel.MeshAsMergedShapesDisabledReason, Converter={x:Static ObjectConverters.IsNull}}"
+                               ToolTip.Tip="{Binding ViewModel.MeshAsMergedShapesToolTip}"
+                               ToolTip.ShowOnDisabled="True"/>
                 </Grid>
                 <SelectableTextBlock FontSize="10" TextWrapping="Wrap"
                            Foreground="{DynamicResource CrfWarningBrush}"

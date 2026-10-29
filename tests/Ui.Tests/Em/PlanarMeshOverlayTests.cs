@@ -222,7 +222,7 @@ public class PlanarMeshOverlayTests
 
         var reloaded = EmSetupPersistence.Deserialize(before);
         Assert.Equal(EmAnalysisKind.Auto, reloaded.AnalysisKind);
-        Assert.Equal(PlanarMeshSettings.Default, reloaded.PlanarMesh);
+        Assert.Equal(EmSetup.DefaultPlanarMesh, reloaded.PlanarMesh);   // PM-3: the product default (merge on)
         Assert.Equal(before, EmSetupPersistence.Serialize(reloaded));
     }
 

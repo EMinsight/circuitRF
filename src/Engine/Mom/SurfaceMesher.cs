@@ -980,12 +980,12 @@ public static class SurfaceMesher
             if (accel)
                 notes.Add("Rooftop merging is on but was not applied: it is for the DENSE solve, and " +
                           "this setup uses the accelerated one. Turn the accelerated solve off to use it.");
-            else if (problem.Layers.Count != 1 || problem.ViaList.Count > 0 || problem.RequiresGeneralKernel)
+            else if (!PlanarRooftopMerge.CanApplyTo(problem))
                 notes.Add("Rooftop merging is on but was not applied: it is built for a single conductor " +
                           "level with no vias, and this mesh has more. The elemental mesh is solved.");
             else
             {
-                var merge = BuildRooftopMerge(problem, mesh, gradedX, gradedY, hMaxX, hMaxY, pitch, ports);
+                var merge = BuildRooftopMerge(problem, mesh, gradedX, gradedY, hMaxX, hMaxY, pitch, ports, narrowest);
                 // Nothing merged is the identity map: leave the mesh elemental, so the run is the
                 // flag-off run to the bit and pays nothing for the panelled fill.
                 if (merge.MergedRunCount == 0)
@@ -1488,10 +1488,24 @@ public static class SurfaceMesher
     /// </summary>
     private static PlanarRooftopMerge BuildRooftopMerge(
         PlanarProblem problem, PlanarMesh mesh, List<GradedAttractor> gradedX, List<GradedAttractor> gradedY,
-        double hMaxX, double hMaxY, PlanarPitchField? pitch, IReadOnlyList<PlanarPort>? ports)
+        double hMaxX, double hMaxY, PlanarPitchField? pitch, IReadOnlyList<PlanarPort>? ports,
+        double narrowestM = 0)
     {
         var field = new PlanarRooftopMerge.LocalSizeField(problem, gradedX, gradedY, hMaxX, hMaxY,
                                                           pitch?.AtX, pitch?.AtY);
+        // PM-3 Part 1 — CORNER ZONES: nothing within one narrowest-conductor width of a polygon
+        // vertex merges. Where the artwork turns — a junction, a bend drawn as an arc and flattened to
+        // vertices, a jog — the thin fan rows that cross it carry the current itself rather than its
+        // transverse part, and a merged ramp over them cannot follow a current that turns cell by cell
+        // along a staircase. Measured on the internal test geometry (RESOLVED.md §PM-3): the merges
+        // inside the bends and the S-jog turned both output reflections 4–7°; with this zone the merged
+        // solve is the elemental one to three decimals, at a 5 % saving instead of 23 %. On the Patch
+        // Antenna example it costs 1,769 → 1,850 unknowns and keeps |ΔS11| at 2.6e-5.
+        var corners = new List<(double X, double Y)>();
+        double cornerR = PlanarRooftopMerge.CornerZoneWidths * narrowestM;
+        if (narrowestM > 0)
+            foreach (var l in problem.Layers) foreach (var p in l.Polygons)
+            { foreach (var v in p.Outer) corners.Add((v.X, v.Y)); foreach (var h in p.HoleRings) foreach (var v in h) corners.Add((v.X, v.Y)); }
         var gx = mesh.GridX; var gy = mesh.GridY;
         int nx = gx.Count - 1, ny = gy.Count - 1, m = mesh.Cells.Count;
         var tx = new double[m]; var ty = new double[m];
@@ -1508,6 +1522,27 @@ public static class SurfaceMesher
             double hx = field.X(cell.CenterX, cell.CenterY), hy = field.Y(cell.CenterX, cell.CenterY);
             tx[c] = hx > PlanarRooftopMerge.SpreadFactor * cell.Width  ? hx : cell.Width;
             ty[c] = hy > PlanarRooftopMerge.SpreadFactor * cell.Height ? hy : cell.Height;
+
+            // PM-3 Part 1 — ONLY ROOFTOPS TRANSVERSE TO THE CURRENT MERGE. Where the current model
+            // states a direction, an x-run (x-rooftops merged along x) is allowed only where the
+            // current flows along y, and a y-run only where it flows along x; an oblique current
+            // merges nothing. Measured on the internal test geometry: the y-runs in the straight
+            // output branches, where y is transverse, moved no entry by 0.001; the same thin rows
+            // through the staircased bends, where the y-rooftops carry the current itself, turned the
+            // output reflections. On its own this rule took the turn from 6.7° to 1.3°; the corner
+            // zones below take the rest — a jog shallower than the field's 15° direction step reads
+            // as straight here, and only its vertices give it away. Both act; each covers what the
+            // other cannot see (a long oblique line has four vertices and a measured direction).
+            if (pitch?.AlongAngle is { } along)
+            {
+                double a = along(cell.CenterX, cell.CenterY);
+                if (!double.IsNaN(a))
+                {
+                    double cx = Math.Abs(Math.Cos(a)), sy = Math.Abs(Math.Sin(a));
+                    if (!(sy >= PlanarRooftopMerge.TransverseCos)) tx[c] = cell.Width;    // x-runs need current along y
+                    if (!(cx >= PlanarRooftopMerge.TransverseCos)) ty[c] = cell.Height;   // y-runs need current along x
+                }
+            }
         }
         var mergeable = new bool[m];
         for (int c = 0; c < m; c++)
@@ -1522,6 +1557,16 @@ public static class SurfaceMesher
                 if (nb >= 0 && nb != c && !plain[nb]) ok = false;
             }
             mergeable[c] = ok;
+        }
+        if (corners.Count > 0)
+        {
+            double r2 = cornerR * cornerR;
+            for (int c = 0; c < m; c++)
+            {
+                var cell = mesh.Cells[c];
+                foreach (var (vx, vy) in corners)
+                    if ((vx - cell.CenterX) * (vx - cell.CenterX) + (vy - cell.CenterY) * (vy - cell.CenterY) < r2) { mergeable[c] = false; break; }
+            }
         }
         double endRun = PlanarCalibrationSettings.Default.EndRunHeights * problem.Slab.HeightM;
         int protectedCells = PlanarRooftopMerge.ProtectPorts(mesh, ports, endRun, mergeable);

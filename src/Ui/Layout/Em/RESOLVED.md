@@ -1079,3 +1079,74 @@ screen — the tallest group in the panel. It is now gated on `ShowCircuitRfSolv
 are the planar/cross-section extraction's, not the 3D generator's. The earlier test asserted only the
 view-model flags, which were right while the markup ignored them; it now also checks the group's
 `Border` in the `.axaml` carries the binding.
+
+## "Mesh as Merged Shapes" — PM-2's merge as a setting, ON by default in the product (brief PM-3 Part 3, 2026-10-29)
+
+PM-2 built rooftop merging behind `PlanarMeshSettings.RooftopMerging` (off, no control, a hand-written
+`.cem` key). The owner's decision, independent of PM-3's diagnosis: it is an ordinary choice a user can
+make, so the EM Setup panel offers it, on by default. What default-on ships is stated on the user page
+and in the checkbox's own tooltip rather than dressed up. **As first built it would have shipped PM-2's
+4–7° turn of the test geometry's output reflections; Part 1 of the same brief found the cause the same
+day and the two classification rules it added (`src/Engine/Mom/RESOLVED.md` §PM-3) take the merged
+solve back to the elemental one — 0.000 in every entry on that board, 2.6e-5 on the patch — at a 5 %
+and 7 % saving.** The page and the tooltip quote those numbers, not the earlier ones.
+
+**Where the product default lives.** `EdgePortReturn`'s pattern: the ENGINE default stays off, so every
+engine test and every number in `HISTORY.md`/`RESOLVED.md` is still reproducible, and the product
+default is `EmSetup.DefaultPlanarMesh` — `PlanarMeshSettings.Default` with the merge on — which is the
+model's own initial `PlanarMesh`, the `.cem`'s omit-at-default comparison and the panel's initial state.
+Nothing carries the value anywhere: `EmRunService` (preflight and run), `circuitrf check` and the panel's
+own `ComputePlanarMesh` all mesh `setup.PlanarMesh` as it stands, so the three cannot disagree (P12's
+lesson, held by `MeshAsMergedShapesUiTests.Check_ThePanel_AndARun_QuoteTheSameUnknownCount`).
+
+**The `.cem` key flipped polarity**, which is why PM-2's spelling was replaced rather than a second key
+added: `PlanarMesh.RooftopMerging` is nullable and **omitted at ON**, so a file written before this phase
+— with or without a `PlanarMesh` block — gains no byte and reads back on; only an explicit `false` is
+ever written, and it survives a round trip and `Clone` (the undo snapshots). `AdaptiveSampling`'s
+polarity, for the same reason. Nothing outside this repo had written the old spelling.
+
+**Provenance.** `EmSnpProvenance.MeshHash` already adds `|merge=True` only when on, and that is kept:
+an explicit off hashes to the engine default's value, so a pre-PM-2 stamp still reads current under it,
+and **every single-level dense planar `.snp` stamped before this reads as stale once, correctly** — the
+result describes an elemental solve the product no longer performs by default.
+
+**The control.** "Mesh as Merged Shapes", a checkbox in the Surface-mesh group (planar kernel only, like
+the rest of the group). One undo entry and `InvalidateMesh()`, because the count the panel shows is the
+SOLVED count and that is what changes; `Auto` is NOT cleared — it is not a resolution, the grid is the
+same either way (`BoundaryCells`' reasoning). Where it cannot apply — the accelerated solve, or a
+multi-level/via layout — it is **greyed, never hidden**, with the reason in its tooltip
+(`ToolTip.ShowOnDisabled`), so nothing in the row shifts; the applicability predicate is the mesher's
+own, `PlanarRooftopMerge.CanApplyTo`, asked in one place by both. One consequence for a control that
+deliberately never invalidated: turning the accelerated solve on now invalidates the mesh **exactly when
+the displayed mesh was merged**, because the count on screen is then not the count the accelerated run
+solves; a report that merged nothing (every line fixture) stays, so
+`AcceleratedSolveUiTests.TogglingIt_…DoesNOTInvalidateTheMesh` still holds.
+
+**The overlay shows what is solved.** `LayoutRenderer.PlanarMesh` draws an internal edge only where the
+rooftop across it is still the face of its own unknown — `PlanarRooftopMerge.IsSolvedFace`, the one
+public query, computed when the map is built (weight 1 on exactly one elemental rooftop per macro); the
+renderer never re-derives the merge. Gate: the internal edges drawn equal `Merge.Count`
+(`MergedOverlayInternalEdgeCount`), and the merged picture has fewer mesh pixels than the elemental one
+on the same grid. With the setting off, or where nothing merged, the merge is not attached and the
+overlay takes the pre-PM-3 path untouched.
+
+**`circuitrf check` quoted two different counts in one run**: its JSON carried `UnknownCount` (the solved
+count since PM-2) while its would-run line carried `Mesh.Bases.Count` (the elemental one). Both read the
+solved count now.
+
+**Tests that moved — three, all updated with the counted change rather than pinned off:**
+`RadiationPatternUiTests.ItIsInNoProvenanceHash_…`, `AcceleratedSolveUiTests.ItIsInNoProvenanceHash_…`
+and `PlanarMeshOverlayTests.D7_ACemWrittenBeforeL8b_…` each compared a fresh setup's `PlanarMesh` to
+`PlanarMeshSettings.Default`; they compare to `EmSetup.DefaultPlanarMesh` now, which is what a setup
+starts from. Nothing else in `tests/Ui.Tests/Em` (882 tests, one run) moved: every line fixture's cells
+sit inside a port's calibrated end run, so the merge finds nothing and the run is the elemental one to
+the bit, with one extra note. **Not mine, reported:**
+`MimResonatorCompositionTests.MIM14_TheSpiralAndTheCapacitorArePREFLIGHTED_…` fails on this tree alone
+(103 ms, deterministic) with "nothing on a layer bound to a signal conductor" — it resolves the shipped
+`SpiralResonator` example, whose spiral is a generated kit cell that a fresh worktree does not carry; no
+file on its path was touched here.
+
+Gate: `tests/Ui.Tests/Em/MeshAsMergedShapesUiTests.cs` (7 tests, ~1 s): the pre-phase `.cem` both with
+and without a `PlanarMesh` block, the explicit off, the hash both ways, one undo entry plus invalidate
+without clearing Auto, greyed-not-hidden under the accelerated solve (asserted against the markup), the
+overlay's edge count and pixel count, and the one-count agreement.

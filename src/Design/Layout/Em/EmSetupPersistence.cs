@@ -109,8 +109,12 @@ public sealed class CemPlanarMesh
     public double? MemoryLimitGb { get; set; }
 
     /// <summary>
-    /// PM-2's rooftop merging (<see cref="PlanarMeshSettings.RooftopMerging"/>). <b>Nullable, and
-    /// omitted at its default (off)</b>, so a <c>.cem</c> written before it existed gains no byte.
+    /// <b>Mesh as Merged Shapes</b> (<see cref="PlanarMeshSettings.RooftopMerging"/>): on a single
+    /// conductor level solved densely, rooftops lying in cells much finer than the local field asks
+    /// for are solved as merged shapes along their own direction, for fewer unknowns on the same
+    /// grid. <b>Null means ON</b>, the product default (<see cref="EmSetup.DefaultPlanarMesh"/>), so a
+    /// <c>.cem</c> written before the setting existed gains no byte and reads back on; only an explicit
+    /// <c>false</c> is ever written. <c>AdaptiveSampling</c>'s polarity, for the same reason.
     /// </summary>
     public bool? RooftopMerging { get; set; }
 }
@@ -1565,7 +1569,7 @@ public static class EmSetupPersistence
         SolveRegion           = s.SolveRegion is { } r
             ? new CemSolveRegion { XMinUm = r.XMinUm, YMinUm = r.YMinUm, XMaxUm = r.XMaxUm, YMaxUm = r.YMaxUm }
             : null,
-        PlanarMesh            = s.PlanarMesh == PlanarMeshSettings.Default ? null : new CemPlanarMesh
+        PlanarMesh            = s.PlanarMesh == EmSetup.DefaultPlanarMesh ? null : new CemPlanarMesh
         {
             Auto               = s.PlanarMesh.Auto,
             CellsPerWavelength = s.PlanarMesh.CellsPerWavelength,
@@ -1586,7 +1590,9 @@ public static class EmSetupPersistence
                 s.PlanarMesh.DetailFloorDivisor == PlanarMeshSettings.DefaultDetailFloorDivisor
                     ? null : s.PlanarMesh.DetailFloorDivisor,
             MemoryLimitGb = s.PlanarMesh.MemoryLimitBytes is { } mlb ? mlb / PlanarMemoryCheck.BytesPerGb : null,
-            RooftopMerging = s.PlanarMesh.RooftopMerging ? true : null,
+            // PM-3 — omitted at the PRODUCT default (on); an explicit off is the only value written.
+            RooftopMerging = s.PlanarMesh.RooftopMerging == EmSetup.DefaultPlanarMesh.RooftopMerging
+                                 ? null : s.PlanarMesh.RooftopMerging,
         },
         Solver3D       = s.Solver3D.IsNone ? null : new Em3dSolverSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D)),
         Compare        = CircuitRF.Design.Em3d.Em3dSolvers.IsCompareSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D))
@@ -1684,8 +1690,8 @@ public static class EmSetupPersistence
                                          ?? PlanarMeshSettings.DefaultDetailFloorDivisor,
                                      pm.MemoryLimitGb is > 0 and var gb && double.IsFinite(gb)
                                          ? (long)Math.Round(gb * PlanarMemoryCheck.BytesPerGb) : null,
-                                     pm.RooftopMerging ?? false)
-            : PlanarMeshSettings.Default,
+                                     pm.RooftopMerging ?? EmSetup.DefaultPlanarMesh.RooftopMerging)
+            : EmSetup.DefaultPlanarMesh,
         Solver3D              = Solver3DOf(f),
         OperatingTempC        = f.OperatingTempC,
         AirBox                = f.AirBox is { } box
