@@ -162,6 +162,39 @@ public class DrcEngineTests
         Assert.Empty(result.Violations);
     }
 
+    /// <summary>
+    /// GitHub discussion 23: a quarter-ring bend whose square corner is followed by a straight shorter
+    /// than half the rule, then the inside arc. The erosion deleted the short straight and the dilation
+    /// rebuilt the corner from the arc's tilted first segment, reporting a thin sliver on metal
+    /// 0.69 mm wide against a 0.1524 mm rule (DBU = 1 nm). The same bend drawn 0.1 mm wide is
+    /// genuinely too narrow and must still be reported.
+    /// </summary>
+    [Theory]
+    [InlineData(690_000, 0)]
+    [InlineData(100_000, 1)]
+    public void MinWidth_SquareCornerBesideAnInsideArc_IsMeasuredAcrossTheMetal(long width, int expected)
+    {
+        const double inner = 600_000;
+        const long straight = 31_500;
+        double outer = inner + width;
+
+        var xy = new List<long> { (long)-outer, straight, (long)-inner, straight };
+        for (int k = 0; k <= 64; k++)
+        {
+            double a = Math.PI + k * (Math.PI / 2) / 64;
+            xy.Add((long)Math.Round(inner * Math.Cos(a))); xy.Add((long)Math.Round(inner * Math.Sin(a)));
+        }
+        for (int k = 64; k >= 0; k--)
+        {
+            double a = Math.PI + k * (Math.PI / 2) / 64;
+            xy.Add((long)Math.Round(outer * Math.Cos(a))); xy.Add((long)Math.Round(outer * Math.Sin(a)));
+        }
+
+        var bend = new PolygonShape { Layer = M1, Xy = [.. xy] };
+        var result = DrcEngine.Run([bend], Tech(minWidth: 152_400, minSpacing: 0));
+        Assert.Equal(expected, result.Violations.Count);
+    }
+
     // ── Curved geometry must not shed false positives ───────────────────────
 
     /// <summary>

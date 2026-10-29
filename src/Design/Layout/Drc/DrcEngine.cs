@@ -33,6 +33,18 @@
 //      anything, so clean geometry differences to nothing by construction. It cannot hide a
 //      violation: the extra dilation only ever REMOVES from `union − opened`, and a genuinely narrow
 //      neck is erased by the erosion entirely, so it has no opened region to be covered by.
+//   4. CONFIRM EVERY CANDIDATE AGAINST TWO EDGES THAT FACE EACH OTHER. Point 1's "exact identity"
+//      is not exact at a convex corner whose next edge is shorter than the erosion radius and then
+//      turns: the erosion deletes that short edge, so the dilation rebuilds the corner from the edge
+//      AFTER it — on a curve, a slightly tilted one — and the gap between the rebuilt corner and the
+//      drawn one comes back as a thin sliver. Measured on an imported 60 GHz bend 0.69 mm wide
+//      (GitHub discussion 23): a 31.5 µm straight between a 90° corner and an inside arc reported a
+//      3.7 × 61 µm sliver against a 0.1524 mm rule, and a tighter arc makes the sliver FATTER, so no
+//      thickness threshold separates it from a real finding. So the opening only nominates; a
+//      candidate is reported when two boundary edges inside it face each other through the metal
+//      closer than the rule — the definition a width rule states. A corner's two edges are
+//      perpendicular, never facing, so it passes; a neck or a spike sharper than 90° does not. The
+//      confirmation can only remove a candidate, never add one.
 //
 // ── Why spacing inflates BOTH sides by s/2 ───────────────────────────────────────────────────────
 //
@@ -510,11 +522,133 @@ public static class DrcEngine
             ? union
             : Clipper.BooleanOp(ClipType.Difference, union, opened, LayoutClipper.Rule);
 
+        // Header point 4: the opening nominates, two facing edges confirm. The outline is re-unioned
+        // only when there is something to confirm, so a clean layer pays nothing, and it is unioned at
+        // all because the edge test reads the metal's side off each ring's winding.
+        List<WidthEdge>? edges = null;
         foreach (var region in DrcRegions.Components(narrow))
-            if (Math.Abs(Clipper.Area(region)) > 0)
+        {
+            if (Math.Abs(Clipper.Area(region)) <= 0) continue;
+            edges ??= WidthEdges(Clipper.Union(union, LayoutClipper.Rule));
+            if (HasFacingEdgesWithin(edges, DrcRegions.BoundsOf(region), widthDbu))
                 found.Add(region);
+        }
 
         return found;
+    }
+
+    /// <summary>One boundary edge with the metal on its LEFT, and whether the vertex it ends on is a
+    /// convex corner of the metal.</summary>
+    private readonly record struct WidthEdge(double Ax, double Ay, double Bx, double By, bool ConvexEnd, int Ring, int Index, int RingLength);
+
+    /// <summary>
+    /// Every edge of <paramref name="outline"/>, directed so the metal is on its left. Clipper2's union
+    /// output winds outer rings positive and holes negative, which is exactly "metal on the left" for
+    /// both — so the winding is read once here rather than re-derived per pair.
+    /// </summary>
+    private static List<WidthEdge> WidthEdges(Paths64 outline)
+    {
+        var edges = new List<WidthEdge>();
+        for (int r = 0; r < outline.Count; r++)
+        {
+            var ring = outline[r];
+            int n = ring.Count;
+            if (n < 3) continue;
+            for (int i = 0; i < n; i++)
+            {
+                var a = ring[i];
+                var b = ring[(i + 1) % n];
+                var c = ring[(i + 2) % n];
+                double cross = (double)(b.X - a.X) * (c.Y - b.Y) - (double)(b.Y - a.Y) * (c.X - b.X);
+                edges.Add(new WidthEdge(a.X, a.Y, b.X, b.Y, ConvexEnd: cross > 0, r, i, n));
+            }
+        }
+        return edges;
+    }
+
+    /// <summary>
+    /// Whether two edges near <paramref name="box"/> face each other through the metal closer than
+    /// <paramref name="widthDbu"/>, at a place inside that box. "Face" means their outward normals
+    /// point more than 90° apart AND each lies on the other's metal side — so a corner's two
+    /// perpendicular edges never qualify, and neither do two edges facing each other across a GAP
+    /// (that is spacing, or a notch). Two edges meeting at a vertex face each other only when that
+    /// vertex is a convex corner sharper than 90°: a spike, which is narrow at its tip.
+    /// </summary>
+    private static bool HasFacingEdgesWithin(List<WidthEdge> edges, Bbox box, long widthDbu)
+    {
+        var near = DrcRegions.Grow(box, widthDbu);
+        var slack = DrcRegions.Grow(box, (long)WidthDilateOvershootDbu + 1);
+
+        var local = new List<WidthEdge>();
+        foreach (var e in edges)
+            if (Math.Max(e.Ax, e.Bx) >= near.MinX && Math.Min(e.Ax, e.Bx) <= near.MaxX
+             && Math.Max(e.Ay, e.By) >= near.MinY && Math.Min(e.Ay, e.By) <= near.MaxY)
+                local.Add(e);
+
+        for (int i = 0; i < local.Count; i++)
+        {
+            var e1 = local[i];
+            double n1x = e1.By - e1.Ay, n1y = -(e1.Bx - e1.Ax);   // outward (right-hand) normal
+
+            for (int j = i + 1; j < local.Count; j++)
+            {
+                var e2 = local[j];
+                double n2x = e2.By - e2.Ay, n2y = -(e2.Bx - e2.Ax);
+                if (n1x * n2x + n1y * n2y >= 0) continue;           // not facing: a corner, or parallel
+
+                // Neighbours on one ring meet at a vertex, distance zero: narrow only at a convex tip.
+                if (e1.Ring == e2.Ring)
+                {
+                    if ((e1.Index + 1) % e1.RingLength == e2.Index)
+                    {
+                        if (e1.ConvexEnd && Inside(slack, e1.Bx, e1.By)) return true;
+                        continue;
+                    }
+                    if ((e2.Index + 1) % e2.RingLength == e1.Index)
+                    {
+                        if (e2.ConvexEnd && Inside(slack, e2.Bx, e2.By)) return true;
+                        continue;
+                    }
+                }
+
+                var (p1x, p1y, p2x, p2y, dist) = ClosestPoints(e1, e2);
+                if (!(dist < widthDbu)) continue;
+
+                // Each must lie on the other's metal side — otherwise they face each other across air.
+                double dx = p2x - p1x, dy = p2y - p1y;
+                if (dx * n1x + dy * n1y > 0 || -(dx * n2x + dy * n2y) > 0) continue;
+
+                if (Inside(slack, 0.5 * (p1x + p2x), 0.5 * (p1y + p2y))) return true;
+            }
+        }
+        return false;
+
+        static bool Inside(Bbox b, double x, double y) => x >= b.MinX && x <= b.MaxX && y >= b.MinY && y <= b.MaxY;
+    }
+
+    /// <summary>The closest pair of points between two segments, and their distance. Two segments
+    /// that do not cross are closest at an endpoint of one of them, so four point-to-segment
+    /// projections cover it; a crossing cannot happen between edges of one valid outline.</summary>
+    private static (double P1x, double P1y, double P2x, double P2y, double Dist) ClosestPoints(WidthEdge e1, WidthEdge e2)
+    {
+        var best = (P1x: 0.0, P1y: 0.0, P2x: 0.0, P2y: 0.0, Dist: double.PositiveInfinity);
+
+        void Try(double px, double py, double ax, double ay, double bx, double by, bool pointOnFirst)
+        {
+            double ex = bx - ax, ey = by - ay;
+            double len2 = ex * ex + ey * ey;
+            double t = len2 > 0 ? Math.Clamp(((px - ax) * ex + (py - ay) * ey) / len2, 0, 1) : 0;
+            double qx = ax + t * ex, qy = ay + t * ey;
+            double d = Math.Sqrt((px - qx) * (px - qx) + (py - qy) * (py - qy));
+            if (d < best.Dist)
+                best = pointOnFirst ? (px, py, qx, qy, d) : (qx, qy, px, py, d);
+        }
+
+        Try(e1.Ax, e1.Ay, e2.Ax, e2.Ay, e2.Bx, e2.By, pointOnFirst: true);
+        Try(e1.Bx, e1.By, e2.Ax, e2.Ay, e2.Bx, e2.By, pointOnFirst: true);
+        Try(e2.Ax, e2.Ay, e1.Ax, e1.Ay, e1.Bx, e1.By, pointOnFirst: false);
+        Try(e2.Bx, e2.By, e1.Ax, e1.Ay, e1.Bx, e1.By, pointOnFirst: false);
+        return best;
     }
 
     // ── Minimum spacing ─────────────────────────────────────────────────────────────────────────

@@ -24445,3 +24445,32 @@ verdict already decided by the mesh counts.
   progress — a ring must keep its circle when its N-gon would cross another ring of its polygon. And the air box,
   sized from the round pads with zero lateral padding, was smaller than a hexagon pad at the board edge, so the lowering
   refused the run — the content extent must be taken from the built N-gons. Anyone reviving this should start there.
+
+## Minimum width: a square corner beside an inside arc (GitHub discussion 23, 2026-10-29)
+
+**Symptom.** An imported 60 GHz splitter on a 0.1524 mm width rule reported two "Min Width"
+violations on a bend 0.69 mm wide. Each marker was a thin sliver along a 31.5 µm straight that sits
+between the bend's square top corner and its inside arc.
+
+**Cause.** The width check is an opening — erode by w/2, dilate back, subtract — and the header's
+claim that miter joins make that round trip exact holds only when every edge beside a convex corner
+outlives the erosion. A straight shorter than w/2 does not: the erosion deletes it, the dilation
+rebuilds the corner from the edge after it (the arc's first segment, slightly tilted) and the wedge
+between the rebuilt and the drawn corner is reported. Reproduced on a replica bend: the sliver appears
+for any straight from 0 to 60 µm and vanishes at w/2 = 76.2 µm. **A tighter arc makes it FATTER**
+(3.7 µm wide at a 600 µm inside radius, 18 µm at 50 µm), so a sliver-thickness threshold cannot
+separate it from a real finding.
+
+**Fix.** The opening now only nominates. `DrcEngine.HasFacingEdgesWithin` reports a candidate when
+two boundary edges near it face each other through the metal closer than the rule — outward normals
+more than 90° apart, each on the other's metal side, the closest pair's midpoint inside the
+candidate; two edges sharing a vertex count only at a convex tip sharper than 90°. A corner's
+edges are perpendicular, so it passes. Because it only removes candidates, nothing the check reported
+correctly before can be lost, and a clean layer pays nothing (the outline is re-unioned only when a
+candidate exists). The overlap check shares `NarrowerThan` and gets the same confirmation.
+
+**Not fixed here.** The minimum-notch check is the same construction mirrored (dilate, erode) and is
+likely to have the mirror defect at a concave corner beside an outside arc; unmeasured.
+
+Gate: `DrcEngineTests.MinWidth_SquareCornerBesideAnInsideArc_IsMeasuredAcrossTheMetal` — the replica
+bend at 0.69 mm passes, the same bend at 0.1 mm is still reported.
