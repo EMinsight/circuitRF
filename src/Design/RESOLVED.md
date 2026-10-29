@@ -24355,3 +24355,28 @@ Palace memory check's half-padding remedy, which had priced the default as λ/8 
 solver-input goldens were rewritten (`CRF_WRITE_GENERATOR_DUMPS`, `CRF_WRITE_WIRE_DUMPS`, `CRF_WRITE_{PALACE,OPENEMS,
 EMERGE}_GOLDENS`); their diffs are the air box, the air solid, slabs that reach the box, the board ground's object
 name, and the line-end port note on two small fixtures, and no port moved.
+
+## Palace's direct solver in the memory check; a via transition across every 3D solver (2026-10-28)
+
+A two-trace via transition on a four-layer board (ML1 on Top, a via to Inner 2, ML2 under the Inner 1 ground), run as
+a 3D view on Palace, EMerge and openEMS and compared with its schematic.
+
+- **The estimate priced every setup as the iterative solver.** A setup on `LinearSolver: Direct` at Standard passed the
+  check (0.9 GB estimated) and was stopped at an 8 GB ceiling at its first refinement pass. Measured on that transition,
+  ten ranks, Palace's own peak, no refinement: order 2, 148,348 unknowns, Direct 4.7 GB / Iterative 2.3 GB; 192,984
+  unknowns, Direct 6.2 GB / Iterative 3.0 GB; order 1, 36,546 unknowns, Direct 1.6 GB / Iterative 1.3 GB. Direct is
+  linear in the unknowns over that range (31.7 KB each at order 2); `Em3dSizeEstimate.PalaceDirectBytesPerUnknownOrder2`
+  holds the larger. The refinement factor is borrowed from the iterative measurement. Both checks now price the solver
+  the setup names, offer the iterative solver as a remedy the run takes itself (`Em3dMemoryRemedy.Iterative`), and ASK
+  below 150 % when Direct will not fit and Iterative would (`Em3dMemoryVerdict.AskFirst`); the CLI warns and runs as set.
+- **The process tree's footprint read ~1.5× Palace's own peak** on the Direct run (past 9.2 GB at the ceiling against
+  6.2 GB reported). The ceiling holds the footprint; the estimates are Palace's own figure. Not reconciled.
+- **The volume estimate read 7,166 tetrahedra against Gmsh's 29,042** on this transition (thin inner copper, the via
+  barrel). The post-mesh check is the one that catches it.
+- **The default air box is not oversized here.** Padding 4 mm (default) → 2 mm moved |S21| 0.04 dB and cut the mesh 8 %;
+  1 mm moved it 0.15 dB; 0.5 mm 0.38 dB. The mesh is the refinement round the copper, not the air.
+- **Stopping `circuitrf em` with SIGTERM leaves Palace's MPI tree running** (orphaned under launchd). Ctrl+C is handled;
+  SIGTERM is not. Open.
+- **`TestPadRound26Tests.ALumpedPortOnAnAirBoxFace_IsClaimedBeforeTheFace` went red with DFR28-3** (5548f3061), which pads
+  an absorbing face clear of a lumped port, so through the generator the port no longer lay in the face. The test now
+  holds both halves: an absorbing face is moved clear; a PEC face is not, and its port is claimed before the faces.

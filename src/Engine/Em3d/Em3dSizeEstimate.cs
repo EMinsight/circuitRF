@@ -71,6 +71,18 @@ public static class Em3dSizeEstimate
     public const double PalaceBytesPerUnknownOrder1 = 6.6e9 / 178_142.0;
 
     /// <summary>
+    /// Palace's peak memory per unknown with the DIRECT linear solver (SuperLU, Palace.LinearSolver: Direct) at order 2, ten
+    /// ranks, as Palace reports it: a four-layer via transition, 6.2 GB for 192,984 unknowns and 4.7 GB for 148,348 (31.7 KB
+    /// an unknown, so linear over that range). The same meshes on the iterative solver took 3.0 and 2.3 GB. The factor's
+    /// fill-in grows faster than the unknowns on a much larger mesh, so far past these sizes this reads low.
+    /// </summary>
+    public const double PalaceDirectBytesPerUnknownOrder2 = 6.2e9 / 192_984.0;
+
+    /// <summary>…and at order 1: the same transition's first-order mesh, 1.6 GB for 36,546 unknowns (the iterative solver
+    /// 1.3 GB), mostly what the ranks cost before the first unknown, as the iterative order-1 figure is.</summary>
+    public const double PalaceDirectBytesPerUnknownOrder1 = 1.6e9 / 36_546.0;
+
+    /// <summary>
     /// brief-em3d-21 R-em3d21-2 — how much adaptive mesh refinement multiplies Palace's peak: F0's
     /// case A on one starting mesh, 11.9 GB with two passes (<c>A palace-round-amr</c>) against 7.4 GB
     /// with none (<c>A palace-round</c>). Most of it is the error estimator, which costs the same from
@@ -118,9 +130,10 @@ public static class Em3dSizeEstimate
     /// before: the shipped connector launch then read 2,037 tetrahedra against Gmsh's 93,371.</param>
     /// <remarks>A static problem (<see cref="Em3dProblem.IsStatic"/>) is priced in Palace's scalar unknowns
     /// (<see cref="UnknownsPerTetStaticOrder2"/>), brief-dfr26-8.</remarks>
+    /// <param name="direct">Priced for the direct linear solver (<see cref="PalaceDirectBytesPerUnknownOrder2"/>).</param>
     public static Em3dPalaceEstimate Palace(Em3dProblem problem, Func<Em3dSolid, double> initialEdgeM, int order,
                                             double? backgroundEdgeM = null, int refinementPasses = 0,
-                                            Em3dRefinementSizing? refinement = null)
+                                            Em3dRefinementSizing? refinement = null, bool direct = false)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(initialEdgeM);
@@ -175,7 +188,7 @@ public static class Em3dSizeEstimate
         }
         long unknowns = (long)Math.Round(tets * UnknownsPerTet(order, problem.IsStatic));
         return new Em3dPalaceEstimate((long)Math.Round(tets), unknowns, order,
-                                      PalaceMemoryBytes(unknowns, order, refinementPasses, problem.IsStatic), regions);
+                                      PalaceMemoryBytes(unknowns, order, refinementPasses, problem.IsStatic, direct), regions);
     }
 
     /// <summary>Palace's unknowns per tetrahedron: Nédélec for a field (driven, eigenmode), H1 for a static potential.</summary>
@@ -194,8 +207,8 @@ public static class Em3dSizeEstimate
     /// conductors and ports, which on a bond wire is nearly the whole mesh (F0's case A: 146,769
     /// tetrahedra, where the volumes alone give about 500).
     /// </summary>
-    public static long PalaceMemoryBytesForMesh(long tetrahedra, int order, int refinementPasses)
-        => PalaceMemoryBytes((long)Math.Round(tetrahedra * UnknownsPerTet(order, false)), order, refinementPasses);
+    public static long PalaceMemoryBytesForMesh(long tetrahedra, int order, int refinementPasses, bool direct = false)
+        => PalaceMemoryBytes((long)Math.Round(tetrahedra * UnknownsPerTet(order, false)), order, refinementPasses, direct);
 
     /// <summary>brief-dfr26-8 — the same for a static problem, in its scalar unknowns; null at order 1, which has no
     /// measured memory figure.</summary>
@@ -223,15 +236,19 @@ public static class Em3dSizeEstimate
         => PalaceOneProcessShare + (1 - PalaceOneProcessShare) * Math.Log2(Math.Max(1, processes)) / Math.Log2(PalaceMeasuredProcesses);
 
     /// <summary>Palace's peak memory for <paramref name="unknowns"/> at <paramref name="order"/>, with
-    /// <see cref="PalaceRefinementMemoryFactor"/> when any refinement pass is allowed.</summary>
-    public static long PalaceMemoryBytes(long unknowns, int order, int refinementPasses)
-        => (long)Math.Round(unknowns * (order == 1 ? PalaceBytesPerUnknownOrder1 : PalaceBytesPerUnknownOrder2)
+    /// <see cref="PalaceRefinementMemoryFactor"/> when any refinement pass is allowed (measured on the iterative solver, and
+    /// borrowed for the direct one: what it multiplies is mostly the error estimator, which the two share).</summary>
+    public static long PalaceMemoryBytes(long unknowns, int order, int refinementPasses, bool direct = false)
+        => (long)Math.Round(unknowns * (direct
+                                ? order == 1 ? PalaceDirectBytesPerUnknownOrder1 : PalaceDirectBytesPerUnknownOrder2
+                                : order == 1 ? PalaceBytesPerUnknownOrder1 : PalaceBytesPerUnknownOrder2)
                             * (refinementPasses > 0 ? PalaceRefinementMemoryFactor : 1));
 
     /// <summary>…for a field or, with <paramref name="isStatic"/>, a static potential — null for a static order-1 run,
-    /// which nothing has measured.</summary>
-    public static long? PalaceMemoryBytes(long unknowns, int order, int refinementPasses, bool isStatic)
-        => !isStatic ? PalaceMemoryBytes(unknowns, order, refinementPasses)
+    /// which nothing has measured. A static problem's figure is the iterative solver's whatever <paramref name="direct"/>
+    /// says: nothing has measured the direct one there.</summary>
+    public static long? PalaceMemoryBytes(long unknowns, int order, int refinementPasses, bool isStatic, bool direct = false)
+        => !isStatic ? PalaceMemoryBytes(unknowns, order, refinementPasses, direct)
          : order == 1 ? null
          : (long)Math.Round(unknowns * PalaceBytesPerUnknownStaticOrder2 * (refinementPasses > 0 ? PalaceRefinementMemoryFactor : 1));
 

@@ -294,15 +294,21 @@
 
             <!-- 3D editor round 1 — the air box: padding per axis as a share of the content's extent, and each face's boundary. -->
             <StackPanel Spacing="4" IsVisible="{Binding IsAirBox}">
-                <TextBlock Text="Padding, % of the content's extent (each side)" FontSize="11" Opacity="0.7"
-                           ToolTip.Tip="10 on X pads a tenth of the design's x-extent beyond it on each side. Empty: the faces keep their own padding (a stated distance, or the default)."/>
-                <Grid ColumnDefinitions="Auto,*,6,Auto,*,6,Auto,*">
-                    <TextBlock Grid.Column="0" Text="X" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBox Grid.Column="1" Text="{Binding PadXPercent}" Tag="x" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
-                    <TextBlock Grid.Column="3" Text="Y" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBox Grid.Column="4" Text="{Binding PadYPercent}" Tag="y" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
-                    <TextBlock Grid.Column="6" Text="Z" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <TextBox Grid.Column="7" Text="{Binding PadZPercent}" Tag="z" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                <TextBlock Text="Padding, % of the content's extent along each axis" FontSize="11" Opacity="0.7"
+                           ToolTip.Tip="10 on +X pads a tenth of the design's x-extent beyond its +X side. Each box shows the padding in use now; a smaller number shrinks the box on that side."/>
+                <Grid ColumnDefinitions="Auto,*,6,Auto,*,6,Auto,*" RowDefinitions="Auto,4,Auto">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="−X" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding PadXMinPercent}" Tag="xmin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBlock Grid.Row="0" Grid.Column="3" Text="−Y" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding PadYMinPercent}" Tag="ymin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBlock Grid.Row="0" Grid.Column="6" Text="−Z" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="0" Grid.Column="7" Text="{Binding PadZMinPercent}" Tag="zmin" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="+X" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding PadXMaxPercent}" Tag="xmax" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBlock Grid.Row="2" Grid.Column="3" Text="+Y" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding PadYMaxPercent}" Tag="ymax" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
+                    <TextBlock Grid.Row="2" Grid.Column="6" Text="+Z" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBox Grid.Row="2" Grid.Column="7" Text="{Binding PadZMaxPercent}" Tag="zmax" PlaceholderText="—" KeyDown="OnPadKey" LostFocus="OnPadLostFocus"/>
                 </Grid>
                 <TextBlock Text="Faces" FontSize="11" Opacity="0.7" Margin="0,4,0,0"/>
                 <ItemsControl ItemsSource="{Binding AirBoxFaces}">

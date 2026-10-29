@@ -317,6 +317,10 @@ public sealed record Em3dMemoryRemedy(string What, long? EstimateBytes)
     /// processes. The question before a run offers it as a button; null for a remedy that is an edit (a preset, a crop).</summary>
     public int? Processes { get; init; }
 
+    /// <summary>A remedy THIS run can take without changing the design: Palace's iterative linear solver in place of the
+    /// direct one the setup asks for. The question before a run offers it as a button.</summary>
+    public bool Iterative { get; init; }
+
     /// <summary>brief-dfr27-5 R-dfr27-5-5 — the remedy was SIZED to fit (a crop of the share that would), so its estimate says
     /// how much, not whether: it never counts as a setting that fits.</summary>
     public bool Sized { get; init; }
@@ -361,7 +365,12 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
     public Em3dMemoryChoice Choice { get; init; } = new();
 
     /// <summary>The remedies this run can take itself (<see cref="Em3dMemoryRemedy.Processes"/>) and that fit.</summary>
-    public IReadOnlyList<Em3dMemoryRemedy> Applicable => [.. Remedies.Where(r => r.Processes is not null && r.Fits(PhysicalBytes))];
+    public IReadOnlyList<Em3dMemoryRemedy> Applicable =>
+        [.. Remedies.Where(r => (r.Processes is not null || r.Iterative) && r.Fits(PhysicalBytes)).OrderByDescending(r => r.Iterative)];
+
+    /// <summary>The setup asks for the direct solver, the run will not fit with it, and it would with the iterative one: asked
+    /// about where a question can be asked, below 150 % too, so the run is not started only to be stopped at its ceiling.</summary>
+    public bool AskFirst { get; init; }
 
     /// <summary>Past the confirmation with no remedy that is a setting and fits: the question says so, and its default is
     /// not to run.</summary>

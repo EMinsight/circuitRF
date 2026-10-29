@@ -6,6 +6,7 @@
 //  hosts a 3D view's selection. Pixels were not seen: these read the view models and the document.
 // ================================================================
 
+using System.Globalization;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Em3d;
@@ -98,17 +99,33 @@ public sealed class EditorRound1TreeTests : IDisposable
         Assert.True(vm.Properties.IsAirBox);
         Assert.Equal(6, vm.Properties.AirBoxFaces.Count);
 
+        // Nothing stated: the box shows the default padding as a share of the 1000 µm x-extent, and focus passing through
+        // it unchanged states nothing.
         int entries = vm.UndoEntries;
-        vm.Properties.PadXPercent = "10";
-        vm.Properties.CommitAirBoxPercent('x');
+        double defaultPad = -vm.ShownAirBox!.Min.X;
+        Assert.Equal((defaultPad / 1000e-6 * 100).ToString("G4", CultureInfo.InvariantCulture), vm.Properties.PadXMinPercent);
+        vm.Properties.CommitAirBoxPercent("xmin");
+        Settle(vm);
+        Assert.Equal(entries, vm.UndoEntries);
+        Assert.Null(EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox?.XMin);
+
+        // Each face is its own setting: the +X side alone.
+        vm.Properties.PadXMaxPercent = "10";
+        vm.Properties.CommitAirBoxPercent("xmax");
         Settle(vm);
         Assert.Equal(entries + 1, vm.UndoEntries);
         var stated = EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox!;
-        Assert.Equal(new EmAirBoxFace(null, null, 10), stated.XMin);
-        Assert.Equal(stated.XMin, stated.XMax);
-        // The content spans x 0 … 1000 µm: a tenth of it beyond each side.
+        Assert.Equal(new EmAirBoxFace(null, null, 10), stated.XMax);
+        Assert.Null(stated.XMin);
+        // The content spans x 0 … 1000 µm: a tenth of it beyond +X, the default still beyond −X.
+        Assert.Equal(1100e-6, vm.ShownAirBox!.Max.X, 12);
+        Assert.Equal(-defaultPad, vm.ShownAirBox.Min.X, 12);
+
+        vm.Properties.PadXMinPercent = "10";
+        vm.Properties.CommitAirBoxPercent("xmin");
+        Settle(vm);
+        Assert.Equal(new EmAirBoxFace(null, null, 10), EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox!.XMin);
         Assert.Equal(-100e-6, vm.ShownAirBox!.Min.X, 12);
-        Assert.Equal(1100e-6, vm.ShownAirBox.Max.X, 12);
         // A boundary change keeps the percentage.
         Assert.Null(vm.SetAirBoxBoundary("xmin", Em3dBoundaryKind.Pec));
         Assert.Equal(10, EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox!.XMin!.PaddingPercent);

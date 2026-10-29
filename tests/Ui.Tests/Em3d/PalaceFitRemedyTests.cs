@@ -68,4 +68,40 @@ public sealed class PalaceFitRemedyTests
         Assert.False(gate.Forced);
         Assert.Contains("as chosen", Assert.Single(log.Warnings));
     }
+
+    /// <summary>
+    /// The via transition's Standard run on the direct solver: 29,042 tetrahedra reached past 8 GB on a machine that size, and
+    /// the iterative solver solved it in about 3.7. Below 150 % the question is asked anyway, offering the iterative solver
+    /// first; chosen, the run takes it and keeps its ceiling. With no one to ask (the CLI) it is a warning naming the remedy,
+    /// and the run goes on as the setup says.
+    /// </summary>
+    [Fact]
+    public void DirectThatWillNotFit_OffersTheIterativeSolver_AskedFirst_AndTheCliOnlyWarns()
+    {
+        var direct = PalaceSettings.Preset(PalaceQuality.Standard) with { LinearSolver = PalaceLinearSolver.Direct };
+        long physical = (long)(8 * GB);
+        var v = Em3dRunService.MeshMemoryVerdict(29_042, direct, physical);
+        Assert.True(v.EstimateBytes > physical);
+        Assert.NotEqual(Em3dMemoryLevel.Severe, v.Level);
+        Assert.True(v.AskFirst);
+        Assert.True(v.Applicable[0].Iterative);
+        Assert.True(v.Applicable[0].EstimateBytes < physical);
+        Assert.Contains("Palace.LinearSolver: Iterative", v.Text);
+
+        var gate = new Em3dRunService.MemoryGate(q => { q.Choice.Remedy = q.Applicable[0]; return true; });
+        var log = new Em3dRunService.RunLog();
+        Assert.Null(gate.Admit(v, log));
+        Assert.True(gate.UseIterative);
+        Assert.False(gate.Forced);
+        Assert.Contains("iterative linear solver, as chosen", Assert.Single(log.Warnings));
+
+        var cli = new Em3dRunService.MemoryGate(null);
+        var cliLog = new Em3dRunService.RunLog();
+        Assert.Null(cli.Admit(v, cliLog));
+        Assert.False(cli.UseIterative);
+        Assert.Contains("Palace.LinearSolver: Iterative", Assert.Single(cliLog.Warnings));
+
+        // The same mesh on the iterative solver fits: nothing is asked.
+        Assert.False(Em3dRunService.MeshMemoryVerdict(29_042, PalaceSettings.Preset(PalaceQuality.Standard), physical).AskFirst);
+    }
 }

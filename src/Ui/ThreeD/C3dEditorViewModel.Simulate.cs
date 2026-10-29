@@ -939,17 +939,30 @@ public sealed partial class C3dEditorViewModel
         return C3dDimension.Spell(dbu, Document.DisplayUnit, Document.DbuPerMicron);
     }
 
-    /// <summary>3D editor round 1 — an axis's padding as a percentage of the content's extent along it, on both of the axis's
-    /// faces (10 pads a tenth of the extent on each side); one undo entry. Null on success, else why not.</summary>
-    public string? SetAirBoxPaddingPercent(char axis, string text)
+    /// <summary>The padding a face has now, whether stated or the default, as a percentage of the modelled extent along its
+    /// axis: what the Inspector's percentage box shows when the setup states none. Null when the content is flat there.</summary>
+    public double? AirBoxPaddingPercent(string face)
+    {
+        if (ShownAirBox is not { } box || Elaboration?.ModelledExtent() is not { } x) return null;
+        var (pad, span) = face switch
+        {
+            "xmin" => (x.X0 - box.Min.X, x.X1 - x.X0), "xmax" => (box.Max.X - x.X1, x.X1 - x.X0),
+            "ymin" => (x.Y0 - box.Min.Y, x.Y1 - x.Y0), "ymax" => (box.Max.Y - x.Y1, x.Y1 - x.Y0),
+            "zmin" => (x.Z0 - box.Min.Z, x.Z1 - x.Z0), _ => (box.Max.Z - x.Z1, x.Z1 - x.Z0),
+        };
+        return span > 0 ? pad / span * 100 : null;
+    }
+
+    /// <summary>3D editor round 1 — a face's padding as a percentage of the content's extent along its axis (10 pads a tenth
+    /// of the extent beyond that face); one undo entry. Null on success, else why not.</summary>
+    public string? SetAirBoxPaddingPercent(string face, string text)
     {
         string t = text.Trim().TrimEnd('%').Trim();
         if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double pct) || !double.IsFinite(pct))
             return $"'{text}' is not a percentage: a number such as 10.";
         if (pct < 0) return "A padding is a distance from the geometry: zero or more.";
-        string lo = axis + "min", hi = axis + "max";
-        return EditActiveAirBox([lo, hi], f => new EmAirBoxFace(null, f?.Boundary, pct),
-                                $"Air box {char.ToUpperInvariant(axis)} padding {pct.ToString("G6", CultureInfo.InvariantCulture)} %");
+        return EditActiveAirBox(face, f => new EmAirBoxFace(null, f?.Boundary, pct),
+                                $"Air box {face} padding {pct.ToString("G6", CultureInfo.InvariantCulture)} %");
     }
 
     /// <summary>The active setup as the Inspector names it.</summary>

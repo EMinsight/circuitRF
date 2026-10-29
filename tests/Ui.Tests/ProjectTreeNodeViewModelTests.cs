@@ -384,16 +384,18 @@ public class ProjectTreeNodeViewModelTests : IDisposable
         NodeKind kind, string absPath, bool expected)
         => Assert.Equal(expected, MakeVm(kind, absPath).HasRemoveAction);
 
-    /// <summary>Open View / Remove All Views ride the view type the sub-folder's name stands for.</summary>
+    /// <summary>Open View / Remove All Views ride the view type the sub-folder's name stands for, and the remove item names
+    /// it, because the cell's other views stay.</summary>
     [Theory]
-    [InlineData("/tmp/x/Amp/schematic", ViewType.Schematic)]
-    [InlineData("/tmp/x/Amp/3d",        ViewType.ThreeD)]
-    [InlineData("/tmp/x/Amp/notes",     null)]
-    public void ViewFolderType_IsTheSubFoldersView(string absPath, ViewType? expected)
+    [InlineData("/tmp/x/Amp/schematic", ViewType.Schematic, "Remove All Schematic Views")]
+    [InlineData("/tmp/x/Amp/3d",        ViewType.ThreeD,    "Remove All 3D Views")]
+    [InlineData("/tmp/x/Amp/notes",     null,               "Remove All Views")]
+    public void ViewFolderType_IsTheSubFoldersView(string absPath, ViewType? expected, string removeHeader)
     {
         var vm = MakeVm(NodeKind.CellViewFolder, absPath);
         Assert.Equal(expected, vm.ViewFolderType);
         Assert.Equal(expected is not null, vm.IsViewFolder);
+        Assert.Equal(removeHeader, vm.RemoveAllViewsHeader);
     }
 
 }

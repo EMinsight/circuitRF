@@ -200,6 +200,16 @@ public static partial class Em3dRunService
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
         Leg Cancelled() => Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
         var (settings, lowering, palace) = (plan.Settings, plan.Lowering, plan.Palace);
+        string configJson = plan.ConfigJson;
+        // The memory question's answer can trade the setup's direct solver for the iterative one, for this run only: the
+        // mesh is the same, so only the configuration is written again.
+        void TakeIterativeIfChosen()
+        {
+            if (!memory.UseIterative || settings.LinearSolver != PalaceLinearSolver.Direct) return;
+            settings = settings with { LinearSolver = PalaceLinearSolver.Iterative };
+            configJson = PalaceConfigWriter.Write(problem, lowering.Groups, settings, plan.FarField, plan.Device).Json ?? configJson;
+        }
+        TakeIterativeIfChosen();
         var wall = System.Diagnostics.Stopwatch.StartNew();
         long physical = plan.Memory?.Bytes ?? MachineMemory.PhysicalBytes;
         using var runner = plan.Runner;
@@ -243,6 +253,7 @@ public static partial class Em3dRunService
             return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource,
                 tooBig + $" The mesh is kept in {runDir}, so a run started anyway reuses it."));
         if (cpu && memory.ProcessCap is { } chosen && chosen < processes) (processes, processNote) = (chosen, null);
+        TakeIterativeIfChosen();
         if (processNote is not null) log.Notes.Add(processNote);
         var tracker = new PalaceStageTracker(settings.AdaptiveMaxIterations, settings.SweepAdaptiveTol, control,
                                              electrostatic: problem.Type == Em3dProblemType.Electrostatic);
@@ -261,7 +272,7 @@ public static partial class Em3dRunService
             foreach (var face in PalaceTerminalS.Faces(ordered).Where(f => f.Count > 1))
             {
                 int attribute = lowering.Groups.Single(g => g.Kind == Em3dGroupKind.Port && g.PortNumber == ordered[face[0]].Number).Attribute;
-                var kn = runner.FaceModes(runDir, plan.ConfigJson, palace.Path, attribute, face.Count, centre, ct, out string? why);
+                var kn = runner.FaceModes(runDir, configJson, palace.Path, attribute, face.Count, centre, ct, out string? why);
                 if (ct.IsCancellationRequested) return Cancelled();
                 if (kn is null) return Failed($"The terminal faces' modes could not be found before the solve: {why}.");
                 if (ModalTerminalTransform.IsDegenerate(kn))
@@ -269,7 +280,7 @@ public static partial class Em3dRunService
                         PalaceTerminalS.DegenerateRefusal(ordered[face[0]].FaceGroupLabel ?? ordered[face[0]].Name, kn, centre)));
             }
         }
-        try { solved = runner.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical, limits); }
+        try { solved = runner.Solve(runDir, configJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical, limits); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return Failed($"Palace could not be staged in '{runDir}' ({e.Message}).");
@@ -322,7 +333,7 @@ public static partial class Em3dRunService
                     foreach (var face in faces)
                     {
                         int attribute = lowering.Groups.Single(g => g.Kind == Em3dGroupKind.Port && g.PortNumber == ports[face[0]].Number).Attribute;
-                        var kn = runner.FaceModes(runDir, plan.ConfigJson, palace.Path, attribute, face.Count, f, ct, out string? why);
+                        var kn = runner.FaceModes(runDir, configJson, palace.Path, attribute, face.Count, f, ct, out string? why);
                         if (ct.IsCancellationRequested) return Cancelled();
                         if (kn is null) return Failed($"The terminal faces' wavenumbers could not be found: {why}.");
                         for (int k = 0; k < face.Count; k++) block[ports[face[k]].Number] = new PalaceWaveMode(ports[face[k]].Number, k + 1, kn[k]);
@@ -372,7 +383,7 @@ public static partial class Em3dRunService
             try
             {
                 var asked = wave.Where(p => !GmshGeoWriter.SharesAnotherTerminalsFace(problem, p)).ToList();
-                var second = runner.SecondModes(runDir, plan.ConfigJson, palace.Path, problem.Frequency.StopHz,
+                var second = runner.SecondModes(runDir, configJson, palace.Path, problem.Frequency.StopHz,
                                                    [.. asked.Select(p => p.Number)], ct, out string? secondNote);
                 string? Group(PalaceWaveMode m) => ports.First(p => p.Number == m.Port).FaceGroupLabel;
                 int Terminals(PalaceWaveMode m) => wave.Count(q => q.FaceGroup is not null && q.FaceGroup == ports.First(p => p.Number == m.Port).FaceGroup);
@@ -883,7 +894,8 @@ public static partial class Em3dRunService
         double backgroundSize = p.IsStatic ? staticSize
             : GmshGeoWriter.MaxElementSizeM(background, GmshGeoWriter.SizingFrequencyHz(p), settings);
         return Em3dSizeEstimate.Palace(p, SolidSize, settings.ElementOrder, backgroundSize, settings.AdaptiveMaxIterations,
-                                       GmshGeoWriter.RefinementSizing(p, SolidSize, backgroundSize, settings));
+                                       GmshGeoWriter.RefinementSizing(p, SolidSize, backgroundSize, settings),
+                                       direct: settings.LinearSolver == PalaceLinearSolver.Direct);
     }
 
     /// <summary>The fit check for a setup as the panel is about to run it: generates the problem and
@@ -960,9 +972,11 @@ public static partial class Em3dRunService
             if (regenerated.Ok && regenerated.Problem is { } q)
                 remedies.Add(new("an air box with half the padding on every side (AirBox)", At(settings, q)));
         }
+        var iterative = IterativeRemedy(settings, At(settings with { LinearSolver = PalaceLinearSolver.Iterative }));
+        if (iterative is not null) remedies.Add(iterative);
         remedies.AddRange(FitRemedies(e, processes, physicalBytes));
         return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes ?? long.MaxValue)],
-            basis: "Before meshing, from the 3D model's volumes:", scope: scope);
+            basis: "Before meshing, from the 3D model's volumes:", scope: scope) with { AskFirst = AskFirst(e, iterative, physicalBytes) };
     }
 
     /// <summary>brief-dfr27-5 R-dfr27-5-5 — <paramref name="bytes"/>, measured on <see cref="Em3dSizeEstimate.PalaceMeasuredProcesses"/>
@@ -1012,7 +1026,9 @@ public static partial class Em3dRunService
                 ? Em3dMemoryVerdict.Evaluate(se, physicalBytes, [],
                       basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope)
                 : Em3dMemoryVerdict.Unknown;
-        long For(int order, int passes) => Scaled(Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, order, passes), processes)!.Value;
+        bool direct = settings.LinearSolver == PalaceLinearSolver.Direct;
+        long For(int order, int passes, bool asDirect = true)
+            => Scaled(Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, order, passes, direct && asDirect), processes)!.Value;
         long e = For(settings.ElementOrder, settings.AdaptiveMaxIterations);
         var remedies = new List<Em3dMemoryRemedy>();
         if (settings.ElementOrder != 1 || settings.AdaptiveMaxIterations > 0)
@@ -1022,10 +1038,25 @@ public static partial class Em3dRunService
             remedies.Add(new("first-order elements (Palace.ElementOrder: 1)", For(1, settings.AdaptiveMaxIterations)));
         if (settings.AdaptiveMaxIterations > 0)
             remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)", For(settings.ElementOrder, 0)));
+        var iterative = IterativeRemedy(settings, For(settings.ElementOrder, settings.AdaptiveMaxIterations, asDirect: false));
+        if (iterative is not null) remedies.Add(iterative);
         remedies.AddRange(FitRemedies(e, processes, physicalBytes));
         return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes)],
-            basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope);
+            basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope)
+            with { AskFirst = AskFirst(e, iterative, physicalBytes) };
     }
+
+    /// <summary>The direct linear solver's way out: the iterative one, at its own estimate, when the setup asks for direct.
+    /// The run can take it itself (<see cref="Em3dMemoryRemedy.Iterative"/>), so the question offers it as a button.</summary>
+    private static Em3dMemoryRemedy? IterativeRemedy(PalaceSettings settings, long? iterativeBytes)
+        => settings.LinearSolver == PalaceLinearSolver.Direct && iterativeBytes is { } b
+            ? new("the iterative linear solver (Palace.LinearSolver: Iterative; slower on some problems, far less memory)", b)
+              { Iterative = true }
+            : null;
+
+    /// <summary>Direct will not fit and iterative would: the run asks first, below 150 % too.</summary>
+    private static bool AskFirst(long estimate, Em3dMemoryRemedy? iterative, long physicalBytes)
+        => iterative is not null && physicalBytes > 0 && estimate > physicalBytes && iterative.Fits(physicalBytes);
 
     /// <summary>R-em3d21-5a — "Palace done in 2 min 27 s · peak memory 7.4 GB · …", every figure the
     /// parser read from Palace's log, and a field Palace did not print left out rather than guessed.</summary>

@@ -458,20 +458,33 @@ public sealed class TestPadRound26Tests : IDisposable
 
     /// <summary>R-dfr26-8-4 — an edge port at a board edge the air box meets with no padding lies IN the box face; it is
     /// claimed before the faces, or the face takes its sheet and the run is refused ("selected nothing in the mesh").
-    /// This fixture was refused so before, and solved after.</summary>
+    /// This fixture was refused so before, and solved after. Since brief DFR28-3 the generator first pads an ABSORBING face
+    /// clear of the sheet (in it, the port shares its power with the absorber), so the port lies inside the box; a PEC face
+    /// is never moved, and a port in one is still claimed before the faces.</summary>
     [Fact]
     public void ALumpedPortOnAnAirBoxFace_IsClaimedBeforeTheFace()
     {
-        var (setup, p) = Fixture("""
+        string Cem(string xmin) => $$"""
             { "FormatVersion": 1, "Name": "drv", "LayoutRef": "fixture.clay", "Solver3D": "Palace",
               "Frequency": { "StartExpr": "1", "StopExpr": "3", "StepExpr": "", "NumPoints": 3, "Mode": "PointCount", "Kind": "Linear",
                              "StartUnit": "GHz", "StopUnit": "GHz", "StepUnit": "Hz" },
               "Palace": { "Quality": "Draft" },
-              "AirBox": { "XMin": { "PaddingUm": 0, "Boundary": "Absorbing" }, "XMax": { "PaddingUm": 0, "Boundary": "Absorbing" },
+              "AirBox": { "XMin": { "PaddingUm": 0, "Boundary": "{{xmin}}" }, "XMax": { "PaddingUm": 0, "Boundary": "Absorbing" },
                           "YMin": { "PaddingUm": 0, "Boundary": "Absorbing" }, "YMax": { "PaddingUm": 0, "Boundary": "Absorbing" },
                           "ZMin": { "PaddingUm": 4000, "Boundary": "Absorbing" }, "ZMax": { "PaddingUm": 4000, "Boundary": "Absorbing" } } }
-            """);
-        string geo = CircuitRF.Design.Em3d.GmshGeoWriter.Write(p, CircuitRF.Design.Layout.Em.PalaceSettings.Resolve(setup.Palace)).Geo!;
+            """;
+        static double EdgeX(CircuitRF.Engine.Em3d.Em3dProblem p) => Assert.Single(p.Ports, q => Math.Abs(q.Min.X - q.Max.X) < 1e-12).Min.X;
+
+        var (setup, absorbing) = Generated(Cem("Absorbing"));
+        Assert.True(absorbing.Ok, absorbing.Refusal);
+        var settings = CircuitRF.Design.Layout.Em.PalaceSettings.Resolve(setup.Palace);
+        Assert.True(absorbing.Problem!.Boundary.Min.X < EdgeX(absorbing.Problem), "the absorbing xmin face is padded clear of the port");
+        Assert.Contains(absorbing.Notes, n => n.Contains("xmin face", StringComparison.Ordinal) && n.Contains("padded", StringComparison.Ordinal));
+        Assert.Contains("q0[] = ", CircuitRF.Design.Em3d.GmshGeoWriter.Write(absorbing.Problem, settings).Geo!);
+
+        var p = Fixture(Cem("Pec")).Problem;
+        Assert.Equal(EdgeX(p), p.Boundary.Min.X, 12);
+        string geo = CircuitRF.Design.Em3d.GmshGeoWriter.Write(p, settings).Geo!;
         Assert.True(geo.IndexOf("q0[] = ", StringComparison.Ordinal) is var port and >= 0
                     && port < geo.IndexOf("// air box", StringComparison.Ordinal), "the port is claimed after the air-box faces");
     }

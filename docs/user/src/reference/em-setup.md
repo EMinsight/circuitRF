@@ -551,7 +551,13 @@ smaller crop — each with the estimate it would give, and saying which of them 
 **150 %** Simulate asks before going on (headless, `circuitrf em` needs `--force`). A warning never stops
 a run on its own: the estimate uses the highest memory per unknown circuitRF has measured.
 
-**Fewer processes is the one remedy a run can take by itself**, without changing the setup: every MPI
+**A setup on the Direct linear solver is checked as Direct**: it needs about two to three times the
+iterative solver's memory (on a four-layer via transition, 6.2 GB against 3.0 GB at 193 k unknowns). When
+Direct will not fit and Iterative would, Simulate asks before starting, below 150 % too. The question's default
+button is **Use the Iterative Solver**, which runs this once on Iterative without changing the setup;
+**Simulate Anyway** keeps Direct. Headless, `circuitrf em` prints the same warning and runs as the setup says.
+
+**Fewer processes is another remedy a run can take by itself**, without changing the setup: every MPI
 process carries its own copy of the solver's preconditioner, so Palace's peak climbs with each doubling
 of the count — on a ten-layer board, 2.5 GB on one process against 4.3 GB on eight, at about twice the
 time. When a smaller count fits, the question's default button is **Run on N Processes**, which runs

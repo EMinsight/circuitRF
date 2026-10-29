@@ -402,7 +402,8 @@ internal static class ExplainEm3d
             palace = new("palace", "estimate", est.Tetrahedra, est.Unknowns, null, est.MemoryBytes,
                 $"about {est.Tetrahedra:N0} elements and {est.Unknowns:N0} unknowns at order {est.Order}" +
                 (est.MemoryBytes is { } b ? $", about {b / 1e9:0.#} GB" +
-                    (settings.AdaptiveMaxIterations > 0 ? " with refinement passes allowed" : "") : "") +
+                    (settings.AdaptiveMaxIterations > 0 ? " with refinement passes allowed" : "") +
+                    (settings.LinearSolver == PalaceLinearSolver.Direct ? " on the direct linear solver" : "") : "") +
                 ", from each meshed region's volume at its largest element and the refined shell round each " +
                 "conductor, sheet and port. A curved surface's own refinement and Palace's adaptive passes add to " +
                 "it, and the run reports the real counts. No mesher is run to get it.");

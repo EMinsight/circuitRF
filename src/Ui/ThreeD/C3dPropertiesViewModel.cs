@@ -1144,9 +1144,14 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         if (_loading || !IsAirBoxRow || value is null) return;
         Error = editor.SetAirBoxMaterial(value) ?? "";
     }
-    [ObservableProperty] private string _padXPercent = "";
-    [ObservableProperty] private string _padYPercent = "";
-    [ObservableProperty] private string _padZPercent = "";
+    // One padding box per face: the first row the low faces, the second the high ones.
+    [ObservableProperty] private string _padXMinPercent = "";
+    [ObservableProperty] private string _padXMaxPercent = "";
+    [ObservableProperty] private string _padYMinPercent = "";
+    [ObservableProperty] private string _padYMaxPercent = "";
+    [ObservableProperty] private string _padZMinPercent = "";
+    [ObservableProperty] private string _padZMaxPercent = "";
+    private readonly Dictionary<string, string> _padLoaded = [];
 
     /// <summary>One row per face: its boundary (editable) and the padding it has now.</summary>
     public ObservableCollection<C3dAirBoxFaceRow> AirBoxFaces { get; } = [];
@@ -1171,11 +1176,16 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         }
         Rows.Add(new C3dPropertyRow("Setup", editor.ActiveSetupLabel));
         var stated = setup.AirBox;
-        string Pct(EmAirBoxFace? a, EmAirBoxFace? b)
-            => a?.PaddingPercent is { } p && b?.PaddingPercent == p ? p.ToString("G6", CultureInfo.InvariantCulture) : "";
-        PadXPercent = Pct(stated?.XMin, stated?.XMax);
-        PadYPercent = Pct(stated?.YMin, stated?.YMax);
-        PadZPercent = Pct(stated?.ZMin, stated?.ZMax);
+        // A face that states no percentage shows the padding in use as one, so a smaller number visibly shrinks the box.
+        string Pct(string face, EmAirBoxFace? s)
+            => s?.PaddingPercent is { } p ? p.ToString("G6", CultureInfo.InvariantCulture)
+             : editor.AirBoxPaddingPercent(face) is { } now ? now.ToString("G4", CultureInfo.InvariantCulture) : "";
+        _padLoaded["xmin"] = PadXMinPercent = Pct("xmin", stated?.XMin);
+        _padLoaded["xmax"] = PadXMaxPercent = Pct("xmax", stated?.XMax);
+        _padLoaded["ymin"] = PadYMinPercent = Pct("ymin", stated?.YMin);
+        _padLoaded["ymax"] = PadYMaxPercent = Pct("ymax", stated?.YMax);
+        _padLoaded["zmin"] = PadZMinPercent = Pct("zmin", stated?.ZMin);
+        _padLoaded["zmax"] = PadZMaxPercent = Pct("zmax", stated?.ZMax);
         var f = box.Faces;
         string defaultBasis = editor.Elaboration is { } elab && C3dProblemAssembly.DefaultPaddingBasis(setup, elab) is { } basis
             ? $" (default: {basis})" : " (default)";
@@ -1195,14 +1205,19 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Rows.Add(new C3dPropertyRow("Editing", "The air box is the active setup's, not the geometry's: it cannot be deleted or duplicated."));
     }
 
-    /// <summary>An axis's padding percentage — Enter or lost focus: both faces of the axis pad by that share of the
-    /// content's extent along it; empty keeps the faces as they are. One undo entry.</summary>
-    public void CommitAirBoxPercent(char axis)
+    /// <summary>A face's padding percentage — Enter or lost focus: that face pads by that share of the content's extent along
+    /// its axis; empty keeps the face as it is. One undo entry.</summary>
+    public void CommitAirBoxPercent(string face)
     {
         if (!IsAirBox) return;
-        string text = axis switch { 'x' => PadXPercent, 'y' => PadYPercent, _ => PadZPercent };
-        if (string.IsNullOrWhiteSpace(text)) return;
-        Error = editor.SetAirBoxPaddingPercent(axis, text) ?? "";
+        string text = face switch
+        {
+            "xmin" => PadXMinPercent, "xmax" => PadXMaxPercent, "ymin" => PadYMinPercent,
+            "ymax" => PadYMaxPercent, "zmin" => PadZMinPercent, _ => PadZMaxPercent,
+        };
+        // Unchanged (focus passing through) states nothing: a default stays a default.
+        if (string.IsNullOrWhiteSpace(text) || text.Trim() == _padLoaded.GetValueOrDefault(face)) return;
+        Error = editor.SetAirBoxPaddingPercent(face, text) ?? "";
     }
 
     /// <summary>A dimension's Enter or lost focus: a number replaces the expression; an expression is bound (and kept even

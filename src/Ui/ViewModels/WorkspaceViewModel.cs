@@ -9420,7 +9420,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (verdict.Applicable is [var fits, ..])
             {
                 var answer = await new Views.Dialogs.SaveChangesDialog(
-                    verdict.Text ?? "", saveLabel: $"Run on {fits.Processes} Process{(fits.Processes == 1 ? "" : "es")}",
+                    verdict.Text ?? "", saveLabel: fits.Iterative ? "Use the Iterative Solver"
+                                                 : $"Run on {fits.Processes} Process{(fits.Processes == 1 ? "" : "es")}",
                     dontSaveLabel: "Simulate Anyway", cancelLabel: "Don't Simulate",
                     title: "This Run May Not Fit in Memory").ShowDialog<SaveChangesResult>(owner);
                 return AnswerEmMemoryWithRemedy(answer, verdict, fits);
@@ -14883,7 +14884,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         catch (Exception ex) { Messages.Error($"Could not read '{folder}': {ex.Message}"); return; }
 
         string cellName = Path.GetFileName(cellDir);
-        string noun     = CellFolder.ViewNoun(viewType);
+        string noun     = viewType == ViewType.ThreeD ? "3D" : CellFolder.ViewNoun(viewType);
+        string label    = ProjectTreeNodeViewModel.RemoveAllViewsLabel(viewType);
         var msg = $"Remove all {noun} views of cell '{cellName}'?\n\n"
                 + $"This moves the '{Path.GetFileName(folder)}' folder and the "
                 + (fileCount == 1 ? "1 file" : $"{fileCount} files")
@@ -14900,10 +14902,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         var dlg = new Views.Dialogs.SaveChangesDialog(
             msg,
-            saveLabel:     "Remove All Views",
+            saveLabel:     label,
             dontSaveLabel: null,
             cancelLabel:   "Cancel",
-            title:         "Remove All Views",
+            title:         label,
             destructive:   true);
         await dlg.ShowDialog(window);
         if (dlg.Result != SaveChangesResult.Save) return;

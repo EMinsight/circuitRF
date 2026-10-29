@@ -793,7 +793,7 @@
                                         </MenuItem>
 
                                         <!-- The whole view sub-folder; the confirmation counts its files. -->
-                                        <MenuItem Header="Remove All Views"
+                                        <MenuItem Header="{Binding RemoveAllViewsHeader}"
                                                   Command="{Binding RemoveAllViewsCommand}"
                                                   IsVisible="{Binding IsOwnViewFolder}">
                                             <MenuItem.Icon><mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/></MenuItem.Icon>

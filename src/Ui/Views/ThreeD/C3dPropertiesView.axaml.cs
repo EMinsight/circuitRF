@@ -197,15 +197,15 @@ public partial class C3dPropertiesView : UserControl
 
     private void OnBoundaryLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitBoundary();
 
-    private static char AxisOf(object? sender) => (sender as Control)?.Tag is string { Length: 1 } a ? a[0] : 'x';
+    private static string FaceOf(object? sender) => (sender as Control)?.Tag as string ?? "xmin";
 
     private void OnPadKey(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter) { _vm?.CommitAirBoxPercent(AxisOf(sender)); e.Handled = true; }
+        if (e.Key == Key.Enter) { _vm?.CommitAirBoxPercent(FaceOf(sender)); e.Handled = true; }
         else if (e.Key == Key.Escape) { _vm?.Reload(); e.Handled = true; }
     }
 
-    private void OnPadLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitAirBoxPercent(AxisOf(sender));
+    private void OnPadLostFocus(object? sender, RoutedEventArgs e) => _vm?.CommitAirBoxPercent(FaceOf(sender));
 
     // brief-em3d-101 — the Image section's width and height commit on Enter and on leaving the box.
     private void OnImageWidthKey(object? sender, Avalonia.Input.KeyEventArgs e) { if (e.Key == Avalonia.Input.Key.Enter) (DataContext as CircuitRF.Ui.ThreeD.C3dPropertiesViewModel)?.CommitImageWidth(); }

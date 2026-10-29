@@ -301,6 +301,18 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     /// </summary>
     public bool IsOwnViewFolder => IsViewFolder && ReferenceScope is null;
 
+    /// <summary>"Remove All Layout Views": the menu names the view type, because the cell's other views stay.</summary>
+    public string RemoveAllViewsHeader => ViewFolderType is { } type ? RemoveAllViewsLabel(type) : "Remove All Views";
+
+    /// <summary>The menu item's, the confirmation's title and its button's text for one view type.</summary>
+    public static string RemoveAllViewsLabel(ViewType type) => type switch
+    {
+        ViewType.Schematic => "Remove All Schematic Views",
+        ViewType.Symbol    => "Remove All Symbol Views",
+        ViewType.Layout    => "Remove All Layout Views",
+        _                  => "Remove All 3D Views",
+    };
+
     /// <summary>Drives "Copy Path" / "Copy Full Path": every row Reveal is offered on, when its path
     /// is a real one — an unresolved reference carries the text the <c>.cws</c> holds instead.</summary>
     public bool CanCopyPath => CanReveal && Path.IsPathRooted(AbsolutePath);

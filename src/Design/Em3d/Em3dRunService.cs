@@ -800,6 +800,9 @@ public static partial class Em3dRunService
         /// <summary>brief-dfr27-5 R-dfr27-5-5 — the MPI processes the question's answer chose for this run, or null.</summary>
         public int? ProcessCap { get; private set; }
 
+        /// <summary>The question's answer chose Palace's iterative linear solver over the setup's direct one, for this run.</summary>
+        public bool UseIterative { get; private set; }
+
         /// <summary>
         /// brief-dfr27-5 R-dfr27-5-2 — openEMS's time estimate, through the same confirmation: a long run is asked about (the
         /// panel's question); with no one to ask (the CLI) or once answered yes, the estimate is a warning and the run goes on.
@@ -820,11 +823,20 @@ public static partial class Em3dRunService
         {
             Last = verdict;
             if (verdict.Level == Em3dMemoryLevel.Fits || verdict.Text is null) return null;
-            if (verdict.Level == Em3dMemoryLevel.Severe && !_confirmed)
+            // A direct solver that will not fit is asked about below 150 % too, where someone can be asked; the CLI warns.
+            if ((verdict.Level == Em3dMemoryLevel.Severe || verdict.AskFirst && confirm is not null) && !_confirmed)
             {
                 if (confirm?.Invoke(verdict) != true)
                     return verdict.Text + " To start it anyway, confirm it when Simulate asks, or pass --force to `circuitrf em`.";
                 // brief-dfr27-5 R-dfr27-5-5 — a remedy the run takes itself: it fits, so it keeps its memory ceiling.
+                if (verdict.Choice.Remedy is { Iterative: true } iterative)
+                {
+                    UseIterative = true;
+                    Warn(verdict.Text + " It was started with the iterative linear solver, as chosen (about " +
+                         $"{MachineMemory.Format(iterative.EstimateBytes ?? 0)}).");
+                    _posted = Em3dMemoryLevel.Warning;
+                    return null;
+                }
                 if (verdict.Choice.Remedy is { Processes: { } n } chosen)
                 {
                     ProcessCap = n;
