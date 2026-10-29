@@ -198,7 +198,10 @@ public sealed class PlanarSolveContext
         // and the pre-solve mesh verdict cannot answer it differently (they did).
         bool accelerated = SurfaceMesher.UsesAcceleratedCeiling(
             Settings.Aim is not null, levels is not null);
-        SurfaceMesher.GuardCeiling(mesh.Bases.Count, accelerated, mesh.Cells.Count, Settings.MemoryLimitBytes);
+        // PM-2 — the dense path holds the MERGED matrix when the mesh carries one; the accelerator
+        // never reads a merge and solves the elemental rooftops.
+        SurfaceMesher.GuardCeiling(accelerated ? mesh.Bases.Count : mesh.SolvedUnknownCount,
+                                   accelerated, mesh.Cells.Count, Settings.MemoryLimitBytes);
 
         // P2/M4 — LazyThreadSafetyMode.ExecutionAndPublication (the default): a de-embedded run fans
         // the standards out across workers, so two of them can reach the same context at once and the

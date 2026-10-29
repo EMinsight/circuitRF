@@ -236,6 +236,23 @@ public enum PlanarCurrentModel
 /// <para>It changes no cell and no answer — only which mesh is refused — so it enters no provenance
 /// hash, and it SURVIVES <see cref="Auto"/> on the taxonomy <see cref="Resolved"/> states.</para>
 /// </param>
+/// <param name="RooftopMerging">
+/// <b>PM-2 — solve a MERGED basis rather than the elemental one.</b> Off by default. Where a run of
+/// elemental rooftops sits in cells more than <see cref="PlanarRooftopMerge.SpreadFactor"/>× finer
+/// than the size field asks for at that point — with every edge attractor's fan localised to the
+/// feature that raised it, instead of running the length of its gridline — the rooftops of one
+/// direction are grouped into runs along that direction and one MACRO-rooftop replaces every rooftop
+/// between two neighbouring runs. A macro
+/// is a fixed-weight sum of elemental rooftops, so the merged space is a subspace of the elemental
+/// one and normal current is continuous at every join by construction. The fill is still of the
+/// elemental rooftops (in panels, never as a whole N×N matrix); what is held and factored is
+/// <c>Tᵀ Z T</c>. See <see cref="PlanarRooftopMerge"/>.
+///
+/// <para>The GRID is unchanged by it — every cell and every elemental rooftop is the one the flag
+/// off produces — so it is not a resolution and it SURVIVES <see cref="Auto"/>. It applies to a
+/// single-level mesh on the dense path only; an accelerated or multi-level run meshes as before and
+/// says so.</para>
+/// </param>
 public sealed record PlanarMeshSettings(
     bool Auto               = true,
     int  CellsPerWavelength = 20,      // = DefaultCellsPerWavelength (a record's own const cannot
@@ -246,7 +263,8 @@ public sealed record PlanarMeshSettings(
     int  MinCellsAcrossConductor = 4,
     PlanarCurrentModel CurrentModel = PlanarCurrentModel.None,
     int  DetailFloorDivisor = 200,
-    long? MemoryLimitBytes  = null)
+    long? MemoryLimitBytes  = null,
+    bool RooftopMerging     = false)
 {
     public const int  DefaultCellsPerWavelength = 20;
     public const bool DefaultEdgeMesh           = true;
@@ -437,7 +455,8 @@ public sealed record PlanarMeshSettings(
                                  MinCellsAcrossConductor: MinCellsAcrossConductor,
                                  CurrentModel: CurrentModel,
                                  DetailFloorDivisor: DetailFloorDivisor,
-                                 MemoryLimitBytes: MemoryLimitBytes)
+                                 MemoryLimitBytes: MemoryLimitBytes,
+                                 RooftopMerging: RooftopMerging)
         : this with
         {
             CellsPerWavelength      = Math.Max(2, CellsPerWavelength),

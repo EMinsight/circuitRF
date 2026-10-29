@@ -139,4 +139,18 @@ public sealed record PlanarMesh(
     IReadOnlyList<PlanarBasis> Bases,
     IReadOnlyList<string>      LayerNames,
     IReadOnlyList<double>      GridX,
-    IReadOnlyList<double>      GridY);
+    IReadOnlyList<double>      GridY)
+{
+    /// <summary>
+    /// <b>PM-2 — the merged basis this mesh is SOLVED in</b>, or null (the default) when every
+    /// elemental rooftop is its own unknown. <see cref="Cells"/> and <see cref="Bases"/> are the
+    /// elemental mesh either way: ports, the current-density map, the far field and the DC solve all
+    /// index by them, and a solve hands back elemental currents (<c>T·I</c>) whichever basis it was
+    /// factored in. Only the dense system reads this.
+    /// </summary>
+    public PlanarRooftopMerge? Merge { get; init; }
+
+    /// <summary>The size of the matrix the DENSE path holds and factors — the merged count when
+    /// <see cref="Merge"/> is set, the basis count otherwise. What every dense ceiling is asked of.</summary>
+    public int SolvedUnknownCount => Merge?.Count ?? Bases.Count;
+}

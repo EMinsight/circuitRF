@@ -12470,3 +12470,136 @@ PM-2 Part 1 measured the dense path at N = 11,210 on real artwork: fill 6.5 s, L
   to 52 mm, `PlanarMemoryAccountingTests`' line to 1 m. `PlanarP7SymmetricFactorTests` pins 10,000.
 - **Not changed:** `src/Engine/Mom/CLAUDE.md` §3.2/§8 still quote 5,000 in places (CLAUDE.md is not edited from a
   change like this; this section supersedes those numbers).
+
+## PM-2 Part 2 — rooftop merging, built behind a flag; gate 2 fails and the flag stays off (R-pm2-2, 2026-10-29)
+
+Built on Part 1's time margin, at the owner's instruction. `PlanarMeshSettings.RooftopMerging` (default off;
+`.cem` `PlanarMesh.RooftopMerging`, omitted at its default; `MeshHash` gains `|merge=True` only when on, so no
+stamped `.snp` goes stale). No panel control. Measured in Release on a 10-core, 16 GB machine, every run under a
+300 s / 8 GB watchdog.
+
+### 1. What was built
+
+- **`PlanarRooftopMerge`** — the sparse map `T` (CSR both ways), `Restrict` (`Tᵀv`) and `Prolong` (`Tx`).
+  Attached to `PlanarMesh.Merge`; `PlanarMesh.SolvedUnknownCount` is what every DENSE ceiling now asks
+  (`SurfaceMesher`'s verdict, `PlanarSystem.GuardCeiling`, `PlanarFill`'s core guards, `PlanarSolveContext`). The
+  grid, the cells and the elemental rooftops are the flag-off ones; ports, current density, far field, DC solve and
+  calibration standards all still read the elemental mesh.
+- **The classification is Part 1's**, moved into the engine as `PlanarRooftopMerge.LocalSizeField`: each graded
+  attractor's fan localised to the axis-parallel edges (and vertices) on its coordinate, read at the cell centre.
+- **Kept elemental:** cut cells, sliver-absorbing cells and their neighbours; every cell within
+  `EndRunHeights` substrate heights of a port's end face, found by walking outward from the label through metal
+  (so a grown feed lead is included) — doubling that length changed the 3-port answer in no digit shown below;
+  accelerated and multi-level/via meshes (a note says so). A merge that merges nothing is not attached, so such a
+  run is the flag-off run to the bit (`testdata/portcal`'s short lines, the taper).
+- **`PlanarFill.FillMerged`** — `Tᵀ Z T` from the lower triangle of the elemental Z in column panels
+  (`MergedPanelBudgetBytes` = 64 MB of workspace), never the whole matrix: `Z = U + Uᵀ` with `U = L + D/2`, so
+  `TᵀZT = X + Xᵀ`, `X = Σ_panels (TᵀU_P)·T_P`. Every elemental entry is `Fill`'s own expression in `Fill`'s order;
+  the cell potential is formed as rows per panel instead of Fill's m×m P. With `T = I` it is `Fill` to the bit,
+  sheet term included (gated); with a real merge it matches a dense `TᵀZT` to 1.4e-16 of the largest entry.
+- **`PlanarSystem`** fills and factors the merged matrix and takes and returns ELEMENTAL vectors
+  (`Size` = elemental, `MatrixSize` = merged), so `PlanarExcitation`, the grounded edge port's Woodbury update
+  and everything downstream are unchanged.
+
+### 2. The first construction had a slit in it
+
+The obvious construction — 2-D rectangular blocks, one macro per pair of blocks sharing an edge — is a subspace
+with continuous normal current, passes the charge test, and is wrong. A block taller than the edge it shares with a
+neighbour carries that neighbour's x-macro on the shared rows only, and the y-rooftops between its own rows are
+gone; a string of 2-row × 1-column blocks along a line (which the classification produces wherever two fan rows of
+other features cross a line) is a slit current cannot cross. Shipped construction: **runs** — x-rooftops merged
+along x within one row, y-rooftops along y within one column, the brief's own wording. Every interior edge keeps a
+rooftop of its own normal current. On the patch the slit was worth 1.8× in the 40-cells/λ error (below); it is not
+what fails gate 2.
+
+### 3. Spread factor 4, not Part 1's 2
+
+Patch, worst |ΔS11| against the elemental mesh over the 11 points, 20 cells/λ:
+
+| Factor | 2 | 3 | **4** | 8 |
+|---|---|---|---|---|
+| Blocks | 4.0e-2 | 1.1e-2 | 8.7e-5 | 2.3e-5 |
+| Runs (shipped) | 0.27 | 1.3e-2 | **2.4e-4** | — |
+
+The step between 3 and 4 is Part 1's §6: a fan cell reads 1.8–1.9× its own size at its centre, more once the fan is
+localised in 2-D, so below about 4 the fans merge. `SpreadFactor` = 4.
+
+### 4. Unknown counts (`circuitrf check`, factor 4, runs)
+
+| Mesh | Elemental | Merged | Part 1 realizable (2×, blocks, no port protection) |
+|---|---|---|---|
+| Internal test geometry, default mesh | 15,236 | **12,065** | 7,784 |
+| Internal test geometry, transmission-line model | 11,210 (11,131 with its leads) | **8,662** (8,581) | 5,486 |
+| Patch Antenna example, 20 / 40 cells/λ | 1,981 / 2,996 | **1,769 / 2,795** | 1,364 |
+| `portcal/separated-pair`, accelerator off | 2,012 | **1,862** | |
+| `portcal/coupled-*`, `offset-pair`, `pad-coupled-pair`, accelerator off | unchanged | nothing merged: every cell is in a port's end run | |
+| `portcal/*` as committed (accelerated) | unchanged | not applied: accelerated, note says so | |
+| Klopfenstein Taper | 805 | nothing merged | |
+
+Flag off, every count is PM-1's (§PM-1 §1) and the mesher's notes are unchanged. **The default mesh stays over the
+10,000 dense ceiling** once the merge is restricted to what is accurate.
+
+### 5. Gates
+
+1. **Patch — passes.** Merged against PM-1's mesh: worst |ΔS11| **2.4e-4** at 20 cells/λ and **7.3e-5** at 40
+   (gate 1e-3). Own doubling 20 → 40: **0.0200**, PM-1's 0.0201. The unmerged Release run reproduces PM-1's saved
+   result exactly (|Δ| = 0), so the reference is current.
+2. **Test geometry, transmission-line model, 55/60/65 GHz — FAILS on the two output ports' reflections.** The
+   reference is PM-1's accelerated A + C run; the dense elemental run reproduces it exactly (|Δ| = 0.000 in every
+   entry), so what moves is the merge and not the solver path. Merged (runs, factor 4, N = 8,581) against it, with
+   PM-1's own A-vs-A+C spread beside:
+
+   | Point | \|ΔS11\| | \|ΔS22\| | \|ΔS33\| | \|ΔS21\| | \|ΔS31\| | \|ΔS23\| |
+   |---|---|---|---|---|---|---|
+   | 55 GHz | 0.001 (0.118) | **0.107** (0.036) | **0.095** (0.088) | 0.004 (0.009) | 0.005 (0.030) | 0.014 (0.010) |
+   | 60 GHz | 0.008 (0.140) | **0.083** (0.040) | **0.108** (0.075) | 0.005 (0.012) | 0.007 (0.031) | 0.010 (0.009) |
+   | 65 GHz | 0.018 (0.109) | **0.076** (0.046) | 0.037 (0.077) | 0.015 (0.022) | 0.008 (0.033) | 0.007 (0.012) |
+
+   |S22| and |S33| are 0.89–0.92 and move by under 0.006: the change is a ~5° turn of a near-total reflection, i.e.
+   about 0.3 % in β over a branch some 3 λ_g long — the same signature as PM-1's own A-vs-A+C difference. No
+   variant tried closes it: blocks at factor 4 (S22 0.10–0.13), blocks at factor 8 (S22 ≤ 0.012 but S33 0.07–0.11,
+   for a 20 % saving), blocks growing across the line only (0.10–0.12), runs along y only (0.075–0.096).
+
+   **It is merging error, not this mesh's own uncertainty — measured.** The elemental mesh refined to 30 cells/λ
+   (N = 13,064, dense, memory limit 10 GB; 222 s, 7.5 GB peak) against 20 cells/λ:
+
+   | Point | \|ΔS22\| 20→30 | merged vs 20 | merged vs 30 | S22 phase, 20 / 30 / merged |
+   |---|---|---|---|---|
+   | 55 GHz | 0.004 | 0.107 | 0.104 | −11.2° / −11.4° / −17.9° |
+   | 60 GHz | 0.010 | 0.083 | 0.073 | −138.1° / −138.7° / −143.2° |
+   | 65 GHz | 0.015 | 0.076 | 0.061 | 101.5° / 100.5° / 96.5° |
+
+   S33 is the same (0.005–0.006 from refining, 0.03–0.10 from merging), and every other entry moves ≤ 0.003 on
+   refining. The elemental mesh is converged in phase to under 1°; the merge turns the two output reflections by
+   4–7° away from BOTH meshes. So the merged space loses something the 20 cells/λ elemental mesh resolves, and the
+   localised field — which said every merged cell was 4× finer than needed — is wrong about it on this artwork.
+   PM-1's A-vs-A+C spread was a change of STRUCTURE (the corner fans), not a refinement, and is not this mesh's
+   uncertainty. Which feature's resolution the merge removes is not isolated.
+3. **Off is off — passes.** Flag off: no merge, the same cells and rooftops, every count in §4 PM-1's, and the
+   fill/solve path is the elemental one. Flag on: the same cells and elemental rooftops, fewer unknowns solved
+   (`RooftopMergeTests.TheFlag_ChangesOnlyTheBasisSolved`).
+4. **`testdata/portcal` and the taper — passes:** same counts off; on, the change is counted and explained in §4.
+
+### 6. Cost on the one measurement that matters
+
+Test geometry, transmission-line model, 3 de-embedded points: dense elemental (N = 11,131, memory limit raised to
+run it) **137 s, 6.5 GB peak**; merged (N = 8,581) **92 s, 6.1 GB**. 1.5×, not Part 1's 6×: Part 1 timed the DUT's
+fill and factorisation alone, and the elemental cores (built at N = 11,131 either way) and the calibration
+standards are shared. The merged run's peak is dominated by those cores, so **`PlanarSystem.ResidentBytes(N_merged,
+cells)` understates a merged run's memory** — its vector-pair cores term is sized from the merged count.
+
+### 7. Left for the owner
+
+- Whether to keep the flag (off) or remove it. Gate 2's failure is a real accuracy loss (§5), the saving where it
+  was measured is 1.5×, and the default mesh stays over the dense ceiling at 12,065. Making it pass would mean
+  finding which resolution the localised field wrongly calls unnecessary on the test geometry — a classification
+  question, not a construction one: the construction is gated exact (`T = I` to the bit, `TᵀZT` to 1.4e-16).
+- Brief PM-3 (`docs/sonnet-briefs/brief-planar-mesh-3-merge-accuracy.md`) asks both open questions: what the
+  merge removes on the test geometry, and whether merging beats an elemental mesh of the SAME unknown count —
+  the comparison that could favour it, since on one grid the merged basis is a subset of the elemental one.
+  It also specifies the user-facing setting, "Mesh as Merged Shapes", ON by default in the product (engine default
+  stays off), as the owner's decision independent of the diagnosis.
+
+Not touched: `DetailFloorTests.WithTheTransmissionLineMeshOn_TheRefusalDoesNotClaimTheWavelengthKnobsAreInert`
+fails on this tree with the flag off (expects Refused, reads Warn). Its fixture sits between the old 5,000 and the
+new 10,000 dense ceiling, so it is the ceiling change of §Ceiling, which did not move it, not this one.

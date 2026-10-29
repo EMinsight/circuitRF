@@ -514,7 +514,9 @@ public static class EmSnpProvenance
                     ? "" : $"|across={m.MinCellsAcrossConductor}") +
                (m.CurrentModel == PlanarCurrentModel.TransmissionLine ? "|tline=True" : "")
              + (m.CurrentModel == PlanarCurrentModel.Sheet ? "|sheet=True" : "")
-             + $"|detail={m.DetailFloorDivisor}");
+             + $"|detail={m.DetailFloorDivisor}"
+             // PM-2 — omitted while off, so every .snp stamped before the flag existed stays current.
+             + (m.RooftopMerging ? "|merge=True" : ""));
 
     /// <summary>
     /// A port's identity for staleness purposes is its number, its POSITION, its inferred side and

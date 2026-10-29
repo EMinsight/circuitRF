@@ -1066,7 +1066,7 @@ public sealed class PlanarFillCores
 /// formulation, for D4/D5/D6, and for what is deliberately NOT here (ports, excitation,
 /// s-parameters — all L8d).
 /// </summary>
-public static class PlanarFill
+public static partial class PlanarFill
 {
     // ══════════════════════════════════════════════════════════════════════════════════════════
     // D6's core build
@@ -1095,7 +1095,7 @@ public static class PlanarFill
 
         int n = mesh.Bases.Count;
         int m = mesh.Cells.Count;
-        GuardCeiling(n, m, st.MemoryLimitBytes);
+        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes);
 
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
         bool wantRad = st.Order >= PlanarExtractionOrder.Linear;
@@ -1274,7 +1274,7 @@ public static class PlanarFill
 
         int n = mesh.Bases.Count;
         int m = mesh.Cells.Count;
-        GuardCeiling(n, m, st.MemoryLimitBytes);
+        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes);
 
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
 
@@ -1464,7 +1464,7 @@ public static class PlanarFill
         var st = settings ?? PlanarFillSettings.Default;
 
         int m = mesh.Cells.Count;
-        GuardCeiling(mesh.Bases.Count, m, st.MemoryLimitBytes);
+        GuardCeiling(mesh.SolvedUnknownCount, m, st.MemoryLimitBytes);
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
         bool wantRad = st.Order >= PlanarExtractionOrder.Linear;
         var topo = RampTopology.Build(mesh);

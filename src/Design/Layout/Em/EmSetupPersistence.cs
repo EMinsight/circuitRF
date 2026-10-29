@@ -107,6 +107,12 @@ public sealed class CemPlanarMesh
     /// byte; a value that is not positive reads back as unset.
     /// </summary>
     public double? MemoryLimitGb { get; set; }
+
+    /// <summary>
+    /// PM-2's rooftop merging (<see cref="PlanarMeshSettings.RooftopMerging"/>). <b>Nullable, and
+    /// omitted at its default (off)</b>, so a <c>.cem</c> written before it existed gains no byte.
+    /// </summary>
+    public bool? RooftopMerging { get; set; }
 }
 
 /// <summary>The solve region, micrometres in layout coordinates. See <see cref="EmSolveRegion"/>.</summary>
@@ -1580,6 +1586,7 @@ public static class EmSetupPersistence
                 s.PlanarMesh.DetailFloorDivisor == PlanarMeshSettings.DefaultDetailFloorDivisor
                     ? null : s.PlanarMesh.DetailFloorDivisor,
             MemoryLimitGb = s.PlanarMesh.MemoryLimitBytes is { } mlb ? mlb / PlanarMemoryCheck.BytesPerGb : null,
+            RooftopMerging = s.PlanarMesh.RooftopMerging ? true : null,
         },
         Solver3D       = s.Solver3D.IsNone ? null : new Em3dSolverSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D)),
         Compare        = CircuitRF.Design.Em3d.Em3dSolvers.IsCompareSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D))
@@ -1676,7 +1683,8 @@ public static class EmSetupPersistence
                                      pm.DetailFloorDivisor
                                          ?? PlanarMeshSettings.DefaultDetailFloorDivisor,
                                      pm.MemoryLimitGb is > 0 and var gb && double.IsFinite(gb)
-                                         ? (long)Math.Round(gb * PlanarMemoryCheck.BytesPerGb) : null)
+                                         ? (long)Math.Round(gb * PlanarMemoryCheck.BytesPerGb) : null,
+                                     pm.RooftopMerging ?? false)
             : PlanarMeshSettings.Default,
         Solver3D              = Solver3DOf(f),
         OperatingTempC        = f.OperatingTempC,

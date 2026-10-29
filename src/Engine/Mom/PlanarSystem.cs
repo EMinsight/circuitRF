@@ -81,6 +81,11 @@ public sealed class PlanarSystem : IPlanarOperator
     /// is the default and is the whole memory saving.</summary>
     private readonly Mat<Complex>? _residualReference;
 
+    /// <summary>PM-2 — the merge this system was filled in, or null for the elemental system.
+    /// Set, the matrix is <c>Tᵀ Z T</c> and <see cref="Solve(Vec{Complex})"/> takes and returns
+    /// ELEMENTAL vectors, so nothing that excites or reads back a solve knows it happened.</summary>
+    private readonly PlanarRooftopMerge? _merge;
+
     private SymmetricFactorization? _ldl;
     private LuDecompositionComplex? _lu;
     private bool _consumed;
@@ -99,7 +104,16 @@ public sealed class PlanarSystem : IPlanarOperator
             "keep its own copy (which costs a whole N×N matrix, and is a diagnostic).")
         : _a;
 
-    public int Size => _a.RowCount;
+    /// <summary>The length of the vectors <see cref="Solve(Vec{Complex})"/> takes — the ELEMENTAL
+    /// rooftop count, also when the matrix is a merged one (<see cref="MatrixSize"/>).</summary>
+    public int Size => _merge?.ElementalCount ?? _a.RowCount;
+
+    /// <summary>The dimension of <see cref="Matrix"/> — the merged count under PM-2's rooftop
+    /// merging, <see cref="Size"/> otherwise.</summary>
+    public int MatrixSize => _a.RowCount;
+
+    /// <summary>PM-2 — the merge this system is solved in, or null.</summary>
+    public PlanarRooftopMerge? Merge => _merge;
 
     /// <summary>P7's stability instruments for this point, or null while the shipped path has not
     /// been used (nothing factored yet, or the NumFlat setting selected).</summary>
@@ -112,10 +126,11 @@ public sealed class PlanarSystem : IPlanarOperator
     /// </summary>
     public double? LastResidual { get; private set; }
 
-    private PlanarSystem(Mat<Complex> matrix, PlanarFillSettings settings)
+    private PlanarSystem(Mat<Complex> matrix, PlanarFillSettings settings, PlanarRooftopMerge? merge = null)
     {
         _a  = matrix;
         _st = settings;
+        _merge = merge;
         if (settings.TrackFactorizationResidual) _residualReference = matrix.Copy();
     }
 
@@ -290,6 +305,13 @@ public sealed class PlanarSystem : IPlanarOperator
                                      PlanarKernelTerms termsQ, double omega)
     {
         ArgumentNullException.ThrowIfNull(cores);
+        // PM-2 — a merged mesh is held and factored at its MERGED size; its fill never forms the
+        // elemental matrix at all.
+        if (cores.Mesh.Merge is { } merge)
+        {
+            GuardCeiling(merge.Count, cores.CellCount, cores.Settings.MemoryLimitBytes);
+            return new PlanarSystem(PlanarFill.FillMerged(cores, termsA, termsQ, omega), cores.Settings, merge);
+        }
         GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes);
         return new PlanarSystem(PlanarFill.Fill(cores, termsA, termsQ, omega), cores.Settings);
     }
@@ -307,6 +329,10 @@ public sealed class PlanarSystem : IPlanarOperator
         ArgumentNullException.ThrowIfNull(cores);
         ArgumentNullException.ThrowIfNull(set);
         ArgumentNullException.ThrowIfNull(levels);
+        if (cores.Mesh.Merge is not null)
+            throw new InvalidOperationException(
+                "Rooftop merging is built for a single conductor level with no vias, and the mesher " +
+                "never attaches a merge to any other mesh. This one carries one; solve it elemental.");
         GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes);
         return new PlanarSystem(PlanarFill.FillMultiLevel(cores, set, levels, omega), cores.Settings);
     }
@@ -371,9 +397,10 @@ public sealed class PlanarSystem : IPlanarOperator
     public Vec<Complex> Solve(Vec<Complex> rhs)
     {
         Factor();
-        var x = _ldl is { } ldl ? ldl.Solve(rhs) : _lu!.Solve(rhs);
-        if (_residualReference is { } z) LastResidual = SymmetricFactorization.Residual(z, x, rhs);
-        return x;
+        var b = _merge is { } mg ? mg.Restrict(rhs) : rhs;
+        var x = _ldl is { } ldl ? ldl.Solve(b) : _lu!.Solve(b);
+        if (_residualReference is { } z) LastResidual = SymmetricFactorization.Residual(z, x, b);
+        return _merge is { } mp ? mp.Prolong(x) : x;
     }
 
     /// <summary>
@@ -386,24 +413,34 @@ public sealed class PlanarSystem : IPlanarOperator
         ArgumentNullException.ThrowIfNull(rhs);
         Factor();
 
+        IReadOnlyList<Vec<Complex>> bs = rhs;
+        if (_merge is { } mg)
+        {
+            var restricted = new Vec<Complex>[rhs.Count];
+            for (int r = 0; r < rhs.Count; r++) restricted[r] = mg.Restrict(rhs[r]);
+            bs = restricted;
+        }
+
         Vec<Complex>[] xs;
         if (_ldl is { } ldl)
         {
-            xs = ldl.Solve(rhs);
+            xs = ldl.Solve(bs);
         }
         else
         {
-            xs = new Vec<Complex>[rhs.Count];
-            for (int r = 0; r < rhs.Count; r++) xs[r] = _lu!.Solve(rhs[r]);
+            xs = new Vec<Complex>[bs.Count];
+            for (int r = 0; r < bs.Count; r++) xs[r] = _lu!.Solve(bs[r]);
         }
 
         if (_residualReference is { } z)
         {
             double worst = 0;
             for (int r = 0; r < xs.Length; r++)
-                worst = Math.Max(worst, SymmetricFactorization.Residual(z, xs[r], rhs[r]));
+                worst = Math.Max(worst, SymmetricFactorization.Residual(z, xs[r], bs[r]));
             LastResidual = worst;
         }
+        if (_merge is { } mp)
+            for (int r = 0; r < xs.Length; r++) xs[r] = mp.Prolong(xs[r]);
         return xs;
     }
 }
@@ -479,7 +516,7 @@ public static class PlanarSweep
         ArgumentNullException.ThrowIfNull(freqsHz);
 
         var st = settings ?? PlanarFillSettings.Default;
-        PlanarSystem.GuardCeiling(mesh.Bases.Count, mesh.Cells.Count, st.MemoryLimitBytes);
+        PlanarSystem.GuardCeiling(mesh.SolvedUnknownCount, mesh.Cells.Count, st.MemoryLimitBytes);
 
         // ── D6: ONCE, whatever the sweep's length ────────────────────────────────────────────
         var sw = Stopwatch.StartNew();

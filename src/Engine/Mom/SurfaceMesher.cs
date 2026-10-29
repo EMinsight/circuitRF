@@ -970,6 +970,46 @@ public static class SurfaceMesher
 
         var mesh = new PlanarMesh(cells, bases, layerNames, gx, gy);
 
+        // ── PM-2 — rooftop merging: the same grid, solved in a coarser basis where it is spread ──
+        //
+        // Nothing above this line reads the flag, so the cells, the elemental rooftops and every
+        // gridline are the ones it off produces; only the unknown count the verdict is asked of
+        // changes. Dense and single-level only — see PlanarRooftopMerge's header.
+        if (s.RooftopMerging)
+        {
+            if (accel)
+                notes.Add("Rooftop merging is on but was not applied: it is for the DENSE solve, and " +
+                          "this setup uses the accelerated one. Turn the accelerated solve off to use it.");
+            else if (problem.Layers.Count != 1 || problem.ViaList.Count > 0 || problem.RequiresGeneralKernel)
+                notes.Add("Rooftop merging is on but was not applied: it is built for a single conductor " +
+                          "level with no vias, and this mesh has more. The elemental mesh is solved.");
+            else
+            {
+                var merge = BuildRooftopMerge(problem, mesh, gradedX, gradedY, hMaxX, hMaxY, pitch, ports);
+                // Nothing merged is the identity map: leave the mesh elemental, so the run is the
+                // flag-off run to the bit and pays nothing for the panelled fill.
+                if (merge.MergedRunCount == 0)
+                    notes.Add("Rooftop merging is on and found nothing to merge: no cell here is more " +
+                              $"than {PlanarRooftopMerge.SpreadFactor:G}× finer than the size field asks for " +
+                              "outside the ports' calibrated end runs, so the elemental mesh is solved.");
+                else
+                {
+                    mesh = mesh with { Merge = merge };
+                    notes.Add($"Rooftop merging: {merge.ElementalCount:N0} elemental rooftops are solved as " +
+                              $"{merge.Count:N0} unknowns, in {merge.MergedRunCount:N0} run(s) of rooftops " +
+                              "merged along their own direction where the cells are more than " +
+                              $"{PlanarRooftopMerge.SpreadFactor:G}× finer than the size field asks for once " +
+                              "each edge fan is confined to the feature that raised it" +
+                              (merge.PortProtectedCells > 0
+                                  ? $"; {merge.PortProtectedCells:N0} cell(s) at the ports' calibrated end " +
+                                    "runs are kept as they are"
+                                  : "") +
+                              ". The grid is unchanged; the fill is still of the elemental rooftops, and the " +
+                              "matrix held and factored is the merged one.");
+                }
+            }
+        }
+
         double minEdge = double.PositiveInfinity, maxEdge = 0, meshedArea = 0;
         foreach (var c in cells)
         {
@@ -1351,7 +1391,7 @@ public static class SurfaceMesher
         foreach (var alt in problem.Alternatives)
             notes.Add($"{alt.Subject} — {alt.Reason}");
 
-        int n = bases.Count;
+        int n = mesh.SolvedUnknownCount;
         // A limit the setup states is the user's own number, and the run checks it against the
         // machine's memory before it starts — so nearing it is not a warning of the mesher's.
         // With a memory limit the count it allows depends on THIS mesh's cells, so it is asked again
@@ -1438,6 +1478,55 @@ public static class SurfaceMesher
             RimFraction:                   rimFraction);
     }
 
+
+    /// <summary>
+    /// PM-2 — the per-cell run limits and the cells that may not merge, then the merge itself. A
+    /// cell may sit in a run only along an axis where the localised field is more than
+    /// <see cref="PlanarRooftopMerge.SpreadFactor"/>× its own extent, read at its centre. Cut cells,
+    /// cells that absorbed a sliver, their neighbours and every port's calibrated end run stay
+    /// elemental.
+    /// </summary>
+    private static PlanarRooftopMerge BuildRooftopMerge(
+        PlanarProblem problem, PlanarMesh mesh, List<GradedAttractor> gradedX, List<GradedAttractor> gradedY,
+        double hMaxX, double hMaxY, PlanarPitchField? pitch, IReadOnlyList<PlanarPort>? ports)
+    {
+        var field = new PlanarRooftopMerge.LocalSizeField(problem, gradedX, gradedY, hMaxX, hMaxY,
+                                                          pitch?.AtX, pitch?.AtY);
+        var gx = mesh.GridX; var gy = mesh.GridY;
+        int nx = gx.Count - 1, ny = gy.Count - 1, m = mesh.Cells.Count;
+        var tx = new double[m]; var ty = new double[m];
+        var plain = new bool[m];
+        var at = new int[mesh.LayerNames.Count][];
+        for (int l = 0; l < at.Length; l++) { at[l] = new int[nx * ny]; Array.Fill(at[l], -1); }
+        for (int c = 0; c < m; c++)
+        {
+            var cell = mesh.Cells[c];
+            at[cell.LayerIndex][cell.IY * nx + cell.IX] = c;
+            plain[c] = cell.Region is null &&
+                       cell.XMin == gx[cell.IX] && cell.XMax == gx[cell.IX + 1] &&
+                       cell.YMin == gy[cell.IY] && cell.YMax == gy[cell.IY + 1];
+            double hx = field.X(cell.CenterX, cell.CenterY), hy = field.Y(cell.CenterX, cell.CenterY);
+            tx[c] = hx > PlanarRooftopMerge.SpreadFactor * cell.Width  ? hx : cell.Width;
+            ty[c] = hy > PlanarRooftopMerge.SpreadFactor * cell.Height ? hy : cell.Height;
+        }
+        var mergeable = new bool[m];
+        for (int c = 0; c < m; c++)
+        {
+            var cell = mesh.Cells[c];
+            bool ok = plain[c];
+            for (int d = 0; d < 4 && ok; d++)
+            {
+                int ix = cell.IX + (d == 0 ? -1 : d == 1 ? 1 : 0), iy = cell.IY + (d == 2 ? -1 : d == 3 ? 1 : 0);
+                if (ix < 0 || ix >= nx || iy < 0 || iy >= ny) continue;
+                int nb = at[cell.LayerIndex][iy * nx + ix];
+                if (nb >= 0 && nb != c && !plain[nb]) ok = false;
+            }
+            mergeable[c] = ok;
+        }
+        double endRun = PlanarCalibrationSettings.Default.EndRunHeights * problem.Slab.HeightM;
+        int protectedCells = PlanarRooftopMerge.ProtectPorts(mesh, ports, endRun, mergeable);
+        return PlanarRooftopMerge.Build(mesh, tx, ty, mergeable, protectedCells);
+    }
 
     /// <summary>
     /// <b>MIM-13 — the fraction of the drawn metal that lies within one bulk cell of a conductor
