@@ -1,3 +1,4 @@
+using Avalonia.Input;
 using CircuitRF.Ui.Layout;
 
 namespace CircuitRF.Ui.Tests;
@@ -117,6 +118,29 @@ public class LayoutEditorDocumentTests
 
         var vm = new LayoutEditorViewModel(model);
         Assert.Equal("1 × 2 µm", vm.ExtentText);
+    }
+
+    [Fact]
+    public void DragDelta_ReplacesExtentWhileDrawingOrMoving_AndRevertsAfter()
+    {
+        var vm = new LayoutEditorViewModel(FreshModel());
+        Assert.False(vm.IsDragDeltaShown);
+
+        vm.ActiveTool = LayoutEditorViewModel.Tool.Rect;
+        vm.OnPointerPressed(0, 0, KeyModifiers.None);
+        vm.OnPointerMoved(3000, 2000, true, KeyModifiers.None);
+        Assert.True(vm.IsDragDeltaShown);
+        Assert.Equal(("3 µm", "2 µm"), (vm.DragDxText, vm.DragDyText));
+        vm.OnPointerReleased(3000, 2000, KeyModifiers.None);
+        Assert.False(vm.IsDragDeltaShown);
+
+        vm.ActiveTool = LayoutEditorViewModel.Tool.Select;
+        vm.OnPointerPressed(1000, 1000, KeyModifiers.None);
+        vm.OnPointerMoved(5000, 0, true, KeyModifiers.None);
+        Assert.True(vm.IsDragDeltaShown);
+        Assert.Equal(("4 µm", "-1 µm"), (vm.DragDxText, vm.DragDyText));
+        vm.OnPointerReleased(5000, 0, KeyModifiers.None);
+        Assert.False(vm.IsDragDeltaShown);
     }
 
     [Fact]

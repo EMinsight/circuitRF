@@ -751,6 +751,15 @@
                         <Setter Property="FontSize" Value="11"/>
                         <Setter Property="VerticalAlignment" Value="Center"/>
                     </Style>
+                    <!-- A coordinate that changes as the pointer moves: equal-width digits, starting right after
+                         its label in a fixed box, so nothing after it shifts as its digit count changes. -->
+                    <Style Selector="TextBlock.coord">
+                        <Setter Property="MinWidth" Value="84"/>
+                        <Setter Property="FontFeatures" Value="+tnum"/>
+                    </Style>
+                    <Style Selector="StackPanel.hidden">
+                        <Setter Property="Opacity" Value="0"/>
+                    </Style>
 
 <!-- Unit and Snap take ComboBox.metaCombo, which lives in Styles/CircuitRfStyles.axaml
                          because railRF's board toolbar reuses the Unit picker (2026-09-23). Read the
@@ -829,16 +838,28 @@
                     <TextBlock Classes="value" Text="{Binding ActiveViewModel.InstanceCountText}"/>
                 </StackPanel>
 
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBlock Classes="label" Text="Extent:"/>
-                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.ExtentText}"/>
-                </StackPanel>
+                <!-- The extent and, while a shape is dragged or drawn, how far it has moved — in ONE cell,
+                     both always measured and only one opaque, so swapping them never moves X/Y. -->
+                <Panel>
+                    <StackPanel Orientation="Horizontal" Spacing="4"
+                                Classes.hidden="{Binding ActiveViewModel.IsDragDeltaShown}">
+                        <TextBlock Classes="label" Text="Extent:"/>
+                        <TextBlock Classes="value" Text="{Binding ActiveViewModel.ExtentText}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="4"
+                                Classes.hidden="{Binding !ActiveViewModel.IsDragDeltaShown}">
+                        <TextBlock Classes="label" Text="ΔX:"/>
+                        <TextBlock Classes="value coord" Text="{Binding ActiveViewModel.DragDxText}"/>
+                        <TextBlock Classes="label" Text="ΔY:"/>
+                        <TextBlock Classes="value coord" Text="{Binding ActiveViewModel.DragDyText}"/>
+                    </StackPanel>
+                </Panel>
 
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <TextBlock Classes="label" Text="X:"/>
-                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.CursorXText}"/>
+                    <TextBlock Classes="value coord" Text="{Binding ActiveViewModel.CursorXText}"/>
                     <TextBlock Classes="label" Text="Y:"/>
-                    <TextBlock Classes="value" Text="{Binding ActiveViewModel.CursorYText}"/>
+                    <TextBlock Classes="value coord" Text="{Binding ActiveViewModel.CursorYText}"/>
                 </StackPanel>
             </StackPanel>
         </Border>

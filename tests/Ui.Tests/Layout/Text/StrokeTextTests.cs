@@ -77,4 +77,17 @@ public sealed class StrokeTextTests
         Assert.True(bb.MinX <= b.MinX - r && bb.MinY <= b.MinY - r && bb.MaxX >= b.MaxX + r && bb.MaxY >= b.MaxY + r);
         Assert.True(bb.MinX > b.MinX - r - 1 && bb.MaxY < b.MaxY + r + 1, "and no looser than rounding to DBU");
     }
+
+    [Fact]
+    public void AMinWidthRuleFloorsALabelsPenButNotAPorts()
+    {
+        var tech = new Technology
+        {
+            DrcRules = [new DrcRule { Kind = DrcRuleKind.MinWidth, Layer = new LayerKey(21, 0), ValueDbu = 4 * Cap }],
+        };
+        var label = Label();
+        Assert.Equal(4 * Cap, StrokeText.DefaultPenWidth(label, tech), 6);
+        label.IsPort = true;
+        Assert.Equal(Cap / StrokeText.PenDivisor, StrokeText.DefaultPenWidth(label, tech), 6);
+    }
 }

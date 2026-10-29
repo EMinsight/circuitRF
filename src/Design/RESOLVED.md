@@ -24497,3 +24497,15 @@ own rectangle) and the mesher's new re-entrant-corner note.
 Tests: `OverlappingCopperMergeTests` — `ShapesThatOnlyTouchOrStandApart_AreNotMerged` was the old behaviour pinned,
 and is replaced by `ShapesThatShareAnEdge_AreMerged_AndACornerOnlyTouchIsNot`; plus a mitred L drawn as two pieces
 against the same L drawn whole, and a notched T drawn as two trapezoids and a line.
+
+## A port's name drew as a blob on copper with a minimum-width rule (2026-10-29)
+
+A stroke label's unset pen is its cap height / 6.5, floored at the largest minimum-width rule on its layer
+(`StrokeText.DefaultPenWidth`). The floor is right for silkscreen that will be fabricated. On a copper layer, though,
+the trace-width rule (0.1524 mm on the shipped 2-layer PCB starters) is wider than a port name 0.1 mm tall. The
+numeral was stroked with a round-capped pen wider than the glyph itself, and drew as two overlapping discs. It
+only appeared when a port sat on a layer with such a rule, which is why it was intermittent.
+
+A port label is a marker that is never fabricated (Gerber, the board writer and flatten all skip it), so it now
+takes no rule floor. A stated `StrokeWidth` still wins, and non-port labels are unchanged. Test:
+`StrokeTextTests.AMinWidthRuleFloorsALabelsPenButNotAPorts`.

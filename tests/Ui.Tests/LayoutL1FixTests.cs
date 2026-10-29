@@ -99,12 +99,13 @@ public class LayoutL1FixTests
         var model = new LayoutView { DbuPerMicron = 1000, DisplayUnit = LayoutUnit.Um, SnapDbu = snapDbu, AngleMode = AngleMode.AnyAngle };
         var vm = new LayoutEditorViewModel(model) { ActiveTool = LayoutEditorViewModel.Tool.Rect };
 
-        // At zoom = 1 device px per DBU, a 3px drag is a 3-DBU raw drag — far under the 1000-DBU
+        // At zoom = 1 device px per DBU, a 6px drag is a 6-DBU raw drag — far under the 1000-DBU
         // snap step, so both endpoints snap to the very same grid cell. The drag is real (the
-        // pointer genuinely moved); the fix must not silently produce nothing.
+        // pointer genuinely moved, past the few pixels that still count as a click); the fix must
+        // not silently produce nothing.
         vm.OnPointerPressed(0, 0, KeyModifiers.None);
-        vm.OnPointerMoved(3, 3, leftDown: true, KeyModifiers.None);
-        vm.OnPointerReleased(3, 3, KeyModifiers.None);
+        vm.OnPointerMoved(6, 6, leftDown: true, KeyModifiers.None, pixelDbu: 1);
+        vm.OnPointerReleased(6, 6, KeyModifiers.None);
 
         var rect = Assert.IsType<RectShape>(Assert.Single(vm.Model.Shapes));
         Assert.Equal(snapDbu, rect.X2 - rect.X1);

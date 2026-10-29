@@ -342,6 +342,41 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// How far the gesture in progress has gone, which the metadata bar shows IN PLACE of the extent
+    /// while it lasts: a move drag's delta, a two-point draw's second corner from its first, a
+    /// multi-point draw's cursor from its last placed point. Null when nothing is being dragged or
+    /// drawn, so the extent comes back the moment the gesture ends or is cancelled.
+    /// </summary>
+    private (long Dx, long Dy)? LiveDragDelta =>
+        _isDrawingTwoPoint ? (_drawP2X - _drawP1X, _drawP2Y - _drawP1Y)
+        : _drawPoints.Count > 0 ? (_drawCurX - _drawPoints[^1].X, _drawCurY - _drawPoints[^1].Y)
+        : MoveDragDelta;
+
+    private (long Dx, long Dy)? _shownDragDelta;
+
+    public bool IsDragDeltaShown => _shownDragDelta is not null;
+
+    public string DragDxText => FormatDragDelta(_shownDragDelta?.Dx ?? 0);
+
+    public string DragDyText => FormatDragDelta(_shownDragDelta?.Dy ?? 0);
+
+    private string FormatDragDelta(long dbu) =>
+        $"{LayoutUnits.Format(dbu, DisplayUnit, Model.DbuPerMicron)} {UnitSuffix(DisplayUnit)}";
+
+    /// <summary>Raised from <see cref="RebuildOverlay"/>, which every drag step, commit and cancel
+    /// already ends in — and only when the delta actually changed, so a still pointer costs nothing.</summary>
+    private void RefreshDragDelta()
+    {
+        var d = LiveDragDelta;
+        if (d == _shownDragDelta) return;
+        bool shownChanged = d.HasValue != _shownDragDelta.HasValue;
+        _shownDragDelta = d;
+        if (shownChanged) OnPropertyChanged(nameof(IsDragDeltaShown));
+        OnPropertyChanged(nameof(DragDxText));
+        OnPropertyChanged(nameof(DragDyText));
+    }
+
     /// <summary>ComboBox item source for the display-unit picker.</summary>
     public static IReadOnlyList<LayoutUnit> AllUnits { get; } = Enum.GetValues<LayoutUnit>();
 
@@ -3573,6 +3608,18 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private bool _isDrawingTwoPoint;
     private long _drawP1X, _drawP1Y, _drawP2X, _drawP2Y;
 
+    /// <summary>
+    /// A two-point draw started by a CLICK rather than a drag: the button came up where it went down,
+    /// so the second corner follows the bare pointer and the next press places it. Without this a click
+    /// finished the shape at zero size on its own release and drew nothing, so only press-drag-release
+    /// worked. Both gestures work now.
+    /// </summary>
+    private bool _twoPointAwaitingSecondClick;
+
+    /// <summary>How far, in screen pixels, the pointer may wander between press and release and still
+    /// count as a click rather than a drag.</summary>
+    private const double TwoPointClickTolerancePx = 4;
+
     // Unsnapped (raw, rounded-to-DBU only) press/current points — tracked alongside the snapped
     // _drawP1/_drawP2 pair purely so BuildTwoPointShape can tell "the pointer genuinely didn't move
     // on this axis" apart from "the pointer moved but the snap grid collapsed it to the same cell"
@@ -3672,6 +3719,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (IsTwoPointDragTool(ActiveTool))
         {
             var (sx, sy) = SnapDrawPoint(wx, wy, mods, snapTolDbu, from: null);
+            if (_isDrawingTwoPoint && _twoPointAwaitingSecondClick)
+            {
+                _drawP2X = sx; _drawP2Y = sy;
+                _drawP2RawX = (long)Math.Round(wx); _drawP2RawY = (long)Math.Round(wy);
+                FinishTwoPointDraw();
+                return;
+            }
             _isDrawingTwoPoint = true;
             _drawP1X = sx; _drawP1Y = sy;
             _drawP2X = sx; _drawP2Y = sy;
@@ -3765,7 +3819,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         if (_isDrawingTwoPoint)
         {
-            if (!leftDown) { CancelDrawOp(); return; }
+            if (!leftDown && !_twoPointAwaitingSecondClick) { CancelDrawOp(); return; }
             var (sx, sy) = SnapDrawPoint(wx, wy, mods, snapTolDbu, from: null);
             _drawP2X = sx; _drawP2Y = sy;
             _drawP2RawX = (long)Math.Round(wx); _drawP2RawY = (long)Math.Round(wy);
@@ -3844,11 +3898,28 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
         if (ActiveTool == Tool.Select) { HandleSelectRelease(wx, wy); return; }
 
-        if (!_isDrawingTwoPoint) return;
+        if (!_isDrawingTwoPoint || _twoPointAwaitingSecondClick) return;
         var (sx, sy) = SnapDrawPoint(wx, wy, mods, snapTolDbu > 0 ? snapTolDbu : _snapQueryLastTolDbu, from: null);
         _drawP2X = sx; _drawP2Y = sy;
         _drawP2RawX = (long)Math.Round(wx); _drawP2RawY = (long)Math.Round(wy);
+        if (ReleasedWherePressed())
+        {
+            _twoPointAwaitingSecondClick = true;
+            RebuildOverlay();
+            return;
+        }
         FinishTwoPointDraw();
+    }
+
+    /// <summary>The first press of a two-point draw came up without dragging: the pointer moved less than
+    /// <see cref="TwoPointClickTolerancePx"/> on screen (not at all, when no zoom is known yet). Judged on the
+    /// RAW pointer, never the snapped corners — a real drag shorter than one snap step still draws a one-step
+    /// shape (<c>LayoutL1FixTests</c>).</summary>
+    private bool ReleasedWherePressed()
+    {
+        double dx = _drawP2RawX - _drawP1RawX, dy = _drawP2RawY - _drawP1RawY;
+        double movedDbu = Math.Sqrt(dx * dx + dy * dy);
+        return LastZoomPxPerDbu > 0 ? movedDbu * LastZoomPxPerDbu < TwoPointClickTolerancePx : movedDbu == 0;
     }
 
     public void OnTextInput(string text)
@@ -4160,6 +4231,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
     private void CancelDrawOp()
     {
         _isDrawingTwoPoint = false;
+        _twoPointAwaitingSecondClick = false;
         _drawPoints.Clear();
         _isTypingLabel   = false;
         _labelBuffer     = "";
@@ -4192,6 +4264,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         var shape = BuildTwoPointShape(_drawP1X, _drawP1Y, _drawP2X, _drawP2Y, _typedWidthDbu, _typedHeightDbu,
             _drawP2RawX - _drawP1RawX, _drawP2RawY - _drawP1RawY);
         _isDrawingTwoPoint = false;
+        _twoPointAwaitingSecondClick = false;
         _typedWidthDbu  = null;
         _typedHeightDbu = null;
         if (shape is not null) Execute(new AddShapeCommand(Model, shape));
@@ -4350,6 +4423,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     private void RebuildOverlay()
     {
+        RefreshDragDelta();
         LayoutShape? inProgress = null;
 
         if (_isDrawingTwoPoint)

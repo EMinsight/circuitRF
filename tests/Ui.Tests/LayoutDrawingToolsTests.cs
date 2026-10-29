@@ -42,6 +42,25 @@ public class LayoutDrawingToolsTests
     }
 
     [Fact]
+    public void Rect_ClickThenClick_DrawsTheSameShapeAsADrag()
+    {
+        var vm = MakeVm(FreshModel());
+        vm.ActiveTool = LayoutEditorViewModel.Tool.Rect;
+
+        vm.OnPointerPressed(5000, 9000, KeyModifiers.None);
+        vm.OnPointerReleased(5000, 9000, KeyModifiers.None);
+        Assert.True(vm.IsDrawingRect);
+        vm.OnPointerMoved(1000, 2000, false, KeyModifiers.None);
+        Assert.Empty(vm.Model.Shapes);
+        vm.OnPointerPressed(1000, 2000, KeyModifiers.None);
+        vm.OnPointerReleased(1000, 2000, KeyModifiers.None);
+
+        var rect = Assert.IsType<RectShape>(Assert.Single(vm.Model.Shapes));
+        Assert.Equal((1000L, 2000L, 5000L, 9000L), (rect.X1, rect.Y1, rect.X2, rect.Y2));
+        Assert.False(vm.IsDrawingRect);
+    }
+
+    [Fact]
     public void RoundedRect_CornerRadius_ComesFromToolbarField_ClampedToHalfShorterSide()
     {
         var vm = MakeVm(FreshModel());

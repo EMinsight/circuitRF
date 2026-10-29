@@ -27,11 +27,16 @@ public static class StrokeText
     /// The pen an unset <see cref="LabelShape.StrokeWidth"/> stands for: <see cref="LabelShape.Height"/> /
     /// <see cref="PenDivisor"/>, never below a minimum-width rule on the label's own layer when
     /// <paramref name="tech"/> has one. Computed at use and never stored (R-ssf-4).
+    ///
+    /// <para>A PORT label takes no rule floor: it is a marker, never fabricated (no export writes it), and on a
+    /// copper layer the trace-width rule is easily wider than the port's name is tall, which drew the name as a
+    /// round-capped blob.</para>
     /// </summary>
     public static double DefaultPenWidth(LabelShape label, Technology? tech = null)
     {
         ArgumentNullException.ThrowIfNull(label);
-        return Math.Max(label.Height / PenDivisor, MinWidthRule(tech, label.Layer));
+        double floor = label.IsPort ? 0 : MinWidthRule(tech, label.Layer);
+        return Math.Max(label.Height / PenDivisor, floor);
     }
 
     /// <summary>The pen a stroke label draws with: its stated width, else <see cref="DefaultPenWidth"/>; times
