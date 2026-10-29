@@ -240,12 +240,13 @@ current enters by.</p>
 <li><p><strong>The air box</strong> (<code>AirBox</code>): how far each face of the solved region lies beyond the geometry, and what
 the face does to the field. It can be <em>Absorbing</em> (open space), <em>Pec</em> (a metal wall), <em>Pmc</em> or
 <em>Symmetry</em>. By default the floor sits on the lowest ground plane and the other five faces are
-absorbing, an eighth of the longest wavelength in the sweep out (a quarter when a radiation pattern is
-asked for). A closed box of <code>Pec</code> faces is a shielded enclosure, and it is how the example models a
-package lid. The Inspector and <code>circuitrf explain</code> both give each face's distance and where it came
-from — <em>default: 18.74 mm, λ/8 at 2 GHz, the sweep's lowest frequency</em> — so a sweep that starts low,
-and so pads far, is visible before it is meshed. On a guided structure (a launch, a transition) a
-stated padding of a few substrate heights is usually far cheaper.</p>
+absorbing, an eighth of the longest wavelength in the sweep out, or the structure's largest extent if
+that is less (a quarter of the longest wavelength when a radiation pattern is asked for). A closed box of
+<code>Pec</code> faces is a shielded enclosure, and it is how the example models a package lid. The Inspector and
+<code>circuitrf explain</code> both give each face's distance and where it came from — <em>default: 18.74 mm, λ/8 at
+2 GHz, the sweep's lowest frequency</em>, or <em>default: 4.014 mm, the structure's largest extent, less than
+λ/8 at 400 MHz</em>. On a guided structure (a launch, a transition) a stated padding of a few substrate
+heights is usually cheaper still.</p>
 </li>
 <li><p><strong>Robust meshing</strong> (<code>RobustMeshing</code>): removes outline points that sit within a fraction of a micrometre of
 their neighbours' line, which imported artwork often has and which can stop the mesher. On in a new setup; see
@@ -712,38 +713,25 @@ yet, and each placeholder says what its headless spelling would need.</p>
 it reaches sideways. The answer depends on the solver, and for the 3D solvers it is part of what gets
 solved.</p>
 <ul>
-<li><p><strong>Planar (MoM) setups.</strong> The planar solver treats every dielectric as <strong>laterally infinite</strong>: a board
+<li><strong>Planar (MoM) setups.</strong> The planar solver treats every dielectric as <strong>laterally infinite</strong>: a board
 that goes on forever under the metal. <strong>Show 3D</strong> on a planar setup has to draw the substrate some
-size, so it draws each dielectric to the <strong>board outline</strong>, or, if the layout has none, to the <strong>outline
-of the copper above and below it</strong>. That shape is <strong>for viewing only</strong>. The planar result is the same
-whatever the picture shows.</p>
-</li>
-<li><p><strong>3D setups (a <code>.cem</code> run in Palace or openEMS).</strong> The dielectric reaches the air box, so a board with
+size, so it draws each dielectric to the <strong>board outline</strong>, or, if the layout has none, to the <strong>box
+round what the layout draws</strong>. That shape is <strong>for viewing only</strong>. The planar result is the same
+whatever the picture shows.</li>
+<li><strong>3D setups (a <code>.cem</code> run in Palace or openEMS).</strong> The dielectric reaches the air box, so a board with
 no drawn edge reaches the absorbing boundary as though it went on forever. A layout that draws a board
-outline is cut to that outline instead.</p>
-</li>
-<li><p><strong>A layout placed in a 3D view (a <code>.c3d</code>).</strong> There is no air box around the layout, so every dielectric
-is <strong>finite</strong>, and its sideways shape <strong>is part of the problem</strong> Palace and openEMS solve. Each slab takes
-the first of these that exists:</p>
-<ol>
-<li>The layout's <strong>board outline</strong>: closed shapes on the technology's outline layer (the layer exported
-as <code>Edge.Cuts</code>, or a Gerber profile).</li>
-<li>The <strong>copper hull</strong>: the outline of the copper directly above and below the slab. If a neighbouring
-copper layer has nothing drawn on it, circuitRF looks further out to the next layer that has copper.
-Gaps up to <strong>10 dielectric stack heights</strong> wide are closed, holes such as via clearances and antipads
-are filled, and the edge stands <strong>2 stack heights</strong> past the outermost copper. On a 1.5 mm board that
-is gaps up to 15 mm closed and a 3 mm margin. The gaps are closed because the field of a coplanar
-line runs through the substrate under its gaps. The margin is there because a trace's fringing field
-runs through the substrate beside it. A slab cut flush to the copper would lose both, and the line
-would read the wrong impedance.</li>
-<li>The <strong>bounding box</strong> of everything drawn, if there is no copper above or below the slab at all.</li>
-</ol>
-<p>The Messages note for the run says which bound each slab took.</p>
-</li>
+outline is cut to that outline instead.</li>
+<li><strong>A layout placed in a 3D view (a <code>.c3d</code>).</strong> There is no air box around the layout, so every dielectric
+is <strong>finite</strong>, and its sideways shape <strong>is part of the problem</strong> Palace and openEMS solve. Every slab is
+cut to the layout's <strong>board outline</strong> (closed shapes on the technology's outline layer: the layer
+exported as <code>Edge.Cuts</code>, or a Gerber profile), or, with no outline, to <strong>one rectangle round everything
+the layout draws</strong>, the same for every slab. Nothing reaches past the artwork, and a placed layout
+brings no metal it does not draw: a ground plane that a planar setup takes from the stackup must be
+drawn. The Messages note for the run says which bound the slabs took.</li>
 </ul>
-<p><strong>Draw a board outline whenever the board's real edge matters</strong>, for example for radiation from the
-board edge, coupling across it, or a board much larger than its copper. The copper hull is a sensible
-guess at the board. The outline is the board itself. How a placed layout comes into a 3D view is in
+<p><strong>Draw a board outline whenever the board is bigger than its copper</strong>, for example when a trace's
+fringing field runs through substrate beside it, for radiation from the board edge, or for coupling
+across it. How a placed layout comes into a 3D view is in
 <a href="drawing-in-3d.html#layout-dielectric">Drawing in 3D ▸ A placed layout's dielectric</a>.</p>
 <h2 id="example">Walking through the example</h2>
 <p><strong>File ▸ New ▸ Examples ▸ 3D EM</strong> copies a workspace with three cells to a folder you choose and opens it.

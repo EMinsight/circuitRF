@@ -90,8 +90,9 @@ public sealed class HierarchyGateTests : IDisposable
         var patch = Scene3DPatch.Between(before, v.Scene);
         Assert.NotNull(patch);
         // 3D editor round 3 — the one geometry that moves is the air box (drawn with no setup too), which grows with the
-        // array: its six faces' 24 vertices and its twelve edges' 24 line vertices, and nothing of the array itself.
-        Assert.Equal(24 * Scene3DVertex.Stride + 24 * 20, patch!.Bytes);
+        // array: its six faces' 24 vertices and its twelve edges' 24 line vertices (every one of them, since the default
+        // padding is the structure's extent and grows on every side), and nothing of the array itself.
+        Assert.Equal(2 * 24 * Scene3DVertex.Stride, patch!.Bytes);
         Assert.Equal(20, patch.ElementTransforms);
         Assert.Equal(uploads + patch.Bytes, fake.Counters.UploadBytesTotal);
         Assert.Equal(20, fake.ElementTransforms);

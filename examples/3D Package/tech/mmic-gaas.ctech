@@ -58,6 +58,22 @@
     },
     {
       "Key": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "Name": "Backside Metal",
+      "Color": {
+        "r": 180,
+        "g": 150,
+        "b": 60,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 0,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
         "Layer": 20,
         "Datatype": 0
       },
@@ -135,7 +151,12 @@
         "TanD": 0,
         "Mur": 1,
         "SigmaSm": 41000000,
-        "DrawingLayers": [],
+        "DrawingLayers": [
+          {
+            "Layer": 9,
+            "Datatype": 0
+          }
+        ],
         "IsGroundReference": true,
         "Material": "Gold"
       },

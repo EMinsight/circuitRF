@@ -916,7 +916,8 @@ said so by naming this flag, which `explain` did not take until then. An unknown
 ones; on a `.cem` (its own setup) or any other kind it is a refusal. `render` takes it too, for the same reason.
 `--analysis <name>` on a `.c3d` stays what it was: its THERMAL setups' size walk. The air-box line now gives every
 face's distance from the content and where it came from — `setup: 2 mm`, `setup: 1.2 mm, 10 % of the content's
-extent`, `floor`, or `default: 18.74 mm, λ/8 at 2 GHz, the sweep's lowest frequency` — where a face that stated
+extent`, `floor`, `default: 18.74 mm, λ/8 at 2 GHz, the sweep's lowest frequency`, or `default: 4.014 mm, the structure's
+largest extent, less than λ/8 at 400 MHz` — where a face that stated
 only its boundary used to read `setup` and hide that its padding was the default's.
 Gate: `tests/Ui.Tests/Cli/ExplainSetupCliTests.cs`.
 
@@ -2165,7 +2166,7 @@ options (`--window`, `--layers`, `--detail`, `--grid`, …) and the `.cdd` ones 
 plane < top, and the plane snaps onto any boundary within a part in a billion first — so
 `z=<the substrate's top>` shows the copper, every time. **The isometric view has no hidden-line
 removal** and its caption says so. A view is framed on the model, not on the air box (which the
-generator pads by λ/8 at the lowest frequency); a face outside the frame is labelled with its distance.
+generator pads by λ/8 at the lowest frequency, or by the structure's extent when that is less); a face outside the frame is labelled with its distance.
 Conductors take their drawing layer's colour from the technology; `--json` adds `render.em3d` with the
 plane after snapping, in metres, and every object the picture drew. Gate:
 `tests/Ui.Tests/Em3d/Em3dRenderExplainTests.cs` — the verb as a process against the in-process render,

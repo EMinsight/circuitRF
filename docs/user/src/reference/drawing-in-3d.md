@@ -1170,7 +1170,9 @@ viewer, and moves it to where it sits in the design. Lengths are in metres, glTF
 **layout**, and a **View** choice between them. The example places the *Thru die* cell's **layout**: a
 layout comes in through its own technology's stackup, bottom up — back-side metal, 100 µm of GaAs, the
 metal on top — bounded by its board outline, the die edge. Its objects are named `U1/…` (`U1/GaAs`,
-`U1/Metal1/1`), and its conductors are pads a wire can land on.
+`U1/Metal1/1`), and its conductors are pads a wire can land on. A placed layout brings only the metal drawn
+in it: a ground plane that a 2D setup takes from the stackup is not added, so draw it in the layout when a port
+returns to it.
 
 - **The placement point** is the child's origin. Hold **Ctrl** (**Cmd**) while placing to use its
   **bottom-centre** instead — the **die-attach handle**: the die is dropped with its back side flat on
@@ -1197,17 +1199,13 @@ metal on top — bounded by its board outline, the die edge. Its objects are nam
 ### A placed layout's dielectric {#layout-dielectric}
 
 A placed layout's dielectrics are drawn, and they are **part of the problem** Palace and openEMS solve. A
-stackup gives a dielectric no outline, so each slab is cut to one of these, the first that exists:
+stackup gives a dielectric no outline, so every slab is cut to the layout's **board outline**, as with the
+die edge above, or, with no outline, to **one rectangle round everything the layout draws**, the same for
+every slab.
 
-- The layout's **board outline**, as with the die edge above.
-- The **outline of the copper directly above and below it**, with gaps closed, holes filled and a margin of
-  2 dielectric stack heights past the copper. This keeps the substrate in a coplanar line's gaps and beside
-  every trace, where its fringing field runs.
-- The bounding box of everything drawn, if there is no copper above or below it.
-
-The Messages note for the build says which one each slab took. Draw a board outline when the board's real
-edge matters. The whole rule, and how it differs from a planar setup's laterally infinite dielectric, is
-in [3D EM ▸ How far the dielectric reaches](em-3d.html#dielectrics).
+The Messages note for the build says which. Draw a board outline when the board is bigger than its copper.
+The whole rule, and how it differs from a planar setup's laterally infinite dielectric, is in
+[3D EM ▸ How far the dielectric reaches](em-3d.html#dielectrics).
 
 ## Bond wires {#wires}
 

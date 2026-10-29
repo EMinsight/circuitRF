@@ -1,8 +1,7 @@
 // ================================================================
-//  SlabLateralBoundTests.cs — designer feedback 02, Q5: the lateral shape of a slab the stackup gives no outline.
-//  A layout placed in a .c3d (the FEM/FDTD problem) and a planar setup's 3D preview (display only) share ONE rule:
-//  the board outline; else the closed hull of the copper above and below (gaps closed, holes filled, a margin past
-//  the copper); else the bounding box.
+//  SlabLateralBoundTests.cs — the lateral shape of a slab the stackup gives no outline. A layout placed in a .c3d
+//  (the FEM/FDTD problem) and a planar setup's 3D preview (display only) share ONE rule: the board outline, else one
+//  rectangle for every slab, the box round what the layout draws. Nothing reaches past the artwork.
 // ================================================================
 
 using CircuitRF.Core.Design;
@@ -21,35 +20,17 @@ public sealed class SlabLateralBoundTests
 {
     private const double Mm = 1e-3;
 
-    /// <summary>The hull closes a coplanar gap and fills a clearance hole, and stands M past the copper — never further.</summary>
+    /// <summary>No outline: the substrate is the box round the drawn copper, no margin, and the note says so.</summary>
     [Fact]
-    public void TheHull_ClosesACoplanarGap_FillsAHole_AndStandsTheMarginPastTheCopper()
-    {
-        var trace  = Rect(0, -0.5, 10, 0.5);
-        var ground = new PlanarPolygon(Rect(0, 1.0, 10, 3.0).Outer, [Rect(4, 1.5, 5, 2.5).Outer]);   // a clearance in it
-        var hull = SlabLateralBound.CopperHull([trace, ground], 2.5 * Mm, 1.0 * Mm);
-
-        var one = Assert.Single(hull);
-        Assert.Empty(one.HoleRings);
-        Assert.True(one.Contains(5 * Mm, 0.75 * Mm), "the coplanar gap");
-        Assert.True(one.Contains(4.5 * Mm, 2 * Mm), "the clearance hole");
-        Assert.True(one.Contains(5 * Mm, 3.9 * Mm), "inside the margin");
-        Assert.False(one.Contains(5 * Mm, 4.1 * Mm), "past the margin");
-    }
-
-    /// <summary>No outline, bottom plane undrawn: the substrate and the instance's plane take the hull of the top
-    /// copper, so the gap and the fringing margin beside the ground strip are substrate, and the note says so.</summary>
-    [Fact]
-    public void APlacedLayoutWithNoOutline_BoundsItsSubstrateByTheCopperHull_AndSaysWhich()
+    public void APlacedLayoutWithNoOutline_BoundsItsSubstrateByTheDrawnBox_AndSaysSo()
     {
         var r = Em3dLayoutSolids.From(Source(Cpw(), "pcb-2layer_RO4350B_20mil_1oz"), Tech2(), null, Instance());
         Assert.True(r.Ok, r.Refusal);
-
-        var slab = Poly(r.Solids.Single(s => s.Role == Em3dRole.Dielectric).Primitive);
-        Assert.True(slab.Contains(5 * Mm, 0.75 * Mm), "the coplanar gap is substrate");
-        Assert.True(slab.Contains(5 * Mm, 3.5 * Mm), "the substrate runs past the outer copper edge");
-        Assert.False(slab.Contains(5 * Mm, 6 * Mm), "and stops a margin past it, not at a bounding box");
-        Assert.Contains(r.Notes, n => n.Contains("'RO4350' from 'Top Copper (1 oz)'", StringComparison.Ordinal));
+        var slab = (Em3dExtrudedPolygon)r.Solids.Single(s => s.Role == Em3dRole.Dielectric).Primitive;
+        Assert.Equal((0.0, -3 * Mm, 10 * Mm, 3 * Mm),
+                     (slab.Outline.Min(p => p.X), slab.Outline.Min(p => p.Y), slab.Outline.Max(p => p.X), slab.Outline.Max(p => p.Y)),
+                     new Tol(1e-12));
+        Assert.Contains(r.Notes, n => n.Contains("bounded by the box round its drawn geometry", StringComparison.Ordinal));
     }
 
     /// <summary>A drawn board outline wins over the copper.</summary>
@@ -65,10 +46,10 @@ public sealed class SlabLateralBoundTests
         Assert.Contains(r.Notes, n => n.Contains("bounded by its board outline", StringComparison.Ordinal));
     }
 
-    /// <summary>A slab whose neighbour conductor has nothing drawn walks outward to the next copper: on a four-layer
-    /// board with only the outer layers drawn, the top prepreg takes the hull of the top AND bottom copper.</summary>
+    /// <summary>Every slab of a four-layer board is the same rectangle, whatever copper is next to it: a top trace over a
+    /// bottom plane gives all three dielectrics the plane's box, not a shape of their own round the trace.</summary>
     [Fact]
-    public void AnEmptyNeighbourConductor_WalksOutwardToTheNextCopper()
+    public void EverySlab_IsTheSameRectangle()
     {
         var tech = ShippedTechnologies.Load("pcb-4layer_FR-4_62mil_1oz");
         var view = LayoutPersistence.Deserialize(Clay(
@@ -76,13 +57,16 @@ public sealed class SlabLateralBoundTests
             """{ "$type": "Rect", "Layer": { "Layer": 4, "Datatype": 0 }, "X1": 0, "Y1": -8000000, "X2": 10000000, "Y2": 8000000 }"""));
         var r = Em3dLayoutSolids.From(new EmLayoutSource("/nowhere/b.clay", view, tech, view.DbuPerMicron), tech, null, Instance());
         Assert.True(r.Ok, r.Refusal);
-        Assert.Contains(r.Notes, n => n.Contains("'Prepreg (top)' from 'Top Copper (1 oz)' and 'Bottom Copper (1 oz)'", StringComparison.Ordinal));
+        var slabs = r.Solids.Where(s => s.Role == Em3dRole.Dielectric).Select(s => (Em3dExtrudedPolygon)s.Primitive).ToList();
+        Assert.Equal(3, slabs.Count);
+        Assert.All(slabs, slab => Assert.Equal((0.0, -8 * Mm, 10 * Mm, 8 * Mm),
+            (slab.Outline.Min(p => p.X), slab.Outline.Min(p => p.Y), slab.Outline.Max(p => p.X), slab.Outline.Max(p => p.Y)), new Tol(1e-12)));
     }
 
-    /// <summary>A planar setup's 3D preview draws its substrate to the same hull — not across the air box — and shows
+    /// <summary>A planar setup's 3D preview draws its substrate to the same box — not across the air box — and shows
     /// it; without the display flag the generator's (3D solve's) slab still spans the air box.</summary>
     [Fact]
-    public void APlanarPreview_DrawsItsSubstrateToTheHull_AndShowsIt()
+    public void APlanarPreview_DrawsItsSubstrateToTheDrawnBox_AndShowsIt()
     {
         var tech = Tech2();
         var source = Source(Cpw(), "pcb-2layer_RO4350B_20mil_1oz");

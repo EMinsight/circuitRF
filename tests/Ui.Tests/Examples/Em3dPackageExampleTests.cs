@@ -58,7 +58,7 @@ public sealed class Em3dPackageExampleTests(ITestOutputHelper output) : IDisposa
         var e = new C3dElaborator().Elaborate(doc, path, cws);
         Assert.True(e.Ok, string.Join(" ", e.Refusals));
         Assert.Contains(e.Solids, s => s.Name == "U1/GaAs" && s.Material == "GaAs");
-        Assert.Contains(e.Solids, s => s.Name == "U1/Backside Metal");
+        Assert.Contains(e.Solids, s => s.Name == "U1/Backside Metal/1");
         Assert.Contains(e.Solids, s => s.Name.StartsWith("U1/Metal1", StringComparison.Ordinal));
         Assert.Contains(e.Solids, s => s.Name == "base" && s.Material == "Alumina");
         Assert.Contains(e.Solids, s => s.Name == "lid" && s.Material == "Lid alloy");

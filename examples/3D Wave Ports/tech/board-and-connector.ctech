@@ -26,6 +26,22 @@
     },
     {
       "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "Bottom Copper",
+      "Color": {
+        "r": 138,
+        "g": 80,
+        "b": 40,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 7,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
         "Layer": 20,
         "Datatype": 0
       },
@@ -85,7 +101,12 @@
         "TanD": 0,
         "Mur": 1,
         "SigmaSm": 58000000,
-        "DrawingLayers": [],
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
         "IsGroundReference": true,
         "Material": "Copper"
       }

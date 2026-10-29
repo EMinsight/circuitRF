@@ -20,6 +20,17 @@
     {
       "$type": "Rect",
       "Layer": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "X1": -500000,
+      "Y1": -300000,
+      "X2": 500000,
+      "Y2": 300000
+    },
+    {
+      "$type": "Rect",
+      "Layer": {
         "Layer": 1,
         "Datatype": 0
       },

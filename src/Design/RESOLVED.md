@@ -24317,3 +24317,41 @@ A chosen folder that is missing refused the Palace run before meshing, exit 1.
 `Scratch:` beside the solver and puts `result.scratch` (`folder`, `source`, `exists`, `systemTemp`) in `--json`, refused
 run included, so an agent can tell which disk a run filled. Checked with the real CLI on Palace and EMerge, a test
 state directory via `CRF_STATE_DIR` (which also moves where installed solvers are looked for: link its `solvers`).
+
+## A placed layout brings only the metal it draws (2026-10-28)
+
+brief-em3d-42 R-em3d42-2c gave a layout placed in a `.c3d` the undrawn ground plane its `.cem` would have made a PEC
+floor — the lowest ground-reference conductor with nothing drawn on it — as bounded metal, so that a 3D view of a layout
+solved like its `.cem`. It is the same rule that put a substrate and a bottom plane under a wBond's wires pushed to an
+empty layout (cb548d256). On a four-layer board with a ground plane DRAWN on Inner 1, it also added a full plane on
+Bottom Copper, a second ground reference nobody drew, which nothing in the 3D view could select or remove. The owner's
+rule: a placed layout never draws anything that was not drawn. `Em3dLayoutSolids` now makes no instance plane at all
+(`_instancePlane` and `Plane` are gone). A port that returned to the invented plane now finds nothing on that edge and is
+refused by the port sentence, so the remedy is to draw the plane in the layout or in the 3D view.
+
+What moved with it. Three shipped examples leaned on the invented plane, and their technologies gave the plane no drawing
+layer at all, so it could not have been drawn: 3D Connector and 3D Wave Ports (`board-and-connector.ctech`, Bottom
+Copper now on layer 2, drawn over the board outline in `Board.clay`) and 3D Package (`mmic-gaas.ctech`, Backside Metal
+now on layer 9, drawn over the die edge in `Thru die.clay`). Each elaborates to the geometry it had, the drawn piece
+named `<entry>/1`. `C3dElaborationTests.Gate3` no longer expects `U1/Floor`, and `SimulateGateTests.Gate2` asserts
+that the port is refused first and then returns to a floor drawn in the 3D view. With an outline, a dielectric now asks
+`Bounded` for it, which records the bound, so the "bounded by its board outline" note no longer depended on the plane's
+own call. A `.cem` 3D run keeps its PEC floor, which is a boundary and draws no object.
+
+**The same day: the substrate's shape, and the air box.** With the plane gone, the 3D view still drew dielectric nobody
+drew: the per-slab copper hull (designer feedback 02 Q5) stood 2 stack heights past the copper, 3 mm on a 62 mil board,
+and gave each slab its own shape. Under a short inner trace that was a rounded slab unlike the core above it. The owner
+chose ONE rectangle for every slab, the box round what the layout draws, with no margin, when there is no board outline
+(`Em3dLayoutSolids.Bounded`). `SlabLateralBound` keeps only `ClipToRect` for the planar preview. A board that is bigger
+than its copper draws its outline.
+
+The 22 GB was the air: the default padding was λ/8 at the sweep's LOWEST frequency, 94 mm round a 4 mm structure at
+400 MHz. The owner chose to cap a non-radiating setup's default at the structure's largest extent, the rule a static
+solve already used (`Em3dGenerator.DefaultPadding`); a radiation pattern keeps λ/4. On the four-layer via case the
+Palace estimate went from 491,470 elements / 22.1 GB to 7,172 / 0.3 GB. Checked by solving it with Palace at the new
+default (4.0 mm) and at twice that: 29,241 against 31,668 elements, 15 s, and |ΔS| ≤ 2.3e-3 on every entry from 0.4 to
+7 GHz (S21 within 0.016 dB, S11 within 0.02 dB). `Em3dGenerator.ContentBounds` is now shared by `explain` and the
+Palace memory check's half-padding remedy, which had priced the default as λ/8 alone. The generator, wire-split and
+solver-input goldens were rewritten (`CRF_WRITE_GENERATOR_DUMPS`, `CRF_WRITE_WIRE_DUMPS`, `CRF_WRITE_{PALACE,OPENEMS,
+EMERGE}_GOLDENS`); their diffs are the air box, the air solid, slabs that reach the box, the board ground's object
+name, and the line-end port note on two small fixtures, and no port moved.

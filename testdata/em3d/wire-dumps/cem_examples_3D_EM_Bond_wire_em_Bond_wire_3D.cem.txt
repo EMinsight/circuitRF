@@ -2,6 +2,8 @@ refusal (none)
 note 2 wedge end(s) were moved in z, by at most 1.81763 µm, so each foot lies on its pad: a foot's axis is its pad's top plus half the section's height. The wires' plan geometry and the rest of their loops are as the .wBond states.
 note Port 1 ('1') at (-550, 0 µm) was taken to be on the conductor's low-x (left) end (the port's own direction), driving current in the +x direction, at 50 Ω.
 note Port 2 ('2') at (550, 0 µm) was taken to be on the conductor's high-x (right) end (the port's own direction), driving current in the −x direction, at 50 Ω.
+note Port 1 at its line's end is a vertical lumped sheet 100 µm wide and 100 µm tall from 'Pads' down to 'Ground' (the air box's floor): the nearest ground-reference plane with metal under the port.
+note Port 2 at its line's end is a vertical lumped sheet 100 µm wide and 100 µm tall from 'Pads' down to 'Ground' (the air box's floor): the nearest ground-reference plane with metal under the port.
 note The air box's floor is 'Ground' as a PEC plane at 3 µm: it is the lowest ground-reference conductor, nothing is drawn on it and nothing is drawn below it.
 solid Substrate Alumina Dielectric 1 box (-0.0015,-0.001,3E-06) (0.0015,0.001,0.00010300000000000001)
 solid air Air Air 2 box (-0.0015,-0.001,0.00010300000000000001) (0.0015,0.001,0.001243663281114457)

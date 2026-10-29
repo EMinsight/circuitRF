@@ -20,10 +20,10 @@
 //   FinishNotes()    the temperature notes, which the generator has always written last but one.
 //
 // `From` is the one-call form an instance uses, with the instance options (§2c): no solve region, no PEC
-// floor, and every laterally unbounded slab — a dielectric, a body without an outline, and the ground
-// plane that a .cem would have made its floor — bounded by SlabLateralBound's rule: the board outline, else the
-// closed hull of the copper above and below the slab, else the drawn geometry's bounding box, with a note
-// saying which bound each slab took. A planar setup previewed in 3D (DisplaySlabs) draws its slabs the same way.
+// floor, no metal the layout does not draw, and every laterally unbounded slab — a dielectric or a body
+// without an outline — bounded by the board outline, else by the box round the drawn geometry, one
+// rectangle for every slab, with a note saying which. A planar setup previewed in 3D (DisplaySlabs) draws its
+// slabs the same way.
 
 using System.Globalization;
 using Clipper2Lib;
@@ -39,7 +39,8 @@ namespace CircuitRF.Design.Layout.Em3d;
 /// depth there (R-em3d3-5f). Null when there is no sweep (a 3D view elaborated with no setup): a conductor
 /// with thickness is then a solid.</param>
 /// <param name="TempC">The operating temperature σ(T) is evaluated at.</param>
-/// <param name="Instance">True for a layout placed in a 3D view (§2c): no solve region, no floor, bounded slabs.</param>
+/// <param name="Instance">True for a layout placed in a 3D view (§2c): no solve region, no floor, bounded slabs, and
+/// no metal but what the layout draws.</param>
 public sealed record Em3dLayoutSolidsOptions(double? FMaxHz, double TempC, bool Instance)
 {
     /// <summary>A <c>.cem</c> run's region: the setup's SolveRegion (the generator's case). Null takes the
@@ -195,11 +196,9 @@ public static class Em3dLayoutSolids
                                PlanarExtractor.StackBand Bottom)> _holeSpans = [];
         private readonly List<string> _unknownTemperature = [];
         private readonly SortedSet<string> _noAlpha = new(StringComparer.Ordinal);
-        // An instance's plane: the lowest ground-reference conductor a .cem would have made its floor.
-        private PlanarExtractor.StackBand? _instancePlane;
 
         /// <summary>Nothing is drawn on a conductor layer (a picture of wires alone, <see cref="Em3dLayoutSolidsOptions.PadsOptional"/>).
-        /// No slab, body or ground plane is then bounded by anything the user drew, so none is built: a wBond's wires pushed to
+        /// No slab or body is then bounded by anything the user drew, so none is built: a wBond's wires pushed to
         /// an empty layout came into a 3D view with a substrate and a bottom plane nobody placed.</summary>
         private bool _noArtwork;
 
@@ -398,14 +397,11 @@ public static class Em3dLayoutSolids
             // off for it left an undrawn ground with no representation and refused every port on it.
             FloorStatedAway = !options.FloorAllowed;
             if (FloorStatedAway) pecFloor = false;
-            // brief-em3d-42 R-em3d42-2c — an instance has no air box to be floored: the plane the floor
-            // would have been is metal, bounded like the slabs.
-            if (options.Instance && pecFloor)
-            {
-                _instancePlane = ground;
-                pecFloor = false;
-            }
-            if (groundPadsOnly && (pecFloor || _instancePlane is not null))
+            // An instance has no air box to be floored, and draws only what its layout draws: the undrawn plane
+            // the floor would have been is not metal in a 3D view (it was, from brief-em3d-42 R-em3d42-2c, and
+            // put copper under a drawn ground plane that nothing in the view could remove).
+            if (options.Instance) pecFloor = false;
+            if (groundPadsOnly && pecFloor)
             {
                 Notes.Add($"{polysByBand[ground!.Index].Count} via pad(s) on '{ground.Layer.Name}' are part of that " +
                           "plane rather than separate metal on it.");
@@ -643,11 +639,6 @@ public static class Em3dLayoutSolids
                 cx0 = Math.Min(cx0, x0); cy0 = Math.Min(cy0, y0); cx1 = Math.Max(cx1, x1); cy1 = Math.Max(cy1, y1);
                 zLow = Math.Min(zLow, z0); zHigh = Math.Max(zHigh, z1);
             }
-            if (_instancePlane is { } plane && !_noArtwork)
-            {
-                zLow = Math.Min(zLow, plane.BottomM);
-                zHigh = Math.Max(zHigh, plane.TopM);
-            }
             (Cx0, Cy0, Cx1, Cy1, ZLow, ZHigh) = (cx0, cy0, cx1, cy1, zLow, zHigh);
         }
 
@@ -685,8 +676,8 @@ public static class Em3dLayoutSolids
                 var (z0, z1) = _dielZ[b.Index];
                 string material = DielectricMaterial(b.Layer);
                 IReadOnlyList<PlanarPolygon>? lateral =
-                    _filmPolys.TryGetValue(b.Index, out var film) ? film : _outline.Count > 0 ? _outline : null;
-                if (lateral is null && bound) lateral = Bounded(z0, z1, b.Layer.Name);
+                    _filmPolys.TryGetValue(b.Index, out var film) ? film : bound ? Bounded(b.Layer.Name)
+                    : _outline.Count > 0 ? _outline : null;
                 if (lateral is { Count: 0 }) continue;
                 order++;
                 if (lateral is null)
@@ -710,7 +701,7 @@ public static class Em3dLayoutSolids
             foreach (var (body, z0, z1, drawnPolys) in _bodies)
             {
                 string material = BodyMaterial(tech.FindMaterial(body.Material)!, out var role);
-                IReadOnlyList<PlanarPolygon> polys = drawnPolys.Count == 0 && bound ? Bounded(z0, z1, body.Name) : drawnPolys;
+                IReadOnlyList<PlanarPolygon> polys = drawnPolys.Count == 0 && bound ? Bounded(body.Name) : drawnPolys;
                 if (polys.Count == 0 && (options.DisplaySlabs || (bound && _noArtwork))) continue;   // nothing drawn bounds it: not in the picture
                 order++;
                 if (polys.Count == 0)
@@ -725,7 +716,6 @@ public static class Em3dLayoutSolids
 
             foreach (var b in Bands)
             {
-                if (_instancePlane is { } plane && ReferenceEquals(b, plane)) Plane(b, ref order);
                 if (!Pieces.ContainsKey(b.Index)) continue;
                 foreach (var p in Pieces[b.Index])
                 {
@@ -888,106 +878,29 @@ public static class Em3dLayoutSolids
         }
 
         // ── Lateral bounds (SlabLateralBound) ───────────────────────────────────────────────────────
-        private readonly List<(string Slab, SlabBoundKind Kind, string? From)> _slabBounds = [];
-        private readonly Dictionary<(int Above, int Below), IReadOnlyList<PlanarPolygon>> _hulls = [];
+        private readonly List<string> _slabBounds = [];
         private Em3dAirBox? _displayBox;
 
-        /// <summary>The dielectric stack's height, metres — what SlabLateralBound's two distances scale with.</summary>
-        private double StackHeightM()
-        {
-            double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
-            foreach (var (_, z) in _dielZ) { lo = Math.Min(lo, z.Bottom); hi = Math.Max(hi, z.Top); }
-            return hi > lo ? hi - lo : ZHigh > ZLow ? ZHigh - ZLow : 0;
-        }
-
         /// <summary>
-        /// The lateral shape of a slab spanning <paramref name="z0"/>..<paramref name="z1"/> that has no outline of
-        /// its own: the board outline; else the closed hull of the nearest copper above and the nearest copper below
-        /// its middle (walking outward past a conductor entry with nothing drawn on it); else the bounding box.
+        /// The lateral shape of a slab that has no outline of its own: the board outline, else ONE rectangle for every
+        /// slab, the bounding box of what the layout draws. Nothing reaches past the artwork: a margin or a hull made a
+        /// substrate nobody drew, a different shape on each slab.
         /// </summary>
-        private IReadOnlyList<PlanarPolygon> Bounded(double z0, double z1, string slab)
+        private IReadOnlyList<PlanarPolygon> Bounded(string slab)
         {
-            if (_outline.Count > 0)
-            {
-                _slabBounds.Add((slab, SlabBoundKind.Outline, null));
-                return _outline;
-            }
-            double zc = (z0 + z1) / 2, h = StackHeightM();
-            var drawn = Bands.Where(b => Pieces.TryGetValue(b.Index, out var l) && l.Count > 0).ToList();
-            var above = drawn.Where(b => b.BottomM >= zc).OrderBy(b => b.BottomM).FirstOrDefault();
-            var below = drawn.Where(b => b.TopM <= zc).OrderByDescending(b => b.TopM).FirstOrDefault();
-            if (h > 0 && (above is not null || below is not null))
-            {
-                var key = (above?.Index ?? -1, below?.Index ?? -1);
-                if (!_hulls.TryGetValue(key, out var hull))
-                {
-                    var copper = new[] { above, below }.Where(b => b is not null)
-                                                       .SelectMany(b => Pieces[b!.Index].Select(p => p.Poly));
-                    hull = SlabLateralBound.CopperHull(copper,
-                        SlabLateralBound.CloseRadiusInStackHeights * h, SlabLateralBound.MarginInStackHeights * h);
-                    if (_displayBox is { } box)
-                        hull = SlabLateralBound.ClipToRect(hull, box.Min.X, box.Min.Y, box.Max.X, box.Max.Y);
-                    _hulls[key] = hull;
-                }
-                if (hull.Count > 0)
-                {
-                    string from = string.Join(" and ", new[] { above, below }.Where(b => b is not null)
-                                                                          .Select(b => $"'{b!.Layer.Name}'"));
-                    _slabBounds.Add((slab, SlabBoundKind.CopperHull, from));
-                    return hull;
-                }
-            }
-            // A planar preview draws no slab that nothing drawn bounds: a box around whatever else is in the picture —
-            // wires alone, on a layout with no artwork — showed a substrate nobody placed. Nor does a placed layout with no
-            // artwork, for the same reason (its ground plane comes through here too).
-            if (options.DisplaySlabs || _noArtwork) return [];
-            _slabBounds.Add((slab, SlabBoundKind.BoundingBox, null));
-            return [new PlanarPolygon([new(Cx0, Cy0), new(Cx1, Cy0), new(Cx1, Cy1), new(Cx0, Cy1)])];
+            _slabBounds.Add(slab);
+            if (_outline.Count > 0) return _outline;
+            // Wires alone, on a layout with no artwork, bound no substrate.
+            if (_noArtwork || !(Cx1 > Cx0 && Cy1 > Cy0)) return [];
+            IReadOnlyList<PlanarPolygon> box = [new PlanarPolygon([new(Cx0, Cy0), new(Cx1, Cy0), new(Cx1, Cy1), new(Cx0, Cy1)])];
+            return _displayBox is { } d ? SlabLateralBound.ClipToRect(box, d.Min.X, d.Min.Y, d.Max.X, d.Max.Y) : box;
         }
 
-        /// <summary>What an instance's note says: which bound each slab took.</summary>
-        private string SlabBoundNote()
-        {
-            if (_outline.Count > 0)
-                return "Placed in a 3D view, the layout's slabs are bounded by its board outline.";
-            var hulls = _slabBounds.Where(b => b.Kind == SlabBoundKind.CopperHull).ToList();
-            var boxes = _slabBounds.Where(b => b.Kind == SlabBoundKind.BoundingBox).Select(b => $"'{b.Slab}'").ToList();
-            var parts = new List<string>();
-            if (hulls.Count > 0)
-                parts.Add("each laterally unbounded slab takes " + SlabLateralBound.HullRule(StackHeightM()) + " — " +
-                          string.Join("; ", hulls.Select(b => $"'{b.Slab}' from {b.From}")));
-            if (boxes.Count > 0)
-                parts.Add($"{string.Join(", ", boxes)} {(boxes.Count == 1 ? "has" : "have")} no copper above or below " +
-                          $"and {(boxes.Count == 1 ? "is" : "are")} bounded by the bounding box of the drawn geometry");
-            return "Placed in a 3D view, the layout draws no board outline, so " + string.Join("; and ", parts) +
-                   ". Draw a board outline when the board's edge matters.";
-        }
-
-        /// <summary>brief-em3d-42 R-em3d42-2c — an instance's ground plane: the undrawn lowest ground-reference
-        /// conductor a .cem would have made its PEC floor, as metal over the outline or the copper hull above it.</summary>
-        private void Plane(PlanarExtractor.StackBand band, ref int order)
-        {
-            string material = ConductorMaterial(band.Layer);
-            var mat = _materialByName[material];
-            double t = band.TopM - band.BottomM;
-            double delta = mat.SigmaSm > 0 && options.FMaxHz is { } fMax
-                ? 1.0 / Math.Sqrt(Math.PI * fMax * Mu0 * mat.Mur * mat.SigmaSm) : 0;
-            double sheetZ = band.Layer.SheetAt == ConductorSheetSurface.Top ? band.TopM : band.BottomM;
-            IReadOnlyList<PlanarPolygon> lateral = Bounded(band.BottomM, band.TopM, band.Layer.Name);
-            for (int k = 0; k < lateral.Count; k++)
-            {
-                string name = lateral.Count == 1 ? band.Layer.Name : $"{band.Layer.Name}/{k + 1}";
-                var (sheet, reason) = SheetRule(band, t, delta, CharacteristicWidth(lateral[k]));
-                order++;
-                OriginMap[name] = new Em3dObjectOrigin(Em3dObjectKind.Conductor, band.Layer.Name, null, reason);
-                GroundBandObjectList.Add(name);
-                if (sheet)
-                    SheetList.Add(new Em3dSheet(name, material, Ring(lateral[k].Outer), [.. lateral[k].HoleRings.Select(Ring)],
-                                                sheetZ, t, order));
-                else
-                    SolidList.Add(new Em3dSolid(name, material, Em3dRole.Conductor, Extrude(lateral[k], band.BottomM, band.TopM), order));
-            }
-        }
+        /// <summary>What an instance's note says: which bound its slabs took.</summary>
+        private string SlabBoundNote() => _outline.Count > 0
+            ? "Placed in a 3D view, the layout's slabs are bounded by its board outline."
+            : "Placed in a 3D view, the layout draws no board outline, so its slabs are bounded by the box round its " +
+              "drawn geometry. Draw a board outline when the board's edge matters.";
 
         /// <summary>The temperature notes, which the generator writes after its terminals.</summary>
         public void FinishNotes()

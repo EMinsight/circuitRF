@@ -147,8 +147,8 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
     /// Brief 42's oracle: the Package example's layout, placed by New 3D View from Layout (brief 48 §7 translates its
     /// setups' ports), gives the ports the .cem route gives — through the lid-modes setup, the one of its three whose
     /// problem has ports (an electrostatic solve has none, and Package L solves another layout) — numbers, rectangles, conductors and directions. The one
-    /// named difference is brief 42's: the ground plane the .cem made its PEC floor (<c>airbox/zmin</c>) is a bounded
-    /// conductor inside the instance, and it is the one the port's negative end is inferred onto.
+    /// named difference: the .cem's PEC floor (<c>airbox/zmin</c>) is the undrawn ground plane, and a placed layout brings
+    /// no metal it does not draw, so its port first returns to nothing; a floor drawn in the 3D view is what it returns to.
     /// </summary>
     [Fact]
     public void Gate2_TheLayoutsPortsDrawnAsC3dPorts_GiveTheCemRoutesPorts()
@@ -171,10 +171,21 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
         var doc = C3dPersistence.LoadFromFile(path);
         var (s, why) = C3dSetups.Select(doc, "Package lid modes");
         Assert.Null(why);
+        var refused = C3dProblemAssembly.Assemble(C3dSetups.ForRun(s!, path), doc, path, cws);
+        Assert.False(refused.Ok);
+        Assert.Contains("nothing on its bottom", refused.Refusal!, StringComparison.Ordinal);
+
+        // The floor, drawn: the stackup's 3 µm gold Floor entry under the base, as wide as the base.
+        var bases = Em3dProblem.Bounds(C3dElaborator.ElaborateOnce(doc, path, cws).Solids.Single(x => x.Name == "U1/Base").Primitive);
+        long Dbu(double m) => (long)Math.Round(m * 1e6 * doc.DbuPerMicron);
+        doc.Objects.Add(new C3dBox
+        {
+            Name = "Floor", Material = "Gold",
+            Min = new(Dbu(bases.X0), Dbu(bases.Y0), 0), Size = new(Dbu(bases.X1 - bases.X0), Dbu(bases.Y1 - bases.Y0), 3 * doc.DbuPerMicron),
+        });
         var g = C3dProblemAssembly.Assemble(C3dSetups.ForRun(s!, path), doc, path, cws);
         Assert.True(g.Ok, g.Refusal);
         var q = g.Problem!;
-        var ground = C3dElaborator.ElaborateOnce(doc, path, cws).GroundBandObjects;
 
         // The .c3d's frame puts the stack's bottom at z = 0: one offset, read off a solid both problems hold.
         var shared = p.Solids.First(x => q.Solids.Any(y => y.Name == "U1/" + x.Name));
@@ -186,7 +197,7 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
             Assert.Equal(a.Min.X, b.Min.X, 9); Assert.Equal(a.Min.Y, b.Min.Y, 9); Assert.Equal(a.Min.Z + dz, b.Min.Z, 9);
             Assert.Equal(a.Max.X, b.Max.X, 9); Assert.Equal(a.Max.Y, b.Max.Y, 9); Assert.Equal(a.Max.Z + dz, b.Max.Z, 9);
             Assert.Equal("U1/" + a.PositiveObject, b.PositiveObject);
-            if (a.NegativeObject == "airbox/zmin") Assert.Contains(b.NegativeObject, ground);
+            if (a.NegativeObject == "airbox/zmin") Assert.Equal("Floor", b.NegativeObject);
             else Assert.Equal("U1/" + a.NegativeObject, b.NegativeObject);
             Assert.Equal(a.Direction, b.Direction);
             Assert.Equal(a.Z0, b.Z0);

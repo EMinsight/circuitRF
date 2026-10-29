@@ -82,7 +82,7 @@ public sealed class Em3dConnectorExampleTests(ITestOutputHelper output) : IDispo
             Assert.True(g.Ok, $"{name}: {g.Refusal}");
             var ports = g.Problem!.Ports.OrderBy(p => p.Number).ToList();
             Assert.Equal(("pin", "housing"), (ports[0].PositiveObject, ports[0].NegativeObject));
-            Assert.Equal(("B1/Top Copper/1", "B1/Bottom Copper"), (ports[1].PositiveObject, ports[1].NegativeObject));
+            Assert.Equal(("B1/Top Copper/1", "B1/Bottom Copper/1"), (ports[1].PositiveObject, ports[1].NegativeObject));
         }
     }
 

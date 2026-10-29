@@ -38,9 +38,9 @@ public sealed class C3dElaborationTests(ITestOutputHelper output) : IDisposable
     /// holding one layout instance of it at the origin with an embedded copy of that setup. Every object
     /// agrees, primitive for primitive and material for material, except the documented differences —
     /// each asserted by name: the <c>U1/</c> prefix; the bounded extent (the layout draws no outline, so the
-    /// substrate takes the closed hull of its copper instead of the air box, and the undrawn ground plane the .cem made
-    /// its PEC floor is a bounded conductor, which becomes the static ground); and, following from both, the
-    /// air above the stack (the .c3d's background) and the air box's floor.
+    /// substrate takes the box round its drawn geometry instead of the air box); the undrawn ground plane the .cem made its
+    /// PEC floor, which is not metal in the instance (a placed layout brings only what it draws); and, following from
+    /// both, the air above the stack (the .c3d's background) and the air box's floor.
     /// </summary>
     [Fact]
     public void Gate3_ALayoutInstanceWithAnEmbeddedCopyOfItsSetup_AssemblesTheCemsProblem_ButForTheNamedDifferences()
@@ -66,7 +66,7 @@ public sealed class C3dElaborationTests(ITestOutputHelper output) : IDisposable
 
         // The prefix, and the two objects only one side has.
         var only = new HashSet<string>(StringComparer.Ordinal) { "air" };
-        Assert.Equal(p.Solids.Where(s => !only.Contains(s.Name)).Select(s => "U1/" + s.Name).Append("U1/Floor").Order(),
+        Assert.Equal(p.Solids.Where(s => !only.Contains(s.Name)).Select(s => "U1/" + s.Name).Order(),
                      q.Solids.Select(s => s.Name).Order());
         Assert.Contains(p.Solids, s => s is { Name: "air", Role: Em3dRole.Air });
         Assert.DoesNotContain(q.Solids, s => s.Role == Em3dRole.Air);
@@ -80,30 +80,28 @@ public sealed class C3dElaborationTests(ITestOutputHelper output) : IDisposable
                          q.Materials.Single(m => m.Name == t.Material) with { Name = "" });
         }
         Assert.Equal(p.Solids.Where(s => s.Role == Em3dRole.Conductor).OrderBy(s => s.Order).Select(s => "U1/" + s.Name),
-                     q.Solids.Where(s => s.Role == Em3dRole.Conductor && s.Name != "U1/Floor").OrderBy(s => s.Order).Select(s => s.Name));
+                     q.Solids.Where(s => s.Role == Em3dRole.Conductor).OrderBy(s => s.Order).Select(s => s.Name));
 
-        // The bounded extent: the substrate keeps its heights and, with no outline drawn, takes the closed hull of the
-        // copper above it (SlabLateralBound) — the drawn extent grown by its margin, not the air box.
+        // The bounded extent: the substrate keeps its heights and, with no outline drawn, takes the box round the drawn
+        // geometry — not the air box.
         var baseA = (Em3dBox)p.Solids.Single(s => s.Name == "Base").Primitive;
         var baseB = (Em3dExtrudedPolygon)q.Solids.Single(s => s.Name == "U1/Base").Primitive;
         Assert.Equal((baseA.Min.Z, baseA.Max.Z), (baseB.ZBottom, baseB.ZTop));
         Assert.Equal((p.Boundary.Min.X, p.Boundary.Max.X), (baseA.Min.X, baseA.Max.X));
-        double margin = SlabLateralBound.MarginInStackHeights * (baseB.ZTop - baseB.ZBottom);
-        Assert.Equal((-3.9e-3 - margin, -100 * Um - margin, 3.9e-3 + margin, 100 * Um + margin),
+        Assert.Equal((-3.9e-3, -100 * Um, 3.9e-3, 100 * Um),
                      (baseB.Outline.Min(v => v.X), baseB.Outline.Min(v => v.Y), baseB.Outline.Max(v => v.X), baseB.Outline.Max(v => v.Y)),
                      new Tol(1e-9));
-        var floor = (Em3dExtrudedPolygon)q.Solids.Single(s => s.Name == "U1/Floor").Primitive;
-        Assert.Equal((0.0, p.Boundary.Min.Z), (floor.ZBottom, floor.ZTop));      // the .cem's floor height is the plane's top
-        Assert.Contains(b.Notes, n => n.Contains("'Base' from", StringComparison.Ordinal));
+        Assert.Equal(p.Boundary.Min.Z, baseB.ZBottom);      // the .cem's floor height is the plane's top, and nothing fills it
+        Assert.Contains(b.Notes, n => n.Contains("bounded by the box round its drawn geometry", StringComparison.Ordinal));
 
-        // The terminals hold the same conductors; the ground is the PEC floor on one side, the plane on the other.
+        // The terminals hold the same conductors; the ground is the PEC floor on one side, and nothing on the other.
         Assert.Equal(p.Terminals.Select(t => (t.Name, string.Join(",", t.Objects.Select(o => "U1/" + o)))),
                      q.Terminals.Select(t => (t.Name, string.Join(",", t.Objects))));
         Assert.Empty(p.GroundObjects);
-        Assert.Equal(["U1/Floor"], q.GroundObjects);
+        Assert.Empty(q.GroundObjects);
 
-        // The air box: the same everywhere but its floor — and laterally, the substrate's margin, since it pads the content.
-        Assert.Equal((p.Boundary.Min.X - margin, p.Boundary.Min.Y - margin, p.Boundary.Max.X + margin, p.Boundary.Max.Y + margin),
+        // The air box: the same everywhere but its floor.
+        Assert.Equal((p.Boundary.Min.X, p.Boundary.Min.Y, p.Boundary.Max.X, p.Boundary.Max.Y),
                      (q.Boundary.Min.X, q.Boundary.Min.Y, q.Boundary.Max.X, q.Boundary.Max.Y), new Tol(1e-9));
         Assert.Equal(p.Boundary.Max.Z, q.Boundary.Max.Z);
         Assert.Equal(p.Boundary.Faces with { ZMin = Em3dBoundaryKind.Absorbing }, q.Boundary.Faces);

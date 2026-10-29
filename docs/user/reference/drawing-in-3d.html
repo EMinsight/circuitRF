@@ -1760,7 +1760,9 @@ viewer, and moves it to where it sits in the design. Lengths are in metres, glTF
 <strong>layout</strong>, and a <strong>View</strong> choice between them. The example places the <em>Thru die</em> cell's <strong>layout</strong>: a
 layout comes in through its own technology's stackup, bottom up — back-side metal, 100 µm of GaAs, the
 metal on top — bounded by its board outline, the die edge. Its objects are named <code>U1/…</code> (<code>U1/GaAs</code>,
-<code>U1/Metal1/1</code>), and its conductors are pads a wire can land on.</p>
+<code>U1/Metal1/1</code>), and its conductors are pads a wire can land on. A placed layout brings only the metal drawn
+in it: a ground plane that a 2D setup takes from the stackup is not added, so draw it in the layout when a port
+returns to it.</p>
 <ul>
 <li><strong>The placement point</strong> is the child's origin. Hold <strong>Ctrl</strong> (<strong>Cmd</strong>) while placing to use its
 <strong>bottom-centre</strong> instead — the <strong>die-attach handle</strong>: the die is dropped with its back side flat on
@@ -1786,17 +1788,12 @@ add one named after that row, with its values — one per row, even where two ro
 </ul>
 <h3 id="layout-dielectric">A placed layout's dielectric</h3>
 <p>A placed layout's dielectrics are drawn, and they are <strong>part of the problem</strong> Palace and openEMS solve. A
-stackup gives a dielectric no outline, so each slab is cut to one of these, the first that exists:</p>
-<ul>
-<li>The layout's <strong>board outline</strong>, as with the die edge above.</li>
-<li>The <strong>outline of the copper directly above and below it</strong>, with gaps closed, holes filled and a margin of
-2 dielectric stack heights past the copper. This keeps the substrate in a coplanar line's gaps and beside
-every trace, where its fringing field runs.</li>
-<li>The bounding box of everything drawn, if there is no copper above or below it.</li>
-</ul>
-<p>The Messages note for the build says which one each slab took. Draw a board outline when the board's real
-edge matters. The whole rule, and how it differs from a planar setup's laterally infinite dielectric, is
-in <a href="em-3d.html#dielectrics">3D EM ▸ How far the dielectric reaches</a>.</p>
+stackup gives a dielectric no outline, so every slab is cut to the layout's <strong>board outline</strong>, as with the
+die edge above, or, with no outline, to <strong>one rectangle round everything the layout draws</strong>, the same for
+every slab.</p>
+<p>The Messages note for the build says which. Draw a board outline when the board is bigger than its copper.
+The whole rule, and how it differs from a planar setup's laterally infinite dielectric, is in
+<a href="em-3d.html#dielectrics">3D EM ▸ How far the dielectric reaches</a>.</p>
 <h2 id="wires">Bond wires</h2>
 <p><strong>W</strong> (or <strong>Shift+A W</strong>, or <em>3D ▸ Draw ▸ Wire</em>; <strong>W</strong> again puts the tool away). A wire runs between two metal objects: click the one it starts on
 (any face — it lands on that object's <strong>top</strong>, above the point clicked), then the one it ends on, then move

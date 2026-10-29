@@ -159,7 +159,7 @@ internal static class ExplainEm3d
         var stated = setup.AirBox;
         // Designer feedback round 11 — every face says how far it stands from the content, and where that distance came from:
         // a face that stated only its boundary used to read "setup", which hid that its padding was the default's.
-        var (contentLo, contentHi) = ContentBounds(p);
+        var (contentLo, contentHi) = Em3dGenerator.ContentBounds(p);
         var (defaultPadM, defaultBasis) = Em3dGenerator.DefaultPadding(setup, p.Frequency.StartHz,
             Math.Max(Math.Max(contentHi.X - contentLo.X, contentHi.Y - contentLo.Y), contentHi.Z - contentLo.Z));
         string Mm(double m) => (m * 1e3).ToString("G4", CultureInfo.InvariantCulture) + " mm";
@@ -323,23 +323,6 @@ internal static class ExplainEm3d
     }
 
     /// <summary>brief-em3d-22 R-em3d22-2b — the terminals, the ground and what floats.</summary>
-    /// <summary>The bound of what the air box pads round: every solid but the generator's air above the stack, and every sheet.</summary>
-    private static (Point3 Lo, Point3 Hi) ContentBounds(Em3dProblem p)
-    {
-        // The .cem generator's own air solid is built TO the box, so it is not content; a drawn air object in a .c3d is.
-        var b = p.Solids.Where(s => s.Name != Em3dGenerator.AirSolidName).Select(s => Em3dProblem.Bounds(s.Primitive))
-                 .Concat(p.Sheets.Select(s =>
-                 {
-                     var w = s.Outline.Select(s.World).ToList();
-                     return (X0: w.Min(q => q.X), Y0: w.Min(q => q.Y), Z0: w.Min(q => q.Z),
-                             X1: w.Max(q => q.X), Y1: w.Max(q => q.Y), Z1: w.Max(q => q.Z));
-                 }))
-                 .Concat(p.CylinderSheets.Select(s => s.WorldBounds())).ToList();      // brief-sar-8b
-        if (b.Count == 0) return (p.Boundary.Min, p.Boundary.Max);
-        return (new Point3(b.Min(q => q.X0), b.Min(q => q.Y0), b.Min(q => q.Z0)),
-                new Point3(b.Max(q => q.X1), b.Max(q => q.Y1), b.Max(q => q.Z1)));
-    }
-
     private static Em3dStaticJson? Static(Em3dProblem p, EmSetup setup)
     {
         if (!p.IsStatic) return null;

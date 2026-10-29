@@ -815,7 +815,7 @@ internal static class DocumentSchema
             are named <instance>/<object>, an array element's <instance>[i,j,k]/<object>; the array
             pitch is in this document's frame. Only geometry comes in: a placed cell's ports, setups
             and face boundaries are ignored. A placed LAYOUT is made 3D through its OWN technology,
-            the bottom of its stackup at the instance's z, its slabs and ground plane bounded by its
+            the bottom of its stackup at the instance's z, its slabs bounded by its
             board outline (else by its drawn extent). Layout instancing's same-technology rule does
             not apply here — it exists because layouts match layers by number, and a 3D view matches
             nothing by layer: every instance is metres and named materials before it arrives. Two

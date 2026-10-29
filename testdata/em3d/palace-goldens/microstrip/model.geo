@@ -9,10 +9,10 @@ e = 0.001;
 
 // ---- solids, in construction order -------------------------------------------------------
 // RO4350: Dielectric, RO4350B, order 1
-v = newv; Box(v) = {-37474.05725, -38024.05725, 35, 84948.1145, 76048.1145, 508};
+v = newv; Box(v) = {-10000, -10550, 35, 30000, 21100, 508};
 s0[] = {v};
 // air: Air, Air, order 2
-v = newv; Box(v) = {-37474.05725, -38024.05725, 543, 84948.1145, 76048.1145, 37509.05725};
+v = newv; Box(v) = {-10000, -10550, 543, 30000, 21100, 10035};
 s1[] = {v};
 // Top Copper (1 oz)/1: Conductor, Copper, order 3
 cl[] = {};
@@ -37,7 +37,7 @@ s2[] = {ex[1]};
 s1[] = BooleanDifference{ Volume{s1[]}; Delete; }{ Volume{s2[]}; };
 
 // ---- the air box, and the background: what no solid claims inside it --------------------
-bx = newv; Box(bx) = {-37474.05725, -38024.05725, 35, 84948.1145, 76048.1145, 38017.05725};
+bx = newv; Box(bx) = {-10000, -10550, 35, 30000, 21100, 10543};
 bg[] = BooleanDifference{ Volume{bx}; Delete; }{ Volume{s0[], s1[], s2[]}; };
 // Conductors are voids: their surfaces carry Palace's conductivity boundary.
 Recursive Delete { Volume{s2[]}; }
@@ -82,27 +82,27 @@ claimed[] = {};
 
 // ---- surfaces, recovered by what circuitRF placed; each face claimed once ------------------
 // air box xmin
-f0[] = Surface In BoundingBox{-37474.05725 - e, -38024.05725 - e, 35 - e, -37474.05725 + e, 38024.05725 + e, 38052.05725 + e};
+f0[] = Surface In BoundingBox{-10000 - e, -10550 - e, 35 - e, -10000 + e, 10550 + e, 10578 + e};
 f0[] -= claimed[];
 claimed[] += f0[];
 // air box xmax
-f1[] = Surface In BoundingBox{47474.05725 - e, -38024.05725 - e, 35 - e, 47474.05725 + e, 38024.05725 + e, 38052.05725 + e};
+f1[] = Surface In BoundingBox{20000 - e, -10550 - e, 35 - e, 20000 + e, 10550 + e, 10578 + e};
 f1[] -= claimed[];
 claimed[] += f1[];
 // air box ymin
-f2[] = Surface In BoundingBox{-37474.05725 - e, -38024.05725 - e, 35 - e, 47474.05725 + e, -38024.05725 + e, 38052.05725 + e};
+f2[] = Surface In BoundingBox{-10000 - e, -10550 - e, 35 - e, 20000 + e, -10550 + e, 10578 + e};
 f2[] -= claimed[];
 claimed[] += f2[];
 // air box ymax
-f3[] = Surface In BoundingBox{-37474.05725 - e, 38024.05725 - e, 35 - e, 47474.05725 + e, 38024.05725 + e, 38052.05725 + e};
+f3[] = Surface In BoundingBox{-10000 - e, 10550 - e, 35 - e, 20000 + e, 10550 + e, 10578 + e};
 f3[] -= claimed[];
 claimed[] += f3[];
 // air box zmin
-f4[] = Surface In BoundingBox{-37474.05725 - e, -38024.05725 - e, 35 - e, 47474.05725 + e, 38024.05725 + e, 35 + e};
+f4[] = Surface In BoundingBox{-10000 - e, -10550 - e, 35 - e, 20000 + e, 10550 + e, 35 + e};
 f4[] -= claimed[];
 claimed[] += f4[];
 // air box zmax
-f5[] = Surface In BoundingBox{-37474.05725 - e, -38024.05725 - e, 38052.05725 - e, 47474.05725 + e, 38024.05725 + e, 38052.05725 + e};
+f5[] = Surface In BoundingBox{-10000 - e, -10550 - e, 10578 - e, 20000 + e, 10550 + e, 10578 + e};
 f5[] -= claimed[];
 claimed[] += f5[];
 // port/1

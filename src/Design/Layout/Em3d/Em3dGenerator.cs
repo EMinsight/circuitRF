@@ -116,8 +116,9 @@ public static class Em3dGenerator
     /// <summary>
     /// <b>R-em3d3-6a — the default air-box padding, as a fraction of the LONGEST free-space
     /// wavelength in the band</b> (c / the lowest non-zero frequency), on the four lateral faces and
-    /// the top. An eighth: far enough that a first-order absorbing face sees a field that has mostly
-    /// decayed, near enough that the air is not most of the mesh. A backend may ENLARGE the box
+    /// the top, and never more than the structure's largest extent (<see cref="DefaultPadding"/>). An
+    /// eighth: far enough that a first-order absorbing face sees a field that has mostly decayed, near
+    /// enough that the air is not most of the mesh. A backend may ENLARGE the box
     /// (Palace's absorbing face wants more room than openEMS's PML) and says so when it does; it
     /// never shrinks it. A <c>.cem</c> overrides any face with <c>AirBox</c>.
     /// </summary>
@@ -1280,9 +1281,31 @@ public static class Em3dGenerator
         if (setup.IsStatic3D)
             return (Math.Max(largestExtentM, 1e-6), "the structure's largest extent, since a static solve has no wavelength");
         bool radiating = setup.RadiationPattern && setup.Problem3D == Em3dProblemType.Driven;
-        return radiating
-            ? (PatternPaddingFractionOfLongestWavelength * C0 / fMin, $"λ/4 at {Hz(fMin)}, the sweep's lowest frequency, since a radiation pattern is asked for")
-            : (DefaultPaddingFractionOfLongestWavelength * C0 / fMin, $"λ/8 at {Hz(fMin)}, the sweep's lowest frequency");
+        if (radiating)
+            return (PatternPaddingFractionOfLongestWavelength * C0 / fMin, $"λ/4 at {Hz(fMin)}, the sweep's lowest frequency, since a radiation pattern is asked for");
+        // A structure that does not radiate keeps its field within about its own size, as a static solve does: λ/8 of a
+        // low first frequency round a board a few millimetres across was a box of tens of gigabytes, nearly all of it air.
+        double eighth = DefaultPaddingFractionOfLongestWavelength * C0 / fMin;
+        return largestExtentM > 0 && largestExtentM < eighth
+            ? (largestExtentM, $"the structure's largest extent, less than λ/8 at {Hz(fMin)}")
+            : (eighth, $"λ/8 at {Hz(fMin)}, the sweep's lowest frequency");
+    }
+
+    /// <summary>The bound of what the air box pads round: every solid but the generator's air above the stack, and every
+    /// sheet. The .cem generator's own air solid is built TO the box, so it is not content; a drawn air object in a .c3d is.</summary>
+    public static (Point3 Lo, Point3 Hi) ContentBounds(Em3dProblem p)
+    {
+        var b = p.Solids.Where(s => s.Name != AirSolidName).Select(s => Em3dProblem.Bounds(s.Primitive))
+                 .Concat(p.Sheets.Select(s =>
+                 {
+                     var w = s.Outline.Select(s.World).ToList();
+                     return (X0: w.Min(q => q.X), Y0: w.Min(q => q.Y), Z0: w.Min(q => q.Z),
+                             X1: w.Max(q => q.X), Y1: w.Max(q => q.Y), Z1: w.Max(q => q.Z));
+                 }))
+                 .Concat(p.CylinderSheets.Select(s => s.WorldBounds())).ToList();      // brief-sar-8b
+        if (b.Count == 0) return (p.Boundary.Min, p.Boundary.Max);
+        return (new Point3(b.Min(q => q.X0), b.Min(q => q.Y0), b.Min(q => q.Z0)),
+                new Point3(b.Max(q => q.X1), b.Max(q => q.Y1), b.Max(q => q.Z1)));
     }
 
     private static string Hz(double f) => f >= 1e9 ? Fmt(f / 1e9) + " GHz" : f >= 1e6 ? Fmt(f / 1e6) + " MHz" : Fmt(f / 1e3) + " kHz";
