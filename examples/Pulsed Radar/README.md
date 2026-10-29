@@ -46,7 +46,8 @@ One envelope run of 3 ms holds three whole pulse periods: **about 105 s**, as on
 Messages pane says what it will show: the slowest memory, the drain-lag state's 1 ms emission, needs
 about 5 ms to settle, so the run shows **the first pulse from cold**, not a settled train. Simulate opens **PulsedPA_pCW.cdd**: the output power
 over the run, the junction's temperature rise over the same time, the first pulse's top zoomed, and the
-per-pulse table.
+per-pulse table. The output power is measured at `Iout`, an IProbe in series with the 50 Ω load, and the
+pulse figures are its rows; the run also records the voltage at every labeled net, `tj` among them.
 
 At the 34 dBm design drive (pulse-top available power):
 
@@ -66,7 +67,7 @@ At the 34 dBm design drive (pulse-top available power):
   quiescent value: the drain-lag state captured at the pulse's peak and emits over a millisecond, so the
   quiescent current is lower until it does. That is current collapse, and it is why pulse 1 differs from
   pulses 2 and 3.
-- `Pin_avg_dBm`, `Pout_avg_dBm` and `DE_pct` (50.4 %) are averages over the whole 3 ms run, off-time
+- `Pin_avg_dBm`, and `Pavg_dBm` and `DE_pct` (50.4 %) at `Iout`, are averages over the whole 3 ms run, off-time
   included. The run ends a whole period after the last pulse's rising edge, so the supply has recharged the
   storage capacitor that pulse drew on: stopped just after a pulse, `DE_pct` counts the capacitor's share of
   the pulse as free and reads high.

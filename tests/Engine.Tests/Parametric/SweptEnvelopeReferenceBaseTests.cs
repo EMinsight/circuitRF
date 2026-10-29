@@ -29,7 +29,8 @@ public sealed class SweptEnvelopeReferenceBaseTests : IDisposable
         var (lib, tb) = new CnlReader().Read("""
             Pin = 0
             MOD_Source:S1 n1 0 Fc=1e9 Pavg=Pin Z=50 Carrier[1]="CW;Off=0;P=0"
-            SnP:X1 n1 0 NumPorts=1 File="data/load.s1p"
+            IProbe:Iout n1 m
+            SnP:X1 m 0 NumPorts=1 File="data/load.s1p"
             analysis ENV1 type=env Stop=40e-6 Accuracy=draft Probes="n1" Segments=2 Warmup=1e-6
             analysis SW1 type=parametric_sweep Var=Pin Values=0,3 Inner=ENV1
             """);
@@ -39,6 +40,6 @@ public sealed class SweptEnvelopeReferenceBaseTests : IDisposable
 
         Assert.Equal(2.0, ds["__EnvSegments"].RealValues[0]);
         // 0 and 3 dBm available into the matched load the file describes.
-        Assert.Equal([0.0, 3.0], ds["Pout_avg_dBm"].RealValues.Select(v => Math.Round(v, 2)));
+        Assert.Equal([0.0, 3.0], ds["Pavg_dBm"].RealValues.Select(v => Math.Round(v, 2)));
     }
 }

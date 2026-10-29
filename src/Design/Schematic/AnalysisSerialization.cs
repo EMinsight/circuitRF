@@ -108,6 +108,7 @@ public sealed class CschAnalysis
     public string?   EnvStop           { get; set; }
     public string?   EnvStep           { get; set; }
     public string?   EnvAccuracy       { get; set; }
+    /// <summary>Retired (brief ENV-MEAS-3): read so an old file's nodes join the recorded voltages, never written.</summary>
     public string?   EnvProbes         { get; set; }
     /// <summary>Retired (brief ENV-MEAS-1): read so an old file's value reaches the run's warning, never written.</summary>
     public string?   EnvZmeas          { get; set; }
@@ -337,7 +338,7 @@ public static class AnalysisSerialization
         EnvelopeAnalysis env => new CschAnalysis
         {
             Type = "env", Name = env.Name, Enabled = env.Enabled,
-            EnvStop = env.StopExpr, EnvStep = env.StepExpr, EnvAccuracy = env.Accuracy, EnvProbes = env.Probes,
+            EnvStop = env.StopExpr, EnvStep = env.StepExpr, EnvAccuracy = env.Accuracy,
             EnvSegments = env.SegmentsExpr, EnvWarmup = env.WarmupExpr, EnvStart = env.StartExpr,
             EnvSaveWaveforms = env.SaveWaveforms, MaxHarmonicExpr = env.MaxHarmExpr, MaxMixOrderExpr = env.MaxMixOrderExpr,
             EnvMode = env.Envelope.Equals("auto", StringComparison.OrdinalIgnoreCase) ? null : env.Envelope,

@@ -13,7 +13,9 @@ namespace CircuitRF.Cli;
 /// <c>circuitrf env &lt;file.cnl|.csch&gt; [-a name] [--set var=expr] [--stop t] [--accuracy draft|standard|fine]
 /// [--segments n|auto] [--warmup t] [--probes a,b] [--all] [-o out.{npy,mat,txt}]</c> — runs the netlist's envelope
 /// (<c>type=env</c>) analysis. The modulated stimulus is the circuit's MOD_Source; every override replaces a field
-/// of the directive, as for <c>hb</c>.
+/// of the directive, as for <c>hb</c>. The run records every labeled net's voltage and every IProbe's power;
+/// <c>--probes</c> is the retired <c>Probes</c> setting, kept so an existing command line still records the nodes it
+/// names (brief ENV-MEAS-3 D2).
 /// </summary>
 internal static class EnvelopeVerb
 {
@@ -56,7 +58,8 @@ internal static class EnvelopeVerb
             int code = JsonRun.Fail(CliDiagnostics.InputRequired("env", ".cnl"));
             Console.Error.WriteLine("Usage: circuitrf env <file.cnl|.csch> [-a name] [--set var=expr] [--stop t] [--step t]");
             Console.Error.WriteLine("                     [--accuracy draft|standard|fine] [--envelope auto|single|lattice] [--segments n|auto]");
-            Console.Error.WriteLine("                     [--warmup t] [--probes a,b] [--all] [-o out.{npy,mat,txt}]");
+            Console.Error.WriteLine("                     [--warmup t] [--all] [-o out.{npy,mat,txt}]");
+            Console.Error.WriteLine("  --probes a,b is deprecated: the nodes it names join the labeled nets, whose voltages are recorded.");
             return code;
         }
         JsonRun.InputPath = input;
@@ -169,30 +172,47 @@ internal static class EnvelopeVerb
         return false;
     }
 
-    /// <summary>One line per sweep point: the swept value, Pout, Gt and the worst ACPR1/ACPR2 at the last probe.</summary>
+    /// <summary>The IProbes carrying RF: those whose gain is a number somewhere in <paramref name="gt"/>
+    /// (<c>Gt_dB</c>, branch axis last). A supply or bias probe is NaN there and has nothing to print.</summary>
+    private static int[] RfBranches(DataCube? gt, int nBranch)
+    {
+        if (gt is null) return [];
+        int outer = gt.RealValues.Length / Math.Max(1, nBranch);
+        return [.. Enumerable.Range(0, nBranch).Where(b => Enumerable.Range(0, outer).Any(o => double.IsFinite(gt.RealValues[o * nBranch + b])))];
+    }
+
+    /// <summary>Per IProbe carrying RF, one line per sweep point: the swept value, Pavg, Gt and the worst ACPR1/ACPR2.</summary>
     private static void PrintSweep(DataSet ds, ParametricSweepAnalysis sweep)
     {
         var inv = CultureInfo.InvariantCulture;
         if (ds.Cubes.TryGetValue("PulseDroop_dB", out var droop)) { PrintPulseSweep(ds, sweep, droop); return; }
-        if (!ds.Cubes.TryGetValue("ACLR", out var a)) { Console.WriteLine("(no ACLR cube)"); return; }
-        var ax = a.Axes;
-        var vals = ax[0].Values;
-        int nNode = ax[1].Values.Length, nCar = ax[2].Values.Length, nMet = ax[3].Values.Length;
-        Console.WriteLine($"Sweep {sweep.Name} over {sweep.SweepVarName}:   (last probe = {ax[1].Labels![nNode - 1]}, worst of carriers)");
-        Console.WriteLine("  value        Pout dBm   Gt dB    ACPR1 dBc   ACPR2 dBc");
-        var pout = ds.Cubes.TryGetValue("Pout_avg_dBm", out var po) ? po.RealValues : null;
-        var gt = ds.Cubes.TryGetValue("Gt_dB", out var g) ? g.RealValues : null;
-        for (int i = 0; i < vals.Length; i++)
+        if (!ds.Cubes.TryGetValue("Gt_dB", out var gt)) { Console.WriteLine("(no IProbe: place one in series with a load to measure its power)"); return; }
+        var vals = gt.Axes[0].Values;
+        var branches = gt.Axes[^1].Labels!;
+        int nb = branches.Length;
+        var a = ds.Cubes.TryGetValue("ACLR", out var ac) ? ac : null;
+        var pavg = ds.Cubes.TryGetValue("Pavg_dBm", out var pa) ? pa.RealValues : null;
+        foreach (int b in RfBranches(gt, nb))
         {
-            double w1 = double.NegativeInfinity, w2 = double.NegativeInfinity;
-            for (int c = 0; c < nCar; c++)
+            Console.WriteLine($"Sweep {sweep.Name} over {sweep.SweepVarName} at IProbe {branches[b]}   (worst of carriers)");
+            Console.WriteLine("  value        Pavg dBm   Gt dB    ACPR1 dBc   ACPR2 dBc");
+            for (int i = 0; i < vals.Length; i++)
             {
-                int o = ((i * nNode + (nNode - 1)) * nCar + c) * nMet;
-                w1 = Math.Max(w1, Math.Max(a.RealValues[o + 1], a.RealValues[o + 2]));
-                w2 = Math.Max(w2, Math.Max(a.RealValues[o + 3], a.RealValues[o + 4]));
+                double w1 = double.NaN, w2 = double.NaN;
+                if (a is not null)
+                {
+                    int nCar = a.Axes[^2].Values.Length, nMet = a.Axes[^1].Values.Length;
+                    w1 = w2 = double.NegativeInfinity;
+                    for (int c = 0; c < nCar; c++)
+                    {
+                        int o = ((i * nb + b) * nCar + c) * nMet;
+                        w1 = Math.Max(w1, Math.Max(a.RealValues[o + 1], a.RealValues[o + 2]));
+                        w2 = Math.Max(w2, Math.Max(a.RealValues[o + 3], a.RealValues[o + 4]));
+                    }
+                }
+                Console.WriteLine(string.Format(inv, "  {0,-11:G5} {1,8:0.00} {2,7:0.00} {3,10:0.00} {4,10:0.00}",
+                    vals[i], pavg?[i * nb + b] ?? double.NaN, gt.RealValues[i * nb + b], w1, w2));
             }
-            Console.WriteLine(string.Format(inv, "  {0,-11:G5} {1,8:0.00} {2,7:0.00} {3,10:0.00} {4,10:0.00}",
-                vals[i], pout?[i] ?? double.NaN, gt?[i] ?? double.NaN, w1, w2));
         }
     }
 
@@ -203,42 +223,74 @@ internal static class EnvelopeVerb
         Console.WriteLine(string.Format(inv, "  f0 {0:0.######} GHz   step {1:0.###} ns   signal rate {2:0.##} MS/s   segments {3}   wall {4:0.##} s   Newton/step {5:0.##}",
             S(ds, "__EnvF0_Hz") / 1e9, S(ds, "__EnvStep_s") * 1e9, S(ds, "__EnvSignalRate_Hz") / 1e6, S(ds, "__EnvSegments"),
             S(ds, "__EnvWall_s"), S(ds, "__EnvNewtonPerStep")));
-        if (ds.Cubes.TryGetValue("ACLR", out var a))
+        foreach (var k in new[] { "Pin_avg_dBm", "Pdc_W" })
+            if (ds.Cubes.ContainsKey(k)) Console.WriteLine(string.Format(inv, "  {0,-18} {1:0.####}", k, S(ds, k)));
+        if (!ds.Cubes.TryGetValue("Gt_dB", out var gt))
         {
-            var nodes = a.Axes[0].Labels!; var car = a.Axes[1].Labels!;
-            Console.WriteLine("  ACLR (dBc)            Pch dBm   ACPR1L   ACPR1U   ACPR2L   ACPR2U");
-            for (int p = 0; p < nodes.Length; p++)
-                for (int c = 0; c < car.Length; c++)
+            Console.WriteLine("  (no IProbe: place one in series with a load to measure its power)");
+        }
+        else
+        {
+            var branches = gt.Axes[0].Labels!;
+            double At(string cube, int b) => ds.Cubes.TryGetValue(cube, out var c) ? c.RealValues[b] : double.NaN;
+            Console.WriteLine("  IProbe               Pavg dBm    Gt dB    DE %   NMSE dB   PAPR dB");
+            for (int b = 0; b < branches.Length; b++)
+                Console.WriteLine(string.Format(inv, "  {0,-20} {1,8:0.00} {2,8:0.00} {3,7:0.00} {4,9:0.00} {5,9:0.00}",
+                    branches[b], At("Pavg_dBm", b), At("Gt_dB", b), At("DE_pct", b), At("NMSE_dB", b), At("PAPR_dB", b)));
+            var rf = RfBranches(gt, branches.Length);
+            if (ds.Cubes.TryGetValue("ACLR", out var a))
+            {
+                var car = a.Axes[1].Labels!;
+                Console.WriteLine("  ACLR (dBc)            Pch dBm   ACPR1L   ACPR1U   ACPR2L   ACPR2U");
+                foreach (int p in rf)
+                    for (int c = 0; c < car.Length; c++)
+                    {
+                        int o = (p * car.Length + c) * 5;
+                        Console.WriteLine(string.Format(inv, "  {0,-20} {1,8:0.00} {2,8:0.00} {3,8:0.00} {4,8:0.00} {5,8:0.00}   {6}",
+                            branches[p], a.RealValues[o], a.RealValues[o + 1], a.RealValues[o + 2], a.RealValues[o + 3], a.RealValues[o + 4], car[c]));
+                    }
+            }
+            if (ds.Cubes.TryGetValue("PulseDroop_dB", out var droop))
+            {
+                // a pulsed-CW source: the pulse figures stand where ACLR does for a modulated one
+                int n = droop.Axes[1].Values.Length;
+                var top = ds.Cubes["PulseTop_dBm"].RealValues; var ph = ds.Cubes["PulsePhaseDroop_deg"].RealValues;
+                var rise = ds.Cubes["PulseRise_s"].RealValues; var fall = ds.Cubes["PulseFall_s"].RealValues;
+                foreach (int b in rf)
                 {
-                    int o = (p * car.Length + c) * 5;
-                    Console.WriteLine(string.Format(inv, "  {0,-20} {1,8:0.00} {2,8:0.00} {3,8:0.00} {4,8:0.00} {5,8:0.00}   {6}",
-                        nodes[p], a.RealValues[o], a.RealValues[o + 1], a.RealValues[o + 2], a.RealValues[o + 3], a.RealValues[o + 4], car[c]));
+                    Console.WriteLine($"  at IProbe {branches[b]}: pulse   top dBm   droop dB   phase droop deg   rise ns   fall ns");
+                    for (int i = 0; i < n; i++)
+                    {
+                        int o = b * n + i;
+                        Console.WriteLine(string.Format(inv, "  {0,5} {1,9:0.000} {2,10:0.0000} {3,17:0.000} {4,9:0.0} {5,9:0.0}",
+                            i + 1, top[o], droop.RealValues[o], ph[o], rise[o] * 1e9, fall[o] * 1e9));
+                    }
+                    Console.WriteLine(string.Format(inv, "  pulse to pulse {0:0.####} dB, {1:0.####} deg", At("PulseToPulse_dB", b), At("PulseToPulse_deg", b)));
                 }
+            }
         }
-        if (ds.Cubes.TryGetValue("PulseDroop_dB", out var droop))
-        {
-            // a pulsed-CW source: the pulse figures stand where ACLR does for a modulated one
-            Console.WriteLine("  pulse   top dBm   droop dB   phase droop deg   rise ns   fall ns");
-            var top = ds.Cubes["PulseTop_dBm"].RealValues; var ph = ds.Cubes["PulsePhaseDroop_deg"].RealValues;
-            var rise = ds.Cubes["PulseRise_s"].RealValues; var fall = ds.Cubes["PulseFall_s"].RealValues;
-            for (int i = 0; i < droop.RealValues.Length; i++)
-                Console.WriteLine(string.Format(inv, "  {0,5} {1,9:0.000} {2,10:0.0000} {3,17:0.000} {4,9:0.0} {5,9:0.0}",
-                    i + 1, top[i], droop.RealValues[i], ph[i], rise[i] * 1e9, fall[i] * 1e9));
-        }
-        foreach (var k in new[] { "PulseToPulse_dB", "PulseToPulse_deg", "Pin_avg_dBm", "Pout_avg_dBm", "Gt_dB", "NMSE_dB", "DE_pct", "Pdc_W", "__EnvSeamError", "__EnvTangentError" })
+        foreach (var k in new[] { "__EnvSeamError", "__EnvTangentError" })
             if (ds.Cubes.ContainsKey(k)) Console.WriteLine(string.Format(inv, "  {0,-18} {1:0.####}", k.TrimStart('_'), S(ds, k)));
     }
 
-    /// <summary>One line per sweep point of a pulsed-CW run: the swept value, then each pulse's droop and top.</summary>
+    /// <summary>Per IProbe carrying RF, one line per sweep point of a pulsed-CW run: the swept value, then each pulse's
+    /// droop and top.</summary>
     private static void PrintPulseSweep(DataSet ds, ParametricSweepAnalysis sweep, DataCube droop)
     {
         var inv = CultureInfo.InvariantCulture;
         var vals = droop.Axes[0].Values;
-        int n = droop.Axes[^1].Values.Length;
+        var branches = droop.Axes[^2].Labels!;
+        int nb = branches.Length, n = droop.Axes[^1].Values.Length;
         var top = ds.Cubes.TryGetValue("PulseTop_dBm", out var t) ? t.RealValues : null;
-        Console.WriteLine($"Sweep {sweep.Name} over {sweep.SweepVarName}:   droop dB (top dBm) of pulses 1..{n}");
-        for (int i = 0; i < vals.Length; i++)
-            Console.WriteLine(string.Format(inv, "  {0,-11:G5} ", vals[i]) + string.Join("  ", Enumerable.Range(0, n).Select(j =>
-                string.Format(inv, "{0:0.0000} ({1:0.00})", droop.RealValues[i * n + j], top?[i * n + j] ?? double.NaN))));
+        foreach (int b in RfBranches(ds.Cubes.TryGetValue("Gt_dB", out var gt) ? gt : null, nb))
+        {
+            Console.WriteLine($"Sweep {sweep.Name} over {sweep.SweepVarName} at IProbe {branches[b]}:   droop dB (top dBm) of pulses 1..{n}");
+            for (int i = 0; i < vals.Length; i++)
+                Console.WriteLine(string.Format(inv, "  {0,-11:G5} ", vals[i]) + string.Join("  ", Enumerable.Range(0, n).Select(j =>
+                {
+                    int o = (i * nb + b) * n + j;
+                    return string.Format(inv, "{0:0.0000} ({1:0.00})", droop.RealValues[o], top?[o] ?? double.NaN);
+                })));
+        }
     }
 }

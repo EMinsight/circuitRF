@@ -2139,7 +2139,16 @@ namespace RfCore.Export
         /// <c>nominal</c> and the corners — so its count is the evaluations one point costs (brief-yield-7 R-ya7-5).
         /// Null without corners, or where <see cref="Optimize"/> is.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<string>? OptimizeAt = null);
+        IReadOnlyList<string>? OptimizeAt = null,
+        /// <summary>What an envelope run will record (brief ENV-MEAS-3): the nets whose voltages it keeps and the
+        /// IProbes it measures power at. Null for any other kind, or when the design does not elaborate.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainEnvelopeRecordsJson? Records = null);
+
+    /// <summary><c>explain --analysis</c>'s answer for an envelope run: every labeled net (with an old file's retired
+    /// <c>Probes</c> nodes) in the order the node axis carries them, and every IProbe in the order of the branch
+    /// axis.</summary>
+    public sealed record ExplainEnvelopeRecordsJson(IReadOnlyList<string> Nets, IReadOnlyList<string> IProbes);
 
     /// <summary>
     /// <c>explain --analysis</c>'s answer to "what would the NDF do here" — the way to see a

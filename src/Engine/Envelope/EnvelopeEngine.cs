@@ -59,7 +59,8 @@ public sealed record EnvelopeParams
     public int MaxHarm { get; init; } = 5;
     public int FftOverSample { get; init; } = 1;
     public double Tol { get; init; } = 1e-6;
-    /// <summary>Nodes whose envelopes are stored (V cube) and measured. Empty = every MOD_Source node.</summary>
+    /// <summary>Nodes an old file's retired <c>Probes</c> list names: they join the recorded voltages, which are every
+    /// labeled net (brief ENV-MEAS-3).</summary>
     public string[] Probes { get; init; } = Array.Empty<string>();
     /// <summary>Signal-record offset of t = 0 (s) — lets a segment start mid-record.</summary>
     public double StartS { get; init; }
@@ -306,7 +307,7 @@ public sealed class EnvelopeEngine
         Mark("HB start");
 
         // probes and supplies
-        var probeNodes = ResolveProbes(p, srcEcs);
+        var probeNodes = RecordedNodes(_nl, p.Probes, srcEcs);
         static int BranchOf(ComponentModel m) => m switch { VdcModel v => v.LastBranchIndex, ToneSourceModel t => t.LastBranchIndex, _ => -1 };
         var supplies = _nl.Components.Where(c => BranchOf(c.Model) >= 0 &&
                                                  c.Parameters.TryGetValue("Vdc", out var vv) && vv.Kind == Core.Expressions.ValueKind.Real && vv.AsReal() != 0).ToArray();
@@ -544,19 +545,26 @@ public sealed class EnvelopeEngine
 
     // ── helpers ──────────────────────────────────────────────────────────
 
-    private (string name, int node)[] ResolveProbes(EnvelopeParams p, ElaboratedComponent[] srcEcs)
+    /// <summary>
+    /// The node voltages a run records (brief ENV-MEAS-3): every labeled net (<see cref="NodeMap.LabeledNames"/>, the set
+    /// harmonic balance marks), and every node an old file's retired <c>Probes</c> list names, in ascending node-index
+    /// order as HB emits them. A netlist that labels nothing records its MOD_Source nodes.
+    /// </summary>
+    public static (string name, int node)[] RecordedNodes(ElaboratedNetlist nl, string[] listed, ElaboratedComponent[] srcEcs)
     {
-        var list = new List<(string, int)>();
-        IEnumerable<string> names = p.Probes.Length > 0 ? p.Probes : srcEcs.Select(e => _nl.Nodes.NameOf(e.Nodes[0]));
-        foreach (var nm in names)
+        var set = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var nm in nl.Nodes.LabeledNames)
+            if (nl.Nodes.TryGetIndex(nm, out int n) && n > 0) set[nm] = n;
+        foreach (var nm in listed)
         {
-            int idx = -1;
-            for (int n = 1; n < _nl.Nodes.Count; n++)
-                if (string.Equals(_nl.Nodes.NameOf(n), nm, StringComparison.Ordinal)) { idx = n; break; }
-            if (idx < 0) throw new InvalidOperationException($"envelope probe '{nm}' is not a node of the circuit");
-            list.Add((nm, idx));
+            if (!nl.Nodes.TryGetIndex(nm, out int n) || n <= 0)
+                throw new InvalidOperationException($"envelope probe '{nm}' is not a node of the circuit");
+            set[nm] = n;
         }
-        return list.ToArray();
+        if (set.Count == 0)
+            foreach (var e in srcEcs)
+                if (e.Nodes[0] > 0) set[nl.Nodes.NameOf(e.Nodes[0])] = e.Nodes[0];
+        return [.. set.OrderBy(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => (kv.Key, kv.Value))];
     }
 
     /// <summary>

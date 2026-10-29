@@ -26,7 +26,8 @@ public sealed class EnvelopeConvergenceTests
         L:L2 VDD Vout L=100 nH
         Vdc:V2 VDD 0 Vdc=8 V
         C:C2 Vout n5 C=100 pF
-        R:RL n5 0 R=50 Ohm
+        IProbe:Iout n5 o
+        R:RL o 0 R=50 Ohm
         analysis ENV1 type=env Stop={stopS} Accuracy={accuracy} MaxHarm=5 Probes="Vin,Vout" Segments=1 Warmup=0
         """;
 
@@ -45,7 +46,7 @@ public sealed class EnvelopeConvergenceTests
         // Stopped at step 77 (t = 78 ns) on the trap-state and thermal rows before the line search.
         var (ds, notes) = Run(Bench(20, "fine", 0.15e-6));
 
-        Assert.True(double.IsFinite(ds["Pout_avg_dBm"].RealValues[0]));
+        Assert.True(double.IsFinite(ds["Pavg_dBm"].RealValues[0]));
         Assert.Empty(notes);
     }
 
@@ -55,7 +56,7 @@ public sealed class EnvelopeConvergenceTests
         // At 38 dBm a standard step near 0.3 µs does not converge even with the line search.
         var (ds, notes) = Run(Bench(38, "standard", 0.35e-6));
 
-        Assert.True(double.IsFinite(ds["Pout_avg_dBm"].RealValues[0]));
+        Assert.True(double.IsFinite(ds["Pavg_dBm"].RealValues[0]));
         Assert.Contains(notes, n => n.Contains("sub-steps", StringComparison.Ordinal));
     }
 
@@ -66,7 +67,8 @@ public sealed class EnvelopeConvergenceTests
         var (lib, tb) = new CnlReader().Read("""
             Pin = 0
             MOD_Source:S1 n1 0 Fc=1e9 Pavg=Pin Z=50 Carrier[1]="CW;Off=0;P=0"
-            SDD:X1 n1 0 I[1,0]=_v1/50 + 1e-4*_v1^3
+            IProbe:Iout n1 m
+            SDD:X1 m 0 I[1,0]=_v1/50 + 1e-4*_v1^3
             analysis ENV1 type=env Stop=2e-6 Accuracy=draft Probes="n1" Segments=1 Warmup=0 Tol="if(Pin>1, 1e-300, 1e-6)"
             analysis SW1 type=parametric_sweep Var=Pin Values=0,3 Inner=ENV1
             """);
@@ -75,7 +77,7 @@ public sealed class EnvelopeConvergenceTests
         var ds = ParametricSweepEngine.Run(tb.Analyses.OfType<ParametricSweepAnalysis>().Single(), lib, tb,
                                            diagnosticsInto: diag);
 
-        var pout = ds["Pout_avg_dBm"].RealValues;
+        var pout = ds["Pavg_dBm"].RealValues;
         Assert.True(double.IsFinite(pout[0]));
         Assert.True(double.IsNaN(pout[1]));
         Assert.Contains(diag.Warnings, w => w.Contains("Pin = 3", StringComparison.Ordinal));

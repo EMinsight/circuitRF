@@ -34,7 +34,8 @@ public sealed class EnvelopeCustomIqTests(ITestOutputHelper output) : IDisposabl
 
         var (lib, tb) = new CnlReader().Read("""
             MOD_Source:S1 in 0 Fc=1e9 Pavg=0 Z=50 Carrier[1]="FILE;File=iq/capture.txt;Fs=10MHz;Off=0;P=0;Seed=1"
-            R:RL in 0 R=50 Ohm
+            IProbe:Iout in o
+            R:RL o 0 R=50 Ohm
             analysis ENV1 type=env Stop=20e-6 Accuracy=draft MaxHarm=1 Probes="in" Segments=1
             """);
         ElaboratedNetlist Elaborate() => new Elaborator(lib) { BaseDirectory = _ws }.Elaborate(tb);

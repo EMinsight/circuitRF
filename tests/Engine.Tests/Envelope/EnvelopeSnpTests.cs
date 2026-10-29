@@ -89,7 +89,8 @@ public sealed class EnvelopeSnpTests(ITestOutputHelper output) : IDisposable
     private static string Filter(string file, string carriers, string env) => $"""
         MOD_Source:S1 in 0 Fc=1e9 Pavg=0 Z=50 Record=0.5e-3 {carriers}
         SnP:F1 in out 0 NumPorts=2 File="{file}"
-        R:RL out 0 R=50 Ohm
+        IProbe:Iout out o
+        R:RL o 0 R=50 Ohm
         analysis ENV1 type=env {env}
         """;
 
@@ -178,7 +179,7 @@ public sealed class EnvelopeSnpTests(ITestOutputHelper output) : IDisposable
         var yRef = Reference(src, fs, F0, null, f => s(f)[1, 0], y.Length);
         int nseg = Nseg(ds, [src], y.Length);
         var exact = Aclr(yRef, fs, nseg, src.Signal.Carriers[0].Spec);
-        var got = DsAclr(ds, "out", 0);
+        var got = DsAclr(ds, "Iout", 0);
         double worst = 0;
         for (int m = 0; m < 5; m++) worst = Math.Max(worst, Math.Abs(got[m] - exact[m]));
         double nmse = NmseDb(y, yRef);
@@ -269,7 +270,7 @@ public sealed class EnvelopeSnpTests(ITestOutputHelper output) : IDisposable
         {
             double fc = F0 + src.Signal.Carriers[c].OffsetHz;
             var yRef = Reference(src, fs, fc, [c], f => Rational(f)[1, 0], nm);
-            double exact = Aclr(yRef, fs, nseg, src.Signal.Carriers[c].Spec)[0], got = DsAclr(ds, "out", c)[0];
+            double exact = Aclr(yRef, fs, nseg, src.Signal.Carriers[c].Spec)[0], got = DsAclr(ds, "Iout", c)[0];
             output.WriteLine($"carrier {c}: Pch exact {exact:0.0000} dBm, engine {got:0.0000} dBm");
             Assert.True(Math.Abs(got - exact) < 0.05, $"carrier {c}: channel power {got:0.000} dBm against {exact:0.000} dBm");
         }
@@ -285,8 +286,9 @@ public sealed class EnvelopeSnpTests(ITestOutputHelper output) : IDisposable
             MOD_Source:S1 in 0 Fc=1e9 Pavg=0 Z=50 Record=0.5e-3 Carrier[1]="CW;Off=0;P=0"
             C:C1 in mid C=2 pF
             L:L1 mid out L=5 nH
-            R:RL out 0 R=50 Ohm
-            analysis ENV1 type=env Stop=2e-6 Accuracy=draft MaxHarm=1 Probes="out" Segments=1
+            IProbe:Iout out o
+            R:RL o 0 R=50 Ohm
+            analysis ENV1 type=env Stop=2e-6 Accuracy=draft MaxHarm=1 Segments=1
             """, out var lnl);
         Assert.False(lumped.Cubes.ContainsKey("__EnvSnpFit"));
         Assert.Empty(lnl.Notes);
@@ -341,7 +343,8 @@ public sealed class EnvelopeSnpTests(ITestOutputHelper output) : IDisposable
         var ds = Run($"""
             MOD_Source:S1 in 0 Fc=1e9 Pavg=0 Z=50 Record=0.5e-3 Carrier[1]="{Nr20}"
             {block}
-            R:RL out 0 R=50 Ohm
+            IProbe:Iout out o
+            R:RL o 0 R=50 Ohm
             {extra}
             analysis ENV1 type=env Stop={GateStop} Accuracy={Gate} MaxHarm=1 Probes="in,out" Segments=1 Warmup=2e-6
             """, out var nl);
@@ -363,7 +366,7 @@ public sealed class EnvelopeSnpTests(ITestOutputHelper output) : IDisposable
         var y = Envelope(ds, "out", 1);
         var yRef = Reference(src, fs, F0, null, S21, y.Length);
         var exact = Aclr(yRef, fs, Nseg(ds, [src], y.Length), src.Signal.Carriers[0].Spec);
-        var got = DsAclr(ds, "out", 0);
+        var got = DsAclr(ds, "Iout", 0);
         double worst = Enumerable.Range(0, 5).Max(m => Math.Abs(got[m] - exact[m]));
         double nmse = NmseDb(y, yRef);
         output.WriteLine($"exact Pch {exact[0]:0.0000} ACPR1 {exact[1]:0.000}/{exact[2]:0.000}; engine Pch {got[0]:0.0000} ACPR1 {got[1]:0.000}/{got[2]:0.000}; worst {worst:0.0000} dB, NMSE {nmse:0.0} dB");

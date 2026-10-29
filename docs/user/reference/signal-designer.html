@@ -1326,7 +1326,7 @@ the first sample of the record: in the off-time that is the quiescent point, so 
 cold.</p>
 <p><strong>Power is the pulse top.</strong> A pulsed-CW record is normalised to unit power on the flat top, so the
 source's <code>Pavg</code> is the pulse-top available power — the number a radar specification states — and
-<code>Pin_avg_dBm</code> and <code>Pout_avg_dBm</code> in the results stay averages over the whole run, off-time included. Harmonic balance
+<code>Pin_avg_dBm</code> and each IProbe's <code>Pavg_dBm</code> in the results stay averages over the whole run, off-time included. Harmonic balance
 and loadpull play a MOD_Source as a CW tone at <code>Pavg</code>, which for a pulse is the top: the steady state of
 a pulse that never ends.</p>
 <p><strong>Its bandwidth is its edges'.</strong> The faster edge sets the carrier's bandwidth (twice the band holding

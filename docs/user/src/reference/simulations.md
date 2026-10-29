@@ -156,8 +156,8 @@ Three things make long modulated runs practical:
 
   Products far from Fc are not reliable in a single envelope. IM3U moves 0.3 dB and IM5 moves 1–4 dB
   when only the envelope's centre frequency moves. The lattice result does not move (to 0.01 dB), so
-  the lattice is the reference. Both modes write the same `IMD` cube. The spectrum is one continuous
-  `PSD` either way, and shows every product of the baseband and fundamental zones.
+  the lattice is the reference. Both modes write the same `IMD` cube. The spectra (`VSD` and `PSD`)
+  are continuous either way, and show every product of the baseband and fundamental zones.
 - **Parallel in time.** The record is split into segments that run on all cores at once. Each segment
   starts a warm-up early from its own harmonic-balance point and discards it. The warm-up follows the
   circuit's slowest memory: five time constants of the slowest of a [ComposedFET](components.html#composedfet)'s
@@ -165,9 +165,9 @@ Three things make long modulated runs practical:
   capacitor), and never less than 5 µs. When that memory is too long to warm up in parallel, the run
   is one segment and the Messages pane says which part remembers how long; `Segments=N` splits it
   anyway. Once the warm-up is past the circuit's memory, the stitched result matches one sequential
-  run. Where the segments overlap, their disagreement relative to each probe's own level is reported
-  as the seam error (`__EnvSeamError`), and a run warns, naming the probe, when it is above 0.01 on a
-  circuit node. In a parametric sweep the points also run at the same time, up to one per core, and
+  run. Where the segments overlap, their disagreement relative to each recorded voltage's and IProbe
+  current's own level is reported as the seam error (`__EnvSeamError`), and a run warns, naming the
+  net or probe, when it is above 0.01 outside a device's internal states. In a parametric sweep the points also run at the same time, up to one per core, and
   share the cores with their segments.
 - **The step follows an accuracy preset.** *standard* (default) steps at 4× the signal's sample rate,
   where ACPR2 and the bias-node memory are converged on every measured case. *draft* (1×) is about
@@ -207,102 +207,110 @@ blocks are handled as follows.
 | MaxHarm | 5 | Harmonics of the fundamental at every step. |
 | Envelope | auto | *auto* / *lattice*: carriers more than 3× their bandwidth apart get their own fundamentals. *single*: one envelope around Fc spans every carrier and their IM3 (smaller step, slower). |
 | MaxMixOrder | 7 | Lattice order when carriers get their own fundamentals; 7 converges IM5. |
-| Probes | MOD_Source node | Nodes kept and measured; the **last** probe is the output for gain, AM-AM/PM and DE. |
 | Segments | auto | Parallel-in-time segments, one per core and none shorter than 4× the warm-up; one when the circuit's memory is too long to warm up in parallel. 1 runs sequentially. |
 | Warmup | auto | Simulated before each segment and discarded. *auto* is 5 µs, or, with Segments auto, five of the circuit's slowest time constants when that is longer. A number is used as written. |
-| SaveWaveforms | yes | Keep the probe envelopes (`V[time, node, harmonic]`, and `I` and `Pprobe_t_W` below); `no` keeps the measurements only. |
+| SaveWaveforms | yes | Keep the envelopes against time (`V`, `I`, `Pprobe_t_W`). `no` keeps every spectrum and every power, AM-AM and pulse number. |
 
-Without IProbes, an envelope run reads each probe node as if it were loaded by 50 Ω. That suits a
-system-level chain of 50 Ω blocks. To measure the power into any other load, place an IProbe in
-series with it and read `Pprobe_fund_W` ([below](#envelope-iprobe-power)).
+### What a run records {#envelope-records}
 
-**Results.** `PSD[node, freq]` (dBm/Hz), `ACLR[node, carrier, metric]`, `Pavg_dBm`, `PAPR_dB`,
-`CCDF[node, prob]`, `AMAM` / `AMAM_min` / `AMAM_max` / `AMPM` against instantaneous input power (axis `Pin_inst`, dBm),
-`IMD[node, product]` for two widely spaced carriers (either mode), the scalars `Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`,
-`NMSE_dB`, `Pdc_W`, `DE_pct`, and the probe envelopes `V[time, node, harmonic]` (or `mixIndex` with two
-fundamentals). Every IProbe in the circuit adds, on a `branch` axis named after the probes,
-`Pprobe_W[branch, harmonic]` (the average power at each harmonic), `Pprobe_fund_W[branch]` (the
-fundamental band) and, with SaveWaveforms, the current envelopes `I[time, branch, harmonic]` and the
-fundamental-band power at every step `Pprobe_t_W[time, branch]`. A [Parametric Sweep](#parametric-sweep) around an envelope analysis (sweeping the
-source's `Pavg`, say) gives ACPR against output power in one run. A sweep point that fails is NaN
-and named in the Messages pane; the other points are kept.
+**Name a net to see its voltage. Put an IProbe where you want power.**
 
-### Power and efficiency {#envelope-power}
+- **Every labeled net** records its voltage. A schematic labels a net by naming it, or with a
+  [VProbe](components.html#vprobe) on it; a netlist labels nets on its `labelednets` line. A netlist
+  that labels nothing records its MOD_Source's node.
+- **Every [IProbe](components.html#iprobe)** records the power that flows through it, from its first
+  node to its second. It is exact for any load, reactive ones included.
 
-There are two ways to read power from an envelope run: the built-in scalars, which need no setup and
-describe one signal path into 50 Ω, and the power through an IProbe, which is exact for any load.
+No impedance is assumed anywhere: a voltage is reported as a voltage, and a power is measured where a
+current is known. Without an IProbe an envelope run reports voltages only; place one in series with a
+load to measure its power. A chain of 50 Ω system blocks needs one IProbe in front of its load.
 
-**The built-in scalars.** `Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`, `Pdc_W` and `DE_pct` are a quick
-first look at one amplifier driven from one source into a 50 Ω load. Each is a time average over the
-measured record (after the warm-up).
+The envelope card shows what the schematic will record ("Records 4 labeled nets and 3 IProbes");
+hover over it for the names. Every recorded net keeps its envelopes, so a design that labels 40 nets,
+swept over five drive levels, keeps about 1 GB of waveforms. Set SaveWaveforms to `no` to keep only
+the measurements.
 
-| Scalar | How it is calculated |
-|---|---|
-| `Pin_avg_dBm` | The **available** power of the drive: the mean of \|V<sub>drive</sub>(t)\|² / (8 · Re Z<sub>source</sub>), where V<sub>drive</sub> is the source's open-circuit envelope. This is not the power delivered into the input. |
-| `Pout_avg_dBm` | The **fundamental-band** power at the **last node listed in Probes**: the mean of \|V<sub>1</sub>(t)\|² / (2 · 50 Ω), where V<sub>1</sub> is that node's carrier envelope. Everything inside that envelope counts, including the adjacent-channel and distortion power. Power at 2f₀, 3f₀ … does not. |
-| `Gt_dB` | `Pout_avg` / `Pin_avg`: transducer gain from available input power. |
-| `Pdc_W` | The sum over **every DC source with a non-zero `Vdc`** of −Vdc · ⟨I<sub>dc</sub>(t)⟩, where I<sub>dc</sub>(t) is that source's DC branch current at each envelope step. The current follows the modulation, so this is the true average supply power. |
-| `DE_pct` | 100 · `Pout_avg` / `Pdc`: average drain efficiency in the fundamental band. NaN when no DC power is drawn. |
+**At every labeled net** (axis `node`, in the order harmonic balance lists nets):
 
-Things to keep in mind:
+| Cube | Axes | Meaning |
+|---|---|---|
+| `V` | time, node, harmonic | the voltage envelopes, peak phasors (SaveWaveforms) |
+| `VSD` | node, freq | the voltage spectral density in dBV/Hz: RMS volts² per hertz (the same number as dBV/√Hz of the RMS amplitude density) |
 
-- **Pout is taken from the probe node's voltage, as if it were loaded by 50 Ω.** With any other
-  load, or a probe placed before the output match, `Pout_avg_dBm`, `Gt_dB` and `DE_pct` are wrong by
-  the mismatch: a 25 Ω load reads 3 dB low.
-- **The output is the last node listed in Probes.** `Probes = Vin,Vout` measures Pout at `Vout`,
-  but `Probes = Vout,Vin` measures it at `Vin`, and the gain and efficiency are then wrong.
-- **An empty Probes setting probes only the MOD_Source's node.** That node is then the output, so
-  `Pout_avg_dBm`, `Gt_dB` and `DE_pct` describe the input side. List the output node last in Probes
-  whenever you read these scalars.
-- **Every non-zero DC source counts toward Pdc**, gate and auxiliary supplies included. A gate supply
-  that draws no current adds nothing. A bias divider or other resistive bias network adds its own
-  dissipation, which lowers `DE_pct`.
-- **Every MOD_Source counts toward Pin**, so two amplifiers driven from two sources share one
-  `Pin_avg_dBm`, one `Pout_avg_dBm` and one `DE_pct`.
-- **No PAE is reported**, because `Pin_avg_dBm` is the available power, not the power delivered
-  into the input.
-- **With two fundamentals** (carriers on the mixing lattice), `Pdc_W` and `DE_pct` are not produced.
+With two fundamentals the `harmonic` axis is `mixIndex`. `VSD` is one continuous spectrum over every
+product of the baseband and fundamental zones; into 50 Ω, a VSD in dBV/Hz plus 13.01 dB is the power
+density in dBm/Hz.
 
-A non-50 Ω load, two or more amplifiers, and PAE are measured at IProbes.
-
-#### Measuring power at an IProbe {#envelope-iprobe-power}
-
-Every IProbe in the circuit is measured; there is nothing to set up beyond placing it. Put one in
-series with each place you want a power:
-
-- the **load**, for output power,
-- the **input**, between the source and the amplifier's input match, for delivered input power,
-- each **supply**, between the DC source and the circuit, for DC power.
-
-The power reported is the power flowing through the probe **from its first node to its second**. With
-the probe's first node on the source side, each of these powers is positive in a working amplifier.
+**At every IProbe** (axis `branch`, named after the probes):
 
 | Cube | Axes | Meaning |
 |---|---|---|
 | `Pprobe_W` | branch, harmonic | average power at each harmonic, in W. Harmonic 0 is the DC power. |
 | `Pprobe_fund_W` | branch | average fundamental-band power, in W. With two fundamentals, the sum over the carrier products. |
-| `I` | time, branch, harmonic | the probe current envelopes (SaveWaveforms) |
+| `Pavg_dBm` | branch | `Pprobe_fund_W` in dBm. At the output probe this is the output power. |
+| `PSD` | branch, freq | the delivered power spectral density in dBm/Hz, on `VSD`'s frequency grid: ½·Re of the cross-spectrum of the probe's voltage and current. A bin where power flows backwards through the probe is blank. |
+| `ACLR` | branch, carrier, metric | `Pch_dBm`, and `ACPR1L` / `ACPR1U` / `ACPR2L` / `ACPR2U` in dBc, from `PSD` |
+| `IMD` | branch, product | the delivered power of each carrier and distortion product, in dBm, for two widely spaced carriers (either mode) |
+| `PAPR_dB`, `CCDF` | branch / branch, prob | of the instantaneous delivered power ½·Re(V₁·I₁*) |
+| `Gt_dB`, `DE_pct` | branch | [below](#envelope-power) |
+| `NMSE_dB`, `Delay_s` | branch | the drive aligned to the probe node's fundamental envelope: the residual, and the delay |
+| `AMAM`, `AMPM` and their `_min` / `_max` | branch, Pin_inst | [AM-AM, AM-PM and memory](#envelope-amam) |
+| `I` | time, branch, harmonic | the current envelopes (SaveWaveforms) |
 | `Pprobe_t_W` | time, branch | fundamental-band power at every step (SaveWaveforms) |
 
-With two fundamentals the `harmonic` axis is `mixIndex`, and the DC power is the `(0,0)` product.
-The averages are taken over the same window as the built-in scalars and have no time axis, so a
-parametric sweep stacks them like any scalar. A probe power is exact for any load, reactive ones
-included, and at a 50 Ω load `Pprobe_fund_W` agrees with `Pout_avg_dBm`.
+Every IProbe gets every row, so the branch axis is the same at every sweep point. A probe that carries
+no RF, such as a supply or bias probe, is blank in the output rows (`Gt_dB`, `DE_pct`, `NMSE_dB`,
+`ACLR`, `PAPR_dB`, `CCDF`, AM-AM and AM-PM): its fundamental-band power is below 10⁻⁶ of the available
+drive. Its `Pprobe_W` still reads its DC power.
+
+A [Parametric Sweep](#parametric-sweep) around an envelope analysis (sweeping the source's `Pavg`, say)
+gives ACPR against output power in one run. A sweep point that fails is NaN and named in the Messages
+pane; the other points are kept. A Data Display trace pins a net or a probe by its name, so it keeps
+reading the same one when a re-run adds nets, probes or a sweep.
+
+### Power and efficiency {#envelope-power}
+
+Two quantities never depend on where the output is, and are scalars:
+
+| Scalar | How it is calculated |
+|---|---|
+| `Pin_avg_dBm` | The **available** power of the drive: the mean of \|V<sub>drive</sub>(t)\|² / (8 · Re Z<sub>source</sub>), where V<sub>drive</sub> is the source's open-circuit envelope. This is not the power delivered into the input. Every MOD_Source counts. |
+| `Pdc_W` | The sum over **every DC source with a non-zero `Vdc`** of −Vdc · ⟨I<sub>dc</sub>(t)⟩, where I<sub>dc</sub>(t) is that source's DC branch current at each envelope step. The current follows the modulation, so this is the true average supply power. Gate and auxiliary supplies count; a resistive bias network's own dissipation lowers `DE_pct`. |
+
+At every IProbe:
+
+| Cube | How it is calculated |
+|---|---|
+| `Pavg_dBm` | The **fundamental-band** power through the probe. Everything inside the carrier's envelope counts, including the adjacent-channel and distortion power. Power at 2f₀, 3f₀ … does not. |
+| `Gt_dB` | `Pavg` / `Pin_avg`: transducer gain from the available input power. |
+| `DE_pct` | 100 · `Pavg` / `Pdc`: average drain efficiency in the fundamental band. Right for one amplifier; blank when no DC power is drawn. |
+
+Each is a time average over the measured record (after the warm-up). With two fundamentals (carriers on
+the mixing lattice), `Pdc_W` and `DE_pct` are not produced; the supply probe's `(0,0)` product gives the
+DC power.
+
+#### Where to place IProbes {#envelope-iprobe-power}
+
+Put one in series with each place you want a power:
+
+- the **load**, for output power,
+- the **input**, between the source and the amplifier's input match, for delivered input power,
+- each **supply**, between the DC source and the circuit, for DC power.
+
+With the probe's first node on the source side, each of these powers is positive in a working
+amplifier. The probe node's voltage is what AM-PM, NMSE and the delay are read from, so the output
+probe belongs at the load itself, not ahead of an output match.
 
 **One amplifier.** With `IProbe:Iin` at the input, `IProbe:Iout` at the load and `IProbe:IDC` at the
-drain supply, inside a sweep of the source's `Pavg`:
+drain supply:
 
 | Quantity | From |
 |---|---|
-| Output power | `Pprobe_fund_W` at `Iout` |
-| Delivered input power | `Pprobe_fund_W` at `Iin` |
+| Output power | `Pavg_dBm` at `Iout` |
+| Delivered input power | `Pavg_dBm` at `Iin` |
 | DC power | `Pprobe_W` at `IDC`, harmonic 0 |
-| Drain efficiency | output power / DC power |
 | PAE | (output power − delivered input power) / DC power |
 | Power gain | output power / delivered input power |
-
-A Data Display trace of `ENV1 › Pprobe_fund_W › Iout` against `Pavg` plots output power against drive
-with no arithmetic at all.
 
 **Two amplifiers**, A and B, each with its own load and supply: place `IoutA`, `IDCA`, `IoutB` and
 `IDCB`. Each amplifier's drain efficiency is its own `Pprobe_fund_W` at `Iout` over its own `Pprobe_W`
@@ -322,6 +330,41 @@ measure PAE_pct  = 100 * (ENV1.P("Iout") - ENV1.P("Iin")) / ENV1.P("IDC", 0)
 
 The same lines work inside any sweep, and on a harmonic-balance analysis (`HB1.P("Iout")`).
 
+### AM-AM, AM-PM and memory {#envelope-amam}
+
+With one fundamental and a modulated drive, every IProbe gets AM-AM and AM-PM against the
+instantaneous **available** drive power, |V<sub>drive</sub>(t)|² / (8 · Re Z<sub>source</sub>), on a
+fixed grid of 0.5 dB bins (axis `Pin_inst`, −40 to 60 dBm). A bin needs 16 samples; one with fewer is
+blank.
+
+- The probe node's fundamental envelope is aligned to the drive (the delay `Delay_s` reports).
+- **AM-AM** is the delivered power ½·Re(V₁·I₁*) over the available drive, sample by sample, averaged in
+  each bin. It is exact for any load.
+- **AM-PM** is the phase of the probe node's voltage relative to the drive, less the mean gain phase.
+- **`AMAM_min` / `AMAM_max` and `AMPM_min` / `AMPM_max`** are the extremes of the samples in each bin.
+  Memory widens them: the same drive level meets a different trap, thermal or bias state. So does the
+  bin itself: in compression the gain changes across 0.5 dB of drive, by about 0.5 dB on a device whose
+  gain falls 1 dB per dB.
+
+**The memory cloud** is every one of those samples on one time axis, so the spread can be seen point
+by point rather than as two edges:
+
+| Cube | Axes | Meaning |
+|---|---|---|
+| `Pin_inst_t_dBm` | time | the available drive power at each sample |
+| `Gt_t_dB` | time, branch | the gain at each sample: the values AM-AM bins |
+| `PM_t_deg` | time, branch | the phase at each sample: the values AM-PM bins |
+
+They keep at most 20,000 samples per probe (every m-th, m set by Stop and the step alone, so a sweep
+stacks), and they are kept with SaveWaveforms `no`. Plot the cloud with a
+[versus](data-display.html#versus) trace drawn with markers and no line:
+
+```
+ENV1.Gt_t_dB[:, "Iout"] vs ENV1.Pin_inst_t_dBm
+```
+
+Under a sweep of the drive, each level draws its own cloud with no edit.
+
 ### Pulsed CW: what is measured {#envelope-pulse}
 
 A [pulsed-CW](signal-designer.html#pulse) source turns the run into a pulse measurement. Harmonic
@@ -335,22 +378,22 @@ off-time, so the first pulse starts from the quiescent point. A record that star
 would start with the device already at its CW temperature, and the first pulse would show no droop at
 all; that is why a pulse's `Delay` must be greater than zero.
 
-On the **last probe** (the one `Pout_avg_dBm` is read at), it adds:
+At every IProbe, from the power delivered through it, it adds:
 
 | Cube | Axes | Meaning |
 |---|---|---|
-| `Pout_t_dBm` | time | output power at every step, floored at −100 dBm in the off-time, so it plots with no arithmetic |
-| `PulseTop_dBm` | pulse | Pout at the droop window's start |
-| `PulseDroop_dB` | pulse | Pout at the window's start minus at its end: positive is drooping |
-| `PulsePhaseDroop_deg` | pulse | the output phase (relative to the input) at the window's start minus at its end |
-| `PulseRise_s`, `PulseFall_s` | pulse | the 10–90 % times of the output envelope |
-| `PulseToPulse_dB`, `PulseToPulse_deg` | — | the peak-to-peak spread over the pulses of `PulseTop_dBm`, and of the output phase at the window's start; the first pulse counts |
+| `Pout_t_dBm` | branch, time | delivered power at every step, floored at −100 dBm in the off-time, so it plots with no arithmetic |
+| `PulseTop_dBm` | branch, pulse | the power at the droop window's start |
+| `PulseDroop_dB` | branch, pulse | the power at the window's start minus at its end: positive is drooping |
+| `PulsePhaseDroop_deg` | branch, pulse | the probe node's phase (relative to the input) at the window's start minus at its end |
+| `PulseRise_s`, `PulseFall_s` | branch, pulse | the 10–90 % times of the amplitude (the square root of the delivered power) |
+| `PulseToPulse_dB`, `PulseToPulse_deg` | branch | the peak-to-peak spread over the pulses of `PulseTop_dBm`, and of the phase at the window's start; the first pulse counts |
 
 The **droop window** is the flat top from `MeasureStart` to `MeasureEnd` (10–90 % of the top by
 default; set them on the carrier). A pulse only partly inside `Stop` is not measured, and the Messages
 pane says how many were and over which window. `ACLR`, `CCDF`, `PAPR`, `AM-AM` / `AM-PM` and `NMSE`
 are not reported for a pulse: they are defined for a modulated signal, and on a pulse train they print
-numbers that look like results. `Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`, `Pdc_W` and `DE_pct` are
+numbers that look like results. `Pin_avg_dBm`, `Pavg_dBm`, `Gt_dB`, `Pdc_W` and `DE_pct` are
 averages over the whole run, off-time included, with no settling skipped (the train starts at
 quiescent and has nothing to settle), so they depend on how many pulses `Stop` holds. `Pdc_W` is
 what the DC sources deliver, so a drain fed from a storage capacitor draws most of each pulse's energy
@@ -367,8 +410,9 @@ pulse-to-pulse figure exists to report. A thermal train settles only after sever
 constants, which on a package pole means milliseconds of record at a step of a few nanoseconds.
 
 From the command line: `circuitrf env design.cnl [--stop 0.5e-3] [--accuracy standard] [-o out.npy]`.
-For a pulsed-CW source the table prints each pulse's top power, droop, phase droop, rise and fall, then
-the pulse-to-pulse spread.
+It prints each IProbe's power, gain, efficiency, NMSE and PAPR, and the ACLR at every probe that
+carries RF. For a pulsed-CW source it prints each pulse's top power, droop, phase droop, rise and fall
+at those probes, then the pulse-to-pulse spread.
 
 ## Parametric Sweep {#parametric-sweep}
 

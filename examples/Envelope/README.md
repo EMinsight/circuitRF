@@ -22,27 +22,42 @@ expressions, so the variables block drives them and a sweep of `Pin` sweeps the 
 
 One envelope run: 200 µs of the signal at `Pin` = 20 dBm average. The step is chosen from the
 signal's sample rate (`Accuracy = standard` is four steps per sample), and the record is split into
-time segments that run in parallel. The result holds, per probe (`Vin`, `Vout`):
+time segments that run in parallel.
 
-| Cube | Shows |
-|---|---|
-| `ACLR` | channel power and ACPR1/ACPR2, lower and upper, per carrier (dBc) |
-| `PSD` | the output spectrum (dBm/Hz) |
-| `V` | the complex envelope at every harmonic of `Fc`, against time |
-| `AMAM`, `AMPM` | gain and phase against instantaneous input power |
-| `Pout_avg_dBm`, `Gt_dB`, `Pdc_W`, `DE_pct`, `NMSE_dB` | the scalars a PA designer reads first |
+The run records a voltage at every labeled net (`VDD`, `Vin`, `Vout`) and a power at every IProbe:
+`Iout` in front of the output DC block and its 50 Ω load, `Iin` at the gate, `IDC` in the drain supply.
 
-Simulate opens **NR20_ACPR.cdd**, the display laid out beside the bench: the spectrum at the drain and
-the gate, AM-AM (mean, minimum and maximum gain in each 0.5 dB input-power bin), AM-PM, and 2 µs of the
-envelope at the fundamental.
+| Cube | At | Shows |
+|---|---|---|
+| `V`, `VSD` | each net | the complex envelope at every harmonic of `Fc` against time, and the voltage spectrum (dBV/Hz) |
+| `PSD`, `ACLR` | each IProbe | the delivered power spectrum (dBm/Hz); channel power and ACPR1/ACPR2, lower and upper (dBc) |
+| `Pavg_dBm`, `Gt_dB`, `DE_pct`, `NMSE_dB`, `PAPR_dB` | each IProbe | at `Iout`: output power, gain, drain efficiency, error, PAPR |
+| `AMAM`, `AMPM` (and `_min`, `_max`) | each IProbe | gain and phase against instantaneous input power |
+| `Gt_t_dB`, `Pin_inst_t_dBm` | each IProbe | the memory cloud: every sample's gain and drive |
+| `Pin_avg_dBm`, `Pdc_W` | the run | the available drive and the DC power |
+
+The `MeasPA` block adds three measure lines from the probe powers: `Pin_del_dBm`, the power delivered
+into the gate network; `Gp_dB`, the power gain from that to the load; and `PAE_pct`.
+
+Simulate opens **NR20_ACPR.cdd**, the display laid out beside the bench: the power spectrum delivered at
+`Iout` and `Iin` with the voltage spectrum at `Vout` on the right axis, AM-AM (mean, minimum and maximum
+gain in each 0.5 dB input-power bin) and AM-PM at `Iout`, 2 µs of the envelope at the fundamental, the
+power, gain and efficiency table with the three measure lines, ACLR, and the memory cloud.
+
+The figures at `Iin` are the power the gate network actually takes in. Its adjacent channels read blank:
+the distortion there flows from the device back toward the source, which is a power flowing the other way
+through the probe.
 
 ## NR20_ACPR_vs_Pin
 
 The same bench with the envelope inside a parametric sweep of `Pin`, 10 → 26 dBm in 4 dB steps:
 ACPR1 and ACPR2 against drive, the curve a linearity budget is read from. The five points run at the
-same time, each split into fewer time segments so they share the cores. **NR20_ACPR_vs_Pin.cdd** plots ACPR1/ACPR2 (both sides), output power and gain,
-drain efficiency and DC power against `Pin`, and the AM-AM of every drive level on one axis — they lie on
-one curve, because AM-AM against the instantaneous input power does not depend on the average drive.
+same time, each split into fewer time segments so they share the cores. **NR20_ACPR_vs_Pin.cdd** plots
+ACPR1/ACPR2 (both sides), output power and gain, drain efficiency and DC power against `Pin`, all at
+`Iout`, and the AM-AM of every drive level on one axis — they lie on one curve, because AM-AM against the
+instantaneous input power does not depend on the average drive. The table lists the `MeasPA` lines
+against `Pin` as well: a measure line stacks over a sweep with no edit. The memory plot draws one cloud
+per drive level.
 
 ## Two carriers far apart
 
@@ -66,4 +81,5 @@ current is the same, and the cell adds the gate and drain charges, Cgd and Cds, 
 The output is narrowband: a 20 nH drain line into a 5 nF bypass, then 20 nH + 0.3166 pF in series,
 resonant at 2.0 GHz, into 50 Ω. Its gain therefore falls away on both sides of 2 GHz, unevenly, and the
 two carriers come out about 5 dB apart at the load (C1 ≈ 18.7 dBm, C2 ≈ 23.5 dBm). A broadband PA would
-put them within a decibel. `Vout` is the load and `Vd` the drain; the display reads `Vout`.
+put them within a decibel. `Vout` is the load and `Vd` the drain. `Iout` sits in front of the load, so
+its power, ACLR, AM-AM and IMD are what reaches the 50 Ω.

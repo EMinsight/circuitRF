@@ -1,27 +1,35 @@
 // ================================================================
 //  EnvelopeDataSet.cs  —  envelope results and modulated measurements
 //
-//  Cubes (probe = a requested node; the LAST probe is the "output" for
-//  gain / AM-AM / AM-PM / NMSE / efficiency):
+//  Name a net to see its voltage; put an IProbe where you want power
+//  (brief ENV-MEAS-3). No impedance is assumed anywhere.
+//
+//  Node cubes, at every labeled net (node axis, ascending node index):
 //    V          [time, node, harmonic|mixIndex]  complex peak phasors (SaveWaveforms)
-//    Idc        [time, supply]          real   DC supply branch currents (A)
-//    PSD        [node, freq]            real   dBm/Hz into 50 ohm, absolute frequency
-//               single fundamental: the fundamental envelope;  two fundamentals:
-//               every carrier product and the IM3/IM5/IM2 products, power-summed onto
+//    VSD        [node, freq]            real   voltage spectral density, dBV/Hz (RMS V^2 per Hz),
+//               absolute frequency. Single fundamental: the fundamental envelope; two
+//               fundamentals: every carrier product and the IM3/IM5/IM2 products, summed onto
 //               one ascending grid over the union of their spans (overlaps merge)
-//    ACLR       [node, carrier, metric] real   Pch_dBm, ACPR1L, ACPR1U, ACPR2L, ACPR2U (dBc)
-//    IMD        [node, product]         real   mean power (dBm) of each listed lattice product
-//    Pavg_dBm / PAPR_dB [node]   CCDF [node, prob] (dB above mean)
-//    AMAM / AMAM_min / AMAM_max / AMPM  [Pin]  binned on instantaneous available input power;
-//               the min/max spread at one Pin is the memory (single fundamental)
-//    Pin_avg_dBm, Pout_avg_dBm, Gt_dB, NMSE_dB, Pdc_W, DE_pct   scalars
-//    Every IProbe (branch = its instance path; power flows through it from its first node to its second):
+//    Idc        [time, supply]          real   DC supply branch currents (A, SaveWaveforms)
+//  IProbe cubes (branch = its instance path; power flows from its first node to its second),
+//  every power the power actually delivered through the probe:
 //    I             [time, branch, harmonic|mixIndex] complex  probe current envelopes (SaveWaveforms)
 //    Pprobe_W      [branch, harmonic|mixIndex]       real     time-averaged power per product (W)
 //    Pprobe_fund_W [branch]                          real     the fundamental band: harmonic 1, or the carrier products
 //    Pprobe_t_W    [time, branch]                    real     instantaneous fundamental-band power (SaveWaveforms)
-//    Every power read from a node voltage alone is into MeasureOhms (50 ohm);
-//    an IProbe's is exact for any load.
+//    PSD        [branch, freq]          dBm/Hz  1/2 Re of the V-I cross-spectrum, on VSD's grid
+//    ACLR       [branch, carrier, metric]       Pch_dBm, ACPR1L, ACPR1U, ACPR2L, ACPR2U (dBc)
+//    IMD        [branch, product]       mean delivered power (dBm) of each listed product
+//    Pavg_dBm   [branch]                Pprobe_fund_W in dBm: at the output probe, Pout
+//    PAPR_dB [branch]   CCDF [branch, prob]   of p(t) = 1/2 Re(V1 I1*) (dB above mean)
+//    Gt_dB, DE_pct, NMSE_dB, Delay_s [branch]
+//    AMAM / AMAM_min / AMAM_max / AMPM / AMPM_min / AMPM_max  [branch, Pin_inst]  binned on the
+//               instantaneous available drive power; the min/max spread at one Pin is the memory
+//    Pin_inst_t_dBm [time]  Gt_t_dB / PM_t_deg [time, branch]   the memory cloud: every AM-AM /
+//               AM-PM sample, decimated to at most CloudMaxSamples (single fundamental)
+//    A probe carrying no RF (mean fundamental-band power below NoRfFraction of the drive) is
+//    NaN in Gt, DE, NMSE, Delay, ACLR, PAPR, CCDF, AM-AM / AM-PM, the cloud and the pulse cubes.
+//  Scalars: Pin_avg_dBm (available drive), Pdc_W (every non-zero supply).
 //    __EnvSnpFit [instance, metric]  order, rel_error, sigma_max of each SnP's
 //               rational fit (only when the circuit has one)
 //    A pulsed-CW source adds the pulse cubes of EnvelopePulse and drops
@@ -46,47 +54,75 @@ public static class EnvelopeDataSet
     public const double AmGridLoDbm = -40, AmGridHiDbm = 60;
     public const int AmMinSamples = 16;
 
-    /// <summary>The load every power read from a node voltage alone is into (ohm). <c>Zmeas</c> set it until brief
-    /// ENV-MEAS-1; a power into any other load is measured at an IProbe.</summary>
-    public const double MeasureOhms = 50.0;
+    /// <summary>A probe whose mean fundamental-band power is below this fraction of the available drive (−60 dB) carries
+    /// no RF: a supply or a bias probe. Its output rows are NaN.</summary>
+    public const double NoRfFraction = 1e-6;
+
+    /// <summary>The memory cloud keeps every m-th aligned sample, m the smallest that leaves at most this many.</summary>
+    public const int CloudMaxSamples = 20_000;
+
+    /// <summary>The lag search of NMSE / AM-AM alignment (steps).</summary>
+    private const int MaxLag = 16;
+
+    /// <summary>10·log10(1000/50): a VSD in dBV/Hz plus this is the power density into 50 Ω in dBm/Hz.</summary>
+    public static readonly double VsdTo50OhmDb = 10 * Math.Log10(1000.0 / 50);
 
     public static DataSet Build(EnvelopeRunResult r, EnvelopeRunner.Plan plan, double skipS = 0, Action<string>? note = null)
     {
         var ds = new DataSet();
         var pulse = EnvelopePulse.Of(r);
-        int nt = r.Time.Length, np = r.ProbeNames.Length, nk = r.Probe[0][0].Length;
-        double zm = MeasureOhms, fs = 1.0 / r.StepS;
         bool multi = r.MixTones is not null;
+        int nt = r.Time.Length, np = r.ProbeNames.Length, nb = r.IProbeNames.Length;
+        int nk = np > 0 ? r.Probe[0][0].Length : nb > 0 ? r.IProbeCurrent[0][0].Length : multi ? r.MixFreqHz!.Length : r.MaxHarm + 1;
+        double fs = 1.0 / r.StepS;
         int t0 = Math.Min(nt - 16, (int)Math.Round(skipS / r.StepS));
         int nm = nt - t0;
-        var probeAxis = new Axis("node", Enumerable.Range(0, np).Select(i => (double)i).ToArray(), "", r.ProbeNames);
+        var nodeAxis = new Axis("node", Index(np), "", r.ProbeNames);
+        var branchAxis = new Axis("branch", Index(nb), "", r.IProbeNames);
 
         if (plan.SaveWaveforms)
         {
-            var v = new Complex[nt * np * nk];
-            for (int t = 0; t < nt; t++)
-                for (int p = 0; p < np; p++)
-                    for (int k = 0; k < nk; k++)
-                        v[(t * np + p) * nk + k] = r.Probe[t][p][k];
-            var third = multi
-                ? new Axis("mixIndex", r.MixFreqHz!, "Hz", r.MixLabels)
-                : new Axis("harmonic", Enumerable.Range(0, nk).Select(i => (double)i).ToArray());
-            ds.Add("V", new DataCube([new Axis("time", r.Time, "s"), probeAxis, third], v));
+            if (np > 0)
+            {
+                var v = new Complex[nt * np * nk];
+                for (int t = 0; t < nt; t++)
+                    for (int p = 0; p < np; p++)
+                        for (int k = 0; k < nk; k++)
+                            v[(t * np + p) * nk + k] = r.Probe[t][p][k];
+                var third = multi
+                    ? new Axis("mixIndex", r.MixFreqHz!, "Hz", r.MixLabels)
+                    : new Axis("harmonic", Index(nk));
+                ds.Add("V", new DataCube([new Axis("time", r.Time, "s"), nodeAxis, third], v));
+            }
             if (r.SupplyNames.Length > 0)
             {
                 var idc = new double[nt * r.SupplyNames.Length];
                 for (int t = 0; t < nt; t++)
                     for (int s = 0; s < r.SupplyNames.Length; s++) idc[t * r.SupplyNames.Length + s] = r.SupplyCurrent[t][s];
                 ds.Add("Idc", new DataCube([new Axis("time", r.Time, "s"),
-                    new Axis("supply", Enumerable.Range(0, r.SupplyNames.Length).Select(i => (double)i).ToArray(), "", r.SupplyNames)], idc));
+                    new Axis("supply", Index(r.SupplyNames.Length), "", r.SupplyNames)], idc));
             }
         }
 
-        Complex[] Env(int p, int k)
+        // One product's envelope over the measured window (from t0). A lattice product at a negative frequency is read
+        // conjugated, so its spectrum runs the right way round; a power or a magnitude is unchanged by it.
+        Complex[] Window(Complex[][][] x, int i, int k)
         {
             var y = new Complex[nm];
-            for (int t = 0; t < nm; t++) y[t] = r.Probe[t0 + t][p][k];
+            bool neg = multi && r.MixFreqHz![k] < 0;
+            for (int t = 0; t < nm; t++) { var v = x[t0 + t][i][k]; y[t] = neg ? Complex.Conjugate(v) : v; }
             return y;
+        }
+        Complex[] Node(int p, int k) => Window(r.Probe, p, k);
+        Complex[] ProbeV(int b, int k) => Window(r.IProbeVoltage, b, k);
+        Complex[] ProbeI(int b, int k) => Window(r.IProbeCurrent, b, k);
+        // the delivered power density at a probe, W/Hz: 1/2 Re of its voltage-current cross-spectrum (peak phasors)
+        (double[] f, double[] d) Delivered(int b, int k)
+        {
+            var (f, csd) = SignalMeasure.CrossWelch(ProbeV(b, k), ProbeI(b, k), fs, Nseg());
+            var d = new double[csd.Length];
+            for (int i = 0; i < d.Length; i++) d[i] = 0.5 * csd[i].Real;
+            return (f, d);
         }
 
         // Spectral resolution follows the CARRIERS' rate, not the envelope's: 8192 bins at the rate a
@@ -97,6 +133,7 @@ public static class EnvelopeDataSet
         while (narrow < needNarrow) narrow *= 2;
         int nseg = 8192 * (int)Math.Max(1, Math.Round(r.SignalRateHz / narrow));
         while (nseg > nm / 4 && nseg > 256) nseg /= 2;
+        int Nseg() => nseg;
 
         // carriers: spec + product + offset
         var carSpecs = new List<CarrierSpec>();
@@ -143,30 +180,20 @@ public static class EnvelopeDataSet
             specProducts.Sort((x, y) => x.fHz.CompareTo(y.fHz));
         }
 
-        var psdF = new List<double>(); var psdV = new List<double>[np];
-        for (int p = 0; p < np; p++) psdV[p] = new List<double>();
-        var aclr = new double[np * nc * AclrLabels.Length];
-        var pavg = new double[np]; var papr = new double[np];
-        var ccdf = new double[np * 200];
-        double[]? probAxis = null;
+        // Every product's envelope spectrum sits on its own span fk ± fs/2. With two fundamentals the spans of
+        // neighbouring products OVERLAP whenever fs exceeds their spacing (400 MHz apart at the standard 491.52 MHz
+        // envelope rate), and appending them gave a frequency axis that ran backwards at each seam: a stitched-looking
+        // spectrum with two crossing skirts. The physical spectrum at f is the sum of every product's contribution
+        // there, so the spans are summed onto ONE ascending grid (linear interpolation of each product's Welch bins;
+        // the cross-spectrum between products is neglected, which only matters in the far skirts where two products'
+        // regrowth meets). VSD and PSD share the grid and every step of this, so they differ only in what is summed.
         double[]? gridF = null;
-        for (int p = 0; p < np; p++)
+        double[] Spectrum(Func<int, (double[] f, double[] d)> density)
         {
-            // Every product's envelope spectrum sits on its own span fk ± fs/2. With two fundamentals
-            // the spans of neighbouring products OVERLAP whenever fs exceeds their spacing (400 MHz
-            // apart at the standard 491.52 MHz envelope rate), and appending them gave a frequency
-            // axis that ran backwards at each seam: a stitched-looking spectrum with two crossing
-            // skirts. The physical spectrum at f is the sum of every product's contribution there,
-            // so the spans are power-summed onto ONE ascending grid (linear interpolation of each
-            // product's Welch bins; the cross-spectrum between products is neglected, which only
-            // matters in the far skirts where two products' regrowth meets).
             var spans = new List<(double fk, double[] f, double[] d)>();
             foreach (var (k, fHz, _) in specProducts)
             {
-                var y = Env(p, k);
-                bool neg = multi && r.MixFreqHz![k] < 0;
-                if (neg) for (int i = 0; i < y.Length; i++) y[i] = Complex.Conjugate(y[i]);
-                var (f, d) = SignalMeasure.Welch(y, fs, nseg);
+                var (f, d) = density(k);
                 if (!multi && k == 0) for (int i = 0; i < d.Length; i++) d[i] *= 4;   // real baseband, one-sided
                 spans.Add((fHz, f, d));
             }
@@ -182,7 +209,6 @@ public static class EnvelopeDataSet
                     if (lo > 0) spans[si] = (fk, f[lo..], d[lo..]);
                 }
             gridF ??= CompositeGrid(spans);
-            if (p == 0) psdF.AddRange(gridF);
             var tot = new double[gridF.Length];
             foreach (var (fk, f, d) in spans)
             {
@@ -197,133 +223,115 @@ public static class EnvelopeDataSet
                     tot[i] += d[i0] + (d[i1] - d[i0]) * a;
                 }
             }
-            foreach (double v in tot) psdV[p].Add(10 * Math.Log10(Math.Max(v, 1e-300) / (2 * zm) * 1e3));
-            for (int c = 0; c < nc && pulse is null; c++)
-            {
-                int k = r.CarrierMix.Length > c ? r.CarrierMix[c] : 1;
-                var y = Env(p, k);
-                if (multi && r.MixFreqHz![k] < 0) for (int i = 0; i < y.Length; i++) y[i] = Complex.Conjugate(y[i]);
-                var (f, d) = SignalMeasure.Welch(y, fs, nseg);
-                var (mb, sp) = SignalMeasure.AclrBands(carSpecs[c]);
-                var a = SignalMeasure.Aclr(f, d, fs, r.CarrierOffsetHz.Length > c ? r.CarrierOffsetHz[c] : 0, mb, sp);
-                int o = (p * nc + c) * AclrLabels.Length;
-                aclr[o] = 10 * Math.Log10(Math.Max(a.ChannelPower, 1e-300) / (2 * zm) * 1e3);
-                aclr[o + 1] = a.Acpr1L; aclr[o + 2] = a.Acpr1U; aclr[o + 3] = a.Acpr2L; aclr[o + 4] = a.Acpr2U;
-            }
-            // total in-band envelope power over the carrier products
-            var ks = multi ? r.CarrierMix.Distinct().ToArray() : new[] { 1 };
-            double ptot = 0;
-            foreach (int k in ks) { var y = Env(p, k); foreach (var v in y) ptot += v.Real * v.Real + v.Imaginary * v.Imaginary; }
-            ptot /= nm;
-            pavg[p] = 10 * Math.Log10(ptot / (2 * zm) * 1e3);
-            if (pulse is not null) continue;
-            var y1 = Env(p, ks[0]);
-            papr[p] = SignalMeasure.PaprDb(y1, 1e-4);
-            var (db, pr) = SignalMeasure.Ccdf(y1, 200);
-            probAxis ??= pr;
-            Array.Copy(db, 0, ccdf, p * 200, 200);
+            return tot;
         }
-        int nf = psdF.Count;
-        ds.Add("PSD", new DataCube([probeAxis, new Axis("freq", psdF.ToArray(), "Hz")], psdV.SelectMany(x => x).ToArray()));
-        if (pulse is null)
-            ds.Add("ACLR", new DataCube([probeAxis,
-                new Axis("carrier", Enumerable.Range(0, nc).Select(i => (double)i).ToArray(), "",
-                         r.CarrierLabels.Length == nc ? r.CarrierLabels : carSpecs.Select(c => c.Label).ToArray()),
-                new Axis("metric", Enumerable.Range(0, AclrLabels.Length).Select(i => (double)i).ToArray(), "", AclrLabels)], aclr));
-        ds.Add("Pavg_dBm", new DataCube([probeAxis], pavg));
-        AddProbePower(ds, r, plan.SaveWaveforms, t0, multi ? r.CarrierMix.Distinct().ToArray() : [1]);
-        if (pulse is null)
-        {
-            ds.Add("PAPR_dB", new DataCube([probeAxis], papr));
-            ds.Add("CCDF", new DataCube([probeAxis, new Axis("prob", probAxis!)], ccdf));
-        }
-        if (imd.Count > 0)
-        {
-            var im = new double[np * imd.Count];
-            for (int p = 0; p < np; p++)
-                for (int i = 0; i < imd.Count; i++)
-                {
-                    var y = Env(p, imd[i].k);
-                    double pw = 0;
-                    bool dc = imd[i].k == 0;
-                    foreach (var v in y) pw += v.Real * v.Real + v.Imaginary * v.Imaginary;
-                    pw /= nm;
-                    im[p * imd.Count + i] = 10 * Math.Log10(Math.Max(pw, 1e-300) / (2 * zm) * 1e3);
-                }
-            ds.Add("IMD", new DataCube([probeAxis,
-                new Axis("product", Enumerable.Range(0, imd.Count).Select(i => (double)i).ToArray(), "", imd.Select(x => x.label).ToArray())], im));
-        }
-        else if (!multi && SingleEnvelopeImd(r, carSpecs, np, nk, zm, fs, nseg, Env) is { } sim)
-            ds.Add("IMD", new DataCube([probeAxis,
-                new Axis("product", Enumerable.Range(0, sim.labels.Length).Select(i => (double)i).ToArray(), "", sim.labels)], sim.dbm));
 
-        // ── gain, AM-AM / AM-PM, NMSE, efficiency on the last probe vs the (summed) drive ──
-        if (r.Drive.Length > 0 && np > 0)
+        // ── node cubes: the voltage spectral density, RMS V^2/Hz (a peak phasor's density over 2) ──
+        if (np > 0)
         {
-            var drive = new Complex[nm];
-            double reZ = r.DriveRe[0];
-            for (int t = 0; t < nm; t++) foreach (var d in r.Drive) drive[t] += d[t0 + t];
-            double pin = 0;
-            for (int t = 0; t < nm; t++) pin += drive[t].Real * drive[t].Real + drive[t].Imaginary * drive[t].Imaginary;
-            pin /= nm;
-            double pinW = pin / (8 * reZ);
-            double poutW = Math.Pow(10, pavg[np - 1] / 10) / 1e3;
-            ds.Add("Pin_avg_dBm", DataCube.Scalar(10 * Math.Log10(pinW * 1e3)));
-            ds.Add("Pout_avg_dBm", DataCube.Scalar(pavg[np - 1]));
-            ds.Add("Gt_dB", DataCube.Scalar(10 * Math.Log10(poutW / pinW)));
-            if (pulse is not null) note?.Invoke(EnvelopePulse.Add(ds, r, pulse, plan.Params.StartS));
-            else if (!multi)
+            var vsd = new List<double>(np * 8192);
+            for (int p = 0; p < np; p++)
             {
-                var y = Env(np - 1, 1);
-                var (g, lag, nmse) = SignalMeasure.Align(drive, y, 16);
-                ds.Add("NMSE_dB", DataCube.Scalar(nmse));
-                ds.Add("Delay_s", DataCube.Scalar(lag * r.StepS));
-                double gphase = Math.Atan2(g.Imaginary, g.Real);
-                var bins = new SortedDictionary<int, (double sum, double min, double max, double ph, int n)>();
-                for (int t = 0; t + lag < nm; t++)
-                {
-                    double pi = (drive[t].Real * drive[t].Real + drive[t].Imaginary * drive[t].Imaginary) / (8 * reZ);
-                    if (pi <= 0) continue;
-                    var yo = y[t + lag];
-                    double po = (yo.Real * yo.Real + yo.Imaginary * yo.Imaginary) / (2 * zm);
-                    if (po <= 0) continue;
-                    double gt = 10 * Math.Log10(po / pi);
-                    double ph = (Complex.Log(yo / drive[t]).Imaginary - gphase) * 180 / Math.PI;
-                    ph = ((ph + 540) % 360) - 180;
-                    int b = (int)Math.Floor(10 * Math.Log10(pi * 1e3) / 0.5);
-                    bins[b] = bins.TryGetValue(b, out var e)
-                        ? (e.sum + gt, Math.Min(e.min, gt), Math.Max(e.max, gt), e.ph + ph, e.n + 1)
-                        : (gt, gt, gt, ph, 1);
-                }
-                // A FIXED absolute grid (AmGridLoDbm..AmGridHiDbm, 0.5 dB), the same at every sweep point: a
-                // data-dependent grid made a swept AM-AM stack every point against the FIRST point's axis.
-                // A bin with fewer than AmMinSamples samples is NaN (plots skip it) rather than noise. The cubes are
-                // emitted at EVERY point, however few bins hold data: a sweep point without them (a CW drive fills one
-                // bin) could not be stacked against the others, and the whole sweep was refused.
-                int b0 = (int)Math.Round(AmGridLoDbm / 0.5), b1 = (int)Math.Round(AmGridHiDbm / 0.5);
-                int nb = b1 - b0;
-                var pinAxis = new Axis("Pin_inst", Enumerable.Range(b0, nb).Select(b => (b + 0.5) * 0.5).ToArray(), "dBm");
-                double[] Col(Func<(double sum, double min, double max, double ph, int n), double> f) =>
-                    Enumerable.Range(b0, nb).Select(b => bins.TryGetValue(b, out var e) && e.n >= AmMinSamples ? f(e) : double.NaN).ToArray();
-                ds.Add("AMAM", new DataCube([pinAxis], Col(e => e.sum / e.n)));
-                ds.Add("AMAM_min", new DataCube([pinAxis], Col(e => e.min)));
-                ds.Add("AMAM_max", new DataCube([pinAxis], Col(e => e.max)));
-                ds.Add("AMPM", new DataCube([pinAxis], Col(e => e.ph / e.n)));
+                int pp = p;
+                foreach (double v in Spectrum(k => SignalMeasure.Welch(Node(pp, k), fs, nseg))) vsd.Add(10 * Math.Log10(Math.Max(v, 1e-300) / 2));
             }
-            if (r.SupplyNames.Length > 0)
-            {
-                double pdc = 0;
-                for (int s = 0; s < r.SupplyNames.Length; s++)
-                {
-                    double iav = 0;
-                    for (int t = t0; t < nt; t++) iav += r.SupplyCurrent[t][s];
-                    pdc += -r.SupplyVoltage[s] * iav / nm;      // branch current flows + node -> source; a supply delivers -V*I
-                }
-                ds.Add("Pdc_W", DataCube.Scalar(pdc));
-                // NaN rather than absent when no DC power is drawn, for the same reason: every sweep point has the cube.
-                ds.Add("DE_pct", DataCube.Scalar(pdc > 0 ? 100 * poutW / pdc : double.NaN));
-            }
+            ds.Add("VSD", new DataCube([nodeAxis, new Axis("freq", gridF!, "Hz")], vsd.ToArray()) { Unit = "dBV/Hz" });
         }
+
+        var ks = multi ? r.CarrierMix.Distinct().ToArray() : [1];
+        var (pk, pf) = ProbePower(r, t0, ks);
+
+        // ── drive and supplies: scalars, they never depended on an output ──
+        var drive = new Complex[nm];
+        double reZ = r.DriveRe[0];
+        for (int t = 0; t < nm; t++) foreach (var d in r.Drive) drive[t] += d[t0 + t];
+        double pin = 0;
+        for (int t = 0; t < nm; t++) pin += drive[t].Real * drive[t].Real + drive[t].Imaginary * drive[t].Imaginary;
+        pin /= nm;
+        double pinW = pin / (8 * reZ);
+        ds.Add("Pin_avg_dBm", DataCube.Scalar(10 * Math.Log10(pinW * 1e3)));
+        double pdc = double.NaN;
+        if (r.SupplyNames.Length > 0)
+        {
+            pdc = 0;
+            for (int s = 0; s < r.SupplyNames.Length; s++)
+            {
+                double iav = 0;
+                for (int t = t0; t < nt; t++) iav += r.SupplyCurrent[t][s];
+                pdc += -r.SupplyVoltage[s] * iav / nm;      // branch current flows + node -> source; a supply delivers -V*I
+            }
+            ds.Add("Pdc_W", DataCube.Scalar(pdc));
+        }
+
+        if (nb > 0)
+        {
+            AddProbePower(ds, r, plan.SaveWaveforms, ks, branchAxis, pk, pf);
+            // A probe carrying no RF is NaN in every output row, so the branch axis is the same at every sweep point.
+            var noRf = pf.Select(x => !(x >= NoRfFraction * pinW)).ToArray();
+            static double Dbm(double w) => w > 0 ? 10 * Math.Log10(w * 1e3) : double.NaN;
+
+            var psd = new List<double>(nb * 8192);
+            for (int b = 0; b < nb; b++)
+            {
+                int bb = b;
+                foreach (double w in Spectrum(k => Delivered(bb, k))) psd.Add(Dbm(w));
+            }
+            ds.Add("PSD", new DataCube([branchAxis, new Axis("freq", gridF!, "Hz")], psd.ToArray()) { Unit = "dBm/Hz" });
+
+            if (pulse is null)
+            {
+                var aclr = new double[nb * nc * AclrLabels.Length];
+                var papr = new double[nb];
+                var ccdf = new double[nb * 200];
+                double[]? probAxis = null;
+                for (int b = 0; b < nb; b++)
+                {
+                    for (int c = 0; c < nc; c++)
+                    {
+                        int k = r.CarrierMix.Length > c ? r.CarrierMix[c] : 1;
+                        var (f, d) = Delivered(b, k);
+                        var (mb, sp) = SignalMeasure.AclrBands(carSpecs[c]);
+                        var a = SignalMeasure.Aclr(f, d, fs, r.CarrierOffsetHz.Length > c ? r.CarrierOffsetHz[c] : 0, mb, sp);
+                        int o = (b * nc + c) * AclrLabels.Length;
+                        aclr[o] = Dbm(a.ChannelPower);
+                        aclr[o + 1] = a.Acpr1L; aclr[o + 2] = a.Acpr1U; aclr[o + 3] = a.Acpr2L; aclr[o + 4] = a.Acpr2U;
+                        if (noRf[b]) Array.Fill(aclr, double.NaN, o, AclrLabels.Length);
+                    }
+                    // the instantaneous delivered power of the first carrier product
+                    Complex[] v1 = ProbeV(b, ks[0]), i1 = ProbeI(b, ks[0]);
+                    var pt = new double[nm];
+                    for (int t = 0; t < nm; t++) pt[t] = 0.5 * (v1[t].Real * i1[t].Real + v1[t].Imaginary * i1[t].Imaginary);
+                    papr[b] = noRf[b] ? double.NaN : SignalMeasure.PaprDb(pt, 1e-4);
+                    var (db, pr) = SignalMeasure.Ccdf(pt, 200);
+                    probAxis ??= pr;
+                    if (noRf[b]) Array.Fill(db, double.NaN);
+                    Array.Copy(db, 0, ccdf, b * 200, 200);
+                }
+                ds.Add("ACLR", new DataCube([branchAxis,
+                    new Axis("carrier", Index(nc), "", r.CarrierLabels.Length == nc ? r.CarrierLabels : carSpecs.Select(c => c.Label).ToArray()),
+                    new Axis("metric", Index(AclrLabels.Length), "", AclrLabels)], aclr));
+                ds.Add("PAPR_dB", new DataCube([branchAxis], papr));
+                ds.Add("CCDF", new DataCube([branchAxis, new Axis("prob", probAxis!)], ccdf));
+            }
+            ds.Add("Pavg_dBm", new DataCube([branchAxis], [.. pf.Select(Dbm)]) { Unit = "dBm" });
+            if (imd.Count > 0)
+            {
+                var im = new double[nb * imd.Count];
+                for (int b = 0; b < nb; b++)
+                    for (int i = 0; i < imd.Count; i++) im[b * imd.Count + i] = Dbm(pk[b * nk + imd[i].k]);
+                ds.Add("IMD", new DataCube([branchAxis, new Axis("product", Index(imd.Count), "", imd.Select(x => x.label).ToArray())], im));
+            }
+            else if (!multi && SingleEnvelopeImd(r, carSpecs, nb, nk, fs, (b, k) => Delivered(b, k)) is { } sim)
+                ds.Add("IMD", new DataCube([branchAxis, new Axis("product", Index(sim.labels.Length), "", sim.labels)], sim.dbm));
+
+            ds.Add("Gt_dB", new DataCube([branchAxis], [.. pf.Select((x, b) => noRf[b] ? double.NaN : 10 * Math.Log10(x / pinW))]));
+            if (r.SupplyNames.Length > 0)
+                // NaN rather than absent when no DC power is drawn: every sweep point has the cube.
+                ds.Add("DE_pct", new DataCube([branchAxis], [.. pf.Select((x, b) => pdc > 0 && !noRf[b] ? 100 * x / pdc : double.NaN)]));
+            if (pulse is not null) note?.Invoke(EnvelopePulse.Add(ds, r, pulse, plan.Params.StartS, branchAxis, noRf));
+            else if (!multi) AddAmAm(ds, r, t0, drive, reZ, branchAxis, noRf, ProbeV, ProbeI);
+        }
+
         ds.Add("__EnvStep_s", DataCube.Scalar(r.StepS));
         ds.Add("__EnvF0_Hz", DataCube.Scalar(r.F0Hz));
         ds.Add("__EnvSignalRate_Hz", DataCube.Scalar(r.SignalRateHz));
@@ -337,34 +345,99 @@ public static class EnvelopeDataSet
         {
             string[] metrics = ["order", "rel_error", "sigma_max"];
             ds.Add("__EnvSnpFit", new DataCube([
-                new Axis("instance", Enumerable.Range(0, r.SnpFits.Count).Select(i => (double)i).ToArray(), "", r.SnpFits.Select(f => f.Instance).ToArray()),
-                new Axis("metric", Enumerable.Range(0, metrics.Length).Select(i => (double)i).ToArray(), "", metrics)],
+                new Axis("instance", Index(r.SnpFits.Count), "", r.SnpFits.Select(f => f.Instance).ToArray()),
+                new Axis("metric", Index(metrics.Length), "", metrics)],
                 r.SnpFits.SelectMany(f => new[] { f.Order, f.RelativeError, f.SigmaMax }).ToArray()));
         }
         return ds;
     }
 
+    private static double[] Index(int n) => [.. Enumerable.Range(0, n).Select(i => (double)i)];
+
     /// <summary>
-    /// Power through every IProbe. Per product, ½·Re(Vₖ·Iₖ*) at a step (V₀·I₀ at DC) is the exact power the product
-    /// carries: the cross terms between products average out over a carrier period. Averaged over the same window as
-    /// the built-in scalars (from <paramref name="t0"/>), so a probe at a true 50 Ω load reads Pout_avg_dBm. The
-    /// fundamental band is <paramref name="fund"/>: harmonic 1, or the lattice's carrier products.
+    /// AM-AM and AM-PM at every IProbe (brief ENV-MEAS-3 §4-5), on the fixed <c>Pin_inst</c> grid. X is the instantaneous
+    /// available drive, |V_drive|²/(8 Re Z_s); the probe node's fundamental envelope is aligned to the drive
+    /// (<see cref="SignalMeasure.Align"/>); the gain is the delivered power ½·Re(V₁·I₁*) over the available drive, exact for
+    /// any load, and the phase is V₁'s relative to the drive less the mean gain phase. The cloud is the same samples on
+    /// the drive's time axis, every m-th of them.
     /// </summary>
-    private static void AddProbePower(DataSet ds, EnvelopeRunResult r, bool saveWaveforms, int t0, int[] fund)
+    private static void AddAmAm(DataSet ds, EnvelopeRunResult r, int t0, Complex[] drive, double reZ, Axis branchAxis, bool[] noRf,
+                                Func<int, int, Complex[]> probeV, Func<int, int, Complex[]> probeI)
+    {
+        int nm = drive.Length, nb = branchAxis.Length;
+        // A FIXED absolute grid (AmGridLoDbm..AmGridHiDbm, 0.5 dB), the same at every sweep point: a data-dependent grid
+        // made a swept AM-AM stack every point against the FIRST point's axis. A bin with fewer than AmMinSamples samples
+        // is NaN (plots skip it) rather than noise. The cubes are emitted at EVERY point, however few bins hold data: a
+        // sweep point without them (a CW drive fills one bin) could not be stacked against the others, and the whole
+        // sweep was refused.
+        int b0 = (int)Math.Round(AmGridLoDbm / 0.5), b1 = (int)Math.Round(AmGridHiDbm / 0.5);
+        int nbin = b1 - b0;
+        var pinAxis = new Axis("Pin_inst", Enumerable.Range(b0, nbin).Select(b => (b + 0.5) * 0.5).ToArray(), "dBm");
+        // the cloud keeps every m-th aligned sample; m depends on Stop and the step alone, so a swept run stacks
+        int m = Math.Max(1, (nm + CloudMaxSamples - 1) / CloudMaxSamples);
+        int nc = (nm + m - 1) / m;
+        var pinT = new double[nc];
+        for (int c = 0; c < nc; c++)
+        {
+            var d = drive[c * m];
+            double pi = (d.Real * d.Real + d.Imaginary * d.Imaginary) / (8 * reZ);
+            pinT[c] = pi > 0 ? 10 * Math.Log10(pi * 1e3) : double.NaN;
+        }
+        var gtT = new double[nc * nb]; var pmT = new double[nc * nb];
+        Array.Fill(gtT, double.NaN); Array.Fill(pmT, double.NaN);
+        string[] names = ["AMAM", "AMAM_min", "AMAM_max", "AMPM", "AMPM_min", "AMPM_max"];
+        var cols = names.Select(_ => new double[nb * nbin]).ToArray();
+        var nmse = new double[nb]; var delay = new double[nb];
+        for (int b = 0; b < nb; b++)
+        {
+            var y = probeV(b, 1); var cur = probeI(b, 1);
+            var (g, lag, e) = SignalMeasure.Align(drive, y, MaxLag);
+            nmse[b] = noRf[b] ? double.NaN : e;
+            delay[b] = noRf[b] ? double.NaN : lag * r.StepS;
+            double gphase = Math.Atan2(g.Imaginary, g.Real);
+            var bins = new SortedDictionary<int, (double sum, double min, double max, double ph, double phMin, double phMax, int n)>();
+            for (int t = 0; t + lag < nm && !noRf[b]; t++)
+            {
+                double pi = (drive[t].Real * drive[t].Real + drive[t].Imaginary * drive[t].Imaginary) / (8 * reZ);
+                if (pi <= 0) continue;
+                Complex yo = y[t + lag], io = cur[t + lag];
+                double po = 0.5 * (yo.Real * io.Real + yo.Imaginary * io.Imaginary);
+                if (po <= 0) continue;
+                double gt = 10 * Math.Log10(po / pi);
+                double ph = (Complex.Log(yo / drive[t]).Imaginary - gphase) * 180 / Math.PI;
+                ph = ((ph + 540) % 360) - 180;
+                int bin = (int)Math.Floor(10 * Math.Log10(pi * 1e3) / 0.5);
+                bins[bin] = bins.TryGetValue(bin, out var q)
+                    ? (q.sum + gt, Math.Min(q.min, gt), Math.Max(q.max, gt), q.ph + ph, Math.Min(q.phMin, ph), Math.Max(q.phMax, ph), q.n + 1)
+                    : (gt, gt, gt, ph, ph, ph, 1);
+                if (t % m == 0) { gtT[t / m * nb + b] = gt; pmT[t / m * nb + b] = ph; }
+            }
+            for (int i = 0; i < nbin; i++)
+            {
+                bool ok = bins.TryGetValue(b0 + i, out var q) && q.n >= AmMinSamples;
+                double[] v = ok ? [q.sum / q.n, q.min, q.max, q.ph / q.n, q.phMin, q.phMax] : [.. names.Select(_ => double.NaN)];
+                for (int c = 0; c < names.Length; c++) cols[c][b * nbin + i] = v[c];
+            }
+        }
+        ds.Add("NMSE_dB", new DataCube([branchAxis], nmse));
+        ds.Add("Delay_s", new DataCube([branchAxis], delay));
+        for (int c = 0; c < names.Length; c++) ds.Add(names[c], new DataCube([branchAxis, pinAxis], cols[c]));
+        var timeAxis = new Axis("time", [.. Enumerable.Range(0, nc).Select(c => r.Time[t0 + c * m])], "s");
+        ds.Add("Pin_inst_t_dBm", new DataCube([timeAxis], pinT) { Unit = "dBm" });
+        ds.Add("Gt_t_dB", new DataCube([timeAxis, branchAxis], gtT) { Unit = "dB" });
+        ds.Add("PM_t_deg", new DataCube([timeAxis, branchAxis], pmT) { Unit = "deg" });
+    }
+
+    /// <summary>
+    /// Per IProbe, per product, ½·Re(Vₖ·Iₖ*) at a step (V₀·I₀ at DC) is the exact power the product carries: the cross terms
+    /// between products average out over a carrier period. Averaged from <paramref name="t0"/>, the built-in scalars'
+    /// window. The fundamental band is <paramref name="fund"/>: harmonic 1, or the lattice's carrier products.
+    /// </summary>
+    private static (double[] pk, double[] pf) ProbePower(EnvelopeRunResult r, int t0, int[] fund)
     {
         int nb = r.IProbeNames.Length, nt = r.Time.Length;
-        if (nb == 0) return;
+        if (nb == 0) return ([], []);
         int nk = r.IProbeCurrent[0][0].Length, nm = nt - t0;
-        bool multi = r.MixTones is not null;
-        var branchAxis = new Axis("branch", Enumerable.Range(0, nb).Select(i => (double)i).ToArray(), "", r.IProbeNames);
-        var third = multi
-            ? new Axis("mixIndex", r.MixFreqHz!, "Hz", r.MixLabels)
-            : new Axis("harmonic", Enumerable.Range(0, nk).Select(i => (double)i).ToArray());
-        double P(int t, int b, int k)
-        {
-            Complex v = r.IProbeVoltage[t][b][k], i = r.IProbeCurrent[t][b][k];
-            return k == 0 ? v.Real * i.Real : 0.5 * (v.Real * i.Real + v.Imaginary * i.Imaginary);
-        }
         var pk = new double[nb * nk];
         var pf = new double[nb];
         for (int b = 0; b < nb; b++)
@@ -372,11 +445,29 @@ public static class EnvelopeDataSet
             for (int k = 0; k < nk; k++)
             {
                 double sum = 0;
-                for (int t = t0; t < nt; t++) sum += P(t, b, k);
+                for (int t = t0; t < nt; t++) sum += P(r, t, b, k);
                 pk[b * nk + k] = sum / nm;
             }
             foreach (int k in fund) pf[b] += pk[b * nk + k];
         }
+        return (pk, pf);
+    }
+
+    private static double P(EnvelopeRunResult r, int t, int b, int k)
+    {
+        Complex v = r.IProbeVoltage[t][b][k], i = r.IProbeCurrent[t][b][k];
+        return k == 0 ? v.Real * i.Real : 0.5 * (v.Real * i.Real + v.Imaginary * i.Imaginary);
+    }
+
+    /// <summary>Power through every IProbe (brief ENV-MEAS-1): the per-product and fundamental-band averages always, the
+    /// probe currents and the instantaneous power with the waveforms.</summary>
+    private static void AddProbePower(DataSet ds, EnvelopeRunResult r, bool saveWaveforms, int[] fund, Axis branchAxis, double[] pk, double[] pf)
+    {
+        int nb = r.IProbeNames.Length, nt = r.Time.Length;
+        int nk = r.IProbeCurrent[0][0].Length;
+        var third = r.MixTones is not null
+            ? new Axis("mixIndex", r.MixFreqHz!, "Hz", r.MixLabels)
+            : new Axis("harmonic", Index(nk));
         ds.Add("Pprobe_W", new DataCube([branchAxis, third], pk));
         ds.Add("Pprobe_fund_W", new DataCube([branchAxis], pf));
         if (saveWaveforms)
@@ -387,24 +478,24 @@ public static class EnvelopeDataSet
                 for (int b = 0; b < nb; b++)
                 {
                     for (int k = 0; k < nk; k++) ic[(t * nb + b) * nk + k] = r.IProbeCurrent[t][b][k];
-                    foreach (int k in fund) pt[t * nb + b] += P(t, b, k);
+                    foreach (int k in fund) pt[t * nb + b] += P(r, t, b, k);
                 }
             ds.Add("I", new DataCube([new Axis("time", r.Time, "s"), branchAxis, third], ic));
             ds.Add("Pprobe_t_W", new DataCube([new Axis("time", r.Time, "s"), branchAxis], pt));
         }
-        ds.Add("__ProbeBranches", new DataCube([new Axis("probe", Enumerable.Range(0, nb).Select(i => (double)i).ToArray(), "", r.IProbeNames)],
-                                               new double[nb]));
+        ds.Add("__ProbeBranches", new DataCube([new Axis("probe", Index(nb), "", r.IProbeNames)], new double[nb]));
     }
 
     /// <summary>
     /// The IMD cube of a SINGLE envelope that spans two widely spaced carriers (Envelope=single): the
-    /// same products the lattice lists, each read as the power of the harmonic envelope that holds it
+    /// same products the lattice lists, each read as the delivered power of the harmonic envelope that holds it
     /// (k = a + b for the product a f1 + b f2) integrated over +/- half the carrier spacing around its offset F - k f0. That
     /// is the lattice's per-product mean power by another route, so the two modes compare directly.
+    /// <paramref name="density"/> is a probe's delivered power density (W/Hz) in one harmonic envelope.
     /// Null unless there are exactly two carrier frequencies more than 3x the bandwidth apart.
     /// </summary>
     private static (string[] labels, double[] dbm)? SingleEnvelopeImd(EnvelopeRunResult r, List<CarrierSpec> carSpecs,
-        int np, int nk, double zm, double fs, int nseg, Func<int, int, Complex[]> env)
+        int nb, int nk, double fs, Func<int, int, (double[] f, double[] d)> density)
     {
         if (!WideTwoCarrier(r, carSpecs, out double f1, out double f2, out double sp)) return null;
         var prods = new[] { (1, 0, "C1 (f1)"), (0, 1, "C2 (f2)"), (2, -1, "IM3L (2f1-f2)"), (-1, 2, "IM3U (2f2-f1)"),
@@ -426,19 +517,19 @@ public static class EnvelopeDataSet
             keep.Add((lab, k, off));
         }
         if (keep.Count == 0) return null;
-        var dbm = new double[np * keep.Count];
-        for (int p = 0; p < np; p++)
+        var dbm = new double[nb * keep.Count];
+        for (int p = 0; p < nb; p++)
         {
             var welch = new Dictionary<int, (double[] f, double[] d)>();
             for (int i = 0; i < keep.Count; i++)
             {
                 var (_, k, off) = keep[i];
-                if (!welch.TryGetValue(k, out var w)) welch[k] = w = SignalMeasure.Welch(env(p, k), fs, nseg);
+                if (!welch.TryGetValue(k, out var w)) welch[k] = w = density(p, k);
                 double pw = SignalMeasure.BandPower(w.f, w.d, off, sp);
                 // the DC envelope is the physical baseband itself: a line at +F appears at +F and -F of its
                 // two-sided spectrum, and its power is not halved the way Re(V e^{jwt}) is
                 if (k == 0) pw = 2 * (pw + SignalMeasure.BandPower(w.f, w.d, -off, sp));
-                dbm[p * keep.Count + i] = 10 * Math.Log10(Math.Max(pw, 1e-300) / (2 * zm) * 1e3);
+                dbm[p * keep.Count + i] = pw > 0 ? 10 * Math.Log10(pw * 1e3) : double.NaN;
             }
         }
         return (keep.Select(x => x.lab).ToArray(), dbm);

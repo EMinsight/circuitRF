@@ -1,5 +1,8 @@
 using CircuitRF.Cli;
 using CircuitRF.Design.Circuit;
+using CircuitRF.Design.Schematic;
+using CircuitRF.Design.Workspace;
+using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.Tests.ModelComposer;
 using RfCore.Data;
 using RfCore.Export;
@@ -29,14 +32,14 @@ public sealed class PulsedRadarExampleTests(ITestOutputHelper output)
             Assert.Equal(0, CliEntry.Run(["env", sch, "-o", npy]));
             using var stream = File.OpenRead(npy);
             var ds = DataSetImporter.ImportNpy(stream);
-            double[] top = Cube(ds, "PulseTop_dBm"), droop = Cube(ds, "PulseDroop_dB");
+            double[] top = AtIout(ds, "PulseTop_dBm"), droop = AtIout(ds, "PulseDroop_dB");
             var v = Get(ds, "V");
             double h = v.Axes[0].Values[1] - v.Axes[0].Values[0];
             int tj = Array.IndexOf(v.Axes[1].Labels!, "tj");
             double Rise(double t) => ((System.Numerics.Complex)v[(int)Math.Round(t / h), tj, 0]).Real;
             double heat = Rise(110e-6) - Rise(9e-6);
             output.WriteLine($"top {string.Join(", ", top.Select(x => x.ToString("F3")))} dBm; droop {string.Join(", ", droop.Select(x => x.ToString("F4")))} dB; " +
-                             $"pulse 1 heats {heat:F1} K; pulse to pulse {Cube(ds, "PulseToPulse_dB")[0]:F4} dB");
+                             $"pulse 1 heats {heat:F1} K; pulse to pulse {AtIout(ds, "PulseToPulse_dB")[0]:F4} dB");
             // the README's numbers
             Assert.Equal(3, top.Length);
             Assert.Equal(Readme.TopDbm, top[0], 0.05);
@@ -76,6 +79,35 @@ public sealed class PulsedRadarExampleTests(ITestOutputHelper output)
         }
     }
 
+    /// <summary>
+    /// The pulse bench's schematic was laid out by hand, so the authoring no longer draws it: it must still BE the
+    /// authoring's netlist. Extracted, it and a fresh drawing of <see cref="PulsedRadarExampleAuthoring.PulsedPApCW"/> hold
+    /// the same lines (order aside: a drawing lists parts in the order they are placed).
+    /// </summary>
+    [Fact]
+    public void TheHandLaidOutPulseBench_IsItsNetlist()
+    {
+        const string cell = PulsedRadarExampleAuthoring.PulseBench;
+        Assert.Contains(cell, PulsedRadarExampleAuthoring.HandLaidOut);
+        string root = Directory.CreateTempSubdirectory("crf-radar-drawn-").FullName;
+        try
+        {
+            string ws = WorkspaceCreate.Create(root, PulsedRadarExampleAuthoring.Folder, null).WorkspaceDir;
+            // the device's pins, the thermal one among them, come from its model
+            Directory.CreateDirectory(Path.Combine(ws, PulsedRadarExampleAuthoring.DeviceDir));
+            File.Copy(Path.Combine(Ws, PulsedRadarExampleAuthoring.Model), Path.Combine(ws, PulsedRadarExampleAuthoring.Model));
+            ModelComposerExampleAuthoring.Draw(ws, cell, PulsedRadarExampleAuthoring.PulsedPApCW, null, PulsedRadarExampleAuthoring.Model);
+            string[] Lines(string csch)
+            {
+                var (model, _, _) = SchematicPersistence.LoadFromFile(csch);
+                return [.. SchematicCircuit.CnlTextOf(model, cell).Split('\n').Select(l => l.Trim())
+                                           .Where(l => l.Length > 0 && !l.StartsWith(';')).Order(StringComparer.Ordinal)];
+            }
+            Assert.Equal(Lines(PulsedRadarExampleAuthoring.SchematicOf(ws, cell)), Lines(PulsedRadarExampleAuthoring.SchematicOf(Ws, cell)));
+        }
+        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+    }
+
     private (double[] Pin, double[] Pout, double[] Pae) Sweep(string cnl)
     {
         var r = CircuitEvaluation.Evaluate(PreparedCircuit.FromText(cnl, Ws, Ws), new CircuitEvaluationRequest());
@@ -89,7 +121,13 @@ public sealed class PulsedRadarExampleTests(ITestOutputHelper output)
     /// <summary>A cube of a run read back from its file (grouped under its analysis) or straight from the run.</summary>
     private static DataCube Get(DataSet ds, string name) => ds.Contains(name) ? ds[name] : ds["ENV1." + name];
 
-    private static double[] Cube(DataSet ds, string name) => Get(ds, name).RealValues;
+    /// <summary>A per-IProbe cube's row at the output probe, <c>Iout</c> (its first axis is the branch).</summary>
+    private static double[] AtIout(DataSet ds, string name)
+    {
+        var c = Get(ds, name);
+        int b = Array.IndexOf(c.Axes[0].Labels!, "Iout"), n = c.RealValues.Length / c.Axes[0].Length;
+        return c.RealValues[(b * n)..((b + 1) * n)];
+    }
 
     /// <summary>What the README states, measured on the merged build.</summary>
     private static class Readme

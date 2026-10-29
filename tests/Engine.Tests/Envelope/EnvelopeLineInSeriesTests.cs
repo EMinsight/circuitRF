@@ -57,7 +57,8 @@ public sealed class EnvelopeLineInSeriesTests(ITestOutputHelper output)
         Vdc:V2 VDD 0 Vdc=VDD V
         C:Cout Vd n10 C=100 pF
         {line}
-        R:RL Vout 0 R=50 Ohm
+        IProbe:Iout Vout o
+        R:RL o 0 R=50 Ohm
         R:Rb1 b1 0 R=50 Ohm
         R:Rb2 b2 0 R=50 Ohm
         analysis ENV1 type=env Stop={stop} Accuracy=standard MaxHarm=5 MaxMixOrder=7 Probes="Vin,Vd,Vout" Segments=1
@@ -93,7 +94,7 @@ public sealed class EnvelopeLineInSeriesTests(ITestOutputHelper output)
     public void TheReproduction_RunsToTheEnd(string line)
     {
         var ds = Run(Pa(line, -10, "1e-6"), out _);
-        double pout = ds["Pout_avg_dBm"].RealValues[0];
+        double pout = ds["Pavg_dBm"].RealValues[0];
         output.WriteLine($"{line}: Pout_avg {pout:0.0000} dBm");
         Assert.True(double.IsFinite(pout));
     }
@@ -104,8 +105,8 @@ public sealed class EnvelopeLineInSeriesTests(ITestOutputHelper output)
     {
         var line = Run(Pa("TLIN:TL3 n10 Vout Z=50 Ohm L=3 mm", 14, "2e-6"), out _);
         var none = Run(Pa("R:Rz n10 Vout R=0.001 Ohm", 14, "2e-6"), out _);
-        double dP = line["Pout_avg_dBm"].RealValues[0] - none["Pout_avg_dBm"].RealValues[0];
-        double[] a = Aclr(line, "Vout"), b = Aclr(none, "Vout");
+        double dP = line["Pavg_dBm"].RealValues[0] - none["Pavg_dBm"].RealValues[0];
+        double[] a = Aclr(line, "Iout"), b = Aclr(none, "Iout");
         output.WriteLine($"ΔPout {dP:0.0000} dB, ΔACPR1L {a[1] - b[1]:0.0000} dB, ΔACPR1U {a[2] - b[2]:0.0000} dB");
         Assert.True(Math.Abs(dP) < 0.05, $"Pout_avg {dP:0.0000} dB from the line-free circuit");
         Assert.True(Math.Abs(a[1] - b[1]) < 0.05 && Math.Abs(a[2] - b[2]) < 0.05, $"ACPR1 {a[1] - b[1]:0.0000} / {a[2] - b[2]:0.0000} dB");

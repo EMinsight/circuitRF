@@ -13,7 +13,8 @@
 //  (EnvelopeMemory), at least 5 us; a run too short to hold two
 //  segments that long runs as one.  Each segment also runs a short
 //  tail into the next one, and the disagreement on that overlap,
-//  relative to each probe's RMS there, is reported as the seam error.
+//  relative to each recorded voltage's and IProbe current's RMS there,
+//  is reported as the seam error.
 // ================================================================
 
 using System.Diagnostics;
@@ -33,8 +34,10 @@ public static class EnvelopeRunner
     /// <param name="Mode">auto / lattice: widely spaced carriers get their own fundamentals; single: one envelope spans them all.</param>
     /// <param name="ZmeasWarning">The one warning an old file's retired <c>Zmeas</c> other than 50 earns; null when it
     /// has none, or 50.</param>
+    /// <param name="ProbesNote">The one note an old file's retired <c>Probes</c> list earns; null when it has none.</param>
+    /// <param name="Name">The analysis, for the notes a run writes.</param>
     public sealed record Plan(EnvelopeParams Params, int Segments, double WarmupS, bool SaveWaveforms, int MaxMixOrder = 5,
-                              string Mode = "auto", string? ZmeasWarning = null);
+                              string Mode = "auto", string? ZmeasWarning = null, string? ProbesNote = null, string Name = "");
 
     public static Plan Resolve(EnvelopeAnalysis a, IReadOnlyDictionary<string, Value> globals)
     {
@@ -79,13 +82,18 @@ public static class EnvelopeRunner
         if (mode is "" ) mode = "auto";
         if (mode is not ("auto" or "single" or "lattice"))
             throw new InvalidOperationException($"envelope '{a.Name}': Envelope must be auto, single or lattice (got '{a.Envelope}')");
-        return new Plan(p, seg, warm, save, Math.Max(1, (int)Num(a.MaxMixOrderExpr, 7)), mode, ZmeasWarning(a, globals));
+        string? probesNote = p.Probes.Length == 0 ? null
+            : $"Envelope '{a.Name}': Probes is no longer a setting. Every labeled net's voltage is recorded and the nodes it " +
+              $"lists ({string.Join(", ", p.Probes)}) join them; power is measured at IProbes.";
+        return new Plan(p, seg, warm, save, Math.Max(1, (int)Num(a.MaxMixOrderExpr, 7)), mode, ZmeasWarning(a, globals),
+                        probesNote, a.Name);
     }
 
     /// <summary>
-    /// <c>Zmeas</c> is retired (brief ENV-MEAS-1): every node power is into <see cref="EnvelopeDataSet.MeasureOhms"/>. An
-    /// old file still carries the key; one that says 50 reads silently, and any other value runs at 50 with this warning,
-    /// because a result that silently moved would be the worse outcome.
+    /// <c>Zmeas</c> is retired (brief ENV-MEAS-1): an envelope run reports voltages at its labeled nets and power at its
+    /// IProbes, and assumes no impedance anywhere (brief ENV-MEAS-3). An old file still carries the key; one that says 50,
+    /// the old default, reads silently, and any other value earns this warning, because it asked for something the run
+    /// no longer does.
     /// </summary>
     private static string? ZmeasWarning(EnvelopeAnalysis a, IReadOnlyDictionary<string, Value> globals)
     {
@@ -94,12 +102,11 @@ public static class EnvelopeRunner
         {
             var v = HbEngine.BuildEvaluator(globals).EvalExpr(Parser.Parse(a.ZmeasExpr), HbEngine.BuildScope(globals));
             var z = v.Kind == ValueKind.Real ? new Complex(v.AsReal(), 0) : v.AsComplex();
-            if (z == new Complex(EnvelopeDataSet.MeasureOhms, 0)) return null;
+            if (z == new Complex(50, 0)) return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { }
-        return $"Envelope '{a.Name}': Zmeas={a.ZmeasExpr} is no longer a setting; its node powers are into " +
-               $"{EnvelopeDataSet.MeasureOhms:0} Ω. To measure the power into another load, place an IProbe in series with it " +
-               "and read Pprobe_fund_W.";
+        return $"Envelope '{a.Name}': Zmeas={a.ZmeasExpr} is no longer a setting. An envelope run reports voltages at its " +
+               "labeled nets and power at its IProbes; to measure the power into a load, place an IProbe in series with it.";
     }
 
     /// <summary>The envelope step the engines will use (same rule as theirs: signal rate x oversampling, or explicit).</summary>
@@ -175,6 +182,11 @@ public static class EnvelopeRunner
         var p = plan.Params;
         var first = elaborate();
         if (plan.ZmeasWarning is { } zw) first.AddWarningOnce("envelope-zmeas:" + zw, zw);
+        if (plan.ProbesNote is { } pn) first.AddNoteOnce("envelope-probes:" + pn, pn);
+        if (!first.Components.Any(c => c.Model is Core.Devices.IProbeModel && c.Nodes.Length >= 2))
+            first.AddNoteOnce("envelope-no-iprobe:" + plan.Name,
+                $"Envelope '{plan.Name}': no IProbe is placed, so no output power, gain or AM-AM was measured. " +
+                "Place an IProbe in series with a load to measure the power into it.");
         var src = first.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().FirstOrDefault()
                   ?? throw new InvalidOperationException("Envelope analysis needs at least one MOD_Source (the modulated signal).");
         _ = src.Signal;                                             // generate (or load) the signal once, up front
@@ -249,7 +261,7 @@ public static class EnvelopeRunner
     internal const double SeamWarnAbove = 0.01;
 
     /// <summary>
-    /// One seam: each probe's worst harmonic-<paramref name="kk"/> mismatch on the <paramref name="ov"/>-step overlap
+    /// One seam: each recorded signal's (a node voltage, then an IProbe current) worst harmonic-<paramref name="kk"/> mismatch on the <paramref name="ov"/>-step overlap
     /// (<paramref name="prev"/> from step <paramref name="pseg"/>, <paramref name="cur"/> from 0), relative to its own RMS
     /// there — the value at a step would let one sample near zero inflate it. A probe with next to no harmonic is
     /// measured against the largest probe's RMS. Returns the worst over every probe, and over the probes that are not
@@ -380,7 +392,11 @@ public static class EnvelopeRunner
         for (int i = 0; i < drv.Length; i++) drv[i] = new List<Complex>();
         double seam = 0, seamExternal = 0;
         string? seamProbe = null;
-        var stateProbe = StateProbes(nets[0], results[0].ProbeNames);
+        // every recorded voltage, then every IProbe current: a current is never a model's internal state
+        var stateProbe = StateProbes(nets[0], results[0].ProbeNames).Concat(results[0].IProbeNames.Select(_ => false)).ToArray();
+        string[] seamNames = [.. results[0].ProbeNames, .. results[0].IProbeNames];
+        static Complex[][][] Signals(EnvelopeRunResult x) =>
+            [.. Enumerable.Range(0, x.Time.Length).Select(t => (Complex[][])[.. x.Probe[t], .. x.IProbeCurrent[t]])];
         for (int s = 0; s < segs; s++)
         {
             var r = results[s];
@@ -399,9 +415,9 @@ public static class EnvelopeRunner
                 int pseg = bound[s] - bound[s - 1];
                 int ov = Math.Min(prev.Time.Length - pseg, r.Time.Length);
                 int kk = Math.Min(1, r.Probe[0][0].Length - 1);
-                var (all, external, worstProbe) = Seam(prev.Probe, pseg, r.Probe, ov, kk, stateProbe);
+                var (all, external, worstProbe) = Seam(Signals(prev), pseg, Signals(r), ov, kk, stateProbe);
                 seam = Math.Max(seam, all);
-                if (worstProbe >= 0 && external > seamExternal) { seamExternal = external; seamProbe = r.ProbeNames[worstProbe]; }
+                if (worstProbe >= 0 && external > seamExternal) { seamExternal = external; seamProbe = seamNames[worstProbe]; }
             }
         }
         var R = results[0];
@@ -424,7 +440,7 @@ public static class EnvelopeRunner
         // a run that started cold (no warm-up on its first segment) is measured after a short settle
         double firstWarm = segs > 1 ? warm : (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS);
         // — except a pulse train, which starts in its off-time at the quiescent point and has nothing to settle: its
-        // Pin_avg and Pout_avg are then averages over the whole record, off-time included
+        // Pin_avg and every probe's Pavg are then averages over the whole record, off-time included
         double skip = firstWarm > 0 || EnvelopePulse.Of(merged) is not null
             ? 0 : Math.Min(5e-6, 0.1 * p.StopS);
         var ds = EnvelopeDataSet.Build(merged, plan, skip, note);

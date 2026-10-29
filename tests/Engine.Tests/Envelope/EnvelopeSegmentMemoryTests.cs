@@ -95,7 +95,7 @@ public sealed class EnvelopeSegmentMemoryTests
 
         Assert.Equal(1, auto["__EnvSegments"].RealValues[0]);
         Assert.Contains(notes, n => n.Contains("the network at node 'nb' remembers 20 µs", StringComparison.Ordinal));
-        Assert.Equal(seq["Pout_avg_dBm"].RealValues[0], auto["Pout_avg_dBm"].RealValues[0]);
+        Assert.Equal(seq["VSD"].RealValues, auto["VSD"].RealValues);
         Assert.Equal(seq["V"].ComplexValues, auto["V"].ComplexValues);
 
         var (forced, forcedNotes) = Run(BiasFeed("20n", "Segments=4 Warmup=1e-6"));

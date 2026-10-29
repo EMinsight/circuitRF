@@ -103,24 +103,26 @@ public sealed class SearchIndex
                 sections.Add([i, anchor, heading, text]);
         }
 
-        var payload = new Dictionary<string, object>
+        // ONE RECORD PER LINE, each record compact. Indenting the JSON would add a third of the file's bytes to every
+        // clone for nobody's benefit; a single line made every regeneration one changed 2 MB line, so no diff could say
+        // which section's text had moved and a grep printed the whole index. A newline per record costs about a byte
+        // each. Unicode is not escaped, so "Ω" stays one character.
+        var options = new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+        var sb = new StringBuilder();
+        sb.Append("// GENERATED FILE - do not edit. Rebuilt by tools/DocGen from docs/user/src/**.md.\n")
+          .Append("// The search UI that reads it is the hand-written assets/js/docs-search.js.\n")
+          .Append("window.CRF_DOCS_SEARCH = {\"v\":1,\"p\":[");
+        void Records<T>(List<T> records)
         {
-            ["v"] = 1,
-            ["p"] = pages,
-            ["s"] = sections,
-        };
-
-        // Not indented: this file is read by a machine, and pretty-printing it would add a third of
-        // its bytes to every clone for nobody's benefit. Unicode is not escaped, so "Ω" stays one
-        // character and the file stays diffable.
-        string json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        });
-
-        return "// GENERATED FILE - do not edit. Rebuilt by tools/DocGen from docs/user/src/**.md.\n"
-             + "// The search UI that reads it is the hand-written assets/js/docs-search.js.\n"
-             + "window.CRF_DOCS_SEARCH = " + json + ";\n";
+            for (int i = 0; i < records.Count; i++)
+                sb.Append(i == 0 ? "\n" : ",\n").Append(JsonSerializer.Serialize(records[i], options));
+            sb.Append("\n]");
+        }
+        Records(pages);
+        sb.Append(",\"s\":[");
+        Records(sections);
+        sb.Append("};\n");
+        return sb.ToString();
     }
 
     // ── Extraction ────────────────────────────────────────────────────────────

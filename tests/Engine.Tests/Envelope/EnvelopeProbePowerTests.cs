@@ -72,29 +72,35 @@ public sealed class EnvelopeProbePowerTests
         return c.RealValues[b * c.Axes[1].Length + k];
     }
 
-    [Fact]
-    public void AtATrue50OhmLoad_TheProbePowerIsPoutAvg()
+    /// <summary>The mean fundamental power |V_b|²/(2R) at the load's node, over the built-in scalars' window.</summary>
+    private static double NodePower(DataSet ds, double ohms)
     {
-        var ds = Run(Bench(Rl50, "Stop=10e-6"));
-
-        Assert.Equal(ds["Pout_avg_dBm"].RealValues[0], 10 * Math.Log10(Fund(ds, "Iout") * 1e3), 1e-6);
-    }
-
-    [Fact]
-    public void AtA25OhmLoad_TheProbeIsExact_AndPoutAvgReads3dBLow()
-    {
-        var ds = Run(Bench("R:RL b 0 R=25 Ohm", "Stop=10e-6"));
-
         var v = ds["V"];
         int nt = v.Axes[0].Length, np = v.Axes[1].Length, nk = v.Axes[2].Length, b = Array.IndexOf(v.Axes[1].Labels!, "b");
         var vv = v.ComplexValues;
         int t0 = T0(ds);
         double sum = 0;
         for (int t = t0; t < nt; t++) { var x = vv[(t * np + b) * nk + 1]; sum += x.Real * x.Real + x.Imaginary * x.Imaginary; }
-        double expected = sum / (nt - t0) / (2 * 25);
+        return sum / (nt - t0) / (2 * ohms);
+    }
 
+    [Fact]
+    public void AtATrue50OhmLoad_TheProbePowerIsTheNodePowerInto50Ohm_AndPavgSaysIt()
+    {
+        var ds = Run(Bench(Rl50, "Stop=10e-6"));
+
+        double expected = NodePower(ds, 50);
         Assert.Equal(expected, Fund(ds, "Iout"), expected * 1e-9);
-        Assert.Equal(10 * Math.Log10(2), 10 * Math.Log10(Fund(ds, "Iout") * 1e3) - ds["Pout_avg_dBm"].RealValues[0], 1e-6);
+        Assert.Equal(10 * Math.Log10(Fund(ds, "Iout") * 1e3), ds["Pavg_dBm"].RealValues[0], 1e-9);
+    }
+
+    [Fact]
+    public void AtA25OhmLoad_TheProbeIsExact()
+    {
+        var ds = Run(Bench("R:RL b 0 R=25 Ohm", "Stop=10e-6"));
+
+        double expected = NodePower(ds, 25);
+        Assert.Equal(expected, Fund(ds, "Iout"), expected * 1e-9);
     }
 
     [Fact]
@@ -163,7 +169,7 @@ public sealed class EnvelopeProbePowerTests
     }
 
     [Fact]
-    public void Zmeas_IsRetired_50IsSilent_AnythingElseRunsAt50WithOneWarning()
+    public void Zmeas_IsRetired_50IsSilent_AnythingElseChangesNothingWithOneWarning()
     {
         string Swept(string z) => Bench(Rl50, $"Stop=2e-6 Zmeas={z}", Cw) + "\nanalysis SW1 type=parametric_sweep Var=Pin Values=0,3 Inner=ENV1\n";
         (DataSet ds, List<string> warnings, TestBench tb) RunSwept(string z)
@@ -180,6 +186,6 @@ public sealed class EnvelopeProbePowerTests
         Assert.Empty(quiet);
         Assert.Single(warned);
         Assert.Empty(tb25.ReadWarnings);                    // the reader (and so check) accepts the key
-        Assert.Equal(at50["Pout_avg_dBm"].RealValues, at25["Pout_avg_dBm"].RealValues);
+        Assert.Equal(at50["Pavg_dBm"].RealValues, at25["Pavg_dBm"].RealValues);
     }
 }

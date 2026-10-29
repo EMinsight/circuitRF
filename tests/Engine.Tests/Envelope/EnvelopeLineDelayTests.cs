@@ -157,7 +157,7 @@ public sealed class EnvelopeLineDelayTests(ITestOutputHelper output)
     {
         var ds = EnvelopeLineInSeriesTests.Run(EnvelopeLineInSeriesTests.Pa("TLIN:TL3 n10 Vout Z=50 Ohm L=300 mm", 14, "1e-6"), out var nl);
         output.WriteLine(string.Join(" | ", nl.Notes.Concat(nl.Warnings)));
-        Assert.True(double.IsFinite(ds["Pout_avg_dBm"].RealValues[0]));
+        Assert.True(double.IsFinite(ds["Pavg_dBm"].RealValues[0]));
         Assert.Contains(nl.Notes, n => n.Contains("'TL3'") && n.Contains("stepped as its delay"));
         Assert.DoesNotContain(nl.Warnings, w => w.Contains("'TL3'"));
     }
@@ -187,12 +187,13 @@ public sealed class EnvelopeLineDelayTests(ITestOutputHelper output)
         var ds = Run("""
             MOD_Source:S1 in 0 Fc=2.14 GHz Pavg=0 Z=50 Ohm Record=0.5e-3 Carrier[1]="NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-100MHz;P=0;Seed=1" Carrier[2]="NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=100MHz;P=0;Seed=2"
             TLIN:TL1 in out Z=25 Ohm L=300 mm Eeff=1
-            R:RL out 0 R=50 Ohm
+            IProbe:Iout out o
+            R:RL o 0 R=50 Ohm
             analysis ENV1 type=env Stop=0.5e-6 MaxMixOrder=3 Probes="in,out" Segments=1 Warmup=0
             """, out var nl);
         output.WriteLine(string.Join(" | ", nl.Notes.Concat(nl.Warnings)));
         Assert.Equal(2, ds["__EnvFundamentals"].RealValues[0]);
-        Assert.True(double.IsFinite(ds["Pout_avg_dBm"].RealValues[0]));
+        Assert.True(double.IsFinite(ds["Pavg_dBm"].RealValues[0]));
         Assert.Contains(nl.Notes, n => n.Contains("'TL1'") && n.Contains("stepped as its delay"));
     }
 }

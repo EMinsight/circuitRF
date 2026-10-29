@@ -31,7 +31,8 @@ public sealed class EnvelopeBasebandTests(ITestOutputHelper output)
     private static string Line(double eDeg, string extra = "") => $"""
         MOD_Source:S1 in 0 Fc=1e9 Pavg=0 Z=50 Record=0.5e-3 Carrier[1]="CW;Off=0;P=0"
         TLIN:TL1 in out Z=25 Ohm E={eDeg} deg F=1 GHz
-        R:RL out 0 R=50 Ohm
+        IProbe:Iout out o
+        R:RL o 0 R=50 Ohm
         {extra}
         analysis ENV1 type=env Stop=2e-6 Accuracy=draft MaxHarm=1 Probes="in,out" Segments=1
         """;

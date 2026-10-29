@@ -191,7 +191,7 @@ cold.
 
 **Power is the pulse top.** A pulsed-CW record is normalised to unit power on the flat top, so the
 source's `Pavg` is the pulse-top available power — the number a radar specification states — and
-`Pin_avg_dBm` and `Pout_avg_dBm` in the results stay averages over the whole run, off-time included. Harmonic balance
+`Pin_avg_dBm` and each IProbe's `Pavg_dBm` in the results stay averages over the whole run, off-time included. Harmonic balance
 and loadpull play a MOD_Source as a CW tone at `Pavg`, which for a pulse is the top: the steady state of
 a pulse that never ends.
 

@@ -511,6 +511,15 @@ Gain[~, :] vs Pout              one curve per RFfreq, each against its own Pout
 actually wants. On the card it is the <strong>vs X</strong> row. The X side inherits the Y side's swept axis and
 family by axis name, so you rarely have to restate them, and the X side may even come from a different
 loaded file.</p>
+<p><strong>A scatter of samples</strong> is a versus trace drawn with markers and no line (the trace card's line and
+marker switches). An envelope run's memory cloud is the example: every sample's gain against its own
+instantaneous input power, at the output IProbe,</p>
+<pre><code class="language-text">ENV1.Gt_t_dB[:, &quot;Iout&quot;] vs ENV1.Pin_inst_t_dBm
+</code></pre>
+<p>which spreads where the amplifier has memory and lies on one curve where it has none (see
+<a href="simulations.html#envelope-amam">AM-AM, AM-PM and memory</a>). Under a sweep of the drive, the trace becomes
+a family by itself and draws one cloud per drive level. A trace of more than 5,000 circle markers draws
+them as plain dots without an outline, which keeps a family of 20,000-sample clouds quick to redraw.</p>
 <h2 id="axes">Axes and limits</h2>
 <p>Each plot carries axis labels and limits of its own, edited from the Plot Inspector. A trace may be
 assigned to a <strong>secondary (right-hand) Y axis</strong> on a rectangular plot, which is how gain in dB and

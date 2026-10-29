@@ -2496,6 +2496,20 @@ report says which:
     nothing. It reports what it can establish and stays quiet about the rest.</p>
   </div>
 
+An envelope analysis also lists what its run will record: the labeled nets whose voltages it keeps,
+and the IProbes it measures power at (see
+[What a run records](simulations.html#envelope-records)):
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain NR20_ACPR.cnl --analysis
+<span class="output">  analyses:
+    ENV1             EnvelopeAnalysis   ENV1                         DISPATCHED by env
+      records voltages at 3 net(s): Vin, Vout, VDD
+      measures power at 3 IProbe(s): Iout, Iin, IDC</span></code></pre>
+
+`circuitrf env --probes a,b` still runs: the nodes it names join the labeled nets, and the run notes
+that `Probes` is no longer a setting. A netlist line with `Probes=` reads the same way, and a file
+saved again no longer carries it.
+
 A design whose expressions call a distribution — a kit's statistical models, or a variable such as
 `Rsh = agauss(50, 2.5, 1)` — also lists each one, as a **process** draw (in a global, shared by every
 instance) or a **mismatch** draw (in a cell, one per instance), with the stream that names it:

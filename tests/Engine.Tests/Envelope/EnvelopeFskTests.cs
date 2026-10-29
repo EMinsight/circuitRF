@@ -20,7 +20,8 @@ public sealed class EnvelopeFskTests(ITestOutputHelper output)
     {
         var (lib, tb) = new CnlReader().Read("""
             MOD_Source:S1 in 0 Fc=868.95e6 Pavg=10 Z=50 Carrier[1]="FSK;Rb=100kbps;Dev=45kHz;BT=0.5;Data=PN9;Off=0;P=0"
-            R:RL in 0 R=50 Ohm
+            IProbe:Iout in o
+            R:RL o 0 R=50 Ohm
             analysis ENV1 type=env Stop=50e-6 Accuracy=draft MaxHarm=1 Probes="in" Segments=1
             """);
         ElaboratedNetlist Elaborate() => new Elaborator(lib).Elaborate(tb);
@@ -45,7 +46,8 @@ public sealed class EnvelopeDbpskTests(ITestOutputHelper output)
     {
         var (lib, tb) = new CnlReader().Read("""
             MOD_Source:S1 in 0 Fc=868.13e6 Pavg=14 Z=50 Carrier[1]="DBPSK;Rb=100bps;Data=PN9;Off=0;P=0"
-            R:RL in 0 R=50 Ohm
+            IProbe:Iout in o
+            R:RL o 0 R=50 Ohm
             analysis ENV1 type=env Stop=50e-3 Accuracy=draft MaxHarm=1 Probes="in" Segments=1
             """);
         ElaboratedNetlist Elaborate() => new Elaborator(lib).Elaborate(tb);

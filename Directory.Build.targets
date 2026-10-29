@@ -1,0 +1,34 @@
+<Project>
+
+  <!--
+    The example workspaces reach a build's output folder file by file (src/Ui/CircuitRF.Ui.csproj, the
+    `examples/**` item, and every project that references it). When a file leaves `examples/`, MSBuild's
+    IncrementalClean deletes its copy but never the folder that held it, so the output keeps an empty
+    folder for every one that once existed. File > New > Examples copies the example from there, and a
+    workspace copy keeps empty folders on purpose (a folder the user made means something), so a
+    folder that left the repository weeks ago turned up in a freshly opened example (an empty
+    `GaNTwoShell` in Pulsed Radar). `examples/` never ships an empty folder (the copy is of files), so
+    every empty folder under an output's `examples/` is one of these, and is removed after the
+    cleanup that leaves them. A published package is unaffected either way: it is built from scratch.
+  -->
+  <UsingTask TaskName="CrfPruneEmptyFolders" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Root ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        // deepest first, so a folder whose only content was empty folders goes too
+        foreach (var dir in Directory.GetDirectories(Root, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length))
+            if (!Directory.EnumerateFileSystemEntries(dir).Any())
+                Directory.Delete(dir);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="CrfPruneEmptyExampleFolders" AfterTargets="IncrementalClean"
+          Condition="Exists('$(OutDir)examples')">
+    <CrfPruneEmptyFolders Root="$(OutDir)examples" />
+  </Target>
+
+</Project>

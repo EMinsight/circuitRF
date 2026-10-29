@@ -41190,3 +41190,39 @@ Opening and saving an old schematic drops its `EnvZmeas` key.
 `DuplicateAnalysisCommand` still copies `EnvelopeAnalysis.ZmeasExpr` and `AnalysisClonePropertyParityTests` still sets
 it: the property stays on the model to carry an old `.cnl`'s value to the run's one warning, and the parity test compares
 every public property by reflection. A duplicated card from such a file warns exactly as its original does.
+
+## Envelope card: the Probes field becomes "Records …"; markers on a family trace (brief ENV-MEAS-3, 2026-10-28)
+
+An envelope run records every labeled net's voltage and every IProbe's power (`src/Engine/RESOLVED.md`, same brief), so
+the card's Probes text box is replaced, in the same grid row, by a read-only line, `EnvBodyViewModel.RecordsSummary`
+("Records 3 labeled nets and 3 IProbes"), with the names in its tooltip (`RecordsDetail`). Nothing below it moves. The
+counts are the schematic's: distinct net-label names other than ground, plus VProbe names, and the IProbe symbols. A
+label a Pin overrides is still counted, where extraction would not mark it; the run itself is the authority, and
+`circuitrf explain --analysis` lists what it will record. `BuildAnalysis` no longer carries `Probes`, so a card edit
+drops an old schematic's `EnvProbes` as the next save would; `DuplicateAnalysisCommand` still copies the property for
+the reason it copies `ZmeasExpr`.
+
+**A family trace drew no point markers.** `TraceRenderer.Draw`'s family branch drew each curve's line and returned, and
+returned at once when the line was off, so a markers-only family (the envelope memory cloud under a Pin sweep, one cloud
+per drive level) was an empty plot with correctly autoscaled axes. The family branch now draws the markers of every
+curve through the same `DrawPointMarkers` the single trace uses. Measured on the shipped NR20_ACPR_vs_Pin at its own
+Stop (five drive levels, 16,385 cloud samples each, 81,925 markers): 260 ms a frame drawn as one antialiased outlined
+oval per point. Above `TraceRenderer.LargeScatterPoints` (5,000) circle markers are now one `DrawPoints` batch of round
+dots in the fill colour with no outline: 41 ms a frame for the five clouds (the first, with path building, 64 ms), under
+10 ms for one. That is an interactive redraw, so the 20,000-sample cap stays (brief D3). Below 5,000 every marker is
+drawn exactly as before, so an existing display is unchanged. Gate: `FamilyPointMarkerTests` (both sizes).
+
+Gate 9 for the four envelope examples: `EnvelopeExampleDisplaysTests` runs each as Simulate does at a short Stop (the
+pulse narrowed to 10 µs so one whole pulse fits) and opens its `.cdd`; every trace resolves, and NR20_ACPR's again after
+a Pin sweep is added. A table trace is held by resolution alone: a table reads its cells from the cube, not from
+`Trace.Points`.
+
+## An opened example carried empty folders the repository no longer has (2026-10-28)
+
+`examples/**` reaches a build's output file by file; when a file left `examples/`, IncrementalClean removed its copy but
+not its folder, and File ▸ New ▸ Examples (WorkspaceCopy, which keeps empty folders on purpose) copied those folders
+into the user's new workspace: an empty `GaNTwoShell/schematic` and six empty `radar-gan` data folders in Pulsed Radar,
+left from its Oct 24 authoring. The root `Directory.Build.targets` now removes every empty folder under an output's
+`examples/` after IncrementalClean, in every project that has one. Published packages were never affected (built from
+scratch). The pulse bench's schematic is now the owner's hand-laid-out one; the authoring keeps it
+(`PulsedRadarExampleAuthoring.HandLaidOut`) and `TheHandLaidOutPulseBench_IsItsNetlist` holds it to the netlist.

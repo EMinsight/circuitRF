@@ -34,7 +34,8 @@ public sealed class EnvelopePulseTests(ITestOutputHelper output)
         L:L2 VDD d L=100 nH
         Vdc:V2 VDD 0 Vdc=48 V
         C:C2 d n5 C=100 pF
-        R:RL n5 0 R=50 Ohm
+        IProbe:IL n5 nl
+        R:RL nl 0 R=50 Ohm
         {analysis}
         """;
 
@@ -52,7 +53,15 @@ public sealed class EnvelopePulseTests(ITestOutputHelper output)
         return (EnvelopeRunner.Run(plan, Elab, note: notes.Add), notes);
     }
 
-    private static double ThermalAt(DataSet ds, int step) => ((Complex)ds["V"][step, 0, 0]).Real;
+    private static double ThermalAt(DataSet ds, int step) => ((Complex)ds["V"][step, Array.IndexOf(ds["V"].Axes[1].Labels!, "X1.t"), 0]).Real;
+
+    /// <summary>A per-IProbe cube's row at the load's probe, <c>IL</c> (its first axis is the branch).</summary>
+    private static double[] AtLoad(DataSet ds, string cube)
+    {
+        var c = ds[cube];
+        int b = Array.IndexOf(c.Axes[0].Labels!, "IL"), n = c.RealValues.Length / c.Axes[0].Length;
+        return c.RealValues[(b * n)..((b + 1) * n)];
+    }
 
     [Fact]
     public void ThePulse_StartsAtTheQuiescentPoint()
@@ -75,7 +84,7 @@ public sealed class EnvelopePulseTests(ITestOutputHelper output)
     {
         // Gate 4.
         var (ds, notes) = RunEnv(Bench("SelfHeating=false DrainLag=false GateLag=false", string.Format(Env, "100e-6")));
-        double droop = ds["PulseDroop_dB"].RealValues.Single();
+        double droop = AtLoad(ds, "PulseDroop_dB").Single();
         output.WriteLine($"droop {droop:G4} dB; {string.Join(" | ", notes)}");
         Assert.True(Math.Abs(droop) <= 0.01, $"droop {droop} dB");
         Assert.Contains(notes, n => n.Contains("1 pulse measured, droop window 10-90 % of the top", StringComparison.Ordinal));
@@ -97,7 +106,7 @@ public sealed class EnvelopePulseTests(ITestOutputHelper output)
     {
         const string still = "SelfHeating=false DrainLag=false GateLag=false";
         var (env, _) = RunEnv(Bench("DrainLag=false GateLag=false", string.Format(Env, "100e-6")));
-        double droop = env["PulseDroop_dB"].RealValues.Single();
+        double droop = AtLoad(env, "PulseDroop_dB").Single();
 
         // IG flows into the gate, ID out of the drain (a branch current runs from its first node to its second)
         double Dissipation(double tc, double pin = 27) { var hb = Hb1(Bench($"{still} Temp={tc:R}", Hb, pin)); return Terminal(hb, "gx", "IG") - Terminal(hb, "dx", "ID"); }
@@ -127,7 +136,7 @@ public sealed class EnvelopePulseTests(ITestOutputHelper output)
         // Gate 6: the traps capture at the pulse peak in nanoseconds and emit over a millisecond, so the quiescent current
         // after pulse 1 is lower than before it.
         var (ds, _) = RunEnv(Bench("", string.Format(Env, "200e-6")));
-        double p2p = ds["PulseToPulse_dB"].RealValues[0];
+        double p2p = AtLoad(ds, "PulseToPulse_dB")[0];
         var time = ds["V"].Axes[0].Values;
         int beforeSecond = Array.FindLastIndex(time, t => t <= 109e-6);
         double t0 = ThermalAt(ds, 0), off = ThermalAt(ds, beforeSecond);

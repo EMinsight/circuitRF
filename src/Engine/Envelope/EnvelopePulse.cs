@@ -2,12 +2,16 @@
 //  EnvelopePulse.cs  —  what an envelope run on a pulsed-CW source
 //  measures inside its pulses (brief ENV-PCW §4)
 //
-//  Cubes, on the last probe (the one Pout_avg_dBm is read at):
-//    Pout_t_dBm [time]               output power, floored at -100 dBm
+//  Cubes, at every IProbe (brief ENV-MEAS-3), from the power it delivers,
+//  1/2 Re(V1 I1*), and the phase of its first node's fundamental:
+//    Pout_t_dBm [branch, time]       delivered power, floored at -100 dBm
 //    PulseTop_dBm, PulseDroop_dB,
 //    PulsePhaseDroop_deg, PulseRise_s,
-//    PulseFall_s [pulse]             per whole pulse inside Stop
-//    PulseToPulse_dB / _deg          peak-to-peak over the pulses
+//    PulseFall_s [branch, pulse]     per whole pulse inside Stop
+//    PulseToPulse_dB / _deg [branch] peak-to-peak over the pulses
+//  A probe carrying no RF (a supply probe) is NaN in all of them.
+//  Rise and fall are 10-90 % of the amplitude, sqrt of the delivered
+//  power: at a resistor, the voltage's own 10-90 %.
 //  The droop window is the flat top from MeasureStart to MeasureEnd
 //  (fractions of the top). Droop is start - end, so a gain falling
 //  across the top is positive, and the phase droop is signed the same
@@ -50,16 +54,13 @@ internal static class EnvelopePulse
     }
 
     /// <summary>Adds the pulse cubes; returns the sentence the Messages pane shows.</summary>
-    internal static string Add(DataSet ds, EnvelopeRunResult r, PulseShape s, double startS)
+    internal static string Add(DataSet ds, EnvelopeRunResult r, PulseShape s, double startS, Axis branchAxis, bool[] noRf)
     {
-        int nt = r.Time.Length, np = r.ProbeNames.Length;
+        int nt = r.Time.Length, nb = branchAxis.Length;
         double h = r.StepS;
-        var y = new Complex[nt];
-        for (int t = 0; t < nt; t++) y[t] = r.Probe[t][np - 1][1];
         var d = r.Drive[0];
-        double Dbm(Complex v) => Math.Max(FloorDbm, 10 * Math.Log10(Math.Max((v.Real * v.Real + v.Imaginary * v.Imaginary) / (2 * EnvelopeDataSet.MeasureOhms), 1e-300) * 1e3));
-        ds.Add("Pout_t_dBm", new DataCube([new Axis("time", r.Time, "s")], [.. y.Select(Dbm)]));
-
+        static double Power(Complex v, Complex i) => 0.5 * (v.Real * i.Real + v.Imaginary * i.Imaginary);
+        static double Dbm(double p) => Math.Max(FloorDbm, 10 * Math.Log10(Math.Max(p, 1e-300) * 1e3));
         Complex At(Complex[] x, double t)
         {
             double u = Math.Clamp(t / h, 0, nt - 1);
@@ -67,55 +68,81 @@ internal static class EnvelopePulse
             double a = u - i;
             return x[i] * (1 - a) + x[i + 1] * a;
         }
-        double Phase(double t) => (At(y, t) / At(d, t)).Phase * 180 / Math.PI;
         static double Wrap(double deg) => deg - 360 * Math.Round(deg / 360);
 
         double top = s.TopEnd - s.TopStart;
         var starts = Starts(s, startS, r.Time[^1]);
         int n = starts.Count;
+        var pout = new double[nb * nt];
+        var pTop = new double[nb * n]; var droop = new double[nb * n]; var phDroop = new double[nb * n];
+        var rise = new double[nb * n]; var fall = new double[nb * n];
+        var p2pDb = new double[nb]; var p2pDeg = new double[nb];
+        for (int b = 0; b < nb; b++)
+        {
+            var v = new Complex[nt]; var c = new Complex[nt]; var amp = new double[nt];
+            for (int t = 0; t < nt; t++)
+            {
+                v[t] = r.IProbeVoltage[t][b][1]; c[t] = r.IProbeCurrent[t][b][1];
+                amp[t] = Math.Sqrt(Math.Max(Power(v[t], c[t]), 0));
+                pout[b * nt + t] = noRf[b] ? double.NaN : Dbm(Power(v[t], c[t]));
+            }
+            if (n == 0) continue;
+            if (noRf[b])
+            {
+                foreach (var a in new[] { pTop, droop, phDroop, rise, fall }) Array.Fill(a, double.NaN, b * n, n);
+                p2pDb[b] = p2pDeg[b] = double.NaN;
+                continue;
+            }
+            double PowerAt(double t) => Power(At(v, t), At(c, t));
+            double Phase(double t) => (At(v, t) / At(d, t)).Phase * 180 / Math.PI;
+            var phStart = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                double t0 = starts[i];
+                double ws = t0 + (s.TopStart - s.Delay) + s.MeasureStart * top;
+                double we = t0 + (s.TopStart - s.Delay) + s.MeasureEnd * top;
+                int o = b * n + i;
+                pTop[o] = Dbm(PowerAt(ws));
+                droop[o] = pTop[o] - Dbm(PowerAt(we));
+                phStart[i] = Phase(ws);
+                phDroop[o] = Wrap(phStart[i] - Phase(we));
+                double next = i + 1 < n ? starts[i + 1] : r.Time[^1];
+                rise[o] = Crossing(amp, h, t0, ws, Math.Sqrt(Math.Max(PowerAt(ws), 0)), rising: true);
+                fall[o] = Crossing(amp, h, we, next, Math.Sqrt(Math.Max(PowerAt(we), 0)), rising: false);
+            }
+            var tops = pTop.AsSpan(b * n, n).ToArray();
+            p2pDb[b] = tops.Max() - tops.Min();
+            var rel = phStart.Select(p => Wrap(p - phStart[0])).ToArray();
+            p2pDeg[b] = rel.Max() - rel.Min();
+        }
+        ds.Add("Pout_t_dBm", new DataCube([branchAxis, new Axis("time", r.Time, "s")], pout));
+
         string window = string.Format(CultureInfo.InvariantCulture, "droop window {0:0.##}-{1:0.##} % of the top",
                                       100 * s.MeasureStart, 100 * s.MeasureEnd);
         if (n == 0)
             return $"Pulsed CW: no whole pulse inside Stop, so nothing was measured ({PulsedCw.FormatTime(s.End - s.Delay)} from the rising edge to the end of the fall)";
-
-        var pTop = new double[n]; var droop = new double[n]; var phDroop = new double[n];
-        var rise = new double[n]; var fall = new double[n]; var phStart = new double[n];
-        for (int i = 0; i < n; i++)
-        {
-            double t0 = starts[i];
-            double ws = t0 + (s.TopStart - s.Delay) + s.MeasureStart * top;
-            double we = t0 + (s.TopStart - s.Delay) + s.MeasureEnd * top;
-            pTop[i] = Dbm(At(y, ws));
-            droop[i] = pTop[i] - Dbm(At(y, we));
-            phStart[i] = Phase(ws);
-            phDroop[i] = Wrap(phStart[i] - Phase(we));
-            double next = i + 1 < n ? starts[i + 1] : r.Time[^1];
-            rise[i] = Crossing(y, h, t0, ws, At(y, ws).Magnitude, rising: true);
-            fall[i] = Crossing(y, h, we, next, At(y, we).Magnitude, rising: false);
-        }
         var pulseAxis = new Axis("pulse", [.. Enumerable.Range(1, n).Select(i => (double)i)]);
-        ds.Add("PulseTop_dBm", new DataCube([pulseAxis], pTop));
-        ds.Add("PulseDroop_dB", new DataCube([pulseAxis], droop));
-        ds.Add("PulsePhaseDroop_deg", new DataCube([pulseAxis], phDroop));
-        ds.Add("PulseRise_s", new DataCube([pulseAxis], rise));
-        ds.Add("PulseFall_s", new DataCube([pulseAxis], fall));
-        ds.Add("PulseToPulse_dB", DataCube.Scalar(pTop.Max() - pTop.Min()));
-        var rel = phStart.Select(p => Wrap(p - phStart[0])).ToArray();
-        ds.Add("PulseToPulse_deg", DataCube.Scalar(rel.Max() - rel.Min()));
+        ds.Add("PulseTop_dBm", new DataCube([branchAxis, pulseAxis], pTop));
+        ds.Add("PulseDroop_dB", new DataCube([branchAxis, pulseAxis], droop));
+        ds.Add("PulsePhaseDroop_deg", new DataCube([branchAxis, pulseAxis], phDroop));
+        ds.Add("PulseRise_s", new DataCube([branchAxis, pulseAxis], rise));
+        ds.Add("PulseFall_s", new DataCube([branchAxis, pulseAxis], fall));
+        ds.Add("PulseToPulse_dB", new DataCube([branchAxis], p2pDb));
+        ds.Add("PulseToPulse_deg", new DataCube([branchAxis], p2pDeg));
         return $"Pulsed CW: {n} pulse{(n == 1 ? "" : "s")} measured, {window}";
     }
 
-    /// <summary>The 10-90 % time of |<paramref name="y"/>| between run times <paramref name="from"/> and
+    /// <summary>The 10-90 % time of the amplitude <paramref name="y"/> between run times <paramref name="from"/> and
     /// <paramref name="to"/>, against the reference amplitude <paramref name="a"/>: the first upward (or downward) crossing
     /// of each level, interpolated between samples. NaN when either level is never crossed.</summary>
-    private static double Crossing(Complex[] y, double h, double from, double to, double a, bool rising)
+    private static double Crossing(double[] y, double h, double from, double to, double a, bool rising)
     {
         int i0 = Math.Max(0, (int)Math.Floor(from / h)), i1 = Math.Min(y.Length - 1, (int)Math.Ceiling(to / h));
         double First(double level)
         {
             for (int i = i0; i < i1; i++)
             {
-                double m0 = y[i].Magnitude, m1 = y[i + 1].Magnitude;
+                double m0 = y[i], m1 = y[i + 1];
                 bool hit = rising ? m0 < level && m1 >= level : m0 > level && m1 <= level;
                 if (hit) return (i + (level - m0) / (m1 - m0)) * h;
             }

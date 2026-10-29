@@ -350,7 +350,7 @@ internal static class Explain
 
                 if (wantAnalyses)
                 {
-                    var (rows, analysisExit) = ExplainAnalyses(lib, tb, analysisName);
+                    var (rows, analysisExit) = ExplainAnalyses(lib, tb, analysisName, CircuitSource.ReferenceBaseOf(path));
                     analyses = rows;
                     exit    |= analysisExit;
                     statistics    = ExplainStatistics.Collect(lib, tb, path);
@@ -1280,7 +1280,7 @@ internal static class Explain
     // ── --analysis ───────────────────────────────────────────────────────────
 
     private static (IReadOnlyList<ExplainAnalysisJson>, int) ExplainAnalyses(
-        Library lib, TestBench tb, string? requested)
+        Library lib, TestBench tb, string? requested, string? refBase = null)
     {
         int exit = 0;
 
@@ -1331,6 +1331,26 @@ internal static class Explain
 
                 foreach (var spa in tb.Analyses.OfType<SParameterAnalysis>())
                     ndfByAnalysis[spa.Name] = SurveyNdf(spa, nl);
+            }
+            catch (Exception) { /* reported by check; nothing to explain here */ }
+        }
+
+        // Brief ENV-MEAS-3: an envelope run records every labeled net's voltage and every IProbe's power, so explain says
+        // which, from the same rule the engine applies. Elaborated once, only when an envelope analysis is declared.
+        var envRecords = new Dictionary<string, ExplainEnvelopeRecordsJson>(StringComparer.Ordinal);
+        if (tb.Analyses.Any(a => a is EnvelopeAnalysis))
+        {
+            try
+            {
+                using var nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+                var src = nl.Components.Where(c => c.Model is ModSourceModel).ToArray();
+                var iprobes = nl.Components.Where(c => c.Model is IProbeModel && c.Nodes.Length >= 2).Select(c => c.InstancePath).ToList();
+                foreach (var env in tb.Analyses.OfType<EnvelopeAnalysis>())
+                {
+                    string[] listed = env.Probes.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries);
+                    var nets = CircuitRF.Engine.Envelope.EnvelopeEngine.RecordedNodes(nl, listed, src).Select(x => x.name).ToList();
+                    envRecords[env.Name] = new ExplainEnvelopeRecordsJson(nets, iprobes);
+                }
             }
             catch (Exception) { /* reported by check; nothing to explain here */ }
         }
@@ -1423,7 +1443,8 @@ internal static class Explain
                 MarginThreshold: MarginThresholdOf(a),
                 Ndf: isSparam && ndfByAnalysis.TryGetValue(a.Name, out var ndfRow) ? ndfRow : null,
                 Optimize: OptimizeScopes(a.Name),
-                OptimizeAt: OptimizeScopes(a.Name) is { Count: > 1 } ? optimizeAt : null));
+                OptimizeAt: OptimizeScopes(a.Name) is { Count: > 1 } ? optimizeAt : null,
+                Records: envRecords.GetValueOrDefault(a.Name)));
         }
 
         return (rows, exit);
@@ -1900,6 +1921,15 @@ internal static class Explain
                         : $"      S-parameters: none (no ports); WSProbe outputs: {probes.Count} probe(s)");
                     foreach (var w in probes)
                         Console.WriteLine($"      WSProbe {w.Label} idx={w.Idx}  G={w.G}  L={w.L}");
+                }
+
+                // brief ENV-MEAS-3: what an envelope run records, voltages and powers.
+                if (a.Records is { } rec)
+                {
+                    Console.WriteLine($"      records voltages at {rec.Nets.Count} net(s): {(rec.Nets.Count > 0 ? string.Join(", ", rec.Nets) : "none")}");
+                    Console.WriteLine(rec.IProbes.Count > 0
+                        ? $"      measures power at {rec.IProbes.Count} IProbe(s): {string.Join(", ", rec.IProbes)}"
+                        : "      measures power at no IProbe: place one in series with a load to measure its power");
                 }
 
                 // R-wsp9-4: the effective margin threshold beside the probe list. The default is

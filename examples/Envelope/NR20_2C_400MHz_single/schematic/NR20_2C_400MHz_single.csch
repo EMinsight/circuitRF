@@ -171,7 +171,7 @@
     {
       "InstanceName": "Iout",
       "Symbol": "IProbe",
-      "X": 800,
+      "X": 2400,
       "Y": -400,
       "Rotation": "R0",
       "MirrorX": false,
@@ -421,6 +421,38 @@
           "Dimension": "Inductance"
         }
       ]
+    },
+    {
+      "InstanceName": "MeasPA",
+      "Symbol": "Meas",
+      "X": -2200,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Pin_del_dBm",
+          "Expression": "dBm(ENV1.P(\u0022Iin\u0022))                     ; delivered into the gate network",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Gp_dB",
+          "Expression": "dBm(ENV1.P(\u0022Iout\u0022)) - Pin_del_dBm      ; power gain, delivered to delivered",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PAE_pct",
+          "Expression": "100*(ENV1.P(\u0022Iout\u0022) - ENV1.P(\u0022Iin\u0022))/ENV1.P(\u0022IDC\u0022, 0)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
     }
   ],
   "Wires": [
@@ -591,6 +623,30 @@
           -300
         ],
         [
+          2400,
+          -300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          -300
+        ],
+        [
+          900,
+          -300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2500,
+          -300
+        ],
+        [
           2600,
           -300
         ]
@@ -629,7 +685,7 @@
       "OffsetY": -20
     },
     {
-      "X": 2300.0,
+      "X": 2200,
       "Y": -320,
       "Name": "Vout",
       "OwnerWireIndex": 13,
@@ -657,8 +713,6 @@
       "EnvStop": "100e-6",
       "EnvStep": "auto",
       "EnvAccuracy": "standard",
-      "EnvProbes": "Vin,Vd,Vout",
-      "EnvZmeas": "50",
       "EnvSegments": "auto",
       "EnvWarmup": "auto",
       "EnvStart": "0",

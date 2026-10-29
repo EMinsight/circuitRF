@@ -16,14 +16,14 @@
           "Height": 408,
           "PlotType": "Rect",
           "FreqUnit": "GHz",
-          "CustomTitle": "Spectrum at the drain and the gate (one envelope over both carriers)",
+          "CustomTitle": "Spectrum: power delivered at Iout and Iin, voltage at Vout (one envelope over both carriers)",
           "CustomTitleOn": true,
           "CustomXLabel": "",
           "CustomXLabelOn": false,
-          "CustomYLabel": "PSD (dBm/Hz)",
+          "CustomYLabel": "PSD delivered (dBm/Hz)",
           "CustomYLabelOn": true,
-          "CustomY2Label": "",
-          "CustomY2LabelOn": false,
+          "CustomY2Label": "VSD at Vout (dBV/Hz)",
+          "CustomY2LabelOn": true,
           "TableViewAscendingSortOrder": true,
           "TableViewScrollIndex": 0,
           "FontSize": 13,
@@ -71,12 +71,12 @@
               "CubeName": "ENV1.PSD",
               "CubeSlice": [
                 {
-                  "AxisName": "node",
+                  "AxisName": "branch",
                   "Role": "PinToIndex",
-                  "Index": 1,
+                  "Index": 0,
                   "RangeStart": 0,
                   "RangeEndExclusive": -1,
-                  "Label": "Vout"
+                  "Label": "Iout"
                 },
                 {
                   "AxisName": "freq",
@@ -133,12 +133,12 @@
               "CubeName": "ENV1.PSD",
               "CubeSlice": [
                 {
-                  "AxisName": "node",
+                  "AxisName": "branch",
                   "Role": "PinToIndex",
-                  "Index": 0,
+                  "Index": 1,
                   "RangeStart": 0,
                   "RangeEndExclusive": -1,
-                  "Label": "Vin"
+                  "Label": "Iin"
                 },
                 {
                   "AxisName": "freq",
@@ -164,6 +164,68 @@
                 "MarkerEnabled": false,
                 "MarkerSize": 1.5,
                 "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "ExcludeFromAutoscale": false,
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
+            },
+            {
+              "SourcePath": "NR20_2C_400MHz_single.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": true,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 115,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 3,
+              "CubeName": "ENV1.VSD",
+              "CubeSlice": [
+                {
+                  "AxisName": "node",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Vout"
+                },
+                {
+                  "AxisName": "freq",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "None",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": null,
+              "XSourcePath": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 1,
+                "LineColorIndex": 3,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 3,
                 "MarkerType": "Circle"
               },
               "Markers": [],
@@ -251,6 +313,14 @@
               "CubeName": "ENV1.AMAM",
               "CubeSlice": [
                 {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
+                {
                   "AxisName": "Pin_inst",
                   "Role": "KeepAsX",
                   "Index": 0,
@@ -305,6 +375,14 @@
               "CubeName": "ENV1.AMAM_min",
               "CubeSlice": [
                 {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
+                {
                   "AxisName": "Pin_inst",
                   "Role": "KeepAsX",
                   "Index": 0,
@@ -358,6 +436,14 @@
               "MaximumFractionDigits": 3,
               "CubeName": "ENV1.AMAM_max",
               "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
                 {
                   "AxisName": "Pin_inst",
                   "Role": "KeepAsX",
@@ -414,7 +500,7 @@
           "Height": 408,
           "PlotType": "Rect",
           "FreqUnit": "GHz",
-          "CustomTitle": "AM-PM: phase vs instantaneous input power",
+          "CustomTitle": "AM-PM: phase vs instantaneous input power (mean, minimum and maximum)",
           "CustomTitleOn": true,
           "CustomXLabel": "Instantaneous Pin (dBm)",
           "CustomXLabelOn": true,
@@ -469,6 +555,14 @@
               "CubeName": "ENV1.AMPM",
               "CubeSlice": [
                 {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
+                {
                   "AxisName": "Pin_inst",
                   "Role": "KeepAsX",
                   "Index": 0,
@@ -492,6 +586,130 @@
                 "MarkerEnabled": false,
                 "MarkerSize": 1.5,
                 "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "ExcludeFromAutoscale": false,
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
+            },
+            {
+              "SourcePath": "NR20_2C_400MHz_single.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 115,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 3,
+              "CubeName": "ENV1.AMPM_min",
+              "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
+                {
+                  "AxisName": "Pin_inst",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "None",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": null,
+              "XSourcePath": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 1,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "ExcludeFromAutoscale": false,
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
+            },
+            {
+              "SourcePath": "NR20_2C_400MHz_single.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 115,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 3,
+              "CubeName": "ENV1.AMPM_max",
+              "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
+                {
+                  "AxisName": "Pin_inst",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                }
+              ],
+              "CubeTransform": "None",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": null,
+              "XSourcePath": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 1,
+                "LineColorIndex": 2,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 2,
                 "MarkerType": "Circle"
               },
               "Markers": [],
@@ -815,8 +1033,17 @@
               "FamilyColumnWidths": {},
               "FormatString": "F",
               "MaximumFractionDigits": 2,
-              "CubeName": "ENV1.Pout_avg_dBm",
-              "CubeSlice": [],
+              "CubeName": "ENV1.Pavg_dBm",
+              "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                }
+              ],
               "CubeTransform": "None",
               "MirrorPatternAngle": false,
               "PatternWholePlane": false,
@@ -860,7 +1087,16 @@
               "FormatString": "F",
               "MaximumFractionDigits": 2,
               "CubeName": "ENV1.Gt_dB",
-              "CubeSlice": [],
+              "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                }
+              ],
               "CubeTransform": "None",
               "MirrorPatternAngle": false,
               "PatternWholePlane": false,
@@ -948,7 +1184,16 @@
               "FormatString": "F",
               "MaximumFractionDigits": 2,
               "CubeName": "ENV1.DE_pct",
-              "CubeSlice": [],
+              "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                }
+              ],
               "CubeTransform": "None",
               "MirrorPatternAngle": false,
               "PatternWholePlane": false,
@@ -992,7 +1237,16 @@
               "FormatString": "F",
               "MaximumFractionDigits": 2,
               "CubeName": "ENV1.NMSE_dB",
-              "CubeSlice": [],
+              "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                }
+              ],
               "CubeTransform": "None",
               "MirrorPatternAngle": false,
               "PatternWholePlane": false,
@@ -1038,12 +1292,12 @@
               "CubeName": "ENV1.PAPR_dB",
               "CubeSlice": [
                 {
-                  "AxisName": "node",
+                  "AxisName": "branch",
                   "Role": "PinToIndex",
-                  "Index": 1,
+                  "Index": 0,
                   "RangeStart": 0,
                   "RangeEndExclusive": -1,
-                  "Label": "Vout"
+                  "Label": "Iout"
                 }
               ],
               "CubeTransform": "None",
@@ -1091,12 +1345,12 @@
               "CubeName": "ENV1.PAPR_dB",
               "CubeSlice": [
                 {
-                  "AxisName": "node",
+                  "AxisName": "branch",
                   "Role": "PinToIndex",
-                  "Index": 0,
+                  "Index": 1,
                   "RangeStart": 0,
                   "RangeEndExclusive": -1,
-                  "Label": "Vin"
+                  "Label": "Iin"
                 }
               ],
               "CubeTransform": "None",
@@ -1120,6 +1374,138 @@
               "WsProbe": null,
               "ContourTrace": null,
               "SummaryColumn": null
+            },
+            {
+              "SourcePath": "NR20_2C_400MHz_single.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 160,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 2,
+              "CubeName": "Pin_del_dBm",
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": null,
+              "XSourcePath": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
+            },
+            {
+              "SourcePath": "NR20_2C_400MHz_single.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 160,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 2,
+              "CubeName": "Gp_dB",
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": null,
+              "XSourcePath": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
+            },
+            {
+              "SourcePath": "NR20_2C_400MHz_single.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 160,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 2,
+              "CubeName": "PAE_pct",
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": null,
+              "XSourcePath": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
             }
           ],
           "Axes": null
@@ -1131,7 +1517,7 @@
           "Height": 330,
           "PlotType": "Table",
           "FreqUnit": "GHz",
-          "CustomTitle": "Channel power (dBm) and ACPR (dBc) at the drain, carrier 1 and carrier 2",
+          "CustomTitle": "Channel power (dBm) and ACPR (dBc) at Iout, carrier 1 and carrier 2",
           "CustomTitleOn": true,
           "CustomXLabel": "",
           "CustomXLabelOn": false,
@@ -1185,12 +1571,12 @@
               "CubeName": "ENV1.ACLR",
               "CubeSlice": [
                 {
-                  "AxisName": "node",
+                  "AxisName": "branch",
                   "Role": "PinToIndex",
-                  "Index": 1,
+                  "Index": 0,
                   "RangeStart": 0,
                   "RangeEndExclusive": -1,
-                  "Label": "Vout"
+                  "Label": "Iout"
                 },
                 {
                   "AxisName": "carrier",
@@ -1254,12 +1640,12 @@
               "CubeName": "ENV1.ACLR",
               "CubeSlice": [
                 {
-                  "AxisName": "node",
+                  "AxisName": "branch",
                   "Role": "PinToIndex",
-                  "Index": 1,
+                  "Index": 0,
                   "RangeStart": 0,
                   "RangeEndExclusive": -1,
-                  "Label": "Vout"
+                  "Label": "Iout"
                 },
                 {
                   "AxisName": "carrier",
@@ -1310,7 +1696,7 @@
           "Height": 330,
           "PlotType": "Table",
           "FreqUnit": "GHz",
-          "CustomTitle": "Carriers and distortion products at the drain (dBm)",
+          "CustomTitle": "Carriers and distortion products delivered at Iout (dBm)",
           "CustomTitleOn": true,
           "CustomXLabel": "",
           "CustomXLabelOn": false,
@@ -1364,12 +1750,12 @@
               "CubeName": "ENV1.IMD",
               "CubeSlice": [
                 {
-                  "AxisName": "node",
+                  "AxisName": "branch",
                   "Role": "PinToIndex",
-                  "Index": 1,
+                  "Index": 0,
                   "RangeStart": 0,
                   "RangeEndExclusive": -1,
-                  "Label": "Vout"
+                  "Label": "Iout"
                 },
                 {
                   "AxisName": "product",
@@ -1404,6 +1790,124 @@
             }
           ],
           "Axes": null
+        },
+        {
+          "Left": 0,
+          "Top": 1356,
+          "Width": 660,
+          "Height": 408,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Memory: each sample's gain against its instantaneous input power",
+          "CustomTitleOn": true,
+          "CustomXLabel": "Instantaneous Pin (dBm)",
+          "CustomXLabelOn": true,
+          "CustomYLabel": "Gain (dB)",
+          "CustomYLabelOn": true,
+          "CustomY2Label": "",
+          "CustomY2LabelOn": false,
+          "TableViewAscendingSortOrder": true,
+          "TableViewScrollIndex": 0,
+          "FontSize": 13,
+          "FreqColumnWidth": 115,
+          "TableOptimum": "Mxp",
+          "TableReadMode": "Interp",
+          "TableCompression": 3,
+          "SummaryLoadpullGroup": null,
+          "PolarRadial": "Linear",
+          "PolarDbFloor": -40,
+          "PolarDbRingStep": 10,
+          "PolarDbReference": "Peak",
+          "PolarDbReferenceValue": 0,
+          "PolarDbUnit": "",
+          "PolarAngleLabels": false,
+          "SmithAdmittanceGrid": false,
+          "SurfaceAzimuthDeg": 35,
+          "SurfaceElevationDeg": 25,
+          "SurfaceZoom": 1,
+          "SurfaceColorMap": "Cool",
+          "SurfaceShowGroundDisc": true,
+          "SurfaceShowAxes": true,
+          "SurfaceShowLegend": true,
+          "Traces": [
+            {
+              "SourcePath": "NR20_2C_400MHz_single.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "PassivityWholeNetwork": true,
+              "PassiveExtraction": "ShuntThrough",
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "MatrixFormat": "MA",
+              "ColumnWidth": 115,
+              "XColumnWidth": 0,
+              "FamilyColumnWidths": {},
+              "FormatString": "F",
+              "MaximumFractionDigits": 3,
+              "CubeName": "ENV1.Gt_t_dB",
+              "CubeSlice": [
+                {
+                  "AxisName": "time",
+                  "Role": "KeepAsX",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": ""
+                },
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 0,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                }
+              ],
+              "CubeTransform": "None",
+              "MirrorPatternAngle": false,
+              "PatternWholePlane": false,
+              "ReferenceInputPowerDbmOverride": null,
+              "Expression": null,
+              "XSpec": "ENV1.Pin_inst_t_dBm",
+              "XSourcePath": null,
+              "Properties": {
+                "LineEnabled": false,
+                "LineWidth": 1,
+                "LineColorIndex": 12,
+                "LineType": "Solid",
+                "MarkerEnabled": true,
+                "MarkerSize": 1,
+                "MarkerColorIndex": 12,
+                "MarkerType": "Circle"
+              },
+              "Markers": [],
+              "ExcludeFromAutoscale": false,
+              "WsProbe": null,
+              "ContourTrace": null,
+              "SummaryColumn": null
+            }
+          ],
+          "Axes": {
+            "AutoscaleX": true,
+            "AutoscaleY": true,
+            "AutoscaleRightY": true,
+            "AutoscaleMag": true,
+            "WindowX": -15,
+            "WindowY": 0,
+            "WindowWidth": 50,
+            "WindowHeight": 0,
+            "WindowSecondaryX": -15,
+            "WindowSecondaryY": 0,
+            "WindowSecondaryWidth": 50,
+            "WindowSecondaryHeight": 0,
+            "XScale": "Linear"
+          }
         }
       ]
     }

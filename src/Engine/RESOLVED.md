@@ -3828,3 +3828,52 @@ means what `ENV1.P("Iout")` means.
 Gates: `ProbePowerAccessorTests` (`OnHarmonicBalance_PMeansWhatItMeansOnEnvelope` agrees with the envelope run to
 0.01 dB on one CW bench; `OnATwoToneHb_TheFundamentalBandIsTheTwoCarriers`).
 
+
+## Envelope: `Probes` retired; labeled nets record voltage, IProbes measure power (brief ENV-MEAS-3, 2026-10-28)
+
+A run records every labeled net (`NodeMap.LabeledNames`, HB's own set, ascending node index; a `.cnl` with none records
+its MOD_Source nodes) as `V` and `VSD[node, freq]` in dBV/Hz, and every IProbe's delivered power on a `branch` axis:
+`PSD` (½·Re of `SignalMeasure.CrossWelch` of the probe's V and I, the same spans, grid and baseband rule as `VSD`),
+`ACLR`, `IMD`, `Pavg_dBm`, `PAPR_dB`/`CCDF` of p(t) = ½·Re(V₁·I₁*), `Gt_dB`, `DE_pct`, `NMSE_dB`, `Delay_s`, AM-AM/AM-PM
+with `AMPM_min`/`_max`, the cloud (`Pin_inst_t_dBm`, `Gt_t_dB`, `PM_t_deg`, every m-th aligned sample, at most 20,000)
+and the pulse cubes, now `[branch, …]`. `Pout_avg_dBm` and every 50 Ω assumption are gone (`EnvelopeDataSet.MeasureOhms`
+removed); `Pin_avg_dBm` and `Pdc_W` stay scalars. A probe whose fundamental-band power is below 10⁻⁶ of the available
+drive is NaN in the output rows. The seam error now also covers every IProbe current. `Probes=` is read as before and
+its nodes join the recorded set, with one note (`EnvelopeRunner.Plan.ProbesNote`); a run with no IProbe notes once that
+no power was measured. D1-D4 taken as recommended; the cloud cap held (`src/Ui/RESOLVED.md`, same brief).
+
+- **`Welch` is now `CrossWelch(x, x)`'s real part**, bit for bit: the complex accumulator's real part is
+  re·re − im·(−im), the same two products the old `|X|²` summed. Gate 3a on the real examples confirms: old `PSD` at
+  every node equals the new `VSD` + 13.0103 dB to 6e-14 dB.
+- **The examples' input spectra are expected to move, and do.** At `Iin` (the gate network) NR20_ACPR's channel power
+  reads 14.01 dBm where the old `Vin` read 24.36 dBm into an assumed 50 Ω, and its ACPR1/ACPR2 are blank: the
+  adjacent-channel distortion there flows from the device toward the source, a negative delivered density, which the
+  brief plots as NaN. PAPR moves 9.45 → 9.32 dB. NR20_2C: `Iin` Pch 10.50 / 8.37 dBm (old `Vin` 9.29 / 8.39), PAPR
+  9.09 → 9.65 dB.
+- **Gate 1 (scratch harness, Stop 20 µs; pCW 150 µs, one pulse), output figures old → new at `Iout`:** NR20_ACPR Pout
+  36.9853 → 36.9842 dBm (−0.0011 dB: the 100 pF block's −j0.8 Ω in series with 50 Ω, the delivered power being exact),
+  Gt the same, DE 36.9523 → 36.9430 % (0.009 pp), NMSE and AM-PM bit-identical, AM-AM bins ≤ 0.0013 dB (min/max ≤ 0.004),
+  ACLR ≤ 0.0011 dB, PAPR 2e-7 dB. NR20_ACPR_vs_Pin: the same at every Pin (DE ≤ 0.0105 pp). PulsedPA_pCW: every pulse
+  figure, Pout, Gt and DE within 1e-9 (the new `Iout` feeds the load directly).
+- **NR20_2C_400MHz_single had its `Iout` at the drain (`Vd`), ahead of the 0.3166 pF + 20 nH output resonator**, not at
+  the load as the brief assumed of all four. There, Pout, Gt, DE and ACLR matched (the network is lossless), but NMSE
+  moved 1.8 dB, AM-AM up to 6 dB, AM-PM 57°, PAPR 1.1 dB and IMD 4.5 dB: those are read from the probe node's voltage and
+  the instantaneous V·I, and at the drain both carry the resonator's stored-energy exchange. The probe was moved in front
+  of `RL` (first node `Vout`, the load on a new net); every figure then matches the old build to 1e-9. A probe meant for
+  output figures belongs at the load, which `simulations.md#envelope-iprobe-power` now says.
+- **Gate 5 as stated is not a property of the min/max cubes.** On the pulsed-radar GaN biased through ideal sources
+  (no linear memory), LTE 5 MHz, 20 µs, `AMAM_max − AMAM_min` was 0.08-0.15 dB in the linear bins and 0.45-0.58 dB in
+  compression **with every memory switch off**, and no larger with them on (0.11-0.55 dB). The spread is mostly the
+  gain's own change across a 0.5 dB bin (about 1 dB per dB in compression). A slope-free measure, each cloud sample's
+  distance from the AM-AM curve interpolated at its own drive, was 0.032 dB / 0.33° off and 0.038 dB / 0.33° on: this
+  device's drain lag captures quasi-statically, and 20 µs shows no hysteresis to speak of. What is gated instead is
+  exact: the min/max cubes are the extremes of the cloud's own samples in each bin
+  (`EnvelopeProbesRetiredTests.TheCloud_BinnedOnThePinGrid_IsAmAmAndAmPm_WithTheirSpread`). A memory figure that
+  subtracts the bin's slope is a follow-up for the owner to decide on.
+- **`.csch` drops `EnvProbes` on the way to the run**, as it dropped `Zmeas`: a schematic reaches the elaborator through
+  `CnlWriter`, which no longer writes it. Only a `.cnl` keeps its `Probes` nodes; a schematic labels nets instead.
+- **Delivered power through a lossless network equals the load's in the mean and per frequency, but not per sample.**
+  That is why AM-AM is exact only where V and I are read at the load itself, and why gate 1 needed the probe moved.
+
+Gates: `EnvelopeProbesRetiredTests` (2-8), `EnvelopeExampleDisplaysTests` (9, in `tests/Ui.Tests`). The envelope tests
+that read the retired cubes place an IProbe in front of their load and read `Pavg_dBm`/`Gt_dB` there.

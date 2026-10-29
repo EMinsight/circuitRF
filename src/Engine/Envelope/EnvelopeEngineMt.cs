@@ -220,7 +220,7 @@ public sealed class EnvelopeEngineMt
         lines.Start(X0);
         var qm1 = q0; var qm2 = q0;
 
-        var probes = ResolveProbes(p, srcEcs);
+        var probes = EnvelopeEngine.RecordedNodes(_nl, p.Probes, srcEcs);
         int P = probes.Length;
         var (iprobes, iprobeRows, iprobeNodes) = EnvelopeEngine.IProbesOf(_nl);
         var iOut = new Complex[nSteps + 1][][];
@@ -459,21 +459,6 @@ public sealed class EnvelopeEngineMt
         var r = new Complex[n, m];
         for (int i = 0; i < n; i++) for (int j = 0; j < m; j++) r[i, j] = Complex.Conjugate(a[i, j]);
         return r;
-    }
-
-    private (string name, int node)[] ResolveProbes(EnvelopeParams p, ElaboratedComponent[] srcEcs)
-    {
-        var list = new List<(string, int)>();
-        IEnumerable<string> names = p.Probes.Length > 0 ? p.Probes : srcEcs.Select(e => _nl.Nodes.NameOf(e.Nodes[0]));
-        foreach (var nm in names)
-        {
-            int idx = -1;
-            for (int n = 1; n < _nl.Nodes.Count; n++)
-                if (string.Equals(_nl.Nodes.NameOf(n), nm, StringComparison.Ordinal)) { idx = n; break; }
-            if (idx < 0) throw new InvalidOperationException($"envelope probe '{nm}' is not a node of the circuit");
-            list.Add((nm, idx));
-        }
-        return list.ToArray();
     }
 
     /// <remarks>The DC solve and the baseband extraction see the held elements, as in <see cref="EnvelopeEngine"/>.</remarks>

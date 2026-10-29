@@ -408,6 +408,38 @@
           "Dimension": "None"
         }
       ]
+    },
+    {
+      "InstanceName": "MeasPA",
+      "Symbol": "Meas",
+      "X": -2200,
+      "Y": 1200,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Pin_del_dBm",
+          "Expression": "dBm(ENV1.P(\u0022Iin\u0022))                     ; delivered into the gate network",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Gp_dB",
+          "Expression": "dBm(ENV1.P(\u0022Iout\u0022)) - Pin_del_dBm      ; power gain, delivered to delivered",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "PAE_pct",
+          "Expression": "100*(ENV1.P(\u0022Iout\u0022) - ENV1.P(\u0022Iin\u0022))/ENV1.P(\u0022IDC\u0022, 0)",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ]
     }
   ],
   "Wires": [
@@ -650,8 +682,6 @@
       "EnvStop": "200e-6",
       "EnvStep": "auto",
       "EnvAccuracy": "standard",
-      "EnvProbes": "Vin,Vout",
-      "EnvZmeas": "50",
       "EnvSegments": "auto",
       "EnvWarmup": "auto",
       "EnvStart": "0",

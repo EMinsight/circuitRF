@@ -228,6 +228,19 @@ actually wants. On the card it is the **vs X** row. The X side inherits the Y si
 family by axis name, so you rarely have to restate them, and the X side may even come from a different
 loaded file.
 
+**A scatter of samples** is a versus trace drawn with markers and no line (the trace card's line and
+marker switches). An envelope run's memory cloud is the example: every sample's gain against its own
+instantaneous input power, at the output IProbe,
+
+```text
+ENV1.Gt_t_dB[:, "Iout"] vs ENV1.Pin_inst_t_dBm
+```
+
+which spreads where the amplifier has memory and lies on one curve where it has none (see
+[AM-AM, AM-PM and memory](simulations.html#envelope-amam)). Under a sweep of the drive, the trace becomes
+a family by itself and draws one cloud per drive level. A trace of more than 5,000 circle markers draws
+them as plain dots without an outline, which keeps a family of 20,000-sample clouds quick to redraw.
+
 ## Axes and limits {#axes}
 
 Each plot carries axis labels and limits of its own, edited from the Plot Inspector. A trace may be

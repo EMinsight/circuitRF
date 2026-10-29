@@ -29,7 +29,8 @@ public sealed class EnvelopeExportCliTests : IDisposable
         string cnl = Path.Combine(_dir, "cw.cnl"), npy = Path.Combine(_dir, "cw.npy");
         File.WriteAllText(cnl,
             "MOD_Source:S1 n1 0 Fc=1e9 Pavg=0 Z=50 Carrier[1]=\"CW;Off=0;P=0\"\n" +
-            "R:RL n1 0 R=50\n" +
+            "IProbe:Iout n1 o\n" +
+            "R:RL o 0 R=50\n" +
             "analysis ENV1 type=env Stop=2e-6 Accuracy=draft Probes=\"n1\" Segments=1 Warmup=0\n");
 
         var run = RunCli("env", cnl, "-o", npy);
@@ -39,7 +40,7 @@ public sealed class EnvelopeExportCliTests : IDisposable
         Assert.Equal([DataSet.DefaultGroup], ds.Groups.ToArray());   // bare names, as `hb -o` writes them
         Assert.True(ds.Cubes.ContainsKey("PSD"));
         // 0 dBm available into a matched 50 ohm load is 0 dBm delivered
-        Assert.Equal(0.0, ds.Cubes["Pout_avg_dBm"][Array.Empty<object>()].RealValue!.Value, 2);
+        Assert.Equal(0.0, ds.Cubes["Pavg_dBm"].RealValues[0], 2);
     }
 
     private (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)

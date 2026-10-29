@@ -199,7 +199,8 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
     public string Envelope      { get; init; } = "auto";
     /// <summary>Mixing order kept when widely spaced carriers get their own fundamentals (|k1|+|k2| &lt;= order).</summary>
     public string MaxMixOrderExpr { get; init; } = "7";
-    /// <summary>Comma-separated node names whose envelopes are kept and measured. Empty = the MOD_Source nodes.</summary>
+    /// <summary>Retired (brief ENV-MEAS-3): a run records every labeled net's voltage and every IProbe's power. Kept only as
+    /// an old file stated it, so the nodes it lists join the recorded voltages, with one note; no writer emits it.</summary>
     public string Probes        { get; init; } = "";
     /// <summary>Retired (brief ENV-MEAS-1): node powers are into 50 Ω. Kept only as an old file stated it, so a value other
     /// than 50 runs at 50 with a warning; no writer emits it.</summary>

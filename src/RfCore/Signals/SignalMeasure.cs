@@ -9,7 +9,9 @@
 //         BW_Config), adjacent channel at +-1 x channel BW, alternate
 //         at +-2 x channel BW — the definitions the Waveform_Generator
 //         tool uses, so the two read the same numbers.
-//  PAPR / CCDF: of |x|^2 over the whole record.
+//  Cross:  the same Welch on two records, X Y* per bin: (1/2) Re of the
+//         cross-spectrum of a voltage and a current is the power density.
+//  PAPR / CCDF: of |x|^2 over the whole record, or of a power record.
 //  NMSE:  output vs input after best integer delay and complex gain.
 // ================================================================
 
@@ -31,6 +33,17 @@ namespace RfCore.Signals
     {
         public static (double[] f, double[] psd) Welch(ReadOnlySpan<Complex> x, double fs, int nseg = 8192)
         {
+            var (f, s) = CrossWelch(x, x, fs, nseg);
+            var psd = new double[s.Length];
+            for (int i = 0; i < s.Length; i++) psd[i] = s[i].Real;
+            return (f, psd);
+        }
+
+        /// <summary>The cross-spectral density of <paramref name="x"/> and <paramref name="y"/> (X·Y* per hertz), with
+        /// <see cref="Welch"/>'s segmenting, window and scale: on <c>y = x</c> its real part is Welch's density, bin for
+        /// bin. <paramref name="y"/> is read for as many samples as <paramref name="x"/> has.</summary>
+        public static (double[] f, Complex[] csd) CrossWelch(ReadOnlySpan<Complex> x, ReadOnlySpan<Complex> y, double fs, int nseg = 8192)
+        {
             nseg = Math.Min(nseg, x.Length);
             if ((nseg & (nseg - 1)) != 0)
             {
@@ -41,26 +54,33 @@ namespace RfCore.Signals
             var w = new double[nseg];
             double wss = 0;
             for (int i = 0; i < nseg; i++) { w[i] = 0.5 * (1 - Math.Cos(2 * Math.PI * i / nseg)); wss += w[i] * w[i]; }
-            var acc = new double[nseg];
+            bool same = x == y;
+            var acc = new Complex[nseg];
             var buf = new Complex[nseg];
+            var buy = same ? buf : new Complex[nseg];
             int step = nseg / 2, count = 0;
             for (int s = 0; s + nseg <= x.Length; s += step)
             {
                 for (int i = 0; i < nseg; i++) buf[i] = x[s + i] * w[i];
                 Fft.Transform(buf, inverse: false);
-                for (int i = 0; i < nseg; i++) acc[i] += buf[i].Real * buf[i].Real + buf[i].Imaginary * buf[i].Imaginary;
+                if (!same)
+                {
+                    for (int i = 0; i < nseg; i++) buy[i] = y[s + i] * w[i];
+                    Fft.Transform(buy, inverse: false);
+                }
+                for (int i = 0; i < nseg; i++) acc[i] += buf[i] * Complex.Conjugate(buy[i]);
                 count++;
             }
             if (count == 0) count = 1;
             var f = new double[nseg];
-            var psd = new double[nseg];
+            var csd = new Complex[nseg];
             for (int i = 0; i < nseg; i++)
             {
                 int k = (i + nseg / 2) % nseg;                 // fftshift
-                psd[i] = acc[k] / count / (fs * wss);
+                csd[i] = acc[k] / count / (fs * wss);
                 f[i] = (k < nseg / 2 ? k : k - nseg) * fs / nseg;
             }
-            return (f, psd);
+            return (f, csd);
         }
 
         public static double BandPower(double[] f, double[] psd, double f0, double bw)
@@ -99,12 +119,15 @@ namespace RfCore.Signals
         }
 
         /// <summary>PAPR (dB) at CCDF probability <paramref name="prob"/> (0 = absolute peak).</summary>
-        public static double PaprDb(ReadOnlySpan<Complex> x, double prob = 1e-4)
+        public static double PaprDb(ReadOnlySpan<Complex> x, double prob = 1e-4) => PaprDb(Power(x), prob);
+
+        /// <summary>PAPR (dB) of an instantaneous power record <paramref name="power"/>.</summary>
+        public static double PaprDb(double[] power, double prob = 1e-4)
         {
-            var p = new double[x.Length];
+            var p = (double[])power.Clone();
             double mean = 0;
-            for (int i = 0; i < x.Length; i++) { p[i] = x[i].Real * x[i].Real + x[i].Imaginary * x[i].Imaginary; mean += p[i]; }
-            mean /= x.Length;
+            for (int i = 0; i < p.Length; i++) mean += p[i];
+            mean /= p.Length;
             if (mean <= 0) return double.NaN;
             if (prob <= 0) return 10 * Math.Log10(p.Max() / mean);
             Array.Sort(p);
@@ -114,13 +137,17 @@ namespace RfCore.Signals
 
         /// <summary>CCDF: for each probability, the power above the mean (dB) exceeded with that probability.</summary>
         public static (double[] dbAboveMean, double[] prob) Ccdf(ReadOnlySpan<Complex> x, int points = 200, double minProb = 1e-5)
+            => Ccdf(Power(x), points, minProb);
+
+        /// <summary>CCDF of an instantaneous power record <paramref name="power"/>.</summary>
+        public static (double[] dbAboveMean, double[] prob) Ccdf(double[] power, int points = 200, double minProb = 1e-5)
         {
-            var p = new double[x.Length];
+            var p = (double[])power.Clone();
             double mean = 0;
-            for (int i = 0; i < x.Length; i++) { p[i] = x[i].Real * x[i].Real + x[i].Imaginary * x[i].Imaginary; mean += p[i]; }
-            mean /= x.Length;
+            for (int i = 0; i < p.Length; i++) mean += p[i];
+            mean /= p.Length;
             Array.Sort(p);
-            minProb = Math.Max(minProb, 1.0 / x.Length);
+            minProb = Math.Max(minProb, 1.0 / p.Length);
             var db = new double[points];
             var pr = new double[points];
             for (int i = 0; i < points; i++)
@@ -131,6 +158,13 @@ namespace RfCore.Signals
                 db[i] = 10 * Math.Log10(Math.Max(p[idx], 1e-300) / mean);
             }
             return (db, pr);
+        }
+
+        private static double[] Power(ReadOnlySpan<Complex> x)
+        {
+            var p = new double[x.Length];
+            for (int i = 0; i < x.Length; i++) p[i] = x[i].Real * x[i].Real + x[i].Imaginary * x[i].Imaginary;
+            return p;
         }
 
         /// <summary>Occupied (99 %) bandwidth from a PSD.</summary>

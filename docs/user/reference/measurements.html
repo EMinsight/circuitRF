@@ -172,7 +172,7 @@ one sweep point, pin its axis by name with <code>at</code>, which takes the poin
 <li><strong>Probe names</strong> match like <code>I(&quot;…&quot;)</code>: the whole name, any case. An unknown name is an error that
 lists the analysis's IProbes.</li>
 <li><strong>With two or more fundamentals</strong>, <code>P(&quot;Iout&quot;)</code> is the sum over the carrier products, the same band
-<code>Pout_avg_dBm</code> reports; <code>P(&quot;Iout&quot;, &quot;(1,0)&quot;)</code> is one carrier.</li>
+<code>Pavg_dBm</code> reports; <code>P(&quot;Iout&quot;, &quot;(1,0)&quot;)</code> is one carrier.</li>
 <li><strong><code>Pt</code> needs the waveforms.</strong> With <code>SaveWaveforms=no</code> it is an error naming that setting. <code>P</code> never
 needs them.</li>
 </ul>
@@ -180,9 +180,9 @@ needs them.</li>
 <pre><code class="language-text">Pout_W = mean_over(real(0.5*ENV1.V(&quot;Vout&quot;, 1)*conj(ENV1.I(&quot;Iout&quot;, 1))), &quot;time&quot;)
 </code></pre>
 <p>with <code>Vout</code> the probe's first node. The one difference is the window: <code>P</code> averages over the run's
-measured window, after the settle a cold start skips, and the long form over the whole record, so at
-a 50 Ω load <code>P</code> agrees with <code>Pout_avg_dBm</code> and the long form can differ slightly. The long form also
-needs <code>SaveWaveforms=yes</code>, and the node listed in <code>Probes</code>.</p>
+measured window, after the settle a cold start skips, and the long form over the whole record, so <code>P</code>
+agrees with the probe's <code>Pavg_dBm</code> and the long form can differ slightly. The long form also needs
+<code>SaveWaveforms=yes</code>, and the probe's first node labeled, so its voltage is recorded.</p>
 <h2 id="sparam">S-parameters: 1-based ports</h2>
 <p>On an S-parameter cube, the <code>i</code>/<code>j</code> axes carry <strong>1-based port numbers</strong> — the way RF engineers
 name S-parameters — in both notations:</p>

@@ -29,9 +29,16 @@ namespace CircuitRF.Render.DataDisplay
 
             // ---- Family trace (Phase 7.3b) ----
             // Every curve in the family shares the trace's single line color (no per-curve
-            // stepping, no legend) — the family reads as one trace drawn N times.
+            // stepping, no legend) — the family reads as one trace drawn N times. Its point markers
+            // are drawn on every curve too: a markers-only family is a scatter per sweep point (an
+            // envelope run's memory cloud at each drive level, brief ENV-MEAS-3 §5).
             if (trace.IsFamily)
             {
+                if (props.MarkerEnabled && !props.LineEnabled && !stemMode)
+                {
+                    foreach (var curve in trace.FamilyCurves) DrawPointMarkers(canvas, curve.Points, props, tf, trace.UseSecondaryAxis, lw, theme);
+                    return;
+                }
                 if (!props.LineEnabled) return;
                 float strokeW   = lw * (float)props.LineWidth;
                 bool  useSecond = trace.UseSecondaryAxis;
@@ -80,6 +87,8 @@ namespace CircuitRF.Render.DataDisplay
                     }
                     canvas.DrawPath(p, paint);
                 }
+                if (props.MarkerEnabled && !trace.IsStabilityCircle)
+                    foreach (var curve in trace.FamilyCurves) DrawPointMarkers(canvas, curve.Points, props, tf, useSecond, lw, theme);
                 return;
             }
 
@@ -140,75 +149,98 @@ namespace CircuitRF.Render.DataDisplay
 
             // ---- Point markers ----
             if (props.MarkerEnabled && !trace.IsStabilityCircle)
+                DrawPointMarkers(canvas, trace.Points, props, tf, trace.UseSecondaryAxis, lw, theme);
+        }
+
+        /// <summary>One trace's (or one family curve's) point markers, in its marker colour.</summary>
+        private static void DrawPointMarkers(SKCanvas canvas, IReadOnlyList<Vector2> points, TraceProperties props, TransformSet tf,
+                                             bool useSecondary, float lw, RenderTheme theme)
+        {
+            float ms           = lw * (float)props.MarkerSize;
+
+            using var fillPaint = new SKPaint
             {
-                float ms           = lw * (float)props.MarkerSize;
-                bool  useSecondary = trace.UseSecondaryAxis;
+                Color       = theme.ToSKColor(props.MarkerColor, props.MarkerOpacity),
+                Style       = SKPaintStyle.Fill,
+                IsAntialias = true
+            };
+            using var strokePaint = new SKPaint
+            {
+                Color       = new SKColor(0, 0, 0, 200),
+                StrokeWidth = lw / 2f,
+                Style       = SKPaintStyle.Stroke,
+                IsAntialias = true
+            };
 
-                using var fillPaint = new SKPaint
+            // ── EVERY PUBLISHED POINT GETS THE SAME GLYPH (owner, 2026-09-14) ───────────
+            //
+            //  There was an attempt to say something here about WHICH points an adaptively
+            //  sampled run actually solved — first by withholding the glyph on a modelled
+            //  point, then by drawing it open. Both were wrong for the same reason: a
+            //  published point is data. The Table view lists it, the line runs through it, and
+            //  the `.sNp` beside it would carry it into a circuit simulation — so it is a
+            //  sample of this trace and it is drawn in this trace's colour, like every other.
+            //
+            //  Trace.PointIsSolved still reports the run's own mask and is still the truth
+            //  about the result; it is just not something the plot draws. Anything that needs
+            //  to report it does so in words.
+
+            //  Circle and Square keep their own draw calls: they are the two shapes that
+            //  existed before the rest, and a saved `.cdd` must come back pixel-identical.
+            //  Every other glyph is ONE closed path from MarkerGlyph, built at this size once
+            //  and translated per point — the outline does not change between points, and
+            //  rebuilding it for each of a few thousand samples is measurable.
+            var shape = props.MarkerType;
+
+            //  A scatter of thousands of circles (an envelope run's memory cloud: up to 20,000 per probe, one
+            //  cloud per drive level) is one DrawPoints call of round dots in the fill colour, with no outline.
+            //  Drawn one oval and one outline at a time, five clouds of 16,000 took 260 ms a frame; at that
+            //  density the outlines merge into a dark blob anyway (src/Ui/RESOLVED.md, ENV-MEAS-3).
+            if (shape == MarkerType.Circle && points.Count > LargeScatterPoints)
+            {
+                var dots = new List<SKPoint>(points.Count);
+                foreach (var pt in points)
+                    if (tf.XIsPlottable(pt.X) && float.IsFinite(pt.Y)) dots.Add(tf.ToCanvas(pt.X, pt.Y, useSecondary));
+                using var dotPaint = new SKPaint
                 {
-                    Color       = theme.ToSKColor(props.MarkerColor, props.MarkerOpacity),
-                    Style       = SKPaintStyle.Fill,
-                    IsAntialias = true
+                    Color = fillPaint.Color, Style = SKPaintStyle.Stroke, StrokeWidth = 2 * ms,
+                    StrokeCap = SKStrokeCap.Round, IsAntialias = true,
                 };
-                using var strokePaint = new SKPaint
+                canvas.DrawPoints(SKPointMode.Points, [.. dots], dotPaint);
+                return;
+            }
+
+            using SKPath? glyph = shape is MarkerType.Circle or MarkerType.Square
+                ? null
+                : MarkerGlyph.BuildPath(shape, ms);
+
+            for (int k = 0; k < points.Count; k++)
+            {
+                var pt   = points[k];
+                if (!tf.XIsPlottable(pt.X)) continue;
+                var px   = tf.ToCanvas(pt.X, pt.Y, useSecondary);
+
+                if (glyph != null)
                 {
-                    Color       = new SKColor(0, 0, 0, 200),
-                    StrokeWidth = lw / 2f,
-                    Style       = SKPaintStyle.Stroke,
-                    IsAntialias = true
-                };
+                    canvas.Save();
+                    canvas.Translate(px.X, px.Y);
+                    canvas.DrawPath(glyph, fillPaint);
+                    canvas.DrawPath(glyph, strokePaint);
+                    canvas.Restore();
+                    continue;
+                }
 
-                // ── EVERY PUBLISHED POINT GETS THE SAME GLYPH (owner, 2026-09-14) ───────────
-                //
-                //  There was an attempt to say something here about WHICH points an adaptively
-                //  sampled run actually solved — first by withholding the glyph on a modelled
-                //  point, then by drawing it open. Both were wrong for the same reason: a
-                //  published point is data. The Table view lists it, the line runs through it, and
-                //  the `.sNp` beside it would carry it into a circuit simulation — so it is a
-                //  sample of this trace and it is drawn in this trace's colour, like every other.
-                //
-                //  Trace.PointIsSolved still reports the run's own mask and is still the truth
-                //  about the result; it is just not something the plot draws. Anything that needs
-                //  to report it does so in words.
+                var rect = new SKRect(px.X - ms, px.Y - ms, px.X + ms, px.Y + ms);
 
-                //  Circle and Square keep their own draw calls: they are the two shapes that
-                //  existed before the rest, and a saved `.cdd` must come back pixel-identical.
-                //  Every other glyph is ONE closed path from MarkerGlyph, built at this size once
-                //  and translated per point — the outline does not change between points, and
-                //  rebuilding it for each of a few thousand samples is measurable.
-                var shape = props.MarkerType;
-                using SKPath? glyph = shape is MarkerType.Circle or MarkerType.Square
-                    ? null
-                    : MarkerGlyph.BuildPath(shape, ms);
-
-                for (int k = 0; k < trace.Points.Count; k++)
+                if (shape == MarkerType.Square)
                 {
-                    var pt   = trace.Points[k];
-                    if (!tf.XIsPlottable(pt.X)) continue;
-                    var px   = tf.ToCanvas(pt.X, pt.Y, useSecondary);
-
-                    if (glyph != null)
-                    {
-                        canvas.Save();
-                        canvas.Translate(px.X, px.Y);
-                        canvas.DrawPath(glyph, fillPaint);
-                        canvas.DrawPath(glyph, strokePaint);
-                        canvas.Restore();
-                        continue;
-                    }
-
-                    var rect = new SKRect(px.X - ms, px.Y - ms, px.X + ms, px.Y + ms);
-
-                    if (shape == MarkerType.Square)
-                    {
-                        canvas.DrawRect(rect, fillPaint);
-                        canvas.DrawRect(rect, strokePaint);
-                    }
-                    else
-                    {
-                        canvas.DrawOval(rect, fillPaint);
-                        canvas.DrawOval(rect, strokePaint);
-                    }
+                    canvas.DrawRect(rect, fillPaint);
+                    canvas.DrawRect(rect, strokePaint);
+                }
+                else
+                {
+                    canvas.DrawOval(rect, fillPaint);
+                    canvas.DrawOval(rect, strokePaint);
                 }
             }
         }
@@ -400,6 +432,10 @@ namespace CircuitRF.Render.DataDisplay
                 }
             }
         }
+
+        /// <summary>Above this many circle markers a trace's points are drawn as one batch of round dots with no
+        /// outline. Below it every marker keeps its own outlined glyph, as a saved display has always drawn it.</summary>
+        internal const int LargeScatterPoints = 5_000;
 
         /// <summary>Above this many points a line is drawn through <see cref="AppendLargePolyline"/>.
         /// Below it the original per-point path is used unchanged.</summary>

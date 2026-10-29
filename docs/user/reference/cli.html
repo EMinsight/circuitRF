@@ -3245,6 +3245,17 @@ report says which:</p>
     "this bench has no bias source" is a property of the solved circuit, and this verb solves
     nothing. It reports what it can establish and stays quiet about the rest.</p>
   </div>
+<p>An envelope analysis also lists what its run will record: the labeled nets whose voltages it keeps,
+and the IProbes it measures power at (see
+<a href="simulations.html#envelope-records">What a run records</a>):</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain NR20_ACPR.cnl --analysis
+<span class="output">  analyses:
+    ENV1             EnvelopeAnalysis   ENV1                         DISPATCHED by env
+      records voltages at 3 net(s): Vin, Vout, VDD
+      measures power at 3 IProbe(s): Iout, Iin, IDC</span></code></pre>
+<p><code>circuitrf env --probes a,b</code> still runs: the nodes it names join the labeled nets, and the run notes
+that <code>Probes</code> is no longer a setting. A netlist line with <code>Probes=</code> reads the same way, and a file
+saved again no longer carries it.</p>
 <p>A design whose expressions call a distribution — a kit's statistical models, or a variable such as
 <code>Rsh = agauss(50, 2.5, 1)</code> — also lists each one, as a <strong>process</strong> draw (in a global, shared by every
 instance) or a <strong>mismatch</strong> draw (in a cell, one per instance), with the stream that names it:</p>

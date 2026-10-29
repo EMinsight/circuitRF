@@ -10,7 +10,9 @@
 //    capacitances typed; Rth and its three-pole ladder typed; drain lag), Fit all, Export ▸ the benches, drawn from their
 //    netlists.
 //
-//  The data is synthetic (SyntheticGan.Radar8x250) and every data set's Note says so.
+//  The data is synthetic (SyntheticGan.Radar8x250) and every data set's Note says so. The pulse bench's schematic was laid
+//  out by hand after it was drawn: a rebuild keeps it rather than redrawing it (HandLaidOut), and
+//  PulsedRadarExampleTests.TheHandLaidOutPulseBench_IsItsNetlist holds it to the netlist here.
 // ================================================================
 
 using System.Text.Json.Nodes;
@@ -51,12 +53,14 @@ public sealed class PulsedRadarExampleAuthoring(ITestOutputHelper output)
         string ws = Workspace;
         string readme = Path.Combine(ws, "README.md");
         string? keptReadme = File.Exists(readme) ? File.ReadAllText(readme) : null;
+        var kept = KeepHandLaidOut(ws);
         if (Directory.Exists(ws)) Directory.Delete(ws, true);
 
         WorkspaceCreate.Create(examples, Folder, null);
         if (keptReadme is not null) File.WriteAllText(readme, keptReadme);
         BuildDevice(ws);
         BuildBenches(ws);
+        RestoreHandLaidOut(ws, kept);
         BuildTheDisplay();
     }
 
@@ -69,13 +73,29 @@ public sealed class PulsedRadarExampleAuthoring(ITestOutputHelper output)
         BuildDevice(Workspace);
     }
 
-    /// <summary>The benches alone, redrawn from their netlists.</summary>
+    /// <summary>The benches alone, redrawn from their netlists; a hand-laid-out schematic is kept.</summary>
     [AuthorFact]
     public void BuildTheBenches()
     {
+        var kept = KeepHandLaidOut(Workspace);
         foreach (string cell in Benches.Select(b => b.Cell))
             if (Directory.Exists(Path.Combine(Workspace, cell))) Directory.Delete(Path.Combine(Workspace, cell), true);
         BuildBenches(Workspace);
+        RestoreHandLaidOut(Workspace, kept);
+    }
+
+    /// <summary>The benches whose schematic was laid out by hand after it was drawn (owner, 2026-10-28). A rebuild draws
+    /// them, so the cell folder is complete, and then puts the hand-laid-out schematic back over the drawing.</summary>
+    public static readonly string[] HandLaidOut = ["PulsedPA_pCW"];
+
+    public static string SchematicOf(string ws, string cell) => Path.Combine(ws, cell, "schematic", cell + ".csch");
+
+    private static Dictionary<string, byte[]> KeepHandLaidOut(string ws) =>
+        HandLaidOut.Where(c => File.Exists(SchematicOf(ws, c))).ToDictionary(c => c, c => File.ReadAllBytes(SchematicOf(ws, c)));
+
+    private static void RestoreHandLaidOut(string ws, Dictionary<string, byte[]> kept)
+    {
+        foreach (var (cell, bytes) in kept) File.WriteAllBytes(SchematicOf(ws, cell), bytes);
     }
 
     // ── radar-gan ─────────────────────────────────────────────────────────────
@@ -170,16 +190,18 @@ public sealed class PulsedRadarExampleAuthoring(ITestOutputHelper output)
         """;
 
     /// <summary>The same stage on a pulsed-CW source: 100 µs pulses every 1 ms (10 % duty), three whole PRIs, so the supply
-    /// has recharged the storage capacitor after the last pulse and DE_pct counts what the pulses drew.</summary>
-    public const string PulsedPApCW = """
+    /// has recharged the storage capacitor after the last pulse and DE_pct counts what the pulses drew. The output power is
+    /// measured where it is delivered (brief ENV-MEAS-3): <c>Iout</c> in series with the load, its first node <c>out</c> as
+    /// before, so the net and every voltage read there keep their meaning and only the load moves to a net of its own.</summary>
+    public static readonly string PulsedPApCW = """
         Pin = 34
         RFfreq = 3 GHz
         VGS = -2.6
         VDD = 48
         temp = 25
         MOD_Source:SRC1  in  0  Fc=RFfreq  Pavg=Pin dBm  Z=50 Ohm  Carrier[1]="PCW;PRI=1ms;PW=100us;Rise=0.5us;Fall=0.5us;Delay=10us;Off=0;P=0"
-        """ + "\n" + Stage + "\n" + """
-        analysis ENV1 type=env Stop=3e-3 Accuracy=draft MaxHarm=5 Probes="g,d,dsup,tj,out"
+        """ + "\n" + Stage.Replace("R:RL  out  0", "IProbe:Iout  out  load\nR:RL  load  0", StringComparison.Ordinal) + "\n" + """
+        analysis ENV1 type=env Stop=3e-3 Accuracy=draft MaxHarm=5
         labelednets in g d dsup out tj
         """;
 
@@ -229,15 +251,15 @@ public sealed class PulsedRadarExampleAuthoring(ITestOutputHelper output)
                 }
                 plots.Add(plot);
             }
-            Plot("pout", 0, 0, "--trace", "cube=Pout_t_dBm", "--title", "Output power over the run",
+            Plot("pout", 0, 0, "--trace", "cube=Pout_t_dBm[\"Iout\",:]", "--title", "Output power over the run",
                  "--ylabel", "Pout (dBm)", "--xlabel", "Time (s)", "--y", "30:52");
             Plot("rise", 660, 0, "--trace", "cube=real(V[:,\"tj\",0])", "--title", "Junction temperature rise",
                  "--ylabel", "Rise above 25 °C (K)", "--xlabel", "Time (s)");
-            Plot("top", 0, 420, "--trace", "cube=Pout_t_dBm", "--title", "Pulse 1, its top",
+            Plot("top", 0, 420, "--trace", "cube=Pout_t_dBm[\"Iout\",:]", "--title", "Pulse 1, its top",
                  "--ylabel", "Pout (dBm)", "--xlabel", "Time (s)", "--x", "0.000008:0.000114", "--y", "48.7:49.4");
-            Plot("table", 660, 420, "--type", "table", "--trace", "cube=PulseTop_dBm", "--trace", "cube=PulseDroop_dB",
-                 "--trace", "cube=PulsePhaseDroop_deg", "--trace", "cube=PulseRise_s", "--trace", "cube=PulseFall_s",
-                 "--title", "Per pulse");
+            Plot("table", 660, 420, "--type", "table", "--trace", "cube=PulseTop_dBm[\"Iout\",:]", "--trace", "cube=PulseDroop_dB[\"Iout\",:]",
+                 "--trace", "cube=PulsePhaseDroop_deg[\"Iout\",:]", "--trace", "cube=PulseRise_s[\"Iout\",:]",
+                 "--trace", "cube=PulseFall_s[\"Iout\",:]", "--title", "Per pulse");
             var doc = JsonNode.Parse(File.ReadAllText(Path.Combine(tmp, "pout.cdd")))!;
             doc["SelectedDataSource"] = PulseBench + ".npy";
             doc["Tabs"]![0]!["Name"] = "Pulsed CW run";

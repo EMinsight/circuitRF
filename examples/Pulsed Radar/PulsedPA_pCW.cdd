@@ -71,6 +71,14 @@
               "CubeName": "ENV1.Pout_t_dBm",
               "CubeSlice": [
                 {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
+                {
                   "AxisName": "time",
                   "Role": "KeepAsX",
                   "Index": 0,
@@ -191,7 +199,7 @@
                 {
                   "AxisName": "node",
                   "Role": "PinToIndex",
-                  "Index": 3,
+                  "Index": 9,
                   "RangeStart": 0,
                   "RangeEndExclusive": -1,
                   "Label": "tj"
@@ -292,6 +300,14 @@
               "MaximumFractionDigits": 3,
               "CubeName": "ENV1.Pout_t_dBm",
               "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
                 {
                   "AxisName": "time",
                   "Role": "KeepAsX",
@@ -403,6 +419,14 @@
               "CubeName": "ENV1.PulseTop_dBm",
               "CubeSlice": [
                 {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
+                {
                   "AxisName": "pulse",
                   "Role": "KeepAsX",
                   "Index": 0,
@@ -456,6 +480,14 @@
               "MaximumFractionDigits": 3,
               "CubeName": "ENV1.PulseDroop_dB",
               "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
                 {
                   "AxisName": "pulse",
                   "Role": "KeepAsX",
@@ -511,6 +543,14 @@
               "CubeName": "ENV1.PulsePhaseDroop_deg",
               "CubeSlice": [
                 {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
+                {
                   "AxisName": "pulse",
                   "Role": "KeepAsX",
                   "Index": 0,
@@ -565,6 +605,14 @@
               "CubeName": "ENV1.PulseRise_s",
               "CubeSlice": [
                 {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
+                {
                   "AxisName": "pulse",
                   "Role": "KeepAsX",
                   "Index": 0,
@@ -618,6 +666,14 @@
               "MaximumFractionDigits": 3,
               "CubeName": "ENV1.PulseFall_s",
               "CubeSlice": [
+                {
+                  "AxisName": "branch",
+                  "Role": "PinToIndex",
+                  "Index": 1,
+                  "RangeStart": 0,
+                  "RangeEndExclusive": -1,
+                  "Label": "Iout"
+                },
                 {
                   "AxisName": "pulse",
                   "Role": "KeepAsX",

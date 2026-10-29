@@ -1,6 +1,7 @@
 <!-- Envelope analysis body (type=env). The stimulus is the schematic's MOD_Source (shown read-only at the
-     top); this card says how long, how accurately, which nodes to keep and how to split the work across
-     cores. Layout and type sizes follow the HB card. -->
+     top); this card says how long, how accurately and how to split the work across cores. What a run records
+     is the schematic's: every labeled net's voltage and every IProbe's power, shown read-only in the row the
+     Probes field had, so nothing below it moves. Layout and type sizes follow the HB card. -->
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CircuitRF.Ui.ViewModels"
@@ -42,8 +43,10 @@
             <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding MaxMixOrder}"
                      ToolTip.Tip="Used when carriers are far apart and each gets its own fundamental. 7 converges IM5; at 5, IM5 sits on the truncation edge."/>
 
-            <TextBlock Grid.Row="3" Classes="lbl" Text="Probes"/>
-            <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Probes}" PlaceholderText="node names, comma-separated — the LAST is the output (gain, AM-AM/AM-PM, DE)"/>
+            <TextBlock Grid.Row="3" Classes="lbl" Text="Records"/>
+            <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding RecordsSummary}" FontSize="11"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource SystemBaseMediumColor}" ToolTip.Tip="{Binding RecordsDetail}"/>
 
             <TextBlock Grid.Row="4" Classes="lbl" Text="Segments"/>
             <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Segments}"
@@ -51,7 +54,7 @@
             <TextBlock Grid.Row="4" Grid.Column="2" Classes="lbl" Text="Warm-up (s)" Margin="12,0,8,0"/>
             <TextBox Grid.Row="4" Grid.Column="3" Text="{Binding Warmup}" ToolTip.Tip="auto = 5 us, or five of the circuit's slowest time constants (traps, thermal, bias network) when Segments is auto"/>
         </Grid>
-        <CheckBox FontSize="11" Content="Keep probe envelopes (time cube)" IsChecked="{Binding SaveWaveforms}"
-                  ToolTip.Tip="Off keeps only the measurements: PSD, ACLR, CCDF, AM-AM/AM-PM, IMD, DE, IProbe powers"/>
+        <CheckBox FontSize="11" Content="Keep the envelopes (time cubes)" IsChecked="{Binding SaveWaveforms}"
+                  ToolTip.Tip="Off keeps every spectrum, power, AM-AM and pulse number; only the V and I envelopes and the instantaneous power go"/>
     </StackPanel>
 </UserControl>

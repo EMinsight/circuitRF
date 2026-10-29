@@ -158,7 +158,7 @@ each one's own probes (`Iout1`, `IDC1`, `Iout2`, `IDC2`).
 - **Probe names** match like `I("…")`: the whole name, any case. An unknown name is an error that
   lists the analysis's IProbes.
 - **With two or more fundamentals**, `P("Iout")` is the sum over the carrier products, the same band
-  `Pout_avg_dBm` reports; `P("Iout", "(1,0)")` is one carrier.
+  `Pavg_dBm` reports; `P("Iout", "(1,0)")` is one carrier.
 - **`Pt` needs the waveforms.** With `SaveWaveforms=no` it is an error naming that setting. `P` never
   needs them.
 
@@ -169,9 +169,9 @@ Pout_W = mean_over(real(0.5*ENV1.V("Vout", 1)*conj(ENV1.I("Iout", 1))), "time")
 ```
 
 with `Vout` the probe's first node. The one difference is the window: `P` averages over the run's
-measured window, after the settle a cold start skips, and the long form over the whole record, so at
-a 50 Ω load `P` agrees with `Pout_avg_dBm` and the long form can differ slightly. The long form also
-needs `SaveWaveforms=yes`, and the node listed in `Probes`.
+measured window, after the settle a cold start skips, and the long form over the whole record, so `P`
+agrees with the probe's `Pavg_dBm` and the long form can differ slightly. The long form also needs
+`SaveWaveforms=yes`, and the probe's first node labeled, so its voltage is recorded.
 
 ## S-parameters: 1-based ports {#sparam}
 

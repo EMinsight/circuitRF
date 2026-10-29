@@ -459,10 +459,11 @@ internal static class ToolCatalog
                      new("envelope", "--envelope", OptKind.Str, "auto, single or lattice: whether widely spaced carriers get their own fundamental."),
                      new("segments", "--segments", OptKind.Str, "Parallel-in-time segments: auto (one per core) or a count; 1 runs sequentially."),
                      new("warmup",   "--warmup",   OptKind.Str, "Warm-up before each segment, s, or auto."),
-                     new("probes",   "--probes",   OptKind.Str, "Nodes to keep and measure, separated by commas. Default: the MOD_Source nodes.")],
-                    "Circuit envelope: the circuit driven by its MOD_Source's LTE, NR, CW or I/Q signal. Returns ACLR "
-                  + "(channel power, ACPR1/ACPR2 per carrier), AM-AM/AM-PM, IMD for two carriers, and the scalars "
-                  + "(Pout_avg_dBm, Gt_dB, Pdc_W, DE_pct, NMSE_dB, PAPR). The time waveforms (V) and spectrum (PSD) are in "
+                     new("probes",   "--probes",   OptKind.Str, "Deprecated: nodes, separated by commas, whose voltages are recorded beside the labeled nets'.")],
+                    "Circuit envelope: the circuit driven by its MOD_Source's LTE, NR, CW or I/Q signal. Every labeled net "
+                  + "records its voltage (V, and VSD in dBV/Hz); every IProbe its delivered power, on a branch axis: ACLR "
+                  + "(channel power, ACPR1/ACPR2 per carrier), PSD, AM-AM/AM-PM, IMD for two carriers, Pavg_dBm, Gt_dB, "
+                  + "DE_pct, NMSE_dB and PAPR_dB; Pin_avg_dBm and Pdc_W are scalars. The time waveforms (V, I) and spectra are in "
                   + "the shape and in -o's file; ask for them with all, only or group. Runs the parametric sweep when one wraps it. "
                   + "Minutes, not seconds: 200 us of an NR 20 MHz signal is about a minute on 10 cores."),
                 new("lp", ["lp"],

@@ -331,7 +331,7 @@ public static class CnlWriter
     {
         HarmonicBalanceAnalysis hb    => FormatHbAnalysis(hb),
         EnvelopeAnalysis env          => $"analysis {env.Name} type=env Stop={env.StopExpr} Step={env.StepExpr} Accuracy={env.Accuracy} " +
-                                         $"MaxHarm={env.MaxHarmExpr} MaxMixOrder={env.MaxMixOrderExpr} Probes=\"{env.Probes}\" Segments={env.SegmentsExpr} " +
+                                         $"MaxHarm={env.MaxHarmExpr} MaxMixOrder={env.MaxMixOrderExpr} Segments={env.SegmentsExpr} " +
                                          $"Warmup={env.WarmupExpr} Start={env.StartExpr} Tol={env.TolExpr} SaveWaveforms={env.SaveWaveforms}" +
                                          (env.Envelope.Equals("auto", StringComparison.OrdinalIgnoreCase) ? "" : $" Envelope={env.Envelope}"),
         LoadpullAnalysis lp           => FormatLoadpullAnalysis(lp),
