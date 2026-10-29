@@ -887,6 +887,25 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private string _planarDetailFloorText = "";
 
     /// <summary>
+    /// The setup's own memory limit for one frequency point (<see cref="PlanarMeshSettings.MemoryLimitBytes"/>),
+    /// staged as text in decimal gigabytes. A memory rather than an unknown count because a user cannot
+    /// know their count before meshing (owner, 2026-10-29). <b>Blank means the default</b>, which
+    /// <see cref="MemoryLimitPlaceholder"/> shows greyed. It does not clear Auto (it is not a
+    /// resolution), and it invalidates the mesh because the verdict the panel shows is judged against it.
+    /// </summary>
+    [ObservableProperty] private string _planarMemoryLimitText = "";
+
+    /// <summary>Why the typed memory limit was not taken, shown under its own box; null when it was.</summary>
+    [ObservableProperty] private string? _memoryLimitError;
+
+    /// <summary>What a blank limit means, in the box's own unit: the memory one point of the default
+    /// dense ceiling holds. The accelerated ceiling is the larger count of the two at any limit
+    /// (<see cref="SurfaceMesher.CeilingFor"/>), so this one number is the default either way.</summary>
+    public static string MemoryLimitPlaceholder =>
+        (PlanarSystem.ResidentBytes(SurfaceMesher.UnknownCeiling) / PlanarMemoryCheck.BytesPerGb)
+            .ToString("0.#", CultureInfo.CurrentCulture);
+
+    /// <summary>
     /// M0's mesh-frequency control, staged as text like every other dimensioned field in this panel.
     /// <b>Blank means "max sweep"</b> — the model stores <c>null</c>, the mesher sizes at the
     /// sweep's own top, and that is exactly the behaviour every existing <c>.cem</c> already has.
@@ -1390,6 +1409,16 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
             // ANT-2's detail floor. It does NOT clear Auto, for the same reason Mesh frequency does
             // not: Auto chooses a resolution and this is not one — it says which drawn geometry is
             // electrically real enough to size a mesh on. 0 is a real value (off), not a blank.
+            // The setup's own memory limit, in GB. Blank is a real value (the default).
+            case "PlanarMemoryLimit":
+                if (PlanarMemoryLimitText.Trim().Length == 0)
+                    updatedPlanar = pm with { MemoryLimitBytes = null };
+                else if (TryDouble(PlanarMemoryLimitText, out double gb) && gb > 0 && double.IsFinite(gb))
+                    updatedPlanar = pm with { MemoryLimitBytes = (long)Math.Round(gb * PlanarMemoryCheck.BytesPerGb) };
+                else
+                    error = "Enter a size in GB, or leave it blank for the default.";
+                break;
+
             case "PlanarDetailFloor":
                 if (TryInt(PlanarDetailFloorText, 0, out int dfd))
                     updatedPlanar = pm with { DetailFloorDivisor = dfd };
@@ -1414,7 +1443,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
         bool isPlanarField = field is "CellsPerWavelength" or "PlanarEdgeCells" or "MeshFrequency"
                                    or "PlanarMinCellsAcross" or "PlanarDetailFloor";
-        if (isPlanarField) PlanarMeshFieldError = error; else MeshFieldError = error;
+        if (field == "PlanarMemoryLimit") MemoryLimitError = error;
+        else if (isPlanarField) PlanarMeshFieldError = error; else MeshFieldError = error;
 
         // Bug report, 2026-08-14: an invalid commit used to fall through to RefreshMeshText(), which
         // silently overwrote the box back to the last-good value — the user's typed text vanished
@@ -1899,6 +1929,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         PlanarEdgeCellsText          = pm.EdgeCells.ToString(CultureInfo.InvariantCulture);
         PlanarMinCellsAcrossText     = pm.MinCellsAcrossConductor.ToString(CultureInfo.InvariantCulture);
         PlanarDetailFloorText        = pm.DetailFloorDivisor.ToString(CultureInfo.InvariantCulture);
+        PlanarMemoryLimitText        = pm.MemoryLimitBytes is { } mlb
+            ? (mlb / PlanarMemoryCheck.BytesPerGb).ToString("0.##", CultureInfo.CurrentCulture) : "";
         PlanarEdgeMesh               = pm.EdgeMesh;
         PlanarCurrentModel           = pm.CurrentModel;
         PlanarBoundaryCells          = pm.BoundaryCells;

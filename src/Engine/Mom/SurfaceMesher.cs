@@ -146,15 +146,20 @@ public enum PlanarRimGrading
 public static class SurfaceMesher
 {
     /// <summary>
-    /// R-msh-7 / R17 — <b>the hard ceiling, declared</b>. §10.7's own table: 5,000 unknowns is a
-    /// 400 MB dense complex matrix and "the practical ceiling for lightweight". Above it the mesher
-    /// refuses by name. A "lightweight" simulator that silently tries to allocate 12 GB is not
-    /// lightweight. <b>This is the DENSE path's ceiling and it does not move</b> — 16N² plus the LU's
-    /// own working set is a real, measured cost and more RAM does not change that a "lightweight"
-    /// simulator should not chase it. See <see cref="AcceleratedUnknownCeiling"/> for the accelerated
-    /// solver's own, higher, separately-measured ceiling.
+    /// R-msh-7 / R17 — <b>the DENSE path's default ceiling</b>. Above it the mesher refuses by name
+    /// unless the setup states its own memory limit (<see cref="PlanarMeshSettings.MemoryLimitBytes"/>).
+    ///
+    /// <para><b>It was 5,000 until 2026-10-29.</b> §10.7 chose that when one frequency point held the
+    /// matrix AND a general LU's two factors, 1.31 GB at 5,000 (P1). P7's in-place LDLᵀ took the
+    /// factors away, and 10,000 now holds about what 5,000 did then: ~2 GB at the peak of one point,
+    /// measured 6.5 s to fill and 37 s to factor at N = 11,210 in Release on a 10-core machine. It is
+    /// a DEFAULT, not a property of the kernel: a setup can raise it, and the run checks the estimate
+    /// against the machine's memory before it starts (<c>EmRunService</c>), which is the question a
+    /// fixed number could only answer the same way on every machine.</para>
+    /// See <see cref="AcceleratedUnknownCeiling"/> for the accelerated solver's own, separately
+    /// measured ceiling.
     /// </summary>
-    public const int UnknownCeiling = 5000;
+    public const int UnknownCeiling = 10_000;
 
     /// <summary>
     /// brief-em-aim-ceiling.md's answer to "does R17's ceiling move for the accelerated solver, and to
@@ -218,6 +223,38 @@ public static class SurfaceMesher
     /// <param name="multiLevel">Whether the problem needs the general (multi-level) kernel.</param>
     public static bool UsesAcceleratedCeiling(bool aimOn, bool multiLevel) => aimOn && !multiLevel;
 
+    /// <summary>
+    /// <b>The unknown ceiling a mesh is judged against, in ONE place.</b> With no memory limit it is
+    /// the shipped ceiling of the path <paramref name="accelerated"/> names. With one, it is the
+    /// largest count whose dense peak (<see cref="PlanarSystem.ResidentBytes"/>, for
+    /// <paramref name="cellCount"/> cells, or a count derived from N when 0) fits it — and on the
+    /// accelerated path never less than <see cref="AcceleratedUnknownCeiling"/>, since the accelerator
+    /// holds far less than the dense matrix that count is sized on.
+    /// </summary>
+    public static int CeilingFor(bool accelerated, long? memoryLimitBytes, int cellCount = 0)
+    {
+        if (memoryLimitBytes is not { } bytes)
+            return accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
+        int lo = 0, hi = 4_000_000;
+        while (lo < hi)
+        {
+            int mid = lo + (hi - lo + 1) / 2;
+            if (PlanarSystem.ResidentBytes(mid, cellCount) <= bytes) lo = mid; else hi = mid - 1;
+        }
+        return accelerated ? Math.Max(lo, AcceleratedUnknownCeiling) : lo;
+    }
+
+    /// <summary>Bytes the way the memory limit is typed: decimal gigabytes, "4.2 GB".</summary>
+    public static string FormatBytes(double bytes)
+        => (bytes / 1e9).ToString(bytes < 1e10 ? "0.0" : "0", System.Globalization.CultureInfo.CurrentCulture) + " GB";
+
+    /// <summary>The refusal every guard below the mesher throws when a setup's own memory limit is
+    /// what binds — one sentence, so the mesh verdict and a guard a caller reached directly agree.</summary>
+    public static string LimitSentence(int n, long limitBytes, int cellCount = 0)
+        => $"This mesh has {n:N0} unknowns and needs about " +
+           $"{FormatBytes(PlanarSystem.ResidentBytes(n, cellCount))} at each frequency point, past the " +
+           $"{FormatBytes(limitBytes)} memory limit this EM setup sets (Solver options).";
+
     /// <summary>Warn — do not refuse — from this fraction of the ceiling upward.</summary>
     public const double WarnFraction = 0.6;
 
@@ -253,8 +290,13 @@ public static class SurfaceMesher
     /// <see cref="Mesh"/>'s own refusal would have used, minus the mesh-specific "why" clause, which
     /// this call site has no mesh geometry left to derive.
     /// </summary>
-    public static void GuardCeiling(int n, bool accelerated, int cellCount = 0)
+    public static void GuardCeiling(int n, bool accelerated, int cellCount = 0, long? limit = null)
     {
+        if (limit is { } bytes)
+        {
+            if (n <= CeilingFor(accelerated, bytes, cellCount)) return;
+            throw new InvalidOperationException(LimitSentence(n, bytes, cellCount));
+        }
         int ceiling = accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
         if (n <= ceiling) return;
         throw new InvalidOperationException(
@@ -348,7 +390,7 @@ public static class SurfaceMesher
             ? PlanarMeshSettings.MaxEdgeRefinement
             : edgeRefinementCap;
         bool accel = accelerated && !problem.RequiresGeneralKernel;
-        int  ceiling = accel ? AcceleratedUnknownCeiling : UnknownCeiling;
+        int  ceiling = CeilingFor(accel, s.MemoryLimitBytes);
         var  fmt = lengthFormat ?? DefaultLengthFormat;
 
         // EM-SEV — the mesher's sentences carry their CLASS from here on. A plain string still
@@ -545,7 +587,7 @@ public static class SurfaceMesher
                       "any of them are tested against the metal, which is past what can be built at all.");
             return Refused(layerNames, meshFreqHz, lambdaG, hWave, narrowest, edgeRef, staircased, notes,
                 $"This geometry needs on the order of {estX * estY:N0} mesh cells, far past the " +
-                $"{UnknownCeiling:N0}-unknown ceiling this kernel is built for — the grid alone cannot " +
+                $"{ceiling:N0}-unknown ceiling this run is judged against — the grid alone cannot " +
                 "be built, let alone solved. " +
                 // Same branch, and the same ANT-2 §7 correction, as BuildRefusal's: with the pitch
                 // FIELD on the λ knobs are NOT inert, and this refusal fires on exactly the boards
@@ -1310,8 +1352,13 @@ public static class SurfaceMesher
             notes.Add($"{alt.Subject} — {alt.Reason}");
 
         int n = bases.Count;
+        // A limit the setup states is the user's own number, and the run checks it against the
+        // machine's memory before it starts — so nearing it is not a warning of the mesher's.
+        // With a memory limit the count it allows depends on THIS mesh's cells, so it is asked again
+        // now that they are known.
+        if (s.MemoryLimitBytes is not null) ceiling = CeilingFor(accel, s.MemoryLimitBytes, cells.Count);
         var verdict = n > ceiling ? PlanarBudgetVerdict.Refused
-                    : n >= (int)(ceiling * WarnFraction) ? PlanarBudgetVerdict.Warn
+                    : s.MemoryLimitBytes is null && n >= (int)(ceiling * WarnFraction) ? PlanarBudgetVerdict.Warn
                     : PlanarBudgetVerdict.Ok;
 
         // ── MIM-13 item 2 — THE BUDGET GOES FIRST, AND IT GOES OUT WHATEVER THE VERDICT ──────────
@@ -1323,7 +1370,8 @@ public static class SurfaceMesher
                                     gx.Length, gy.Length, bulkLinesX, bulkLinesY,
                                     accelerated: accel, multiLevel: problem.RequiresGeneralKernel,
                                     rimFraction: rimFraction,
-                                    edgeMesh: s.EdgeMesh && s.EdgeCells > 0);
+                                    edgeMesh: s.EdgeMesh && s.EdgeCells > 0,
+                                    limit: s.MemoryLimitBytes);
         notes.Insert(0, budget);
 
         string? refusal = null;
@@ -1331,12 +1379,14 @@ public static class SurfaceMesher
             refusal = BuildRefusal(n, cells.Count, s, narrowX, narrowY, hx, hy, hWave, x1 - x0, y1 - y0,
                                    cellsAcrossRealised: across,
                                    accelerated: accel,
-                                   acceleratedWouldFit: !accel && n <= AcceleratedUnknownCeiling
+                                   acceleratedWouldFit: s.MemoryLimitBytes is null && !accel
+                                                      && n <= AcceleratedUnknownCeiling
                                                       && !problem.RequiresGeneralKernel,
                                    multiLevel: problem.RequiresGeneralKernel,
                                    fmt: fmt,
                                    coarsestPitch: pitch is null
-                                       ? 0 : Math.Max(pitch.MaxPitchX, pitch.MaxPitchY))
+                                       ? 0 : Math.Max(pitch.MaxPitchX, pitch.MaxPitchY),
+                                   limit: s.MemoryLimitBytes)
                     + GrownLeadClause(leads, fmt);
         else if (verdict == PlanarBudgetVerdict.Warn)
             notes.Add(accel
@@ -1444,9 +1494,9 @@ public static class SurfaceMesher
         int n, int cellCount, int viaUnknowns,
         IReadOnlyList<string> layerNames, IReadOnlyList<int> unknownsPerLayer,
         int gxLines, int gyLines, int bulkXLines, int bulkYLines,
-        bool accelerated, bool multiLevel, double rimFraction, bool edgeMesh)
+        bool accelerated, bool multiLevel, double rimFraction, bool edgeMesh, long? limit = null)
     {
-        int ceiling = accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
+        int ceiling = CeilingFor(accelerated, limit, cellCount);
 
         var sb = new System.Text.StringBuilder();
         sb.Append($"Mesh budget: {cellCount:N0} cells, {n:N0} unknowns");
@@ -1470,7 +1520,11 @@ public static class SurfaceMesher
         sb.Append(". ");
 
         // THE CEILING, BOTH NUMBERS, AND WHICH ONE GOVERNS — every time, not only on a refusal.
-        sb.Append(accelerated
+        sb.Append(limit is { } own
+            ? $"About {FormatBytes(PlanarSystem.ResidentBytes(n, cellCount))} at each frequency point on the " +
+              $"dense path. Judged against this setup's memory limit, {FormatBytes(own)} (Solver options), " +
+              $"which allows {ceiling:N0} unknowns here"
+            : accelerated
             ? $"Judged against the ACCELERATED ceiling, {AcceleratedUnknownCeiling:N0} unknowns " +
               $"(the dense path's is {UnknownCeiling:N0})"
             : $"Judged against the DENSE ceiling, {UnknownCeiling:N0} unknowns (the accelerated " +
@@ -1513,8 +1567,8 @@ public static class SurfaceMesher
     /// act on THAT one — and, when the wavelength cap is not binding, says so outright rather than
     /// leaving the user to discover it by experiment. The megabytes moved to the end and lost the
     /// lead, because quoting them first reads as a memory limit and invites "does my machine need
-    /// more RAM": <see cref="UnknownCeiling"/> is a compile-time constant, identical on every
-    /// machine, and the same file refuses identically everywhere.</para>
+    /// more RAM". (Since 2026-10-29 the ceiling is a default a setup can raise, and the machine's
+    /// memory is asked about at Simulate, so the closing sentence now names that as the last remedy.)</para>
     ///
     /// <para><b>brief-em-aim-ceiling.md, 2026-08-14 — the accelerated solve moved from an inert remedy
     /// to a real one, and the wording has to tell the three resulting cases apart.</b> When this mesh
@@ -1542,11 +1596,11 @@ public static class SurfaceMesher
         double narrowX, double narrowY, double hx, double hy, double hWave,
         double extentX, double extentY, int cellsAcrossRealised,
         bool accelerated, bool acceleratedWouldFit, bool multiLevel,
-        PlanarLengthFormat fmt, double coarsestPitch = 0)
+        PlanarLengthFormat fmt, double coarsestPitch = 0, long? limit = null)
     {
         double pitch     = Math.Min(hx, hy);
         double narrowest = Math.Min(narrowX, narrowY);
-        int    ceiling   = accelerated ? AcceleratedUnknownCeiling : UnknownCeiling;
+        int    ceiling   = CeilingFor(accelerated, limit, cellCount);
         bool   field     = coarsestPitch > 0;
 
         // WHICH quantity set the cell size. This is the whole difference between a refusal a user can
@@ -1664,31 +1718,42 @@ public static class SurfaceMesher
         //     ceiling that is 12,000, about a mesh of 9,316. `multiLevel` splits the two apart and
         //     each gets the sentence that is true of it.
         string ceilingPair =
-            $"There are two ceilings: the DENSE path's, {UnknownCeiling:N0} unknowns, and the " +
+            $"There are two default ceilings: the DENSE path's, {UnknownCeiling:N0} unknowns, and the " +
             $"ACCELERATED solve's, {AcceleratedUnknownCeiling:N0}.";
 
-        string costNote = accelerated
+        // 2026-10-29 — the ceilings became DEFAULTS. A setup can state its own limit, and the run
+        // checks the estimate against the machine's memory before it starts; every branch below
+        // ends by saying so, because "a fixed property of this kernel, not of your machine" — which
+        // these sentences used to end on — stopped being true.
+        string need = FormatBytes(PlanarSystem.ResidentBytes(n, cellCount));
+        string raise =
+            $" Or, if this machine can give the run {need}, set Memory limit in Solver options to " +
+            "at least that: Simulate checks the run against this machine and asks before starting " +
+            "one that will not fit.";
+
+        string costNote = limit is { } own
+            ? $"(This mesh needs about {need} at each frequency point, and the memory limit this " +
+              $"setup sets is {FormatBytes(own)} (Solver options). Raise it there if this machine " +
+              "has the memory: Simulate checks the run against this machine and asks before starting " +
+              "one that will not fit.)"
+            : accelerated
             ? // The dense byte count is meaningless here — this mesh will never see a dense matrix —
               // and the accelerator's own working set has no closed form (it depends on geometry), so
               // this states the measured ballpark rather than a number nothing computed for this run.
               $"({ceilingPair} This run is already on the accelerated one — {AcceleratedUnknownCeiling:N0} " +
               "unknowns, measured healthy on a wide-to-narrow taper's own growth pattern and, " +
-              "separately, on a conformally cut mesh; the accelerator's own working set stays under " +
-              "200 MB even at that ceiling. Matrix compression IS what is running here, and this mesh " +
-              "is past what it has been measured to carry, so the remedy is a smaller count rather " +
-              "than a different solver. A mesh refined mainly by RESOLUTION rather than by extent can " +
-              "also fail to converge before reaching this ceiling — GMRES throws rather than returning " +
-              "a wrong answer when that happens, so it is reported at solve time, not here.)"
+              "separately, on a conformally cut mesh. A mesh refined mainly by RESOLUTION rather than " +
+              "by extent can fail to converge before reaching this ceiling — GMRES throws rather than " +
+              "returning a wrong answer when that happens, so it is reported at solve time, not here." +
+              raise + ")"
             : acceleratedWouldFit
               ? // The remedy above already says what to do; this says WHY it works, in the same terms
                 // the dense-only sentence used, so a user comparing the two ceilings sees real numbers.
-                $"({ceilingPair} Both are fixed properties of this kernel, not of your machine — " +
-                $"{n:N0} unknowns is " +
-                $"{PlanarSystem.ResidentPhrase(n, cellCount)}, and " +
-                "the same geometry refuses identically everywhere. The accelerated solve's is higher " +
+                $"({ceilingPair} {n:N0} unknowns is " +
+                $"{PlanarSystem.ResidentPhrase(n, cellCount)}. The accelerated solve's ceiling is higher " +
                 "because its working set is a near-field sparse correction plus a uniform auxiliary " +
                 "grid rather than the full N×N matrix, and this mesh fits under it — which is why " +
-                "turning it on is the first remedy above rather than a change to this mesh.)"
+                "turning it on is the first remedy above rather than a change to this mesh." + raise + ")"
               : multiLevel && n <= AcceleratedUnknownCeiling
                 ? // The mesh WOULD fit under 12,000 and the accelerator WOULD run it (P12's bordered
                   // operator). What it does not get is the wider ceiling. Saying so is the difference
@@ -1700,18 +1765,15 @@ public static class SurfaceMesher
                   $"rather than by N, which is why a ceiling stated in N alone is not offered for it — " +
                   $"so turning it on is worth doing for speed and memory, but it will not lift this " +
                   $"refusal. What does is a count at or under {UnknownCeiling:N0}, which is " +
-                  $"{(double)n / UnknownCeiling:G3}× down from here. Both ceilings are fixed " +
-                  $"properties of this kernel, not of your machine — {n:N0} unknowns is " +
-                  $"{PlanarSystem.ResidentPhrase(n, cellCount)}, and " +
-                  "the same geometry refuses identically everywhere.)"
+                  $"{(double)n / UnknownCeiling:G3}× down from here; {n:N0} unknowns is " +
+                  $"{PlanarSystem.ResidentPhrase(n, cellCount)}." + raise + ")"
                 : $"({ceilingPair} This mesh is past BOTH, so the accelerated solve would not lift " +
                   $"this refusal either — it is {(double)n / AcceleratedUnknownCeiling:G3}× over the " +
-                  "accelerated ceiling as well. Both are fixed properties of this kernel, not of " +
-                  $"your machine — {n:N0} unknowns is {PlanarSystem.ResidentPhrase(n, cellCount)}, and the same " +
-                  "geometry refuses identically everywhere.)";
+                  $"accelerated ceiling as well; {n:N0} unknowns is " +
+                  $"{PlanarSystem.ResidentPhrase(n, cellCount)}." + raise + ")";
 
-        return $"This geometry needs {n:N0} unknowns, past the {ceiling:N0}-unknown ceiling " +
-               "this kernel is built for." + why +
+        return $"This geometry needs {n:N0} unknowns, past the {ceiling:N0}-unknown " +
+               (limit is null ? "ceiling this kernel is built for." : "count its memory limit allows.") + why +
                " What acts on the count here: " + JoinOr(acts) + "." + how + " " + costNote;
     }
 

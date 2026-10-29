@@ -99,6 +99,14 @@ public sealed class CemPlanarMesh
     /// gains no byte and reads back on the shipped default.
     /// </summary>
     public int? DetailFloorDivisor { get; set; }
+
+    /// <summary>
+    /// The setup's own memory limit for one frequency point, in decimal gigabytes
+    /// (<see cref="PlanarMeshSettings.MemoryLimitBytes"/>), in place of the shipped unknown ceilings.
+    /// <b>Nullable, and omitted when unset</b>, so a <c>.cem</c> written before it existed gains no
+    /// byte; a value that is not positive reads back as unset.
+    /// </summary>
+    public double? MemoryLimitGb { get; set; }
 }
 
 /// <summary>The solve region, micrometres in layout coordinates. See <see cref="EmSolveRegion"/>.</summary>
@@ -1571,6 +1579,7 @@ public static class EmSetupPersistence
             DetailFloorDivisor =
                 s.PlanarMesh.DetailFloorDivisor == PlanarMeshSettings.DefaultDetailFloorDivisor
                     ? null : s.PlanarMesh.DetailFloorDivisor,
+            MemoryLimitGb = s.PlanarMesh.MemoryLimitBytes is { } mlb ? mlb / PlanarMemoryCheck.BytesPerGb : null,
         },
         Solver3D       = s.Solver3D.IsNone ? null : new Em3dSolverSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D)),
         Compare        = CircuitRF.Design.Em3d.Em3dSolvers.IsCompareSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D))
@@ -1665,7 +1674,9 @@ public static class EmSetupPersistence
                                          ?? PlanarMeshSettings.DefaultMinCellsAcrossConductor,
                                      ResolveCurrentModel(pm),
                                      pm.DetailFloorDivisor
-                                         ?? PlanarMeshSettings.DefaultDetailFloorDivisor)
+                                         ?? PlanarMeshSettings.DefaultDetailFloorDivisor,
+                                     pm.MemoryLimitGb is > 0 and var gb && double.IsFinite(gb)
+                                         ? (long)Math.Round(gb * PlanarMemoryCheck.BytesPerGb) : null)
             : PlanarMeshSettings.Default,
         Solver3D              = Solver3DOf(f),
         OperatingTempC        = f.OperatingTempC,

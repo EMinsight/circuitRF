@@ -461,8 +461,9 @@ public sealed class PlanarP7SymmetricFactorTests(ITestOutputHelper output)
         _out.WriteLine("factorisation's own wall clock at that N, and the accuracy of a mesh that");
         _out.WriteLine("large. Memory stopped being the binding constraint; time has not been re-asked.");
 
-        // The ceiling itself is untouched. This is the guard against a well-meaning follow-up.
-        Assert.Equal(5_000, SurfaceMesher.UnknownCeiling);
+        // The owner moved the ceiling to 10,000 on 2026-10-29, once fill and factor time had been
+        // measured at N = 11,210 (6.5 s and 37 s in Release); this pins the number they chose.
+        Assert.Equal(10_000, SurfaceMesher.UnknownCeiling);
         Assert.True(fits > fitsBefore,
             "P7 should have made the same memory buy more unknowns, not fewer");
     }

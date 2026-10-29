@@ -313,9 +313,9 @@ public class PlanarP12BorderedAimTests(ITestOutputHelper output)
         Assert.False(SurfaceMesher.UsesAcceleratedCeiling(aimOn: true, multiLevel: true));
 
         // …and on a real mesh, through the two call paths rather than through the function alone.
-        // 24 mm at cells/λ 80 is N ≈ 5,000: between the two ceilings, which is the only band where
-        // the two answers could ever have differed.
-        var problem = TwoLevel(10e9, 24e-3, via: true);
+        // 52 mm at cells/λ 80 is N ≈ 11,000: between the two ceilings (10,000 and 12,000 since
+        // 2026-10-29), which is the only band where the two answers could ever have differed.
+        var problem = TwoLevel(10e9, 52e-3, via: true);
         var ms      = new PlanarMeshSettings(Auto: false, CellsPerWavelength: 80, EdgeMesh: false);
         var aimFill = PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default };
         bool accel  = SurfaceMesher.UsesAcceleratedCeiling(true, problem.RequiresGeneralKernel);

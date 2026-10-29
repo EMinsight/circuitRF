@@ -511,7 +511,7 @@ public sealed class PlanarMemoryAccountingTests
         // Milestone 4's whole point: the three had drifted apart in wording while agreeing on a number
         // that was wrong, and the fix is that they share one function rather than three copies of one
         // formula. N is past the dense ceiling and the mesh is a real one, so the cell count is real.
-        var problem = PlanarLineFixtures.Fr4Line(400e-3, 10e9);
+        var problem = PlanarLineFixtures.Fr4Line(1.0, 10e9);   // past the 10,000 dense ceiling
         var report  = SurfaceMesher.Mesh(problem, PlanarLineFixtures.Shipping);
         Assert.Equal(PlanarBudgetVerdict.Refused, report.Verdict);
         int n = report.UnknownCount, cells = report.CellCount;

@@ -307,6 +307,11 @@ public sealed class PlanarKernel
 
         var st = settings ?? PlanarSolveSettings.Default;
 
+        // The setup's own memory limit reaches every guard below the mesher through the fill
+        // settings, so a standard or a context judges against what the mesh verdict did.
+        if (meshSettings.MemoryLimitBytes is { } limit)
+            st = st with { Fill = (st.Fill ?? PlanarFillSettings.Default) with { MemoryLimitBytes = limit } };
+
         // ── R-fed-1 — grow whatever uniform feed the calibration needs, BEFORE meshing ───────────
         //
         // A port whose metal changes cross-section at the reference plane makes the error box a
@@ -441,6 +446,15 @@ public sealed class PlanarKernel
         // means "recoverable"; everything the accelerator cannot fix still refuses as before. The
         // work repeated is the setup up to the first oversized standard — sub-second — against a
         // run the user would otherwise have had to start again by hand anyway.
+        // The caller's own question about this run's size, once the mesh it will solve is final.
+        if (st.Admit is { } admit)
+        {
+            bool aim = st.Fill?.Aim is not null;
+            var size = new PlanarRunSize(report.UnknownCount, report.CellCount, aim,
+                aim ? null : PlanarSystem.ResidentBytes(report.UnknownCount, report.CellCount));
+            if (admit(size) is { } declined) throw new PlanarRunDeclinedException(declined);
+        }
+
         string? acceleratorNote = null;
         PlanarSolveResult sweep;
         try

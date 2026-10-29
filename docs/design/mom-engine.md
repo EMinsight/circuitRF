@@ -943,6 +943,17 @@ forever.
 > what binds at 5,000. What has NOT been re-measured is the FILL's time and a mesh's accuracy at that
 > size, so moving `UnknownCeiling` stays a separate owner decision; `HISTORY.md` §P7 carries the
 > sentence that would change, written out and not applied.
+>
+> **Moved, and made a default (2026-10-29).** Fill and factor time were measured at N = 11,210 on real
+> artwork (6.5 s and 37 s per point in Release, ten cores; 3.8 GB peak), and the owner moved
+> `UnknownCeiling` to **10,000**, which holds about what 5,000 did before P7 (2.2 GB). It is now a
+> DEFAULT: a setup may state a **memory limit** for one frequency point (`PlanarMeshSettings.MemoryLimitBytes`,
+> `.cem` `MemoryLimitGb`, the EM panel's Solver options) and the mesh is then allowed whenever
+> `PlanarSystem.ResidentBytes` fits it — the accelerated path never below 12,000. A memory rather than a
+> count because a user cannot know their unknown count before meshing. Every run is then checked against
+> the machine before it fills (`PlanarSolveSettings.Admit`, `PlanarMemoryCheck`): a warning past 75 % of
+> physical memory (or of the Settings ▸ Solvers limit when set), the 3D solvers' own confirmation past
+> 100 %. `src/Engine/Mom/RESOLVED.md` §Ceiling records it.
 
 **R17. Declare a hard N ceiling (~5000), surface the predicted N before solving, and refuse politely
 above it** with a message pointing at mesh coarsening. A "lightweight" simulator that silently tries to

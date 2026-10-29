@@ -418,6 +418,16 @@ public sealed record PlanarFillSettings(
     public PlanarAimSettings? Aim { get; init; }
 
     /// <summary>
+    /// <b>The memory limit this run was given in place of the shipped ceilings</b> — the same number
+    /// as <see cref="PlanarMeshSettings.MemoryLimitBytes"/>, carried here so the guards below the mesher
+    /// (this file's, <see cref="PlanarSystem"/>'s, <see cref="PlanarSolveContext"/>'s and the
+    /// calibration standards') judge against what the mesh verdict did. <c>PlanarKernel.Solve</c>
+    /// copies it across; null keeps the shipped ceilings. Outside the positional list and in no
+    /// provenance hash, for <see cref="Aim"/>'s reason: it decides what is refused, not the answer.
+    /// </summary>
+    public long? MemoryLimitBytes { get; init; }
+
+    /// <summary>
     /// <b>CL1 — the surface-impedance term: non-null models the metal's loss, null is a PEC and is
     /// the default.</b> With it null the filled matrix is bit-identical to the pre-CL1 one, byte for
     /// byte, and the object is not read at all — exactly the terms <see cref="Aim"/>'s null is the
@@ -1085,7 +1095,7 @@ public static class PlanarFill
 
         int n = mesh.Bases.Count;
         int m = mesh.Cells.Count;
-        GuardCeiling(n, m);
+        GuardCeiling(n, m, st.MemoryLimitBytes);
 
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
         bool wantRad = st.Order >= PlanarExtractionOrder.Linear;
@@ -1264,7 +1274,7 @@ public static class PlanarFill
 
         int n = mesh.Bases.Count;
         int m = mesh.Cells.Count;
-        GuardCeiling(n, m);
+        GuardCeiling(n, m, st.MemoryLimitBytes);
 
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
 
@@ -1454,7 +1464,7 @@ public static class PlanarFill
         var st = settings ?? PlanarFillSettings.Default;
 
         int m = mesh.Cells.Count;
-        GuardCeiling(mesh.Bases.Count, m);
+        GuardCeiling(mesh.Bases.Count, m, st.MemoryLimitBytes);
         var (minEdge, extent, rhoFloor) = MeshGeometry(mesh, st);
         bool wantRad = st.Order >= PlanarExtractionOrder.Linear;
         var topo = RampTopology.Build(mesh);
@@ -2111,7 +2121,7 @@ public static class PlanarFill
         RequireLayout(cores, PlanarCoreLayout.Classes, nameof(Fill));
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        GuardCeiling(n, mesh.Cells.Count);
+        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes);
 
         var z = new Mat<Complex>(n, n);
         var st = cores.Settings;
@@ -2200,7 +2210,7 @@ public static class PlanarFill
         RequireLayout(cores, PlanarCoreLayout.Triangles, nameof(FillByPairs));
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        GuardCeiling(n, mesh.Cells.Count);
+        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes);
 
         var z = new Mat<Complex>(n, n);
         var st = cores.Settings;
@@ -2744,7 +2754,7 @@ public static class PlanarFill
 
         var mesh = cores.Mesh;
         int n = mesh.Bases.Count;
-        GuardCeiling(n, mesh.Cells.Count);
+        GuardCeiling(n, mesh.Cells.Count, cores.Settings.MemoryLimitBytes);
         var st = cores.Settings;
         int m = mesh.Cells.Count;
 
@@ -3704,8 +3714,13 @@ public static class PlanarFill
     /// <see cref="PlanarSystem.ResidentPhrase"/>, the one function all three refusals share</b>, so
     /// the three cannot drift apart again — they had all three quoted 16·N², which is about a third
     /// of what the machine holds.</summary>
-    private static void GuardCeiling(int n, int cellCount = 0)
+    private static void GuardCeiling(int n, int cellCount = 0, long? limit = null)
     {
+        if (limit is { } bytes)
+        {
+            if (n <= SurfaceMesher.CeilingFor(false, bytes, cellCount)) return;
+            throw new InvalidOperationException(SurfaceMesher.LimitSentence(n, bytes, cellCount));
+        }
         // MIM-13 — the fourth copy of PlanarSystem.GuardCeiling's own sentence, and it carried both
         // of that sentence's defects: it named two remedies without asking whether either BINDS on
         // this geometry (the 2026-08-14 owner report), and it closed on "matrix compression, which is

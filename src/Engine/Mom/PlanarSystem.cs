@@ -245,8 +245,13 @@ public sealed class PlanarSystem : IPlanarOperator
     /// R-fil-10 / R17, in <see cref="SurfaceMesher"/>'s own words and with the same numbers, asked
     /// before anything of that size is allocated.
     /// </summary>
-    public static void GuardCeiling(int n, int cellCount = 0)
+    public static void GuardCeiling(int n, int cellCount = 0, long? limit = null)
     {
+        if (limit is { } bytes)
+        {
+            if (n <= SurfaceMesher.CeilingFor(false, bytes, cellCount)) return;
+            throw new InvalidOperationException(SurfaceMesher.LimitSentence(n, bytes, cellCount));
+        }
         if (n <= SurfaceMesher.UnknownCeiling) return;
         // ── MIM-13 item 1 — WHAT THIS SENTENCE USED TO END ON, AND WHY IT HAD TO CHANGE ─────────
         //
@@ -285,7 +290,7 @@ public sealed class PlanarSystem : IPlanarOperator
                                      PlanarKernelTerms termsQ, double omega)
     {
         ArgumentNullException.ThrowIfNull(cores);
-        GuardCeiling(cores.UnknownCount, cores.CellCount);
+        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes);
         return new PlanarSystem(PlanarFill.Fill(cores, termsA, termsQ, omega), cores.Settings);
     }
 
@@ -302,7 +307,7 @@ public sealed class PlanarSystem : IPlanarOperator
         ArgumentNullException.ThrowIfNull(cores);
         ArgumentNullException.ThrowIfNull(set);
         ArgumentNullException.ThrowIfNull(levels);
-        GuardCeiling(cores.UnknownCount, cores.CellCount);
+        GuardCeiling(cores.UnknownCount, cores.CellCount, cores.Settings.MemoryLimitBytes);
         return new PlanarSystem(PlanarFill.FillMultiLevel(cores, set, levels, omega), cores.Settings);
     }
 
@@ -316,7 +321,7 @@ public sealed class PlanarSystem : IPlanarOperator
     /// </summary>
     public static PlanarSystem Wrap(Mat<Complex> matrix, PlanarFillSettings? settings = null)
     {
-        GuardCeiling(matrix.RowCount);
+        GuardCeiling(matrix.RowCount, limit: settings?.MemoryLimitBytes);
         return new PlanarSystem(matrix, settings ?? PlanarFillSettings.Default);
     }
 
@@ -474,7 +479,7 @@ public static class PlanarSweep
         ArgumentNullException.ThrowIfNull(freqsHz);
 
         var st = settings ?? PlanarFillSettings.Default;
-        PlanarSystem.GuardCeiling(mesh.Bases.Count, mesh.Cells.Count);
+        PlanarSystem.GuardCeiling(mesh.Bases.Count, mesh.Cells.Count, st.MemoryLimitBytes);
 
         // ── D6: ONCE, whatever the sweep's length ────────────────────────────────────────────
         var sw = Stopwatch.StartNew();

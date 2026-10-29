@@ -50,7 +50,7 @@ public class MeshBudgetAndCeilingsTests
         var tech = StarterTechnologies.Pcb2Layer();
         var shapes = gen(new Dictionary<string, PCellValue>(StringComparer.Ordinal)
         {
-            ["Z1"] = PCellValue.Real(7.0),
+            ["Z1"] = PCellValue.Real(4.25),   // between the 10,000 and 12,000 ceilings
             ["Z2"] = PCellValue.Real(100),
             ["GammaMax"] = PCellValue.Real(0.05),
             ["L"] = PCellValue.Real(0.030),

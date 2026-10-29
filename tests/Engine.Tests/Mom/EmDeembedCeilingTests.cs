@@ -94,7 +94,7 @@ public class EmDeembedCeilingTests(ITestOutputHelper output)
         // mismatch C2 exists to fix. The refusal decision is unchanged (it still asks about n,
         // per the brief's own instruction not to change the shared threshold); only the message
         // a caller reaching it through StaticCapacitance sees is different.
-        var mesh = BuildUniformGrid(100, 45, 1e-4);
+        var mesh = BuildUniformGrid(110, 50, 1e-4);
         int n = mesh.Bases.Count, m = mesh.Cells.Count;
         Assert.True(n > SurfaceMesher.UnknownCeiling, $"fixture must exceed the ceiling; got n={n}");
         Assert.True(m < SurfaceMesher.UnknownCeiling, $"fixture's point needs m under ceiling; got m={m}");
@@ -301,8 +301,10 @@ public class EmDeembedCeilingTests(ITestOutputHelper output)
     {
         var (problem, mesh, ports) = WidePortFixture();
 
+        // 550 MHz since the dense ceiling moved to 10,000 (2026-10-29): the wide port's standard is
+        // then 11,044, inside the narrow window the two ceilings now leave.
         var ex = Assert.Throws<PlanarAcceleratorWouldFitException>(() => PlanarSolve.Run(
-            problem, mesh, ports, [1e9, 5e9],
+            problem, mesh, ports, [0.55e9, 5e9],
             new PlanarSolveSettings(Fill: PlanarFillSettings.Default, Deembed: true,
                                     Calibration: PreQsc)));
 
@@ -317,7 +319,7 @@ public class EmDeembedCeilingTests(ITestOutputHelper output)
             Fill: PlanarFillSettings.Default with { Aim = PlanarAimSettings.Default }, Deembed: true);
         var slab = Ro4350;
         int endRun = PlanarCalibration.EndRunCellsFor(ports[0], slab);
-        Assert.All(PlanarCalibration.BuildSet(ports[0], slab, 1e9, 5e9, PreQsc),
+        Assert.All(PlanarCalibration.BuildSet(ports[0], slab, 0.55e9, 5e9, PreQsc),
                    z => Assert.True(z.Mesh.Bases.Count <= SurfaceMesher.AcceleratedUnknownCeiling));
         _out.WriteLine($"end run {endRun} cells; accelerated ceiling clears every standard");
         Assert.NotNull(accelerated.Fill!.Aim);
@@ -336,7 +338,7 @@ public class EmDeembedCeilingTests(ITestOutputHelper output)
         var slab = Ro4350;
 
         int endRun = PlanarCalibration.EndRunCellsFor(ports[0], slab);
-        var set = PlanarCalibration.BuildSet(ports[0], slab, 1e9, 5e9, PreQsc);
+        var set = PlanarCalibration.BuildSet(ports[0], slab, 0.55e9, 5e9, PreQsc);   // see LF3's test for 550 MHz
         var sizes = set.Select(s => s.Mesh.Bases.Count).ToArray();
         _out.WriteLine($"end run {endRun}; standards N = {string.Join(" / ", sizes.Select(n => n.ToString("N0")))}");
 
@@ -357,4 +359,5 @@ public class EmDeembedCeilingTests(ITestOutputHelper output)
                 PlanarDeembed.GuardCapacitanceCeiling(std.Mesh, accelerated: true)));
         }
     }
+
 }

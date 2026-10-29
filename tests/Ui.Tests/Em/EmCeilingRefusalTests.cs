@@ -57,7 +57,9 @@ public class EmCeilingRefusalTests
     private static PlanarMeshReport MeshTaper(PlanarMeshSettings s, out int n)
     {
         var tech = StarterTechnologies.Pcb2Layer();
-        var x = PlanarExtractor.Extract(Klopf(tech, 7.0, 0.030), tech, Dbu, 5e9);
+        // A 4.25 Ω wide end: past the 10,000 dense ceiling, under the 12,000 accelerated one. The
+        // count follows the WIDTH ratio, not the length (50 mm meshes within 0.2 % of 30 mm).
+        var x = PlanarExtractor.Extract(Klopf(tech, 4.25, 0.030), tech, Dbu, 5e9);
         Assert.True(x.Ok, x.Refusal);
         var r = SurfaceMesher.Mesh(x.Problem!, s);
         n = r.UnknownCount;
@@ -141,15 +143,16 @@ public class EmCeilingRefusalTests
     // ══════════════════════════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public void TheRefusal_SaysTheCeilingIsTheKERNELS_NotTheMACHINES()
+    public void TheRefusal_LeadsWithTheCount_AndNamesTheMemoryLimitAsTheLastRemedy()
     {
         var r = MeshTaper(Planar(10), out int n);
         string refusal = r.Refusal!;
 
         // The megabytes stay — they are real and a user sizing a problem wants them — but they are no
-        // longer the lead, and the sentence that carries them says what they are NOT.
-        Assert.Contains("not of your machine", refusal, StringComparison.Ordinal);
-        Assert.Contains("refuses identically everywhere", refusal, StringComparison.Ordinal);
+        // longer the lead. Since 2026-10-29 the ceiling is a default a setup can raise, and the machine
+        // is asked about at Simulate, so the closing remedy says exactly that.
+        Assert.Contains("set Memory limit in Solver options", refusal, StringComparison.Ordinal);
+        Assert.Contains("asks before starting one that will not fit", refusal, StringComparison.Ordinal);
         Assert.True(refusal.IndexOf("unknowns, past the", StringComparison.Ordinal)
                   < refusal.IndexOf("MB resident at the peak", StringComparison.Ordinal),
             "the unknown count must precede the megabytes; leading with MB is what read as a RAM limit");
@@ -215,7 +218,7 @@ public class EmCeilingRefusalTests
     public void TheRefusalCarriesItsReport_SoTheNotesSurviveTheThrow()
     {
         var tech = StarterTechnologies.Pcb2Layer();
-        var shapes = new List<LayoutShape>(Klopf(tech, 7.0, 0.030));
+        var shapes = new List<LayoutShape>(Klopf(tech, 4.25, 0.030));
         var x = PlanarExtractor.Extract(shapes, tech, Dbu, 5e9);
         Assert.True(x.Ok, x.Refusal);
 
@@ -365,9 +368,10 @@ public class EmCeilingRefusalTests
                                        EdgeCells: 3, BoundaryCells: PlanarBoundaryCells.Conformal,
                                        MeshFrequencyHz: 500e6);
 
+        // Since the dense ceiling moved to 10,000 (2026-10-29) the reported taper's 6,581 unknowns
+        // solve on the dense path too; the accelerated one meshes it identically.
         var dense = SurfaceMesher.Mesh(x.Problem!, s);
-        Assert.Equal(PlanarBudgetVerdict.Refused, dense.Verdict);
-        Assert.True(dense.UnknownCount > SurfaceMesher.UnknownCeiling);
+        Assert.True(dense.CanSolve, $"N = {dense.UnknownCount} should fit the {SurfaceMesher.UnknownCeiling:N0} dense ceiling");
 
         var accelerated = SurfaceMesher.Mesh(x.Problem!, s, accelerated: true);
         Assert.True(accelerated.CanSolve,
@@ -448,21 +452,14 @@ public class EmCeilingRefusalTests
         Assert.True(sw.Elapsed.TotalSeconds < 30,
             $"setup plus one kernel fit should be seconds; took {sw.Elapsed.TotalSeconds:F1} s");
 
-        // …and the DENSE form of the same run is still refused at setup — here by the DUT's OWN mesh
-        // (N = 6,581 is past the dense ceiling before any standard is looked at), which is the
-        // ordinary R17 refusal and not de-embedding's. The de-embedding-specific sentence, and the
-        // fact that it now names the accelerator as the remedy, needs a fixture whose DUT fits while
-        // its wide port's standards do not; that is
-        // Engine.Tests' EmDeembedCeilingTests.P11_ADenseDeembeddedRun_IsRefusedAtSetup_… .
-        var ex = Assert.Throws<InvalidOperationException>(
+        // …and the DENSE form of the same run: the DUT's own 6,581 unknowns fit the 10,000 dense
+        // ceiling, and its wide port's standard (10,708) does not but fits the accelerated one — the
+        // one recoverable case, signalled for PlanarKernel.Solve to turn the accelerator on and re-run.
+        var signal = Assert.Throws<PlanarAcceleratorWouldFitException>(
             () => PlanarSolve.Run(x.Problem!, report.Mesh, resolved, [5e9],
                                   settings with { Fill = PlanarFillSettings.Default }));
-        Assert.Contains(SurfaceMesher.UnknownCeiling.ToString("N0"), ex.Message, StringComparison.Ordinal);
-
-        // §0's own finding: mesh remedies are inert on this class of geometry, so they must not be
-        // offered here either.
-        Assert.DoesNotContain("Lower Cells per wavelength", ex.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain("edge mesh off", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.InRange(signal.StandardUnknowns,
+                       SurfaceMesher.UnknownCeiling + 1, SurfaceMesher.AcceleratedUnknownCeiling);
     }
 
     /// <summary>
@@ -532,4 +529,5 @@ public class EmCeilingRefusalTests
         Assert.NotNull(ctx.LastAccelerator);
         Assert.True(ctx.LastAccelerator!.LastIterations > 0);
     }
+
 }

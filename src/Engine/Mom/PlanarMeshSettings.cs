@@ -222,6 +222,20 @@ public enum PlanarCurrentModel
 /// λ_g/1000 / λ_g/500 / λ_g/200 / λ_g/100, cell count and de-embedded S₁₁ at resonance) that chose
 /// it.</para>
 /// </param>
+/// <param name="MemoryLimitBytes">
+/// <b>How much memory one frequency point of this setup may hold, in place of the shipped unknown
+/// ceilings.</b> <c>null</c> (the default) keeps them (<see cref="SurfaceMesher.UnknownCeiling"/> on
+/// the dense path, <see cref="SurfaceMesher.AcceleratedUnknownCeiling"/> on the accelerated one). Set,
+/// a dense mesh is allowed while <see cref="PlanarSystem.ResidentBytes"/> fits it, and an accelerated
+/// one up to the larger of that count and the accelerated ceiling (<see cref="SurfaceMesher.CeilingFor"/>).
+///
+/// <para><b>A memory, not a count, because a user cannot know their unknown count before meshing</b>
+/// (owner, 2026-10-29) — but can know what their machine holds. The run checks the estimate against the
+/// machine before it starts, so a setup written on a larger machine is asked about rather than trusted.</para>
+///
+/// <para>It changes no cell and no answer — only which mesh is refused — so it enters no provenance
+/// hash, and it SURVIVES <see cref="Auto"/> on the taxonomy <see cref="Resolved"/> states.</para>
+/// </param>
 public sealed record PlanarMeshSettings(
     bool Auto               = true,
     int  CellsPerWavelength = 20,      // = DefaultCellsPerWavelength (a record's own const cannot
@@ -231,7 +245,8 @@ public sealed record PlanarMeshSettings(
     double? MeshFrequencyHz = null,
     int  MinCellsAcrossConductor = 4,
     PlanarCurrentModel CurrentModel = PlanarCurrentModel.None,
-    int  DetailFloorDivisor = 200)
+    int  DetailFloorDivisor = 200,
+    long? MemoryLimitBytes  = null)
 {
     public const int  DefaultCellsPerWavelength = 20;
     public const bool DefaultEdgeMesh           = true;
@@ -421,7 +436,8 @@ public sealed record PlanarMeshSettings(
                                  MeshFrequencyHz: MeshFrequencyHz,
                                  MinCellsAcrossConductor: MinCellsAcrossConductor,
                                  CurrentModel: CurrentModel,
-                                 DetailFloorDivisor: DetailFloorDivisor)
+                                 DetailFloorDivisor: DetailFloorDivisor,
+                                 MemoryLimitBytes: MemoryLimitBytes)
         : this with
         {
             CellsPerWavelength      = Math.Max(2, CellsPerWavelength),

@@ -389,6 +389,15 @@ public static class EmRunService
         // now, and flattening them here is what put a warning at the weight of the core count.
         findings.AddRange(report.AllFindings);
 
+        // The memory check a run makes before it fills anything, said here as a warning (a check
+        // asks no one). The run's own mesh also carries any feed it grows, so it can be a little larger.
+        if (report.CanSolve && !setup.AcceleratedSolve &&
+            PlanarMemoryCheck.Evaluate(
+                new PlanarRunSize(report.UnknownCount, report.CellCount, false,
+                                  PlanarSystem.ResidentBytes(report.UnknownCount, report.CellCount)),
+                CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes).Text is { } memory)
+            findings.Add(EmFinding.Warn(memory));
+
         // MIM-3/MIM-8's question, which is a property of the MESH against the STACKUP and needs no
         // solve to answer — and which, past the measured bound, is EM-SEV R-emsev-4's warning.
         var lengthFmt = EmLengthFormat.For(source.View.DisplayUnit, source.DbuPerMicron);
@@ -773,7 +782,8 @@ public static class EmRunService
                          "computed. Set Analysis to the planar (full-wave) kernel.");
 
         if (choice.Kind == EmAnalysisKind.Planar)
-            return RunPlanar(setup, source, resultsRoot, planar, freqs, choice, warnings, notes, errors, ct, control, maxCores);
+            return RunPlanar(setup, source, resultsRoot, planar, freqs, choice, warnings, notes, errors, ct, control, maxCores,
+                             confirmMemory, memoryCeilingBytes);
 
         var extraction = crossSection;
         var problem = extraction.Problem!;
@@ -872,7 +882,9 @@ public static class EmRunService
         EmSetup setup, EmLayoutSource source, string resultsRoot,
         PlanarExtractionResult extraction, double[] freqs, EmKernelChoice choice,
         List<string> warnings, List<string> notes, List<string> errors,
-        CancellationToken ct, RunControl? control = null, int? maxCores = null)
+        CancellationToken ct, RunControl? control = null, int? maxCores = null,
+        Func<CircuitRF.Design.Em3d.Em3dMemoryVerdict, bool>? confirmMemory = null,
+        long? memoryCeilingBytes = null)
     {
         var problem = extraction.Problem!;
         var kernel  = new PlanarKernel();
@@ -998,6 +1010,13 @@ public static class EmRunService
                 // The one that remains is the explicit, self-declaring way past the clearance
                 // refusal below — it publishes a de-embedded answer, not an uncalibrated one.
                 DeembedOutsideCalibrationValidity = setup.DeembedOutsideCalibrationValidity,
+                // The run's size against this machine, once the mesh it will solve is final: a warning
+                // past 75 %, and past 100 % the question Simulate asks (--force headless). Against the
+                // machine's own memory limit when one is set (Settings ▸ Solvers, `em --memory-limit`),
+                // which every solver is held to.
+                Admit = PlanarMemoryCheck.Admitter(confirmMemory, warnings,
+                                                   memoryCeilingBytes ?? CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes,
+                                                   machineLimit: memoryCeilingBytes is not null),
             };
             // ANT-9 — the one combination the panel can express and the engine cannot honour. The
             // search bisects toward a zero crossing of Im(Z_in) that it finds in the interpolant
@@ -1037,6 +1056,15 @@ public static class EmRunService
             // because nothing past this point runs, which is the whole point — a note does not
             // survive onto the file and the file is what the next person opens.
             var d = EmDiagnostics.Forwarded("port-clearance", ex.Message);
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
+                ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                KernelName: choice.KernelName, Diagnostic: d);
+        }
+        catch (PlanarRunDeclinedException ex)
+        {
+            // The memory check declined the run (not confirmed, or no one to ask): a refusal, with
+            // the check's own sentence, and nothing was filled.
+            var d = EmDiagnostics.Forwarded("memory", ex.Message);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
                 ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
                 KernelName: choice.KernelName, Diagnostic: d);

@@ -602,7 +602,7 @@ foreach (var (kind, arg) in steps)
         }
         case "--type":
         {
-            var dialog = TopDialog() ?? (imageVm is not null || vendorMode ? host : throw new InvalidOperationException("--type: no dialog is open"));
+            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null ? host : throw new InvalidOperationException("--type: no dialog is open"));
             // Name=text types into the text box of that x:Name (an inline box: SizeInput, DistanceInput); else the dialog's
             // first text box.
             int eq = arg.IndexOf('=');
@@ -652,9 +652,11 @@ foreach (var (kind, arg) in steps)
         case "--button":
         {
             // A real press and release on the button's centre, in the dialog's own window.
-            var dialog = TopDialog() ?? (imageVm is not null || vendorMode ? host : throw new InvalidOperationException("--button: no dialog is open"));
+            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null ? host : throw new InvalidOperationException("--button: no dialog is open"));
             var buttons = dialog.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).ToList();
+            // A toolbar button's content is an icon beside a TextBlock, so its label is matched too.
             var button = buttons.FirstOrDefault(b => b.Content is string c && c == arg)
+                ?? buttons.FirstOrDefault(b => b.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == arg))
                 ?? throw new InvalidOperationException($"--button '{arg}': the dialog has {string.Join(" | ", buttons.Select(b => b.Content))}");
             var c = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), dialog)!.Value;
             dialog.MouseDown(c, MouseButton.Left, RawInputModifiers.None);

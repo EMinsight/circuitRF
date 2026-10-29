@@ -344,7 +344,7 @@ public class PlanarP11StaticAimTests(ITestOutputHelper output)
     {
         // Chosen so n sits between the two ceilings: the dense route refuses, the accelerated one
         // does not.
-        var mesh = BuildUniformGrid(120, 40, 1e-4);
+        var mesh = BuildUniformGrid(130, 42, 1e-4);
         int n = mesh.Bases.Count, m = mesh.Cells.Count;
         Assert.InRange(n, SurfaceMesher.UnknownCeiling + 1, SurfaceMesher.AcceleratedUnknownCeiling);
         _out.WriteLine($"fixture: m = {m:N0} cells, n = {n:N0} bases — between the {SurfaceMesher.UnknownCeiling:N0} " +

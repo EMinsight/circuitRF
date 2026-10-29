@@ -198,7 +198,7 @@ public sealed class PlanarSolveContext
         // and the pre-solve mesh verdict cannot answer it differently (they did).
         bool accelerated = SurfaceMesher.UsesAcceleratedCeiling(
             Settings.Aim is not null, levels is not null);
-        SurfaceMesher.GuardCeiling(mesh.Bases.Count, accelerated, mesh.Cells.Count);
+        SurfaceMesher.GuardCeiling(mesh.Bases.Count, accelerated, mesh.Cells.Count, Settings.MemoryLimitBytes);
 
         // P2/M4 — LazyThreadSafetyMode.ExecutionAndPublication (the default): a de-embedded run fans
         // the standards out across workers, so two of them can reach the same context at once and the
@@ -1504,7 +1504,27 @@ public sealed record PlanarSolveSettings(
     bool                       SubstituteConductionBelowFitFloor = true)
 {
     public static readonly PlanarSolveSettings Default = new();
+
+    /// <summary>
+    /// <b>Asked once the run's final mesh is known and before anything is filled</b>: null to go on,
+    /// or the sentence the run is declined with (<see cref="PlanarRunDeclinedException"/>). The engine
+    /// has no notion of the machine it runs on, so this is where a caller weighs the run's size
+    /// against it — <c>EmRunService</c> checks the dense estimate against physical memory and asks
+    /// before starting a run that will not fit. Null asks nothing. Outside the positional list and in
+    /// no provenance hash: it decides whether a run starts, never what it computes.
+    /// </summary>
+    public Func<PlanarRunSize, string?>? Admit { get; init; }
 }
+
+/// <summary>What <see cref="PlanarSolveSettings.Admit"/> is asked about: the structure's own mesh.</summary>
+/// <param name="DenseResidentBytes">One frequency point's peak on the dense path
+/// (<see cref="PlanarSystem.ResidentBytes"/>); null on the accelerated path, whose working set
+/// depends on the geometry and has no closed form.</param>
+public sealed record PlanarRunSize(int Unknowns, int Cells, bool Accelerated, long? DenseResidentBytes);
+
+/// <summary>A run <see cref="PlanarSolveSettings.Admit"/> declined. Its message is the caller's own
+/// sentence, and nothing was filled.</summary>
+public sealed class PlanarRunDeclinedException(string message) : InvalidOperationException(message);
 
 /// <summary>
 /// The whole thing: mesh + ports + slab + frequencies → de-embedded, renormalised s-parameters.
@@ -2629,8 +2649,7 @@ public static class PlanarSolve
                     // decision is ever settled differently, since a standard judged against a
                     // ceiling the DUT is not judged against is the same defect P12 fixed.
                     bool accStd = SurfaceMesher.UsesAcceleratedCeiling(fillSt.Aim is not null, general);
-                    int  stdCeiling = accStd ? SurfaceMesher.AcceleratedUnknownCeiling
-                                             : SurfaceMesher.UnknownCeiling;
+                    long? stdLimit = fillSt.MemoryLimitBytes;
                     // QSC — the plan is drawn ONCE and both the standards that are BUILT and the
                     // separations that are SELECTED come from it. Evaluating SeparationPlan twice
                     // with the same arguments would agree today and is exactly the shape PCAL6's
@@ -2658,6 +2677,7 @@ public static class PlanarSolve
                     {
                         var std  = stdSet[si];
                         int nStd = std.Mesh.Bases.Count;
+                        int stdCeiling = SurfaceMesher.CeilingFor(accStd, stdLimit, std.Mesh.Cells.Count);
                         if (nStd <= stdCeiling) continue;
 
                         // The short line (index 0) is shared by both paths, so it is "quasi-static"
@@ -2677,7 +2697,8 @@ public static class PlanarSolve
                         // capacitance solve on the accelerator too, so an accelerated run is judged
                         // against one ceiling throughout. Only the recoverable case is signalled;
                         // past the accelerated ceiling, or already accelerated, the refusal stands.
-                        if (!accStd && !general && nStd <= SurfaceMesher.AcceleratedUnknownCeiling)
+                        if (stdLimit is null && !accStd && !general &&
+                            nStd <= SurfaceMesher.AcceleratedUnknownCeiling)
                             throw new PlanarAcceleratorWouldFitException(
                                 ports[i].Number, nStd,
                                 $"Port {ports[i].Number}'s calibration standard needs {nStd:N0} " +
@@ -2687,7 +2708,8 @@ public static class PlanarSolve
                         throw new InvalidOperationException(
                             $"Port {ports[i].Number}'s calibration standard needs {nStd:N0} unknowns " +
                             $"to solve for its reference impedance, past the {stdCeiling:N0}-unknown " +
-                            (accStd ? "ACCELERATED " : "") + "ceiling. This is de-embedding's OWN " +
+                            (stdLimit is not null ? "count that fits the memory limit this EM setup sets (Solver options). "
+                             : accStd ? "ACCELERATED ceiling. " : "ceiling. ") + "This is de-embedding's OWN " +
                             "standard, not the DUT's mesh — a standard reproduces the DUT's " +
                             "transverse gridlines verbatim, so a wide port's standard can be larger " +
                             "than the DUT itself. " +

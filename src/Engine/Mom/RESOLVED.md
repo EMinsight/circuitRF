@@ -12326,3 +12326,147 @@ the tensor field asks for, so they are not fan lines. They are **hard gridlines*
 coordinate crosses the whole part, and edges of different features a few tens of µm apart cut sliver rows. Only 5
 of 260 x-intervals and 24 of 129 y-rows on the test geometry are slivers, but those rows run through the metal and
 hold most of the unknowns. Merging fan lines alone would miss most of the saving.
+
+> **Corrected by PM-2 Part 1 (below, §6):** the sliver rows are not hard gridlines. Almost none of their bounds is a
+> conductor edge; they are ordinary edge-fan cells, and the "finer than the 1-D field" column counts every fan cell
+> because it reads the field at the cell's midpoint. Snapping edges does not remove them.
+
+## PM-2 Part 1 — what rooftop merging would cost (R-pm2-1, 2026-10-29)
+
+Scratch harness only, in Release on a 10-core, 16 GB machine; nothing committed except this section. The mesher was
+given a temporary capture hook and then restored to the committed file.
+
+**Verdict: criterion 1 fails, criterion 2 passes on time alone, and Part 2 was not started.** The brief asks for a go
+on either. The time half of criterion 2 is met by a wide margin, but its "at the same accuracy" cannot be measured
+without building the thing, and Part 1 also found that the premise Part 2 was written on (hard gridlines) is wrong.
+That changes what PM-2 should be, so the build is left to the owner.
+
+### 1. The classification, reproduced
+
+PM-1's classifier was a throwaway, so it was rebuilt: each graded attractor carries every axis-parallel edge on its
+coordinate (and every vertex on it, for a corner) as its feature, the local field is `min(bulk cap, minᵢ c0ᵢ + gᵢ·dᵢ)`
+with dᵢ the 2-D distance to that feature, and a horizontal unknown is spread when the field at its shared edge's
+midpoint is more than 2× the smaller of its two cells in either axis.
+
+| Mesh | Unknowns | Spread > 2× (PM-1) | > 4× (PM-1) | Finer than 1-D field > 2× (PM-1) |
+|---|---|---|---|---|
+| Test geometry, default mesh | 15,236 | 82.6 % (82.8) | 57.2 % (58.1) | 58.2 % (58.2) |
+| Test geometry, transmission-line model | 11,210 | 85.1 % (85.3) | 59.3 % (60.8) | 62.0 % (62.0) |
+| Patch Antenna example | 1,981 | 69.9 % (69.2) | 32.3 % (29.6) | 54.9 % (54.9) |
+
+### 2. Merged unknown count (item 1)
+
+Two numbers, because they are far apart. The **ideal** sums, over each spread unknown, the fraction of a
+field-sized basis it occupies (`min(1, cell/field)` per axis); it is what a mesh with no tensor or rectangle
+constraint at all would need. The **realizable** count builds the merge: greedy rectangular blocks of fine cells,
+each no larger than the local field at any cell it covers (an axis that is not spread does not grow), and one
+rooftop per maximal shared face between two blocks. Every such rooftop is a fixed-weight sum of elemental ones,
+so the merged space is a subspace of today's and normal current is continuous at every join by construction.
+
+| Mesh | Today | Along the current only (ideal) | Both axes (ideal) | Both axes (realizable) |
+|---|---|---|---|---|
+| Test geometry, default | 15,236 | 8,369 | 4,764 | **7,784** |
+| Test geometry, transmission-line model | 11,210 | 5,596 | 3,114 | **5,486** |
+| Patch | 1,981 | 1,183 | 861 | **1,364** |
+
+Merging only where the field is 1.5× or 1× the cell moves the realizable count by under 5 %. **Criterion 1 fails:**
+the default mesh's realizable count is 7,784 against the 5,000 dense ceiling, and even the unreachable ideal clears
+it by only 5 %. Merging along one direction alone does not come near it.
+
+### 3. Fill and solve time, transmission-line model, one point mid-band (item 2)
+
+| | Per mesh | Per frequency |
+|---|---|---|
+| **Today: accelerated, N = 11,210** | geometry 6.3 s | operator 68.5 s (near matrix 14.3 % dense) + 0.5 s per port solve, **≈ 70 s** |
+| Dense, unmerged, N = 11,210 | cores 16.7 s | fill 6.5 s + LDLᵀ 36.8 s = **43 s**, 3.8 GB peak |
+| **Merged by Tᵀ Z T, N = 5,486** | cores 18.3 s | elemental fill 6.3 s + LDLᵀ 4.6 s (+ the sparse product, under 1 s) ≈ **12 s** |
+
+The LDLᵀ was timed on a 5,486 block of the real elemental matrix. A macro entry costs (elements in A) × (elements in
+B) elemental integrals, but every elemental pair is filled once and the product is sparse (a block averages two
+cells), so the merged fill is today's dense fill and no more. **About 6× faster than today**, which passes the time
+half of criterion 2; the accuracy half needs Part 2's patch gate. Two things this hides: the Tᵀ Z T route needs the
+elemental matrix in panels rather than whole (2.0 GB here, 3.7 GB on the default mesh), and Fill has no panel entry
+point today; and filling the block rooftops directly as rectangles would lose most of P5's translation-class reuse,
+which is what makes the elemental fill this cheap.
+
+**Separately: on this mesh the plain dense path already beats the accelerator,** 43 s against 70 s, because the near
+matrix is 14 % dense and its sparse LU is the whole cost. That is §8's P8 regime (near entries per row, not N, is
+what binds), measured here on real artwork inside the 12,000 ceiling.
+
+### 4. The AIM path (item 3)
+
+Projection is linear, so a macro-rooftop projects as `Π T` and the far field carries over unchanged; block supports
+never exceed the bulk cap, so the auxiliary grid's pitch and near radius barely move. But the near correction must
+then be exact between macro pairs, each a sum over all their elemental pairs, and §3 shows the accelerator is
+already slower than dense on this board. A merged mesh would run dense. That leaves the 12,000 ceiling where it is
+and moves the reach a different way: an elemental mesh above 12,000 (the default mesh here, refused today) becomes
+solvable when its merged count fits a dense budget, which at 7,784 is 0.97 GB and would need the 5,000 ceiling
+raised.
+
+### 5. Snapping edges — the alternative the brief named (§5)
+
+The hard-line share stayed above half (58–62 %), so it was measured: near-coincident axis-parallel edges within δ
+merged onto one gridline, with their attractors moved onto it.
+
+| δ | 0–20 µm | 30 µm | 50 µm |
+|---|---|---|---|
+| Default mesh | 15,236 | 15,150 | 14,806 |
+| Transmission-line model | 11,210 | 11,034 | 10,884 |
+| Patch | 1,981 | 1,981 | 1,981 |
+
+**It does not pay**: 3 % at 50 µm, and nothing at all up to 20 µm.
+
+### 6. Why: the sliver rows are edge-fan cells, read at their midpoint
+
+Of the 24 sliver rows and 5 sliver columns on the default mesh, only 4 bounds are conductor edges. The rest are
+lines `PartitionGraded` placed, and they are ordinary fan cells. R-mom-8's field gives each fan cell the size the
+field has at the cell's end NEAREST the attractor (`c0·rᵏ = c0 + g·dₖ`), on both sides: departing, the marcher reads
+the field where the step starts; approaching, M0's closed form `s = (c0 + g·d)/(1 + g)` reads it where the step
+ends, which is the same point. The field at the cell's MIDPOINT is therefore `s(1 + g/2)`, 1.77× at the shipped
+g = 1.54, for every fan cell either side of every attractor (measured 1.84× approaching and 1.91× departing on the
+rows either side of one attractor; a short interval's rescale adds the rest). A 2× threshold read at the midpoint
+sits just above that, so "finer than the 1-D field" counts fan cells rather than slivers, and the spread fraction
+carries the same bias at 2×. The 4× figure is the robust one. The realizable merge in §2 is barely affected, since
+it merges only where the field exceeds 2× and changes by under 5 % at 1×.
+
+**A marcher change is not a free saving.** A scratch run sizing the approach step at its midpoint,
+`(c0 + g·d)/(1 + g/2)`, read 15,236 → 11,459, 11,210 → 8,355 and 1,981 → 1,459 (−25 % on all three). That is not a
+fix: it makes the approach side of each fan a steeper fan than the departing side, and the step overruns the
+attractor whenever `d < c0/(1 − g/2)` (4.35·c0 at g = 1.54), so the rim cell on the approach side lands near
+2·c0 instead of c0. It is fan coarsening, which is what `EdgeCells`, the growth clamp and EFAN's
+`MaxEdgeRefinement` already control under accuracy gates (§ANT-2, §EFAN). Not pursued.
+
+### 7. Left for the owner
+
+- Whether to build Part 2 on criterion 2's time margin, knowing the default mesh stays over the dense ceiling.
+
+## Ceiling — 10,000 by default, a memory limit per setup, and a memory check at Simulate (2026-10-29)
+
+PM-2 Part 1 measured the dense path at N = 11,210 on real artwork: fill 6.5 s, LDLᵀ 36.8 s per point in Release
+(ten cores), 3.8 GB peak — faster than the accelerated solve on the same mesh (70 s). The owner moved the ceiling.
+
+- **`SurfaceMesher.UnknownCeiling` 5,000 → 10,000**, about what 5,000 held before P7 (2.2 GB per point, decimal).
+  `AcceleratedUnknownCeiling` stays 12,000, so the window between the two is now 10,001–12,000.
+- **A setup can state a MEMORY limit, not a count** (`PlanarMeshSettings.MemoryLimitBytes`; `.cem`
+  `PlanarMesh.MemoryLimitGb`, decimal GB, omitted when unset; the EM panel's Solver options, blank = the default,
+  placeholder 2.2). An unknown count was built first and replaced the same day: nobody knows their count before
+  meshing. `SurfaceMesher.CeilingFor(accelerated, bytes, cells)` is the one place it becomes a count — the largest N
+  whose `PlanarSystem.ResidentBytes(N, cells)` fits, never below 12,000 on the accelerated path. The mesher asks it
+  again once the real cell count is known. `PlanarKernel.Solve` copies it into `PlanarFillSettings.MemoryLimitBytes`,
+  which every guard below the mesher reads (the fill, `PlanarSystem`, `PlanarSolveContext`, the calibration
+  standards, the static capacitance solve), so no guard judges against a number the verdict did not. It enters no
+  provenance hash: it decides what is refused, never the answer.
+- **The refusals no longer say the ceiling is "a fixed property of this kernel, not of your machine"** — false
+  now. Each ends by naming the memory this mesh needs and the Memory limit field. The limit-set branch skips the
+  "accelerator would fit" retry (LF3), since the limit already governs both paths.
+- **Simulate checks every planar run before it fills** (`PlanarSolveSettings.Admit` → `PlanarRunDeclinedException`;
+  `src/Design/Layout/Em/PlanarMemoryCheck`). The dense estimate against physical memory, or against the Settings ▸
+  Solvers limit when one is set: a warning past 75 %, the 3D solvers' own confirmation past 100 % (their 150 % is
+  for an estimate that errs high; this one errs LOW, because de-embedding's standards are not in it). Declined, or
+  headless without `--force`, the run is a refusal (`em.refused.memory`). The accelerated path has no closed-form
+  estimate and is not checked. `check` reports the same warning without asking.
+- **Fixtures that had to sit between the two ceilings moved**: `EmDeembedCeilingTests`' wide port to a 550 MHz
+  band edge (standard 11,044), the uniform grids to 110×50 and 130×42, `PlanarP12BorderedAimTests`' two-level line
+  to 52 mm, `PlanarMemoryAccountingTests`' line to 1 m. `PlanarP7SymmetricFactorTests` pins 10,000.
+- **Not changed:** `src/Engine/Mom/CLAUDE.md` §3.2/§8 still quote 5,000 in places (CLAUDE.md is not edited from a
+  change like this; this section supersedes those numbers).
