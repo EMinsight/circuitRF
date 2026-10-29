@@ -24380,3 +24380,68 @@ a 3D view on Palace, EMerge and openEMS and compared with its schematic.
 - **`TestPadRound26Tests.ALumpedPortOnAnAirBoxFace_IsClaimedBeforeTheFace` went red with DFR28-3** (5548f3061), which pads
   an absorbing face clear of a lumped port, so through the generator the port no longer lay in the face. The test now
   holds both halves: an absorbing face is moved clear; a PEC face is not, and its port is claimed before the faces.
+
+## Simpler vias away from the path: measured, and stopped (brief-dfr30-2, 2026-10-28)
+
+The brief asked whether building the vias away from the signal path as regular N-gons, rather than as true cylinders
+with faceted pads and antipads, saves enough mesh to be worth an option. Phases 1–3 were done; **the phase 3 verdict is
+Stop**, so phase 4 (the Reduced Via Mesh checkbox) was not built and the measurement switch was removed again. Nothing
+of it is in the tree.
+
+**What was measured.** An internal switch in `Em3dLayoutSolids` built each chosen via's barrel, its plated wall's air
+fill, and every pad and antipad ring concentric with it as one regular N-gon — the same N and the same vertex angles for
+all four (first vertex at π/N, so a square's and an octagon's sides lie on the axes), each of **equal area** to its
+circle (D1). Far-only kept a via round when its axis lay within *d* of the path; the path (D2) was the copper the board's
+own partition (`CopperPieces`) joins to any port label, and *d* a multiple of the widest trace on it (2·area/perimeter of
+each path conductor piece at least 4:1 long; a pad is not a trace). Every variant passed the entity check.
+
+On a ten-layer test-pad crop (about 5 × 4.6 mm, 8 round plated drills on the board, one more edge-cut and left as its
+clipped disc), the driven setup's Gmsh script, Gmsh 4.15.2, one process at a time on an otherwise idle machine:
+
+| Vias | Tetrahedra | Nodes | Gmsh wall | Peak RSS | `ill-shaped tets` warnings |
+|---|---:|---:|---:|---:|---:|
+| round (today) | 152,009 | 256,296 | 47.8 s | 1.8 GB | 51 |
+| all, N = 16 | 130,251 (−14 %) | 216,228 | 59.5–61.7 s | 1.5–2.1 GB | 63 |
+| all, N = 8 | 118,817 (−22 %) | 195,708 | 39.0–40.0 s | 1.5 GB | 17 |
+| all, N = 6 | 118,688 (−22 %) | 194,530 | 38.1 s | 1.1 GB | 22 |
+| all, N = 4 | 114,705 (−25 %) | 187,644 | 30.7–31.1 s | 1.4 GB | 18 |
+| far, N = 8, *d* = 2 widths (6 of 8 vias) | 128,755 (−15 %) | 213,004 | 45.4 s | 1.9 GB | 17 |
+| far, N = 8, *d* = 3 widths (3 of 8) | 137,298 (−10 %) | 229,704 | 44.7 s | 1.8 GB | 39 |
+| far, N = 4, *d* = 2 widths (6 of 8) | 124,989 (−18 %) | 205,920 | 38.2 s (−20 %) | 1.5 GB | 18 |
+| far, N = 4, *d* = 3 widths (3 of 8) | 136,039 (−11 %) | 227,036 | 40.9 s | 1.8 GB | 35 |
+
+The widest trace on the path was 0.233 mm, so *d* = 2 and 3 widths were 0.47 and 0.70 mm. Tetrahedron and node counts are
+deterministic; wall times are not (a repeat of round under load read 62.7 s), so the counts decide. The memory and disk
+watchdog never fired on a Gmsh run.
+
+The electrostatic capacitance matrix, Palace, Draft (first order) with no refinement passes for every variant — the
+setup's own Standard order 2 with refinement passed the 4 GB watchdog cap and was stopped, so this is a like-for-like
+comparison at a cheaper setting, not the setup's accuracy:
+
+| Vias | C(TP) pF | C(RFin) pF | C(RFout) pF |
+|---|---:|---:|---:|
+| round | 3.6305 | 0.9592 | 0.3025 |
+| all, N = 8 | 3.6356 (+0.14 %) | 0.9608 (+0.16 %) | 0.3063 (**+1.26 %**) |
+| far, N = 8, *d* = 2 | 3.5849 (**−1.26 %**) | 0.9541 (−0.53 %) | 0.3035 (+0.33 %) |
+| far, N = 4, *d* = 2 | 3.5869 (**−1.20 %**) | 0.9515 (−0.80 %) | 0.3051 (+0.85 %) |
+
+**Verdict: Stop, on both counts.** No far-only variant reached 25 % fewer tetrahedra (best −18 %) or a dependable 25 %
+less Gmsh time (best −20 %, inside the timing noise), and each moved one diagonal capacitance by more than 1 %. The
+capacitance changes do not follow N or *d* (all-8 is closest on TP and furthest on RFout), which reads as first-order
+discretisation scatter between different meshes rather than as the shape — but that scatter is the size of the 1 % gate,
+so the gate cannot be shown met at this setting either way. The driven S11/S21 point was not run: it could not change a
+verdict already decided by the mesh counts.
+
+**What the numbers say beyond the verdict.**
+- On this crop the vias are about a fifth of the mesh at most: building **every** via as an octagon saved 22 % of the
+  tetrahedra, and a square 25 %. The brief's stated risk held — the thin copper and dielectric layers carry the rest. A
+  crop with many more stitching vias per square millimetre than this one (8 in ~23 mm²) could come out differently; the
+  far-only saving scales with how many vias are far from the path, and here only 3–6 of 8 were.
+- **Round vias drew about three times the `ill-shaped tets` warnings** (51) of any N ≤ 8 (17–22). N = 16 drew more (63)
+  than round: many short facets beside the curved barrel are worse than either.
+- **An N-gon's corners reach past the circle it replaces** (by 2.6 % at N = 8, 10 % at N = 6, 13 % at N = 4, equal
+  area), and two things broke on that until handled. At N = 6 an antipad's hexagon crossed another ring of the same
+  plane, OpenCASCADE reported self-intersecting shapes, and Gmsh then spent its five minutes recovering edges with no
+  progress — a ring must keep its circle when its N-gon would cross another ring of its polygon. And the air box,
+  sized from the round pads with zero lateral padding, was smaller than a hexagon pad at the board edge, so the lowering
+  refused the run — the content extent must be taken from the built N-gons. Anyone reviving this should start there.
