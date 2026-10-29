@@ -50,14 +50,14 @@ internal static class EnvelopePulse
     }
 
     /// <summary>Adds the pulse cubes; returns the sentence the Messages pane shows.</summary>
-    internal static string Add(DataSet ds, EnvelopeRunResult r, PulseShape s, double startS, double zm)
+    internal static string Add(DataSet ds, EnvelopeRunResult r, PulseShape s, double startS)
     {
         int nt = r.Time.Length, np = r.ProbeNames.Length;
         double h = r.StepS;
         var y = new Complex[nt];
         for (int t = 0; t < nt; t++) y[t] = r.Probe[t][np - 1][1];
         var d = r.Drive[0];
-        double Dbm(Complex v) => Math.Max(FloorDbm, 10 * Math.Log10(Math.Max((v.Real * v.Real + v.Imaginary * v.Imaginary) / (2 * zm), 1e-300) * 1e3));
+        double Dbm(Complex v) => Math.Max(FloorDbm, 10 * Math.Log10(Math.Max((v.Real * v.Real + v.Imaginary * v.Imaginary) / (2 * EnvelopeDataSet.MeasureOhms), 1e-300) * 1e3));
         ds.Add("Pout_t_dBm", new DataCube([new Axis("time", r.Time, "s")], [.. y.Select(Dbm)]));
 
         Complex At(Complex[] x, double t)

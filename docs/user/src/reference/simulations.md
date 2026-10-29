@@ -210,38 +210,45 @@ blocks are handled as follows.
 | Probes | MOD_Source node | Nodes kept and measured; the **last** probe is the output for gain, AM-AM/PM and DE. |
 | Segments | auto | Parallel-in-time segments, one per core and none shorter than 4× the warm-up; one when the circuit's memory is too long to warm up in parallel. 1 runs sequentially. |
 | Warmup | auto | Simulated before each segment and discarded. *auto* is 5 µs, or, with Segments auto, five of the circuit's slowest time constants when that is longer. A number is used as written. |
-| Zmeas | 50 Ω | Reference impedance for power at a probe node. |
-| SaveWaveforms | yes | Keep the probe envelopes (`V[time, node, harmonic]`); `no` keeps the measurements only. |
+| SaveWaveforms | yes | Keep the probe envelopes (`V[time, node, harmonic]`, and `I` and `Pprobe_t_W` below); `no` keeps the measurements only. |
+
+Without IProbes, an envelope run reads each probe node as if it were loaded by 50 Ω. That suits a
+system-level chain of 50 Ω blocks. To measure the power into any other load, place an IProbe in
+series with it and read `Pprobe_fund_W` ([below](#envelope-iprobe-power)).
 
 **Results.** `PSD[node, freq]` (dBm/Hz), `ACLR[node, carrier, metric]`, `Pavg_dBm`, `PAPR_dB`,
 `CCDF[node, prob]`, `AMAM` / `AMAM_min` / `AMAM_max` / `AMPM` against instantaneous input power (axis `Pin_inst`, dBm),
 `IMD[node, product]` for two widely spaced carriers (either mode), the scalars `Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`,
 `NMSE_dB`, `Pdc_W`, `DE_pct`, and the probe envelopes `V[time, node, harmonic]` (or `mixIndex` with two
-fundamentals). A [Parametric Sweep](#parametric-sweep) around an envelope analysis (sweeping the
+fundamentals). Every IProbe in the circuit adds, on a `branch` axis named after the probes,
+`Pprobe_W[branch, harmonic]` (the average power at each harmonic), `Pprobe_fund_W[branch]` (the
+fundamental band) and, with SaveWaveforms, the current envelopes `I[time, branch, harmonic]` and the
+fundamental-band power at every step `Pprobe_t_W[time, branch]`. A [Parametric Sweep](#parametric-sweep) around an envelope analysis (sweeping the
 source's `Pavg`, say) gives ACPR against output power in one run. A sweep point that fails is NaN
 and named in the Messages pane; the other points are kept.
 
-### How the power and efficiency scalars are calculated {#envelope-power}
+### Power and efficiency {#envelope-power}
 
-`Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`, `Pdc_W` and `DE_pct` are calculated for convenience, as a
-quick first look at a modulated run. Each one is a time average over the measured record (after the
-warm-up), and each rests on the simplifications below. Check them against your circuit before
-relying on the numbers.
+There are two ways to read power from an envelope run: the built-in scalars, which need no setup and
+describe one signal path into 50 Ω, and the power through an IProbe, which is exact for any load.
+
+**The built-in scalars.** `Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`, `Pdc_W` and `DE_pct` are a quick
+first look at one amplifier driven from one source into a 50 Ω load. Each is a time average over the
+measured record (after the warm-up).
 
 | Scalar | How it is calculated |
 |---|---|
 | `Pin_avg_dBm` | The **available** power of the drive: the mean of \|V<sub>drive</sub>(t)\|² / (8 · Re Z<sub>source</sub>), where V<sub>drive</sub> is the source's open-circuit envelope. This is not the power delivered into the input. |
-| `Pout_avg_dBm` | The **fundamental-band** power at the **last node listed in Probes**: the mean of \|V<sub>1</sub>(t)\|² / (2 · Zmeas), where V<sub>1</sub> is that node's carrier envelope. Everything inside that envelope counts, including the adjacent-channel and distortion power. Power at 2f₀, 3f₀ … does not. |
+| `Pout_avg_dBm` | The **fundamental-band** power at the **last node listed in Probes**: the mean of \|V<sub>1</sub>(t)\|² / (2 · 50 Ω), where V<sub>1</sub> is that node's carrier envelope. Everything inside that envelope counts, including the adjacent-channel and distortion power. Power at 2f₀, 3f₀ … does not. |
 | `Gt_dB` | `Pout_avg` / `Pin_avg`: transducer gain from available input power. |
 | `Pdc_W` | The sum over **every DC source with a non-zero `Vdc`** of −Vdc · ⟨I<sub>dc</sub>(t)⟩, where I<sub>dc</sub>(t) is that source's DC branch current at each envelope step. The current follows the modulation, so this is the true average supply power. |
 | `DE_pct` | 100 · `Pout_avg` / `Pdc`: average drain efficiency in the fundamental band. NaN when no DC power is drawn. |
 
 Things to keep in mind:
 
-- **Pout is taken from the probe's voltage, not from the current into the load.** It is exact only
-  when the last probe node is loaded by a resistance equal to `Zmeas`. With a different load, or a
-  probe placed before the output match, `Pout_avg_dBm`, `Gt_dB` and `DE_pct` are wrong by the
-  mismatch.
+- **Pout is taken from the probe node's voltage, as if it were loaded by 50 Ω.** With any other
+  load, or a probe placed before the output match, `Pout_avg_dBm`, `Gt_dB` and `DE_pct` are wrong by
+  the mismatch: a 25 Ω load reads 3 dB low.
 - **The output is the last node listed in Probes.** `Probes = Vin,Vout` measures Pout at `Vout`,
   but `Probes = Vout,Vin` measures it at `Vin`, and the gain and efficiency are then wrong.
 - **An empty Probes setting probes only the MOD_Source's node.** That node is then the output, so
@@ -250,9 +257,56 @@ Things to keep in mind:
 - **Every non-zero DC source counts toward Pdc**, gate and auxiliary supplies included. A gate supply
   that draws no current adds nothing. A bias divider or other resistive bias network adds its own
   dissipation, which lowers `DE_pct`.
-- **No PAE is reported.** PAE needs the power delivered into the input, and `Pin_avg_dBm` is the
-  available power.
+- **Every MOD_Source counts toward Pin**, so two amplifiers driven from two sources share one
+  `Pin_avg_dBm`, one `Pout_avg_dBm` and one `DE_pct`.
+- **No PAE is reported**, because `Pin_avg_dBm` is the available power, not the power delivered
+  into the input.
 - **With two fundamentals** (carriers on the mixing lattice), `Pdc_W` and `DE_pct` are not produced.
+
+A non-50 Ω load, two or more amplifiers, and PAE are measured at IProbes.
+
+#### Measuring power at an IProbe {#envelope-iprobe-power}
+
+Every IProbe in the circuit is measured; there is nothing to set up beyond placing it. Put one in
+series with each place you want a power:
+
+- the **load**, for output power,
+- the **input**, between the source and the amplifier's input match, for delivered input power,
+- each **supply**, between the DC source and the circuit, for DC power.
+
+The power reported is the power flowing through the probe **from its first node to its second**. With
+the probe's first node on the source side, each of these powers is positive in a working amplifier.
+
+| Cube | Axes | Meaning |
+|---|---|---|
+| `Pprobe_W` | branch, harmonic | average power at each harmonic, in W. Harmonic 0 is the DC power. |
+| `Pprobe_fund_W` | branch | average fundamental-band power, in W. With two fundamentals, the sum over the carrier products. |
+| `I` | time, branch, harmonic | the probe current envelopes (SaveWaveforms) |
+| `Pprobe_t_W` | time, branch | fundamental-band power at every step (SaveWaveforms) |
+
+With two fundamentals the `harmonic` axis is `mixIndex`, and the DC power is the `(0,0)` product.
+The averages are taken over the same window as the built-in scalars and have no time axis, so a
+parametric sweep stacks them like any scalar. A probe power is exact for any load, reactive ones
+included, and at a 50 Ω load `Pprobe_fund_W` agrees with `Pout_avg_dBm`.
+
+**One amplifier.** With `IProbe:Iin` at the input, `IProbe:Iout` at the load and `IProbe:IDC` at the
+drain supply, inside a sweep of the source's `Pavg`:
+
+| Quantity | From |
+|---|---|
+| Output power | `Pprobe_fund_W` at `Iout` |
+| Delivered input power | `Pprobe_fund_W` at `Iin` |
+| DC power | `Pprobe_W` at `IDC`, harmonic 0 |
+| Drain efficiency | output power / DC power |
+| PAE | (output power − delivered input power) / DC power |
+| Power gain | output power / delivered input power |
+
+A Data Display trace of `ENV1 › Pprobe_fund_W › Iout` against `Pavg` plots output power against drive
+with no arithmetic at all.
+
+**Two amplifiers**, A and B, each with its own load and supply: place `IoutA`, `IDCA`, `IoutB` and
+`IDCB`. Each amplifier's drain efficiency is its own `Pprobe_fund_W` at `Iout` over its own `Pprobe_W`
+at `IDC`, harmonic 0, and the total DC power is the sum of the two.
 
 ### Pulsed CW: what is measured {#envelope-pulse}
 

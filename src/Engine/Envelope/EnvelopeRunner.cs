@@ -31,8 +31,10 @@ namespace CircuitRF.Engine.Envelope;
 public static class EnvelopeRunner
 {
     /// <param name="Mode">auto / lattice: widely spaced carriers get their own fundamentals; single: one envelope spans them all.</param>
-    public sealed record Plan(EnvelopeParams Params, int Segments, double WarmupS, bool SaveWaveforms, double Zmeas, int MaxMixOrder = 5,
-                              string Mode = "auto");
+    /// <param name="ZmeasWarning">The one warning an old file's retired <c>Zmeas</c> other than 50 earns; null when it
+    /// has none, or 50.</param>
+    public sealed record Plan(EnvelopeParams Params, int Segments, double WarmupS, bool SaveWaveforms, int MaxMixOrder = 5,
+                              string Mode = "auto", string? ZmeasWarning = null);
 
     public static Plan Resolve(EnvelopeAnalysis a, IReadOnlyDictionary<string, Value> globals)
     {
@@ -69,7 +71,6 @@ public static class EnvelopeRunner
             MaxHarm = Math.Max(1, (int)Num(a.MaxHarmExpr, 5)),
             Tol = Num(a.TolExpr, 1e-6),
             Probes = a.Probes.Split(new[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries),
-            MeasureZ = Num(a.ZmeasExpr, 50),
             StartS = Num(a.StartExpr, 0),
         };
         bool save = !a.SaveWaveforms.Equals("no", StringComparison.OrdinalIgnoreCase) &&
@@ -78,7 +79,27 @@ public static class EnvelopeRunner
         if (mode is "" ) mode = "auto";
         if (mode is not ("auto" or "single" or "lattice"))
             throw new InvalidOperationException($"envelope '{a.Name}': Envelope must be auto, single or lattice (got '{a.Envelope}')");
-        return new Plan(p, seg, warm, save, p.MeasureZ, Math.Max(1, (int)Num(a.MaxMixOrderExpr, 7)), mode);
+        return new Plan(p, seg, warm, save, Math.Max(1, (int)Num(a.MaxMixOrderExpr, 7)), mode, ZmeasWarning(a, globals));
+    }
+
+    /// <summary>
+    /// <c>Zmeas</c> is retired (brief ENV-MEAS-1): every node power is into <see cref="EnvelopeDataSet.MeasureOhms"/>. An
+    /// old file still carries the key; one that says 50 reads silently, and any other value runs at 50 with this warning,
+    /// because a result that silently moved would be the worse outcome.
+    /// </summary>
+    private static string? ZmeasWarning(EnvelopeAnalysis a, IReadOnlyDictionary<string, Value> globals)
+    {
+        if (string.IsNullOrWhiteSpace(a.ZmeasExpr)) return null;
+        try
+        {
+            var v = HbEngine.BuildEvaluator(globals).EvalExpr(Parser.Parse(a.ZmeasExpr), HbEngine.BuildScope(globals));
+            var z = v.Kind == ValueKind.Real ? new Complex(v.AsReal(), 0) : v.AsComplex();
+            if (z == new Complex(EnvelopeDataSet.MeasureOhms, 0)) return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { }
+        return $"Envelope '{a.Name}': Zmeas={a.ZmeasExpr} is no longer a setting; its node powers are into " +
+               $"{EnvelopeDataSet.MeasureOhms:0} Ω. To measure the power into another load, place an IProbe in series with it " +
+               "and read Pprobe_fund_W.";
     }
 
     /// <summary>The envelope step the engines will use (same rule as theirs: signal rate x oversampling, or explicit).</summary>
@@ -153,6 +174,7 @@ public static class EnvelopeRunner
     {
         var p = plan.Params;
         var first = elaborate();
+        if (plan.ZmeasWarning is { } zw) first.AddWarningOnce("envelope-zmeas:" + zw, zw);
         var src = first.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().FirstOrDefault()
                   ?? throw new InvalidOperationException("Envelope analysis needs at least one MOD_Source (the modulated signal).");
         _ = src.Signal;                                             // generate (or load) the signal once, up front
@@ -353,6 +375,7 @@ public static class EnvelopeRunner
         // stitch, measure the seam on the overlap tails
         h = results[0].StepS;
         var time = new List<double>(); var probe = new List<Complex[][]>(); var sup = new List<double[]>();
+        var ipI = new List<Complex[][]>(); var ipV = new List<Complex[][]>();
         var drv = new List<Complex>[results[0].Drive.Length];
         for (int i = 0; i < drv.Length; i++) drv[i] = new List<Complex>();
         double seam = 0, seamExternal = 0;
@@ -367,6 +390,7 @@ public static class EnvelopeRunner
             {
                 time.Add((bound[s] + i) * h);
                 probe.Add(r.Probe[i]); sup.Add(r.SupplyCurrent[i]);
+                ipI.Add(r.IProbeCurrent[i]); ipV.Add(r.IProbeVoltage[i]);
                 for (int d = 0; d < drv.Length; d++) drv[d].Add(r.Drive[d][i]);
             }
             if (s > 0)
@@ -384,7 +408,8 @@ public static class EnvelopeRunner
         var merged = new EnvelopeRunResult
         {
             Time = time.ToArray(), ProbeNames = R.ProbeNames, Probe = probe.ToArray(), SupplyNames = R.SupplyNames,
-            SupplyCurrent = sup.ToArray(), SupplyVoltage = R.SupplyVoltage, Drive = drv.Select(d => d.ToArray()).ToArray(),
+            SupplyCurrent = sup.ToArray(), SupplyVoltage = R.SupplyVoltage,
+            IProbeNames = R.IProbeNames, IProbeCurrent = ipI.ToArray(), IProbeVoltage = ipV.ToArray(), Drive = drv.Select(d => d.ToArray()).ToArray(),
             DriveRe = R.DriveRe, F0Hz = R.F0Hz, StepS = h, MaxHarm = R.MaxHarm, SignalRateHz = R.SignalRateHz, Sources = R.Sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = results.Average(x => x.MeanNewton),
             JacobianBuilds = results.Sum(x => x.JacobianBuilds), WorstTangentError = results.Max(x => x.WorstTangentError),

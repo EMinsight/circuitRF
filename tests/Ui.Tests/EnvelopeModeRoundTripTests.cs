@@ -43,4 +43,18 @@ public class EnvelopeModeRoundTripTests
         Assert.DoesNotContain("Envelope=", CnlWriter.Write(tb));
         Assert.Null(AnalysisSerialization.ToDto(env).EnvMode);
     }
+
+    [Fact]
+    public void Zmeas_IsReadForTheRunsWarning_AndNeitherWriterEmitsIt()
+    {
+        // Brief ENV-MEAS-1 gate 9: the key drops out the next time a file is saved.
+        var env = ReadEnv("analysis ENV1 type=env Stop=10e-6 Zmeas=25");
+        Assert.Equal("25", env.ZmeasExpr);
+        var tb = new TestBench("tb");
+        tb.Analyses.Add(env);
+        Assert.DoesNotContain("Zmeas", CnlWriter.Write(tb));
+        Assert.Null(AnalysisSerialization.ToDto(env).EnvZmeas);
+        var fromCsch = (EnvelopeAnalysis)AnalysisSerialization.FromDto(new CschAnalysis { Type = "env", Name = "ENV1", EnvZmeas = "25" })!;
+        Assert.Equal("25", fromCsch.ZmeasExpr);
+    }
 }

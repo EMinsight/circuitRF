@@ -41180,3 +41180,13 @@ pattern returned early, so nothing decided the separators and all of them showed
 owner report). `Track` now runs regardless, and re-decides on every item's `IsVisible` change, each separator's `Tag`
 change, the menu's `DataContextChanged` and `Opened`; the dynamic menu state is refreshed when the node arrives.
 `ReferencedCellTreeTests` applies the same rule (`MenuSeparators.Shown`) to every row kind.
+
+## Envelope card: the Zmeas field is gone (brief ENV-MEAS-1, 2026-10-28)
+
+Envelope node powers are into 50 Ω and any other load is measured at an IProbe (`src/Engine/RESOLVED.md`, same brief), so
+`EnvBodyViewModel` and `EnvBodyView.axaml` lose `Zmeas`; the "Keep probe envelopes" checkbox now sits alone on its row.
+Opening and saving an old schematic drops its `EnvZmeas` key.
+
+`DuplicateAnalysisCommand` still copies `EnvelopeAnalysis.ZmeasExpr` and `AnalysisClonePropertyParityTests` still sets
+it: the property stays on the model to carry an old `.cnl`'s value to the run's one warning, and the parity test compares
+every public property by reflection. A duplicated card from such a file warns exactly as its original does.

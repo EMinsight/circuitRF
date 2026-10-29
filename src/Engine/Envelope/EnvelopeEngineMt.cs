@@ -222,6 +222,9 @@ public sealed class EnvelopeEngineMt
 
         var probes = ResolveProbes(p, srcEcs);
         int P = probes.Length;
+        var (iprobes, iprobeRows, iprobeNodes) = EnvelopeEngine.IProbesOf(_nl);
+        var iOut = new Complex[nSteps + 1][][];
+        var ivOut = new Complex[nSteps + 1][][];
         var tOut = new double[nSteps + 1];
         var pOut = new Complex[nSteps + 1][][];
         var dOut = new Complex[sources.Length][];
@@ -244,6 +247,24 @@ public sealed class EnvelopeEngineMt
                 pr[pi][0] = new Complex(pr[pi][0].Real, 0);
             }
             pOut[o] = pr;
+            var ic = new Complex[iprobes.Length][];
+            var iv = new Complex[iprobes.Length][];
+            for (int i = 0; i < iprobes.Length; i++)
+            {
+                ic[i] = new Complex[M];
+                iv[i] = new Complex[M];
+                for (int m = 0; m < M; m++)
+                {
+                    var c = prods[m].Xm1[iprobeRows[i]];
+                    var v = iprobeNodes[i] >= 0 ? prods[m].Xm1[iprobeNodes[i]] : Complex.Zero;
+                    ic[i][m] = prods[m].Neg ? Complex.Conjugate(c) : c;
+                    iv[i][m] = prods[m].Neg ? Complex.Conjugate(v) : v;
+                }
+                ic[i][0] = new Complex(ic[i][0].Real, 0);
+                iv[i][0] = new Complex(iv[i][0].Real, 0);
+            }
+            iOut[o] = ic;
+            ivOut[o] = iv;
             for (int s = 0; s < sources.Length; s++) { Complex a = 0; for (int t = 0; t < T; t++) a += drv[s, t][step]; dOut[s][o] = a; }
         }
         Record(0);
@@ -417,7 +438,8 @@ public sealed class EnvelopeEngineMt
         {
             Time = tOut, ProbeNames = probes.Select(x => x.name).ToArray(), Probe = pOut,
             SupplyNames = Array.Empty<string>(), SupplyCurrent = Enumerable.Range(0, nSteps + 1).Select(_ => Array.Empty<double>()).ToArray(),
-            SupplyVoltage = Array.Empty<double>(), Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
+            SupplyVoltage = Array.Empty<double>(), IProbeNames = iprobes, IProbeCurrent = iOut, IProbeVoltage = ivOut,
+            Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
             F0Hz = tones[0], StepS = h, MaxHarm = M - 1, SignalRateHz = rate, Sources = sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newton.Iterations / Math.Max(1, total - 1), JacobianBuilds = newton.JacobianBuilds,
             WorstTangentError = tanErrWorst, SnpFits = snpFit.Reports,

@@ -51,13 +51,7 @@
             <TextBlock Grid.Row="4" Grid.Column="2" Classes="lbl" Text="Warm-up (s)" Margin="12,0,8,0"/>
             <TextBox Grid.Row="4" Grid.Column="3" Text="{Binding Warmup}" ToolTip.Tip="auto = 5 us, or five of the circuit's slowest time constants (traps, thermal, bias network) when Segments is auto"/>
         </Grid>
-        <StackPanel Orientation="Horizontal" Spacing="12">
-            <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Classes="lbl" Text="Zmeas (Ω)"/>
-                <TextBox Text="{Binding Zmeas}" MinWidth="60"/>
-            </StackPanel>
-            <CheckBox FontSize="11" Content="Keep probe envelopes (time cube)" IsChecked="{Binding SaveWaveforms}"
-                      ToolTip.Tip="Off keeps only the measurements: PSD, ACLR, CCDF, AM-AM/AM-PM, IMD, DE"/>
-        </StackPanel>
+        <CheckBox FontSize="11" Content="Keep probe envelopes (time cube)" IsChecked="{Binding SaveWaveforms}"
+                  ToolTip.Tip="Off keeps only the measurements: PSD, ACLR, CCDF, AM-AM/AM-PM, IMD, DE, IProbe powers"/>
     </StackPanel>
 </UserControl>

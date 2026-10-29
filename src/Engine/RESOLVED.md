@@ -3765,3 +3765,41 @@ it and its source. Found when an ideal 0 V source on an SDD's thermal port let t
   a volt or so) leaves ~1e-10 A on it: a `Tol=` at or below that is unreachable, and Newton stalls at its last
   line-search halving instead of converging. `ExternalDeviceHbDcConsistencyTests` (an ideal `V_1Tone` on the gate) sat at
   1.05e-10 against `Tol=1e-10` and was moved to 1e-9. That this fix is what turned it red is inferred from the code, not bisected.
+
+## Envelope: power through every IProbe, and `Zmeas` retired (brief ENV-MEAS-1, 2026-10-28)
+
+Every power an envelope run reported was |V|² / (2 · `Zmeas`) at a probe node: right only at a resistive load equal to
+`Zmeas`, with no warning otherwise, and a complex `Zmeas` silently kept its real part. Both engines already solved every
+IProbe's branch current at every step; nothing read it.
+
+- **What is recorded.** Every `IProbeModel` (a WSProbe shares the stamp and is excluded), at every kept step: its branch
+  current from `Xm1[LastBranchIndex]` (the absolute MNA row, read after the products are stamped, like the supply rows)
+  and its first node's voltage from the same vector. On the lattice a negative-frequency product is conjugated exactly as
+  the probe voltages are. The DC entry is kept real, as `V`'s is. `EnvelopeEngine.IProbesOf` is the one selection.
+- **Why the power is averaged per step, not from averages.** ½·Re(Vₖ·Iₖ*) at a step is the exact power that product
+  carries (the cross terms between products average out over a carrier period), so ⟨½·Re(V·I*)⟩ is the average power;
+  the product of the averages is not, and at k = 0 it would miss V₀ following the modulation behind a supply
+  resistance. The window is the built-in scalars' own (`t0`, after a cold run's settle skip), so at a true 50 Ω load
+  `Pprobe_fund_W` reads `Pout_avg_dBm` to 1e-6 dB.
+- **A reactive load's probe power is not exactly the resistor's power under modulation.** Into R + L the envelope power
+  carries ¼·L·d|I|²/dt, which averages to the change in stored energy over the window, not to zero. The reactive gate
+  therefore runs CW, where the envelope is stationary from its harmonic-balance start; under NR the difference is that
+  stored-energy change over the record, and it is real power that did flow through the probe.
+- **`V` and `PSD` keep exactly the `Probes` nodes.** An IProbe's node voltage goes only into the power cubes; appending it
+  to `V` would have grown the examples' node axes.
+- **`Zmeas` → `EnvelopeDataSet.MeasureOhms` (50).** `Plan.Zmeas` and `EnvelopeParams.MeasureZ` are gone;
+  `EnvelopeAnalysis.ZmeasExpr` stays as the carrier of an old file's value, so `Resolve` can evaluate it in the run's own
+  scope (it may name a global) and `Prepare` posts one warning on the first netlist under one key — a sweep's merge
+  dedups it, so N points warn once. The reader, the schema entry (now DEPRECATED, like HB's `Sweep=`) and the `.csch` DTO
+  still accept it; neither writer emits it.
+- **A `.csch` loses a non-50 `Zmeas` before the run can warn.** A schematic reaches the elaborator through `CnlWriter`'s
+  text (`SchematicCircuit.RoundTrip`), and the writer no longer says `Zmeas`, so such a schematic runs at 50 Ω with no
+  warning. Only a `.cnl` that states `Zmeas` warns. The envelope card no longer shows the field, so the next save drops
+  the key either way.
+
+**Gate 1, the examples did not move.** A scratch harness ran `NR20_ACPR`, `NR20_ACPR_vs_Pin`,
+`NR20_2C_400MHz_single` (Stop 20 µs) and `PulsedPA_pCW` (Stop 130 µs, one whole pulse) through `CircuitEvaluation` before
+and after, comparing every cube's axes and values as raw bits. Run to run, before the change, all four were identical
+(determinism checked first). After it: 29, 29, 30 and 28 pre-existing cubes **bit-identical**, none moved or missing;
+each run gained exactly `I`, `Pprobe_W`, `Pprobe_fund_W`, `Pprobe_t_W` and `__ProbeBranches` (all four examples already
+place IProbes). Gates 2-9: `EnvelopeProbePowerTests`, plus `EnvelopeModeRoundTripTests` for the writers.

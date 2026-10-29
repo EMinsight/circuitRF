@@ -5,7 +5,7 @@
 //  gain / AM-AM / AM-PM / NMSE / efficiency):
 //    V          [time, node, harmonic|mixIndex]  complex peak phasors (SaveWaveforms)
 //    Idc        [time, supply]          real   DC supply branch currents (A)
-//    PSD        [node, freq]            real   dBm/Hz into Zmeas, absolute frequency
+//    PSD        [node, freq]            real   dBm/Hz into 50 ohm, absolute frequency
 //               single fundamental: the fundamental envelope;  two fundamentals:
 //               every carrier product and the IM3/IM5/IM2 products, power-summed onto
 //               one ascending grid over the union of their spans (overlaps merge)
@@ -15,6 +15,13 @@
 //    AMAM / AMAM_min / AMAM_max / AMPM  [Pin]  binned on instantaneous available input power;
 //               the min/max spread at one Pin is the memory (single fundamental)
 //    Pin_avg_dBm, Pout_avg_dBm, Gt_dB, NMSE_dB, Pdc_W, DE_pct   scalars
+//    Every IProbe (branch = its instance path; power flows through it from its first node to its second):
+//    I             [time, branch, harmonic|mixIndex] complex  probe current envelopes (SaveWaveforms)
+//    Pprobe_W      [branch, harmonic|mixIndex]       real     time-averaged power per product (W)
+//    Pprobe_fund_W [branch]                          real     the fundamental band: harmonic 1, or the carrier products
+//    Pprobe_t_W    [time, branch]                    real     instantaneous fundamental-band power (SaveWaveforms)
+//    Every power read from a node voltage alone is into MeasureOhms (50 ohm);
+//    an IProbe's is exact for any load.
 //    __EnvSnpFit [instance, metric]  order, rel_error, sigma_max of each SnP's
 //               rational fit (only when the circuit has one)
 //    A pulsed-CW source adds the pulse cubes of EnvelopePulse and drops
@@ -39,12 +46,16 @@ public static class EnvelopeDataSet
     public const double AmGridLoDbm = -40, AmGridHiDbm = 60;
     public const int AmMinSamples = 16;
 
+    /// <summary>The load every power read from a node voltage alone is into (ohm). <c>Zmeas</c> set it until brief
+    /// ENV-MEAS-1; a power into any other load is measured at an IProbe.</summary>
+    public const double MeasureOhms = 50.0;
+
     public static DataSet Build(EnvelopeRunResult r, EnvelopeRunner.Plan plan, double skipS = 0, Action<string>? note = null)
     {
         var ds = new DataSet();
         var pulse = EnvelopePulse.Of(r);
         int nt = r.Time.Length, np = r.ProbeNames.Length, nk = r.Probe[0][0].Length;
-        double zm = plan.Zmeas, fs = 1.0 / r.StepS;
+        double zm = MeasureOhms, fs = 1.0 / r.StepS;
         bool multi = r.MixTones is not null;
         int t0 = Math.Min(nt - 16, (int)Math.Round(skipS / r.StepS));
         int nm = nt - t0;
@@ -220,6 +231,7 @@ public static class EnvelopeDataSet
                          r.CarrierLabels.Length == nc ? r.CarrierLabels : carSpecs.Select(c => c.Label).ToArray()),
                 new Axis("metric", Enumerable.Range(0, AclrLabels.Length).Select(i => (double)i).ToArray(), "", AclrLabels)], aclr));
         ds.Add("Pavg_dBm", new DataCube([probeAxis], pavg));
+        AddProbePower(ds, r, plan.SaveWaveforms, t0, multi ? r.CarrierMix.Distinct().ToArray() : [1]);
         if (pulse is null)
         {
             ds.Add("PAPR_dB", new DataCube([probeAxis], papr));
@@ -259,7 +271,7 @@ public static class EnvelopeDataSet
             ds.Add("Pin_avg_dBm", DataCube.Scalar(10 * Math.Log10(pinW * 1e3)));
             ds.Add("Pout_avg_dBm", DataCube.Scalar(pavg[np - 1]));
             ds.Add("Gt_dB", DataCube.Scalar(10 * Math.Log10(poutW / pinW)));
-            if (pulse is not null) note?.Invoke(EnvelopePulse.Add(ds, r, pulse, plan.Params.StartS, zm));
+            if (pulse is not null) note?.Invoke(EnvelopePulse.Add(ds, r, pulse, plan.Params.StartS));
             else if (!multi)
             {
                 var y = Env(np - 1, 1);
@@ -330,6 +342,58 @@ public static class EnvelopeDataSet
                 r.SnpFits.SelectMany(f => new[] { f.Order, f.RelativeError, f.SigmaMax }).ToArray()));
         }
         return ds;
+    }
+
+    /// <summary>
+    /// Power through every IProbe. Per product, ½·Re(Vₖ·Iₖ*) at a step (V₀·I₀ at DC) is the exact power the product
+    /// carries: the cross terms between products average out over a carrier period. Averaged over the same window as
+    /// the built-in scalars (from <paramref name="t0"/>), so a probe at a true 50 Ω load reads Pout_avg_dBm. The
+    /// fundamental band is <paramref name="fund"/>: harmonic 1, or the lattice's carrier products.
+    /// </summary>
+    private static void AddProbePower(DataSet ds, EnvelopeRunResult r, bool saveWaveforms, int t0, int[] fund)
+    {
+        int nb = r.IProbeNames.Length, nt = r.Time.Length;
+        if (nb == 0) return;
+        int nk = r.IProbeCurrent[0][0].Length, nm = nt - t0;
+        bool multi = r.MixTones is not null;
+        var branchAxis = new Axis("branch", Enumerable.Range(0, nb).Select(i => (double)i).ToArray(), "", r.IProbeNames);
+        var third = multi
+            ? new Axis("mixIndex", r.MixFreqHz!, "Hz", r.MixLabels)
+            : new Axis("harmonic", Enumerable.Range(0, nk).Select(i => (double)i).ToArray());
+        double P(int t, int b, int k)
+        {
+            Complex v = r.IProbeVoltage[t][b][k], i = r.IProbeCurrent[t][b][k];
+            return k == 0 ? v.Real * i.Real : 0.5 * (v.Real * i.Real + v.Imaginary * i.Imaginary);
+        }
+        var pk = new double[nb * nk];
+        var pf = new double[nb];
+        for (int b = 0; b < nb; b++)
+        {
+            for (int k = 0; k < nk; k++)
+            {
+                double sum = 0;
+                for (int t = t0; t < nt; t++) sum += P(t, b, k);
+                pk[b * nk + k] = sum / nm;
+            }
+            foreach (int k in fund) pf[b] += pk[b * nk + k];
+        }
+        ds.Add("Pprobe_W", new DataCube([branchAxis, third], pk));
+        ds.Add("Pprobe_fund_W", new DataCube([branchAxis], pf));
+        if (saveWaveforms)
+        {
+            var ic = new Complex[nt * nb * nk];
+            var pt = new double[nt * nb];
+            for (int t = 0; t < nt; t++)
+                for (int b = 0; b < nb; b++)
+                {
+                    for (int k = 0; k < nk; k++) ic[(t * nb + b) * nk + k] = r.IProbeCurrent[t][b][k];
+                    foreach (int k in fund) pt[t * nb + b] += P(t, b, k);
+                }
+            ds.Add("I", new DataCube([new Axis("time", r.Time, "s"), branchAxis, third], ic));
+            ds.Add("Pprobe_t_W", new DataCube([new Axis("time", r.Time, "s"), branchAxis], pt));
+        }
+        ds.Add("__ProbeBranches", new DataCube([new Axis("probe", Enumerable.Range(0, nb).Select(i => (double)i).ToArray(), "", r.IProbeNames)],
+                                               new double[nb]));
     }
 
     /// <summary>

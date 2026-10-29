@@ -201,7 +201,8 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
     public string MaxMixOrderExpr { get; init; } = "7";
     /// <summary>Comma-separated node names whose envelopes are kept and measured. Empty = the MOD_Source nodes.</summary>
     public string Probes        { get; init; } = "";
-    /// <summary>Reference impedance (ohm) for power at a probe node.</summary>
+    /// <summary>Retired (brief ENV-MEAS-1): node powers are into 50 Ω. Kept only as an old file stated it, so a value other
+    /// than 50 runs at 50 with a warning; no writer emits it.</summary>
     public string ZmeasExpr     { get; init; } = "50";
     /// <summary>Parallel-in-time segments: <c>auto</c> (one per core, or one when the circuit's memory is too long to warm up
     /// in parallel), or a count (1 = sequential).</summary>

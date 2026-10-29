@@ -123,7 +123,7 @@ public static partial class AnalysisDirectiveSchema
             new("Envelope",  Default: "auto",    Summary: "auto: carriers farther apart than 3x their bandwidth each get their own fundamental (two-fundamental lattice). single: one envelope around Fc spanning every carrier and their IM3 - the step shrinks with the spacing. lattice: as auto."),
             new("MaxMixOrder", Default: "7",     Summary: "Mixing order kept when widely spaced carriers get their own fundamentals (|k1|+|k2| <= order). 7 converges IM5; at 5, IM5 sits on the truncation edge (measured 0.5-1 dB off)."),
             new("Probes",    Default: "",        Summary: "Comma-separated nodes whose envelopes are kept and measured. Empty = the MOD_Source nodes."),
-            new("Zmeas",     Default: "50",      Summary: "Reference impedance (ohm) for power measured at a probe node."),
+            new("Zmeas",     Default: "50",      Summary: "DEPRECATED. Node powers are into 50 ohm; any other value runs at 50 with a warning. Place an IProbe in series with a load to measure the power into it."),
             new("Segments",  Default: "auto",    Summary: "Parallel-in-time segments: auto (one per core, none shorter than 4x the warm-up; one when the circuit's memory is too long to warm up in parallel) or a count; 1 runs sequentially."),
             new("Warmup",    Default: "auto",    Summary: "Warm-up simulated and discarded before each segment (s), or auto: 5 us, or with Segments auto five of the circuit's slowest time constants (a trap, thermal pole or the linear network's slowest pole) when longer."),
             new("Start",     Default: "0",       Summary: "Signal-record time of t = 0 (s)."),

@@ -1,6 +1,6 @@
 # Brief ENV-MEAS-2 — `P("probe")`: a short, sweep-proof spelling for power in a measure line
 
-**Series:** Envelope measurements · **Tag:** `R-envm2-n` · **Briefs:** [1](brief-env-meas-1-probe-power.md), 2 (this)
+**Series:** Envelope measurements · **Tag:** `R-envm2-n` · **Briefs:** [1](brief-env-meas-1-probe-power.md), 2 (this), [3](brief-env-meas-3-probes-retired.md)
 **Depends on:** ENV-MEAS-1 (the `Pprobe_*` cubes)
 **Area:** `src/Core/Expressions/Evaluator.cs` (`EvalQualifiedAccessor`); `src/Engine/HarmonicBalance/HbEngine.cs`
 (the dataset builders, §3); `src/Cli/ReferenceTuning.cs` (the `goals` reference topic's function list);

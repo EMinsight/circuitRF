@@ -264,29 +264,31 @@ is large enough to move ACPR by about 0.1 dB.</li>
 <td>Simulated before each segment and discarded. <em>auto</em> is 5 µs, or, with Segments auto, five of the circuit's slowest time constants when that is longer. A number is used as written.</td>
 </tr>
 <tr>
-<td>Zmeas</td>
-<td>50 Ω</td>
-<td>Reference impedance for power at a probe node.</td>
-</tr>
-<tr>
 <td>SaveWaveforms</td>
 <td>yes</td>
-<td>Keep the probe envelopes (<code>V[time, node, harmonic]</code>); <code>no</code> keeps the measurements only.</td>
+<td>Keep the probe envelopes (<code>V[time, node, harmonic]</code>, and <code>I</code> and <code>Pprobe_t_W</code> below); <code>no</code> keeps the measurements only.</td>
 </tr>
 </tbody>
 </table>
+<p>Without IProbes, an envelope run reads each probe node as if it were loaded by 50 Ω. That suits a
+system-level chain of 50 Ω blocks. To measure the power into any other load, place an IProbe in
+series with it and read <code>Pprobe_fund_W</code> (<a href="#envelope-iprobe-power">below</a>).</p>
 <p><strong>Results.</strong> <code>PSD[node, freq]</code> (dBm/Hz), <code>ACLR[node, carrier, metric]</code>, <code>Pavg_dBm</code>, <code>PAPR_dB</code>,
 <code>CCDF[node, prob]</code>, <code>AMAM</code> / <code>AMAM_min</code> / <code>AMAM_max</code> / <code>AMPM</code> against instantaneous input power (axis <code>Pin_inst</code>, dBm),
 <code>IMD[node, product]</code> for two widely spaced carriers (either mode), the scalars <code>Pin_avg_dBm</code>, <code>Pout_avg_dBm</code>, <code>Gt_dB</code>,
 <code>NMSE_dB</code>, <code>Pdc_W</code>, <code>DE_pct</code>, and the probe envelopes <code>V[time, node, harmonic]</code> (or <code>mixIndex</code> with two
-fundamentals). A <a href="#parametric-sweep">Parametric Sweep</a> around an envelope analysis (sweeping the
+fundamentals). Every IProbe in the circuit adds, on a <code>branch</code> axis named after the probes,
+<code>Pprobe_W[branch, harmonic]</code> (the average power at each harmonic), <code>Pprobe_fund_W[branch]</code> (the
+fundamental band) and, with SaveWaveforms, the current envelopes <code>I[time, branch, harmonic]</code> and the
+fundamental-band power at every step <code>Pprobe_t_W[time, branch]</code>. A <a href="#parametric-sweep">Parametric Sweep</a> around an envelope analysis (sweeping the
 source's <code>Pavg</code>, say) gives ACPR against output power in one run. A sweep point that fails is NaN
 and named in the Messages pane; the other points are kept.</p>
-<h3 id="envelope-power">How the power and efficiency scalars are calculated</h3>
-<p><code>Pin_avg_dBm</code>, <code>Pout_avg_dBm</code>, <code>Gt_dB</code>, <code>Pdc_W</code> and <code>DE_pct</code> are calculated for convenience, as a
-quick first look at a modulated run. Each one is a time average over the measured record (after the
-warm-up), and each rests on the simplifications below. Check them against your circuit before
-relying on the numbers.</p>
+<h3 id="envelope-power">Power and efficiency</h3>
+<p>There are two ways to read power from an envelope run: the built-in scalars, which need no setup and
+describe one signal path into 50 Ω, and the power through an IProbe, which is exact for any load.</p>
+<p><strong>The built-in scalars.</strong> <code>Pin_avg_dBm</code>, <code>Pout_avg_dBm</code>, <code>Gt_dB</code>, <code>Pdc_W</code> and <code>DE_pct</code> are a quick
+first look at one amplifier driven from one source into a 50 Ω load. Each is a time average over the
+measured record (after the warm-up).</p>
 <table>
 <thead>
 <tr>
@@ -301,7 +303,7 @@ relying on the numbers.</p>
 </tr>
 <tr>
 <td><code>Pout_avg_dBm</code></td>
-<td>The <strong>fundamental-band</strong> power at the <strong>last node listed in Probes</strong>: the mean of |V<sub>1</sub>(t)|² / (2 · Zmeas), where V<sub>1</sub> is that node's carrier envelope. Everything inside that envelope counts, including the adjacent-channel and distortion power. Power at 2f₀, 3f₀ … does not.</td>
+<td>The <strong>fundamental-band</strong> power at the <strong>last node listed in Probes</strong>: the mean of |V<sub>1</sub>(t)|² / (2 · 50 Ω), where V<sub>1</sub> is that node's carrier envelope. Everything inside that envelope counts, including the adjacent-channel and distortion power. Power at 2f₀, 3f₀ … does not.</td>
 </tr>
 <tr>
 <td><code>Gt_dB</code></td>
@@ -319,10 +321,9 @@ relying on the numbers.</p>
 </table>
 <p>Things to keep in mind:</p>
 <ul>
-<li><strong>Pout is taken from the probe's voltage, not from the current into the load.</strong> It is exact only
-when the last probe node is loaded by a resistance equal to <code>Zmeas</code>. With a different load, or a
-probe placed before the output match, <code>Pout_avg_dBm</code>, <code>Gt_dB</code> and <code>DE_pct</code> are wrong by the
-mismatch.</li>
+<li><strong>Pout is taken from the probe node's voltage, as if it were loaded by 50 Ω.</strong> With any other
+load, or a probe placed before the output match, <code>Pout_avg_dBm</code>, <code>Gt_dB</code> and <code>DE_pct</code> are wrong by
+the mismatch: a 25 Ω load reads 3 dB low.</li>
 <li><strong>The output is the last node listed in Probes.</strong> <code>Probes = Vin,Vout</code> measures Pout at <code>Vout</code>,
 but <code>Probes = Vout,Vin</code> measures it at <code>Vin</code>, and the gain and efficiency are then wrong.</li>
 <li><strong>An empty Probes setting probes only the MOD_Source's node.</strong> That node is then the output, so
@@ -331,10 +332,99 @@ whenever you read these scalars.</li>
 <li><strong>Every non-zero DC source counts toward Pdc</strong>, gate and auxiliary supplies included. A gate supply
 that draws no current adds nothing. A bias divider or other resistive bias network adds its own
 dissipation, which lowers <code>DE_pct</code>.</li>
-<li><strong>No PAE is reported.</strong> PAE needs the power delivered into the input, and <code>Pin_avg_dBm</code> is the
-available power.</li>
+<li><strong>Every MOD_Source counts toward Pin</strong>, so two amplifiers driven from two sources share one
+<code>Pin_avg_dBm</code>, one <code>Pout_avg_dBm</code> and one <code>DE_pct</code>.</li>
+<li><strong>No PAE is reported</strong>, because <code>Pin_avg_dBm</code> is the available power, not the power delivered
+into the input.</li>
 <li><strong>With two fundamentals</strong> (carriers on the mixing lattice), <code>Pdc_W</code> and <code>DE_pct</code> are not produced.</li>
 </ul>
+<p>A non-50 Ω load, two or more amplifiers, and PAE are measured at IProbes.</p>
+<h4 id="envelope-iprobe-power">Measuring power at an IProbe</h4>
+<p>Every IProbe in the circuit is measured; there is nothing to set up beyond placing it. Put one in
+series with each place you want a power:</p>
+<ul>
+<li>the <strong>load</strong>, for output power,</li>
+<li>the <strong>input</strong>, between the source and the amplifier's input match, for delivered input power,</li>
+<li>each <strong>supply</strong>, between the DC source and the circuit, for DC power.</li>
+</ul>
+<p>The power reported is the power flowing through the probe <strong>from its first node to its second</strong>. With
+the probe's first node on the source side, each of these powers is positive in a working amplifier.</p>
+<table>
+<thead>
+<tr>
+<th>Cube</th>
+<th>Axes</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pprobe_W</code></td>
+<td>branch, harmonic</td>
+<td>average power at each harmonic, in W. Harmonic 0 is the DC power.</td>
+</tr>
+<tr>
+<td><code>Pprobe_fund_W</code></td>
+<td>branch</td>
+<td>average fundamental-band power, in W. With two fundamentals, the sum over the carrier products.</td>
+</tr>
+<tr>
+<td><code>I</code></td>
+<td>time, branch, harmonic</td>
+<td>the probe current envelopes (SaveWaveforms)</td>
+</tr>
+<tr>
+<td><code>Pprobe_t_W</code></td>
+<td>time, branch</td>
+<td>fundamental-band power at every step (SaveWaveforms)</td>
+</tr>
+</tbody>
+</table>
+<p>With two fundamentals the <code>harmonic</code> axis is <code>mixIndex</code>, and the DC power is the <code>(0,0)</code> product.
+The averages are taken over the same window as the built-in scalars and have no time axis, so a
+parametric sweep stacks them like any scalar. A probe power is exact for any load, reactive ones
+included, and at a 50 Ω load <code>Pprobe_fund_W</code> agrees with <code>Pout_avg_dBm</code>.</p>
+<p><strong>One amplifier.</strong> With <code>IProbe:Iin</code> at the input, <code>IProbe:Iout</code> at the load and <code>IProbe:IDC</code> at the
+drain supply, inside a sweep of the source's <code>Pavg</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>From</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Output power</td>
+<td><code>Pprobe_fund_W</code> at <code>Iout</code></td>
+</tr>
+<tr>
+<td>Delivered input power</td>
+<td><code>Pprobe_fund_W</code> at <code>Iin</code></td>
+</tr>
+<tr>
+<td>DC power</td>
+<td><code>Pprobe_W</code> at <code>IDC</code>, harmonic 0</td>
+</tr>
+<tr>
+<td>Drain efficiency</td>
+<td>output power / DC power</td>
+</tr>
+<tr>
+<td>PAE</td>
+<td>(output power − delivered input power) / DC power</td>
+</tr>
+<tr>
+<td>Power gain</td>
+<td>output power / delivered input power</td>
+</tr>
+</tbody>
+</table>
+<p>A Data Display trace of <code>ENV1 › Pprobe_fund_W › Iout</code> against <code>Pavg</code> plots output power against drive
+with no arithmetic at all.</p>
+<p><strong>Two amplifiers</strong>, A and B, each with its own load and supply: place <code>IoutA</code>, <code>IDCA</code>, <code>IoutB</code> and
+<code>IDCB</code>. Each amplifier's drain efficiency is its own <code>Pprobe_fund_W</code> at <code>Iout</code> over its own <code>Pprobe_W</code>
+at <code>IDC</code>, harmonic 0, and the total DC power is the sum of the two.</p>
 <h3 id="envelope-pulse">Pulsed CW: what is measured</h3>
 <p>A <a href="signal-designer.html#pulse">pulsed-CW</a> source turns the run into a pulse measurement. Harmonic
 balance cannot see what happens inside a pulse: it solves one steady state, so the device sits at one

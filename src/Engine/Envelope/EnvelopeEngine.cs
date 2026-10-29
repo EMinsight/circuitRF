@@ -61,8 +61,6 @@ public sealed record EnvelopeParams
     public double Tol { get; init; } = 1e-6;
     /// <summary>Nodes whose envelopes are stored (V cube) and measured. Empty = every MOD_Source node.</summary>
     public string[] Probes { get; init; } = Array.Empty<string>();
-    /// <summary>Reference impedance for power measurements at a probe node (ohm).</summary>
-    public double MeasureZ { get; init; } = 50.0;
     /// <summary>Signal-record offset of t = 0 (s) — lets a segment start mid-record.</summary>
     public double StartS { get; init; }
     /// <summary>Warm-up simulated before <see cref="StartS"/> and discarded (s).</summary>
@@ -79,6 +77,12 @@ public sealed class EnvelopeRunResult
     /// <summary>[step][supply] DC supply branch current (A).</summary>
     public required double[][] SupplyCurrent { get; init; }
     public required double[] SupplyVoltage { get; init; }
+    /// <summary>Every IProbe in the netlist (a WSProbe is not one), by instance path.</summary>
+    public required string[] IProbeNames { get; init; }
+    /// <summary>[step][iprobe][harmonic] the probe's branch current (A, peak phasors), flowing from its first node to its second.</summary>
+    public required Complex[][][] IProbeCurrent { get; init; }
+    /// <summary>[step][iprobe][harmonic] the voltage at the probe's first node (an IProbe is 0 V, so at both).</summary>
+    public required Complex[][][] IProbeVoltage { get; init; }
     /// <summary>Per MOD source: instantaneous available-drive phasor (V peak) at the fundamental.</summary>
     public required Complex[][] Drive { get; init; }
     public required double[] DriveRe { get; init; }
@@ -308,11 +312,14 @@ public sealed class EnvelopeEngine
                                                  c.Parameters.TryGetValue("Vdc", out var vv) && vv.Kind == Core.Expressions.ValueKind.Real && vv.AsReal() != 0).ToArray();
         var supplyRows = supplies.Select(c => BranchOf(c.Model)).ToArray();   // AddBranch returns the absolute MNA row
         var supplyV = supplies.Select(c => c.Parameters.TryGetValue("Vdc", out var v) && v.Kind == Core.Expressions.ValueKind.Real ? v.AsReal() : 0.0).ToArray();
+        var (iprobes, iprobeRows, iprobeNodes) = IProbesOf(_nl);
 
         int total = nWarm + nSteps + 1;
         var tOut = new double[nSteps + 1];
         var pOut = new Complex[nSteps + 1][][];
         var sOut = new double[nSteps + 1][];
+        var iOut = new Complex[nSteps + 1][][];
+        var ivOut = new Complex[nSteps + 1][][];
         var dOut = new Complex[sources.Length][];
         for (int s = 0; s < sources.Length; s++) dOut[s] = new Complex[nSteps + 1];
         void Record(int step)
@@ -332,6 +339,22 @@ public sealed class EnvelopeEngine
             var su = new double[supplies.Length];
             for (int i = 0; i < supplies.Length; i++) su[i] = products[0].Xm1[supplyRows[i]].Real;
             sOut[o] = su;
+            var ic = new Complex[iprobes.Length][];
+            var iv = new Complex[iprobes.Length][];
+            for (int i = 0; i < iprobes.Length; i++)
+            {
+                ic[i] = new Complex[K + 1];
+                iv[i] = new Complex[K + 1];
+                for (int k = 0; k <= K; k++)
+                {
+                    ic[i][k] = products[k].Xm1[iprobeRows[i]];
+                    iv[i][k] = iprobeNodes[i] >= 0 ? products[k].Xm1[iprobeNodes[i]] : Complex.Zero;
+                }
+                ic[i][0] = new Complex(ic[i][0].Real, 0);
+                iv[i][0] = new Complex(iv[i][0].Real, 0);
+            }
+            iOut[o] = ic;
+            ivOut[o] = iv;
             for (int s = 0; s < sources.Length; s++) dOut[s][o] = Drv(s, step);
         }
         Record(0);
@@ -505,6 +528,7 @@ public sealed class EnvelopeEngine
         {
             Time = tOut, ProbeNames = probeNodes.Select(x => x.name).ToArray(), Probe = pOut,
             SupplyNames = supplies.Select(c => c.InstancePath).ToArray(), SupplyCurrent = sOut, SupplyVoltage = supplyV,
+            IProbeNames = iprobes, IProbeCurrent = iOut, IProbeVoltage = ivOut,
             Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
             F0Hz = f0, StepS = h, MaxHarm = K, SignalRateHz = rate, Sources = sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newton.Iterations / Math.Max(1, total - 1),
@@ -533,6 +557,18 @@ public sealed class EnvelopeEngine
             list.Add((nm, idx));
         }
         return list.ToArray();
+    }
+
+    /// <summary>
+    /// Every IProbe of the netlist (a WSProbe shares the stamp and is not one), with its branch row and its first
+    /// node's row in the state vector (−1 at ground). Read after the products are stamped: the branch row is the one
+    /// the last full stamp gave it.
+    /// </summary>
+    internal static (string[] names, int[] rows, int[] nodes) IProbesOf(ElaboratedNetlist nl)
+    {
+        var ps = nl.Components.Where(c => c.Model is IProbeModel { LastBranchIndex: >= 0 } && c.Nodes.Length >= 2).ToArray();
+        return ([.. ps.Select(c => c.InstancePath)], [.. ps.Select(c => ((IProbeModel)c.Model).LastBranchIndex)],
+                [.. ps.Select(c => c.Nodes[0] - 1)]);
     }
 
     internal static CompressedColumnStorage<Complex> Stamp(HbLinearExtractor ex, MnaSystem mna, double omega)

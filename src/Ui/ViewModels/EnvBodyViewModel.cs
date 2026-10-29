@@ -35,7 +35,6 @@ public sealed partial class EnvBodyViewModel : ObservableObject
     [ObservableProperty] private string _maxHarm = "5";
     [ObservableProperty] private string _maxMixOrder = "7";
     [ObservableProperty] private string _probes = "";
-    [ObservableProperty] private string _zmeas = "50";
     [ObservableProperty] private string _segments = "auto";
     [ObservableProperty] private string _warmup = "auto";
     [ObservableProperty] private bool _saveWaveforms = true;
@@ -68,7 +67,7 @@ public sealed partial class EnvBodyViewModel : ObservableObject
     {
         Stop = a.StopExpr, Accuracy = a.Accuracy, MaxHarm = a.MaxHarmExpr, MaxMixOrder = a.MaxMixOrderExpr,
         Envelope = Array.IndexOf(EnvelopeOptions, a.Envelope.ToLowerInvariant()) >= 0 ? a.Envelope.ToLowerInvariant() : "auto",
-        Probes = a.Probes, Zmeas = a.ZmeasExpr, Segments = a.SegmentsExpr, Warmup = a.WarmupExpr,
+        Probes = a.Probes, Segments = a.SegmentsExpr, Warmup = a.WarmupExpr,
         SaveWaveforms = !a.SaveWaveforms.Equals("no", StringComparison.OrdinalIgnoreCase),
     };
 
@@ -76,7 +75,7 @@ public sealed partial class EnvBodyViewModel : ObservableObject
     {
         Enabled = enabled,
         StopExpr = Stop.Trim(), StepExpr = "auto", Accuracy = Accuracy, MaxHarmExpr = MaxHarm.Trim(),
-        MaxMixOrderExpr = MaxMixOrder.Trim(), Probes = Probes.Trim(), ZmeasExpr = Zmeas.Trim(),
+        MaxMixOrderExpr = MaxMixOrder.Trim(), Probes = Probes.Trim(),
         SegmentsExpr = Segments.Trim(), WarmupExpr = Warmup.Trim(), SaveWaveforms = SaveWaveforms ? "yes" : "no",
         Envelope = Envelope,
     };
