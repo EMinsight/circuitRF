@@ -78,6 +78,10 @@ Technologies live in a `tech/` folder at the workspace root, and the workspace r
 default. A layout stores a relative reference to one, or leaves it blank to mean "the workspace
 default".
 
+A technology's **name** — the one in the technology editor's header and on a layout's technology label —
+is stored inside the `.ctech`, so renaming the file does not change it. To rename the technology,
+double-click its name in the technology editor's header, type, and press Enter (Esc puts it back).
+
 <div class="callout warn">
 <span class="label">"The workspace" means the document's workspace</span>
 <p>A blank technology reference resolves against the workspace containing <em>that layout file</em> —

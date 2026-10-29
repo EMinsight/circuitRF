@@ -58,6 +58,9 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
     {
         Layer = layer;
         RefreshFromModel();
+        // Computed from the technology, so nothing else raises it: a kept row went on labelling its
+        // thickness in the OLD unit after "Unit for new layouts" changed (GitHub issue 24).
+        OnPropertyChanged(nameof(ThicknessUnitSuffix));
     }
 
     /// <summary>
@@ -881,7 +884,7 @@ public sealed partial class StackupLayerRowViewModel : ObservableObject
         bool wasSelected = string.Equals(_owner.SelectedStackupLayerName, Layer.Name, StringComparison.Ordinal);
 
         var before = _owner.SnapshotJson();
-        Layer.Name = name;
+        _owner.Working.RenameStackupEntry(Layer.Name, name);
         _owner.CommitEdit(before, $"Rename stackup layer to {name}");
 
         if (wasSelected) _owner.SelectedStackupLayerName = name;

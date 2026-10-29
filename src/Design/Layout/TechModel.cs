@@ -794,6 +794,36 @@ public sealed class Technology
     /// </summary>
     public List<TechBody> Bodies { get; set; } = [];
 
+    /// <summary>
+    /// Renames the stackup entry <paramref name="oldName"/> and every reference this technology holds
+    /// to it — a via's <see cref="StackupLayer.SpanFromLayer"/>/<see cref="StackupLayer.SpanToLayer"/>,
+    /// a dielectric's <see cref="StackupLayer.PresentWithLayer"/> and a body's
+    /// <see cref="TechBody.SitsOn"/>. All four resolve BY NAME, so renaming the entry alone left each
+    /// of them pointing at a name nothing carried any more (GitHub issue 21: renaming a copper layer
+    /// broke the plated through-hole spanning it).
+    ///
+    /// <para>Ordinal, as every one of those lookups is. A <c>PresentWithLayer</c> may also name a
+    /// DRAWING layer, but the editor never offers a drawing-layer name a conductor already carries,
+    /// so one equal to the old entry name was the entry. Nothing outside this technology is touched:
+    /// a layout or EM setup that names the conductor is a separate document.</para>
+    /// </summary>
+    /// <returns>False, changing nothing, when no entry is called <paramref name="oldName"/>.</returns>
+    public bool RenameStackupEntry(string oldName, string newName)
+    {
+        var entry = Stackup.Layers.FirstOrDefault(l => l.Name == oldName);
+        if (entry is null) return false;
+        entry.Name = newName;
+        foreach (var l in Stackup.Layers)
+        {
+            if (l.SpanFromLayer    == oldName) l.SpanFromLayer    = newName;
+            if (l.SpanToLayer      == oldName) l.SpanToLayer      = newName;
+            if (l.PresentWithLayer == oldName) l.PresentWithLayer = newName;
+        }
+        foreach (var b in Bodies)
+            if (b.SitsOn == oldName) b.SitsOn = newName;
+        return true;
+    }
+
     /// <summary>The material <paramref name="name"/> names, compared ordinal and case-insensitive
     /// (as <c>WireMaterials.ByName</c> does), or null for none/unknown.</summary>
     /// <remarks>Answers from <see cref="ResolvedMaterials"/> — own list first, then the libraries

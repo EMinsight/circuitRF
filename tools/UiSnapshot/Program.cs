@@ -122,6 +122,7 @@ bool reviewRun = false;
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
 string? optimizer = null;
+string? ctech = null;
 bool optimize = false;
 string? cmc = null, cmcImport = null, cmcStep = null, cmcRun = null;
 string? image = null, imageTech = null;
@@ -154,6 +155,7 @@ for (int i = 0; i < args.Length; i++)
         case "--optimize": optimize = true; break;
         case "--clay" when i + 1 < args.Length: clay = Path.GetFullPath(args[++i]); break;
         case "--cem" when i + 1 < args.Length: cem = Path.GetFullPath(args[++i]); break;
+        case "--ctech" when i + 1 < args.Length: ctech = Path.GetFullPath(args[++i]); break;
         case "--cmc" when i + 1 < args.Length: cmc = args[++i]; break;
         case "--image" when i + 1 < args.Length: image = Path.GetFullPath(args[++i]); break;
         case "--tech" when i + 1 < args.Length: imageTech = Path.GetFullPath(args[++i]); break;
@@ -189,6 +191,7 @@ for (int i = 0; i < args.Length; i++)
             sizeGiven = true;
             break;
         case "--click" or "--drag" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover"
+            or "--unit" or "--rename-stackup" or "--rename-tech"
             when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
             break;
@@ -202,7 +205,7 @@ if (reviewPanel is not null && output is not null)
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
 bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null;
-if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && optimizer is null && clay is null && cem is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -212,6 +215,7 @@ if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && optimi
                           + "       UiSnapshot --optimizer <file.csch> -o <out.png> [--optimize] [--size WxH] [steps]\n"
                           + "       UiSnapshot --clay <file.clay> -o <out.png> [--hide <layer>] [--lock <layer>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --cem <file.cem> -o <out.png> [--size WxH] [steps]\n"
+                          + "       UiSnapshot --ctech <file.ctech> -o <out.png> [--tab n] [--unit <unit>] [--rename-stackup old=new] [--rename-tech <name>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --cmc <file.cmc|new:Passive|new:Active> -o <out.png> [--import <data>] [--step <name>] [--run <key>] [--size WxH] [steps]\n"
                           + "       UiSnapshot --image <picture> -o <out.png> [--tech <file.ctech>] [--digitise] [--make-schematic] [--scale-points x0,y0,x1,y1=<len>] [--strip-geometry] [--size WxH] [steps]");
     return 2;
@@ -232,6 +236,7 @@ ParameterEditorViewModel? parameterEditor = null;
 OptimizerTool? optimizerTool = null;
 LayoutCanvas? layoutCanvas = null;
 LayoutEditorViewModel? layoutVm = null;
+TechEditorViewModel? techVm = null;
 if (vendorMode)
 {
     host = VendorView();
@@ -322,6 +327,18 @@ else if (image is not null)
     }
     PrintImage();
     if (stripGeometry) return StripGeometry();
+}
+else if (ctech is not null)
+{
+    // The technology editor as the workspace opens a .ctech (OpenOrActivateTech): the file's own content, its libraries
+    // resolved by the editor, the real TechEditorView on a TechDocument. --tab picks the section (1 = Stackup).
+    techVm = new TechEditorViewModel(ctech, TechPersistence.LoadOwnFromFile(ctech), p => new TechnologyCache().LoaderFor(p));
+    techVm.SelectedTabIndex = previewTab;
+    host = new Window { Width = sizeGiven ? width : 1100, Height = sizeGiven ? height : 1400,
+                        Content = new TechEditorView { DataContext = new TechDocument(Path.GetFileName(ctech), techVm, ctech) } };
+    host.Show();
+    Pump();
+    PrintTech("opened");
 }
 else if (cem is not null)
 {
@@ -597,6 +614,41 @@ foreach (var (kind, arg) in steps)
             if (named is not null) named.Text = text; else dialog.KeyTextInput(text);
             break;
         }
+        case "--unit":
+        {
+            // The header's "Unit for new layouts" combo, given the unit as a pick from its own list gives it.
+            var combo = host.GetVisualDescendants().OfType<ComboBox>().First(c => c.SelectedItem is LayoutUnit);
+            combo.SelectedItem = combo.Items.OfType<LayoutUnit>().First(u => LayoutUnits.Suffix(u) == arg || u.ToString().Equals(arg, StringComparison.OrdinalIgnoreCase));
+            break;
+        }
+        case "--rename-stackup":
+        {
+            // old=new: the stackup card's own name box, typed into and committed with Enter through its KeyDown handler.
+            int eq = arg.IndexOf('=');
+            var box = host.GetVisualDescendants().OfType<TextBox>()
+                .First(t => t.Tag as string == "Name" && t.DataContext is StackupLayerRowViewModel && t.Text == arg[..eq]);
+            box.Focus();
+            box.Text = arg[(eq + 1)..];
+            box.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Enter, Source = box });
+            break;
+        }
+        case "--rename-tech":
+        {
+            // A real double-click on the header's name, then the text typed into whatever took focus — the box, if it
+            // opened and focused itself. Enter is left to a following --key Enter, so the open box can be --shot first.
+            var label = host.GetVisualDescendants().OfType<TextBlock>()
+                .First(t => t.Text == techVm!.Working.Name && t.FontWeight == Avalonia.Media.FontWeight.SemiBold);
+            var c = label.TranslatePoint(new Point(label.Bounds.Width / 2, label.Bounds.Height / 2), host)!.Value;
+            for (int k = 0; k < 2; k++)
+            {
+                host.MouseDown(c, MouseButton.Left, RawInputModifiers.None);
+                host.MouseUp(c, MouseButton.Left, RawInputModifiers.None);
+            }
+            Pump();
+            Console.WriteLine($"focus after double-click: {(host.FocusManager?.GetFocusedElement() as Control)?.Name ?? "none"}");
+            host.KeyTextInput(arg);
+            break;
+        }
         case "--button":
         {
             // A real press and release on the button's centre, in the dialog's own window.
@@ -619,6 +671,7 @@ foreach (var (kind, arg) in steps)
     }
     if (parameterEditor is { IsVendorPart: true } pev)
         Console.WriteLine($"{kind} {arg}: vendor part tuned {pev.IsVendorPartTuned}, optimized {pev.IsVendorPartOptimized}");
+    if (techVm is not null) PrintTech($"{kind} {arg}");
     if (paletteTool is not null)
         Console.WriteLine($"{kind} {arg}: focus {host.FocusManager?.GetFocusedElement()?.GetType().Name ?? "none"}; armed "
                         + (paletteTool.VendorRows.FirstOrDefault(r => r.IsArmed)?.Part ?? "none")
@@ -730,6 +783,23 @@ void Pump()
         AvaloniaHeadlessPlatform.ForceRenderTimerTick();
         host?.UpdateLayout();
     }
+}
+
+// The stackup cards as drawn — each thickness box with the unit label beside it — then every via's span and the
+// editor's own problems, which are what the banner shows.
+void PrintTech(string when)
+{
+    Console.WriteLine($"{when}: name '{techVm!.Working.Name}'{(techVm.IsEditingName ? $" (editing: '{techVm.StagedTechName}')" : "")}, "
+                    + $"{(techVm.IsDirty ? "unsaved" : "saved")}, unit for new layouts {techVm.DefaultDisplayUnit}");
+    foreach (var box in host.GetVisualDescendants().OfType<TextBox>().Where(t => t.Tag as string == "Thickness" && t.IsEffectivelyVisible))
+    {
+        var label = (box.Parent as Panel)?.Children.SkipWhile(c => c != box).Skip(1).OfType<TextBlock>().FirstOrDefault()?.Text;
+        Console.WriteLine($"  {((StackupLayerRowViewModel)box.DataContext!).StagedName}: thickness {box.Text} {label}");
+    }
+    foreach (var via in techVm.Working.Stackup.Layers.Where(l => l.Kind == StackupKind.Via))
+        Console.WriteLine($"  via {via.Name}: {via.SpanFromLayer} -> {via.SpanToLayer}");
+    foreach (var problem in techVm.ValidationProblems) Console.WriteLine($"  problem: {problem.Message}");
+    if (techVm.ValidationProblems.Count == 0) Console.WriteLine("  problems: none");
 }
 
 void Capture(string path)

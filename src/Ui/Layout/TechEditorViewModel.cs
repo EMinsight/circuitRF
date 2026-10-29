@@ -354,6 +354,37 @@ public sealed partial class TechEditorViewModel : ObservableObject
 
     private bool _suppressPaneCommit;
 
+    /// <summary>
+    /// The header's inline rename (GitHub issue 22): double-clicking the technology's name opens a box
+    /// over it. The name lives inside the <c>.ctech</c>, so renaming the FILE outside circuitRF left
+    /// the header — and every layout's technology label — reading the old one, with nowhere to change it.
+    /// </summary>
+    [ObservableProperty] private bool _isEditingName;
+
+    /// <inheritdoc cref="IsEditingName"/>
+    [ObservableProperty] private string _stagedTechName = "";
+
+    public void BeginRenameTechnology()
+    {
+        StagedTechName = Working.Name;
+        IsEditingName = true;
+    }
+
+    /// <summary>One undoable, dirtying edit, like every other value here. An empty or unchanged name
+    /// closes the box and changes nothing.</summary>
+    public void CommitTechnologyName()
+    {
+        if (!IsEditingName) return;
+        IsEditingName = false;
+        var name = StagedTechName.Trim();
+        if (name.Length == 0 || name == Working.Name) return;
+        var before = SnapshotJson();
+        Working.Name = name;
+        CommitEdit(before, $"Rename technology to {name}");
+    }
+
+    public void CancelRenameTechnology() => IsEditingName = false;
+
     partial void OnDefaultDisplayUnitChanged(LayoutUnit value)
     {
         if (_suppressDisplayUnitCommit || value == Working.DefaultDisplayUnit) return;
@@ -561,6 +592,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         Working = TechPersistence.DeserializeUnresolved(json);
         ResolveLibrariesInPlace();
         RebuildAll();
+        OnPropertyChanged(nameof(Working));   // the header shows Working.Name, and a rename or its undo changes it
 
         // R-fix-1: a SEPARATE deserialize of the same json, never Working itself — Working keeps
         // mutating in place until the next commit, and a later undo/redo replaces the Working

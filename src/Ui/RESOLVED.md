@@ -41226,3 +41226,42 @@ left from its Oct 24 authoring. The root `Directory.Build.targets` now removes e
 `examples/` after IncrementalClean, in every project that has one. Published packages were never affected (built from
 scratch). The pulse bench's schematic is now the owner's hand-laid-out one; the authoring keeps it
 (`PulsedRadarExampleAuthoring.HandLaidOut`) and `TheHandLaidOutPulseBench_IsItsNetlist` holds it to the netlist.
+
+## Technology editor: a renamed conductor broke its via; the unit label lagged the unit (GitHub issues 21, 24, 2026-10-29)
+
+**A stackup rename now carries every name-keyed reference in the technology** —
+`Technology.RenameStackupEntry` (in `src/Design`) re-points a via's `SpanFromLayer`/`SpanToLayer`, a dielectric's
+`PresentWithLayer` and a body's `SitsOn`, and `StackupLayerRowViewModel.CommitName` calls it, so the rename and its
+references are ONE undo entry. Before, renaming "Top Copper (1 oz)" left the plated through-hole spanning a name no
+entry carried: the banner reported an unknown conductor and the barrel vanished from the cross-section. Nothing
+outside the technology is rewritten — a layout or EM setup naming the conductor is its own document.
+
+**A computed property on a REBOUND row is raised by nobody.** Since the stackup cards are rebound rather than
+rebuilt on a commit (the 2026-10-12 card-list jump fix), a row VM lives across edits, and `ThicknessUnitSuffix` —
+read from the technology, not stored on the row — kept its first value: changing "Unit for new layouts" from mil to
+µm converted the numbers and left them labelled mil. `Rebind` now raises it. Any future computed property on that
+row that depends on the technology rather than the layer needs the same line.
+
+Seen headlessly with `tools/UiSnapshot --ctech` (new for this), whose output prints each thickness box with the
+label drawn beside it, every via span and the editor's problems. Gates:
+`TechEditorDocumentTests.ChangingDisplayUnit_RaisesThicknessUnitSuffix_OnTheKeptRow` and
+`RenamingConductor_CarriesViaSpan_AndUndoRestoresBoth`.
+
+## Technology editor: the technology's name is renamed in place (GitHub issue 22, 2026-10-29)
+
+**Double-click the name in the editor's header** and a box opens in the name's own cell: Enter or leaving the box
+commits, Escape puts it back. One undoable, dirtying edit (`TechEditorViewModel.BeginRenameTechnology` /
+`CommitTechnologyName` / `CancelRenameTechnology`). The name is stored INSIDE the `.ctech` and is what the header,
+every layout's technology label and several messages show, so a file renamed outside circuitRF kept reading the old
+name, and nothing in the application could change it short of Save As.
+
+`ApplySnapshot` now raises `Working`: the header binds `ViewModel.Working.Name`, and `Working` was replaced on every
+commit with no notification, so a rename (and its undo) would not have redrawn the header. Only the header binds
+through `Working`, so the raise re-evaluates nothing else. Escape is taken in the tunnelling `OnEscapeKeyDown`,
+because the window's key binding has already handled it by the time a box's own KeyDown would see it.
+
+**Not fixed, recorded for the 3D half of the same issue:** a 3D design opened at launch with no workspace
+(On Launch ▸ New 3D Design) lives in a TEMPORARY workspace made on the catalog default technology
+(`ScratchC3dWorkspace`). Opening a workspace afterwards does not move it, so it goes on resolving that technology,
+not the workspace's default, until it is saved. Saving it inside the workspace re-resolves (`Viewer.Regenerate`
+after `SaveAs`), but objects drawn before then keep the material names the first technology offered.

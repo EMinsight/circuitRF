@@ -90,6 +90,21 @@ dotnet run --project tools/UiSnapshot --no-build -- --cem <file.cem> -o out.png 
 
 Default size 900x1200.
 
+**The technology editor** opens on a `.ctech` as the workspace opens one (the file's own content, its libraries
+resolved by the editor — copy a `.cmat` it names beside it). `--tab n` picks the section (0 Layers, 1 Stackup, 2 DRC
+Rules, 3 Interchange, 4 Materials). Two steps drive its real controls: `--unit <unit>` picks "Unit for new layouts",
+`--rename-stackup old=new` types into a stackup card's name box and commits it with Enter, and `--rename-tech <name>`
+double-clicks the header's technology name and types into the box that opens (follow it with `--key Enter`, or
+`--shot` the open box first). After opening and after every step it prints the name, each thickness box with the unit
+label drawn beside it, every via's span, and the editor's problems:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --ctech <file.ctech> -o out.png [--tab n] [--unit um] \
+    [--rename-stackup "Top Copper (1 oz)=Top Cu"] [--rename-tech "My Board"] [--size WxH] [steps]
+```
+
+Default size 1100x1400.
+
 **The 3D editor** draws a `.c3d` on the platform's own GPU backend (Metal, D3D11 or Vulkan — what the application
 picks), through the editor's view model and Export Picture's own `CapturePicture`. No window is opened, so this mode
 starts no Avalonia platform at all:

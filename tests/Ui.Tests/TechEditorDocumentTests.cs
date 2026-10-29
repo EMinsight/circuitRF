@@ -337,6 +337,84 @@ public class TechEditorDocumentTests
         Assert.Equal("mil", vm.StackupLayers[0].ThicknessUnitSuffix);
     }
 
+    // GitHub issue 24: a value edit REBINDS the kept rows rather than rebuilding them, so a computed label
+    // has to be raised by the rebind or the bound view keeps showing the old unit.
+    [Fact]
+    public void ChangingDisplayUnit_RaisesThicknessUnitSuffix_OnTheKeptRow()
+    {
+        var tech = FreshTech();
+        tech.DefaultDisplayUnit = LayoutUnit.Mil;
+        tech.Stackup.Layers.Add(new StackupLayer { Kind = StackupKind.Conductor, Name = "Top", ThicknessDbu = 35_000, SigmaSm = 1e7 });
+        var vm  = new TechEditorViewModel(TempPath(), tech);
+        var row = vm.StackupLayers[0];
+        var raised = new System.Collections.Generic.List<string?>();
+        row.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.DefaultDisplayUnit = LayoutUnit.Um;
+
+        Assert.Same(row, vm.StackupLayers[0]);
+        Assert.Contains(nameof(StackupLayerRowViewModel.ThicknessUnitSuffix), raised);
+        Assert.Equal("µm", row.ThicknessUnitSuffix);
+        Assert.Equal("35", row.StagedThicknessText);
+    }
+
+    // GitHub issue 22: the technology's name lives in the file, so the header's inline box is the way to change it —
+    // one undoable edit; Escape and an unchanged name write nothing.
+    [Fact]
+    public void RenamingTechnology_IsOneUndoableEdit_CancelWritesNothing()
+    {
+        var vm = new TechEditorViewModel(TempPath(), FreshTech());
+        var raised = new System.Collections.Generic.List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        vm.BeginRenameTechnology();
+        Assert.Equal("Test Tech", vm.StagedTechName);
+        vm.StagedTechName = "Something else";
+        vm.CancelRenameTechnology();
+        vm.CommitTechnologyName();   // the LostFocus that follows a cancel
+        Assert.Equal("Test Tech", vm.Working.Name);
+        Assert.False(vm.IsDirty);
+
+        vm.BeginRenameTechnology();
+        vm.StagedTechName = "  Renamed Tech ";
+        vm.CommitTechnologyName();
+        Assert.False(vm.IsEditingName);
+        Assert.Equal("Renamed Tech", vm.Working.Name);
+        Assert.True(vm.IsDirty);
+        Assert.Contains(nameof(TechEditorViewModel.Working), raised);
+
+        vm.UndoCommand.Execute(null);
+        Assert.Equal("Test Tech", vm.Working.Name);
+    }
+
+    // GitHub issue 21: a via spans its conductors BY NAME, so renaming one has to carry the span with it.
+    [Fact]
+    public void RenamingConductor_CarriesViaSpan_AndUndoRestoresBoth()
+    {
+        var tech = FreshTech();
+        tech.Stackup.Layers.AddRange(
+        [
+            new StackupLayer { Kind = StackupKind.Conductor,  Name = "Top",  ThicknessDbu = 35_000, SigmaSm = 5.8e7 },
+            new StackupLayer { Kind = StackupKind.Dielectric, Name = "Core", ThicknessDbu = 500_000, Epsr = 3.0 },
+            new StackupLayer { Kind = StackupKind.Conductor,  Name = "Bot",  ThicknessDbu = 35_000, SigmaSm = 5.8e7 },
+            new StackupLayer { Kind = StackupKind.Via, Name = "PTH", SpanFromLayer = "Top", SpanToLayer = "Bot", SigmaSm = 5.8e7 },
+        ]);
+        var vm = new TechEditorViewModel(TempPath(), tech);
+
+        vm.StackupLayers[0].StagedName = "Top Copper";
+        vm.StackupLayers[0].CommitName();
+
+        var via = vm.Working.Stackup.Layers.Single(l => l.Kind == StackupKind.Via);
+        Assert.Equal("Top Copper", via.SpanFromLayer);
+        Assert.Equal("Bot", via.SpanToLayer);
+        Assert.DoesNotContain(vm.ValidationProblems, p => p.Message.Contains("unknown conductor"));
+
+        vm.UndoCommand.Execute(null);
+        via = vm.Working.Stackup.Layers.Single(l => l.Kind == StackupKind.Via);
+        Assert.Equal("Top", vm.Working.Stackup.Layers[0].Name);
+        Assert.Equal("Top", via.SpanFromLayer);
+    }
+
     // ── Gate 3 (the L0 gate line): editing + saving a technology re-resolves an open layout ──
     // through L0c's already-working cache/seam. WorkspaceViewModel can't be instantiated headlessly
     // (needs the Avalonia runtime — see src/Ui/CLAUDE.md's testing notes), so this "simulates" the

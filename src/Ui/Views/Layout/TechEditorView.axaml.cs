@@ -178,6 +178,32 @@ public partial class TechEditorView : UserControl
     private void OnStackupInlineEditLostFocus(object? sender, RoutedEventArgs e)
         => StackupInlineEditor.Commit();
 
+    // ── The header's technology-name box (GitHub issue 22) — the same three-key contract ──────────
+    // Escape arrives already handled by the window's key binding, so its revert is taken in
+    // OnEscapeKeyDown, which tunnels; the case below is the documented second path.
+
+    private void OnTechNameDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is not TechDocument doc) return;
+        doc.ViewModel.BeginRenameTechnology();
+        // Posted: the box becomes visible on this notification, and a hidden control takes no focus.
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => { TechNameEdit.Focus(); TechNameEdit.SelectAll(); });
+        e.Handled = true;
+    }
+
+    private void OnTechNameKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not TechDocument doc) return;
+        switch (e.Key)
+        {
+            case Key.Return or Key.Enter: doc.ViewModel.CommitTechnologyName(); e.Handled = true; break;
+            case Key.Escape:              doc.ViewModel.CancelRenameTechnology(); e.Handled = true; break;
+        }
+    }
+
+    private void OnTechNameLostFocus(object? sender, RoutedEventArgs e)
+        => (DataContext as TechDocument)?.ViewModel.CommitTechnologyName();
+
     private void OnDataContextChanged(object? sender, System.EventArgs e)
     {
         if (_subscribedDoc is not null) _subscribedDoc.ActivationFocusRequested -= OnActivationFocusRequested;
@@ -487,6 +513,14 @@ public partial class TechEditorView : UserControl
     private void OnEscapeKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key != Key.Escape) return;
+
+        // The header's name box, open: Esc puts the name back and does nothing else.
+        if (DataContext is TechDocument { ViewModel.IsEditingName: true } renaming)
+        {
+            renaming.ViewModel.CancelRenameTechnology();
+            e.Handled = true;
+            return;
+        }
 
         // R-stk4-6's first job. THE REVERT IS DONE HERE, not left to the box's own KeyDown handler:
         // Escape is already marked Handled by WorkspaceWindow's KeyBinding by the time it reaches

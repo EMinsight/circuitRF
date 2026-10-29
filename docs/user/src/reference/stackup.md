@@ -196,7 +196,10 @@ nine are showing.
 
 Each entry is a card. The grey word at its left is its **kind**, fixed when it was added. The box
 beside it is its **name**, and the name is not decoration: a via entry names the two conductors it
-spans **by name**, and an EM setup names its analysis levels the same way. The three buttons at the
+spans **by name**, and an EM setup names its analysis levels the same way. Renaming an entry carries
+every reference to it inside the technology along — a via's span, a dielectric's **Patterned with**,
+a 3D body sitting on it — as one undoable edit; an EM setup or a layout part that names it is a separate
+file and keeps the old name. The three buttons at the
 right are **↑** and **↓** — the list is ordered top to bottom and **that order is z** — and **✕**,
 which removes the entry.
 

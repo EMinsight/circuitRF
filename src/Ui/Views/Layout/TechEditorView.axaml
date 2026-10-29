@@ -313,10 +313,19 @@
                       VerticalAlignment="Center" ClipToBounds="True" MinWidth="0">
                     <mi:MaterialIcon Grid.Column="0" Kind="LayersOutline" Width="16" Height="16"
                                      Foreground="{DynamicResource SystemBaseMediumHighColor}"/>
+                    <!-- Double-click the name to rename the technology (GitHub issue 22). The box sits in
+                         the name's own cell, so nothing beside it moves while it is open. -->
                     <TextBlock Grid.Column="1" Text="{Binding ViewModel.Working.Name}"
                                FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
                                TextTrimming="CharacterEllipsis"
-                               ToolTip.Tip="{Binding ViewModel.Working.Name}"/>
+                               IsVisible="{Binding !ViewModel.IsEditingName}"
+                               DoubleTapped="OnTechNameDoubleTapped"
+                               ToolTip.Tip="{Binding ViewModel.Working.Name, StringFormat='{}{0} — double-click to rename'}"/>
+                    <TextBox x:Name="TechNameEdit" Grid.Column="1" Classes="cell"
+                             Text="{Binding ViewModel.StagedTechName}"
+                             FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
+                             IsVisible="{Binding ViewModel.IsEditingName}"
+                             LostFocus="OnTechNameLostFocus" KeyDown="OnTechNameKeyDown"/>
                     <TextBlock Grid.Column="2" Text="· Technology"
                                Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="12"
                                VerticalAlignment="Center"/>
