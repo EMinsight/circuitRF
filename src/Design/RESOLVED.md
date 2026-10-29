@@ -24449,7 +24449,7 @@ verdict already decided by the mesh counts.
 ## Minimum width: a square corner beside an inside arc (GitHub discussion 23, 2026-10-29)
 
 **Symptom.** An imported 60 GHz splitter on a 0.1524 mm width rule reported two "Min Width"
-violations on a bend 0.69 mm wide. Each marker was a thin sliver along a 31.5 µm straight that sits
+violations on a bend 0.347 mm wide. Each marker was a thin sliver along a 31.5 µm straight that sits
 between the bend's square top corner and its inside arc.
 
 **Cause.** The width check is an opening — erode by w/2, dilate back, subtract — and the header's
@@ -24458,7 +24458,7 @@ outlives the erosion. A straight shorter than w/2 does not: the erosion deletes 
 rebuilds the corner from the edge after it (the arc's first segment, slightly tilted) and the wedge
 between the rebuilt and the drawn corner is reported. Reproduced on a replica bend: the sliver appears
 for any straight from 0 to 60 µm and vanishes at w/2 = 76.2 µm. **A tighter arc makes it FATTER**
-(3.7 µm wide at a 600 µm inside radius, 18 µm at 50 µm), so a sliver-thickness threshold cannot
+(7.1 µm wide at the drawn 330 µm inside radius, 18 µm at 50 µm), so a sliver-thickness threshold cannot
 separate it from a real finding.
 
 **Fix.** The opening now only nominates. `DrcEngine.HasFacingEdgesWithin` reports a candidate when
@@ -24473,4 +24473,4 @@ candidate exists). The overlap check shares `NarrowerThan` and gets the same con
 likely to have the mirror defect at a concave corner beside an outside arc; unmeasured.
 
 Gate: `DrcEngineTests.MinWidth_SquareCornerBesideAnInsideArc_IsMeasuredAcrossTheMetal` — the replica
-bend at 0.69 mm passes, the same bend at 0.1 mm is still reported.
+bend at 0.347 mm passes, the same bend at 0.1 mm is still reported.

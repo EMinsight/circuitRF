@@ -166,15 +166,15 @@ public class DrcEngineTests
     /// GitHub discussion 23: a quarter-ring bend whose square corner is followed by a straight shorter
     /// than half the rule, then the inside arc. The erosion deleted the short straight and the dilation
     /// rebuilt the corner from the arc's tilted first segment, reporting a thin sliver on metal
-    /// 0.69 mm wide against a 0.1524 mm rule (DBU = 1 nm). The same bend drawn 0.1 mm wide is
+    /// 0.347 mm wide against a 0.1524 mm rule (DBU = 1 nm). The same bend drawn 0.1 mm wide is
     /// genuinely too narrow and must still be reported.
     /// </summary>
     [Theory]
-    [InlineData(690_000, 0)]
+    [InlineData(347_000, 0)]
     [InlineData(100_000, 1)]
     public void MinWidth_SquareCornerBesideAnInsideArc_IsMeasuredAcrossTheMetal(long width, int expected)
     {
-        const double inner = 600_000;
+        const double inner = 330_000;
         const long straight = 31_500;
         double outer = inner + width;
 

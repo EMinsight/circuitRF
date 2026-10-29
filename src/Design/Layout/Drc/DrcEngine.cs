@@ -37,9 +37,9 @@
 //      is not exact at a convex corner whose next edge is shorter than the erosion radius and then
 //      turns: the erosion deletes that short edge, so the dilation rebuilds the corner from the edge
 //      AFTER it — on a curve, a slightly tilted one — and the gap between the rebuilt corner and the
-//      drawn one comes back as a thin sliver. Measured on an imported 60 GHz bend 0.69 mm wide
+//      drawn one comes back as a thin sliver. Measured on an imported 60 GHz bend 0.347 mm wide
 //      (GitHub discussion 23): a 31.5 µm straight between a 90° corner and an inside arc reported a
-//      3.7 × 61 µm sliver against a 0.1524 mm rule, and a tighter arc makes the sliver FATTER, so no
+//      7.1 × 64 µm sliver against a 0.1524 mm rule, and a tighter arc makes the sliver FATTER, so no
 //      thickness threshold separates it from a real finding. So the opening only nominates; a
 //      candidate is reported when two boundary edges inside it face each other through the metal
 //      closer than the rule — the definition a width rule states. A corner's two edges are
