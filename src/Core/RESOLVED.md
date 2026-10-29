@@ -4029,3 +4029,27 @@ solve had finished. Both only under load; both classes passed alone.
 signal pad (PadW wide, PadL/2 long, the tip at the pad's middle) and the line. The ground pads are ideal ground at
 the probe's reference plane, so their vias are artwork only. Gate: `tests/Engine.Tests/Devices/GsgPadSParamTests.cs`
 matches the same two MLINs wired by hand to 1e-9.
+
+## `A.P("probe")` and `A.Pt("probe")`: power through an IProbe in a measure line (brief ENV-MEAS-2, 2026-10-28)
+
+`EvalProbePower` reads `Pprobe_fund_W` (`P("Iout")`), `Pprobe_W` (`P("Iout", k)`, `k` through `ResolveSpectralArg`, so
+an index or a product tag) or `Pprobe_t_W` (`Pt("Iout")`), cubes the envelope and HB engines emit.
+
+- **The branch and spectral axes are found by NAME and every other axis is kept.** Deliberately unlike `V`/`I`, whose
+  third and later arguments slice sweep axes by position: a positional argument is the one thing that changes meaning
+  when a sweep is wrapped around the analysis, so `P` offers none. One point is `at(…, "Pin", i)`.
+- **`at`'s third argument is a POSITION along the axis (0-based, negative from the end), not an axis value**, and it
+  returns a rank-0 cube, not a scalar. The brief's example `at(ENV1.P("Iout"), "Pin", 20)`, read as "Pin = 20 dBm",
+  would have been the 21st point; the docs and the reference topic say position.
+- **Precedence:** the accessor is taken when the first argument evaluates to a string and the DataSet holds no cube
+  literally named `P`/`Pt`. The brief also asked that the `Pprobe_*` cube be present, but the "no IProbe" and
+  "set SaveWaveforms=yes" errors are exactly the cases where it is absent, so absence is answered by those errors
+  rather than by falling through to "no cube named P".
+- **Errors say what is missing**: an unknown probe lists the run's probes; a DataSet with `__ProbeBranches` but no
+  `Pprobe_fund_W` (a DC run) says `P` is read on envelope and HB; one with neither says to place an IProbe in series
+  with the load.
+
+Gates: `Core.Tests` `ProbePowerAccessorErrorTests` (errors, precedence); `Engine.Tests` `ProbePowerAccessorTests`
+(values, sweep shapes, `at`, the PA block); `Ui.Tests` `ProbePowerTraceRerunTests` (a `P` measure's trace and a
+`Pprobe_fund_W` trace both become a family when a re-run wraps an outer sweep, through the existing carry).
+

@@ -749,6 +749,8 @@ public sealed class HbEngine
             }
             probeCurrents[ec.InstancePath] = spec;
         }
+        var probeVoltages = ProbeFirstNodeVoltages(K + 1,
+            (c, k) => ifNodeToIdx.TryGetValue(c, out int i) ? V[i, k] : backSolver.GetNodeVoltage(c, k, 0));
 
         // brief-em3d-79 R-em3d79-2a — the pin currents of a LINEAR instance a caller asked for, appended to the I cube
         // after the device ports. Opt-in (AnalysisSettings.HbPinCurrents, empty by default), so every other run's I
@@ -779,7 +781,7 @@ public sealed class HbEngine
 
         var ds = BuildSingleToneDataSet(
             Vfull, INlfull, namesFull, f0, K, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
-            _netlist.Nodes.LabeledNames, probeCurrents, opVars);
+            _netlist.Nodes.LabeledNames, probeCurrents, opVars, probeVoltages);
         AddWireTemperature(ds, solveResult.Converged,
             [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], k => backSolver.GetSolution(k, 0));
 
@@ -1131,12 +1133,14 @@ public sealed class HbEngine
                 spec[m] = ip.LastBranchIndex < xMix[m].Length ? xMix[m][ip.LastBranchIndex] : Complex.Zero;
             probeCurrents[ec.InstancePath] = spec;
         }
+        var probeVoltages = ProbeFirstNodeVoltages(M, (c, m) => ifNodeToIdx.TryGetValue(c, out int i) ? V[i, m]
+                                                               : c - 1 < xMix[m].Length ? xMix[m][c - 1] : Complex.Zero);
 
         var opVars2 = HbOpVars.CollectTwoTone(V, grid, N, N1, N2, _netlist, ifNodes);
 
         var ds2 = BuildTwoToneDataSet(
             Vfull, INlfull, namesFull, grid, f1, f2, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
-            _netlist.Nodes.LabeledNames, probeCurrents, opVars2);
+            _netlist.Nodes.LabeledNames, probeCurrents, opVars2, probeVoltages);
         AddWireTemperature(ds2, solveResult.Converged,
             [.. Enumerable.Range(0, M).Select(m => grid.OmegaOf(m, w1, w2) / (2 * Math.PI))], m => xMix[m]);
 
@@ -1420,12 +1424,14 @@ public sealed class HbEngine
                 spec[m] = ip.LastBranchIndex < xMix[m].Length ? xMix[m][ip.LastBranchIndex] : Complex.Zero;
             probeCurrents[ec.InstancePath] = spec;
         }
+        var probeVoltages = ProbeFirstNodeVoltages(M, (c, m) => ifNodeToIdx.TryGetValue(c, out int i) ? V[i, m]
+                                                               : c - 1 < xMix[m].Length ? xMix[m][c - 1] : Complex.Zero);
 
         var opVarsNd = HbOpVars.CollectMultiTone(V, apft, N, _netlist, ifNodes);
 
         var dsNd = BuildMultiToneDataSet(
             Vfull, INlfull, namesFull, lattice, f, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
-            _netlist.Nodes.LabeledNames, probeCurrents, opVarsNd);
+            _netlist.Nodes.LabeledNames, probeCurrents, opVarsNd, probeVoltages);
         AddWireTemperature(dsNd, solveResult.Converged,
             [.. Enumerable.Range(0, M).Select(m => lattice.OmegaOf(m, omegas) / (2 * Math.PI))], m => xMix[m]);
 
@@ -2368,7 +2374,8 @@ public sealed class HbEngine
         Dictionary<string, List<Complex[]>> portCurrents,
         HashSet<string>?    labeledNames = null,
         Dictionary<string, Complex[]>? probeCurrents = null,
-        Dictionary<string, Complex[]>? opVars = null)
+        Dictionary<string, Complex[]>? opVars = null,
+        Dictionary<string, Complex[]>? probeVoltages = null)
     {
         int N  = V.GetLength(0);
         int K1 = K + 1;
@@ -2456,6 +2463,8 @@ public sealed class HbEngine
                     var pIdx = Enumerable.Range(0, probeLabels.Length).Select(i => (double)i).ToArray();
                     ds.Add("__ProbeBranches", new DataCube(
                         [new Axis("probe", pIdx, "", probeLabels)], new double[probeLabels.Length]));
+                    if (probeVoltages is not null)
+                        AddProbePower(ds, probeLabels, probeCurrents!, probeVoltages, harmAxis, K >= 1 ? [1] : []);
                 }
             }
         }
@@ -2482,7 +2491,8 @@ public sealed class HbEngine
         Dictionary<string, List<Complex[]>> portCurrentsByBranch,
         HashSet<string>?    labeledNames = null,
         Dictionary<string, Complex[]>? probeCurrents = null,
-        Dictionary<string, Complex[]>? opVars = null)
+        Dictionary<string, Complex[]>? opVars = null,
+        Dictionary<string, Complex[]>? probeVoltages = null)
     {
         int N = V.GetLength(0);
         int M = grid.MixCount;
@@ -2574,6 +2584,8 @@ public sealed class HbEngine
                     var pIdx = Enumerable.Range(0, probeLabels.Length).Select(i => (double)i).ToArray();
                     ds.Add("__ProbeBranches", new DataCube(
                         [new Axis("probe", pIdx, "", probeLabels)], new double[probeLabels.Length]));
+                    if (probeVoltages is not null)
+                        AddProbePower(ds, probeLabels, probeCurrents!, probeVoltages, mixAxis, CarrierProducts(grid));
                 }
             }
         }
@@ -2603,7 +2615,8 @@ public sealed class HbEngine
         Dictionary<string, List<Complex[]>> portCurrentsByBranch,
         HashSet<string>?    labeledNames = null,
         Dictionary<string, Complex[]>? probeCurrents = null,
-        Dictionary<string, Complex[]>? opVars = null)
+        Dictionary<string, Complex[]>? opVars = null,
+        Dictionary<string, Complex[]>? probeVoltages = null)
     {
         int N = V.GetLength(0);
         int M = lattice.MixCount;
@@ -2697,11 +2710,74 @@ public sealed class HbEngine
                     var pIdx = Enumerable.Range(0, probeLabels.Length).Select(i => (double)i).ToArray();
                     ds.Add("__ProbeBranches", new DataCube(
                         [new Axis("probe", pIdx, "", probeLabels)], new double[probeLabels.Length]));
+                    if (probeVoltages is not null)
+                        AddProbePower(ds, probeLabels, probeCurrents!, probeVoltages, mixAxis, CarrierProducts(lattice));
                 }
             }
         }
 
         return ds;
+    }
+
+    // ── Power through every IProbe (brief ENV-MEAS-2 R-envm2-3) ─────────────
+
+    /// <summary>The voltage spectrum at each probe's FIRST node, keyed as the probe currents are: the rows the V cube
+    /// is built from (<paramref name="nodeV"/>, by circuit node number), zero for a probe whose first node is ground.</summary>
+    private Dictionary<string, Complex[]> ProbeFirstNodeVoltages(int count, Func<int, int, Complex> nodeV)
+    {
+        var pv = new Dictionary<string, Complex[]>(StringComparer.Ordinal);
+        foreach (var ec in _netlist.Components)
+        {
+            if (ec.Model is not SeriesProbeModelBase ip || ip.LastBranchIndex < 0) continue;
+            int c = ec.Nodes.Length > 0 ? ec.Nodes[0] : 0;
+            var spec = new Complex[count];
+            if (c > 0) for (int m = 0; m < count; m++) spec[m] = nodeV(c, m);
+            pv[ec.InstancePath] = spec;
+        }
+        return pv;
+    }
+
+    /// <summary>Each tone's first-order product on a two-tone grid: the band <c>Pprobe_fund_W</c> sums.</summary>
+    private static int[] CarrierProducts(MixingGrid grid) =>
+        [.. new[] { grid.IndexOf(1, 0), grid.IndexOf(0, 1) }.Where(m => m >= 0)];
+
+    /// <summary>Each tone's first-order product on a T-tone lattice.</summary>
+    private static int[] CarrierProducts(MixingLattice lattice) =>
+        [.. Enumerable.Range(0, lattice.ToneCount).Select(t =>
+        {
+            var k = new int[lattice.ToneCount];
+            k[t] = 1;
+            return lattice.IndexOf(k);
+        }).Where(m => m >= 0)];
+
+    /// <summary>
+    /// The two probe-power cubes an envelope run carries, on one HB point, so one measure line
+    /// (<c>P("Iout")</c>) reads either analysis: <c>Pprobe_W[branch, harmonic|mixIndex]</c> = ½·Re(Vₖ·Iₖ*), V₀·I₀ at
+    /// DC, with V at the probe's first node; <c>Pprobe_fund_W[branch]</c> = the sum over <paramref name="fund"/>.
+    /// The current flows first node → second, so the power is what passes through the probe in that direction.
+    /// No time axis, so <c>ParametricSweepEngine</c> stacks both as it stacks everything else.
+    /// </summary>
+    private static void AddProbePower(DataSet ds, string[] probeLabels, Dictionary<string, Complex[]> probeCurrents,
+                                      Dictionary<string, Complex[]> probeVoltages, Axis spectral, int[] fund)
+    {
+        int nb = probeLabels.Length, nk = spectral.Length;
+        var pk = new double[nb * nk];
+        var pf = new double[nb];
+        for (int b = 0; b < nb; b++)
+        {
+            var v = probeVoltages[probeLabels[b]];
+            var i = probeCurrents[probeLabels[b]];
+            for (int k = 0; k < nk; k++)
+            {
+                Complex vk = k < v.Length ? v[k] : Complex.Zero, ik = k < i.Length ? i[k] : Complex.Zero;
+                // The spectral axis's index 0 is DC on both: harmonic 0, and the (0,…,0) product the lattice puts first.
+                pk[b * nk + k] = k == 0 ? vk.Real * ik.Real : 0.5 * (vk.Real * ik.Real + vk.Imaginary * ik.Imaginary);
+            }
+            foreach (int k in fund) pf[b] += pk[b * nk + k];
+        }
+        var branchAxis = new Axis("branch", Enumerable.Range(0, nb).Select(x => (double)x).ToArray(), "", probeLabels);
+        ds.Add("Pprobe_W", new DataCube([branchAxis, spectral], pk));
+        ds.Add("Pprobe_fund_W", new DataCube([branchAxis], pf));
     }
 
     // ── Control-current branch resolution (HB) — brief #2 ───────────────────

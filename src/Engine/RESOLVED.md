@@ -3803,3 +3803,28 @@ and after, comparing every cube's axes and values as raw bits. Run to run, befor
 (determinism checked first). After it: 29, 29, 30 and 28 pre-existing cubes **bit-identical**, none moved or missing;
 each run gained exactly `I`, `Pprobe_W`, `Pprobe_fund_W`, `Pprobe_t_W` and `__ProbeBranches` (all four examples already
 place IProbes). Gates 2-9: `EnvelopeProbePowerTests`, plus `EnvelopeModeRoundTripTests` for the writers.
+
+## Harmonic balance: the same probe-power cubes as envelope (brief ENV-MEAS-2 R-envm2-3, 2026-10-28)
+
+All three HB dataset builders (single-tone, the rectangular two-tone, the lattice) emit `Pprobe_W[branch,
+harmonic|mixIndex]` and `Pprobe_fund_W[branch]` beside `I` and `__ProbeBranches`, so `HB1.P("Iout")` in a measure line
+means what `ENV1.P("Iout")` means.
+
+- **The voltage is the V cube's own row**, not a fresh back-solve: the converged Newton spectrum at an interface node,
+  the linear back-solve elsewhere, zero for a probe whose first node is ground (`ProbeFirstNodeVoltages`). An interface
+  node's back-solved voltage differs from its Newton value by the solve residual, and a power that disagreed with
+  ½·Re(V·I*) taken from the cubes by hand would look like a bug.
+- **The fundamental band** is harmonic 1, or each tone's first-order product: `(1,0)` and `(0,1)` on two tones, the unit
+  vectors on the lattice. Index 0 of the spectral axis is DC on all three, so `P("IDC", 0)` is V₀·I₀ everywhere.
+- **The probe set is HB's own** (every `SeriesProbeModelBase`, the set already in `__ProbeBranches`), so a WSProbe gets a
+  power row too, as it already gets a current row. Envelope matches `IProbeModel` only; the two differ only on a bench
+  that places a WSProbe in an HB run, where the extra row is harmless.
+- **Nothing else moved**: the builders only read V and I, so every pre-existing cube is unchanged. One visible
+  consequence: the data display's auto-seed ranks a plottable cube whose `branch` labels are exactly the placed probes
+  above raw outputs, so an unswept HB run with IProbes and no measurements now opens on `Pprobe_W` (harmonic as X)
+  rather than `V`, as envelope has done since ENV-MEAS-1. Left as is: it is the existing "a placed probe outranks a raw
+  output" rule doing what it says.
+
+Gates: `ProbePowerAccessorTests` (`OnHarmonicBalance_PMeansWhatItMeansOnEnvelope` agrees with the envelope run to
+0.01 dB on one CW bench; `OnATwoToneHb_TheFundamentalBandIsTheTwoCarriers`).
+

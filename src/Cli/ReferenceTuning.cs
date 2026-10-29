@@ -506,6 +506,16 @@ internal static partial class Reference
             "(analysis=F1) and runs no EM.", 96))
             sb.AppendLine("  " + line);
         sb.AppendLine();
+        // brief ENV-MEAS-2 R-envm2-4: the power through an IProbe, the everyday spelling of Pout, Pdc and PAE.
+        foreach (var line in Wrap(
+            "The probe-power functions read an envelope or harmonic-balance analysis by name, through an IProbe, in W " +
+            "(first node to second): A.P(\"probe\") is the fundamental-band power, A.P(\"probe\", k) the power at harmonic k " +
+            "(0 = DC, V0*I0) or at a mixing product by its tag (\"(1,0)\"), and A.Pt(\"probe\") the instantaneous " +
+            "fundamental-band power against time (envelope, SaveWaveforms=yes). Every sweep axis passes through, so one line " +
+            "is a number, a curve or a surface as sweeps are added; one point is at(A.P(\"probe\"), \"Pin\", i), i its position along Pin (0 first, -1 last). So: " +
+            "measure Pout_dBm = dBm(ENV1.P(\"Iout\")), measure PAE_pct = 100*(ENV1.P(\"Iout\") - ENV1.P(\"Iin\"))/ENV1.P(\"IDC\", 0).", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
     }
 
     /// <summary>The bench the goal-function list is generated over: one S-parameter analysis with a

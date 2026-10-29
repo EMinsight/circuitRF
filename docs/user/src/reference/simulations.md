@@ -308,6 +308,20 @@ with no arithmetic at all.
 `IDCB`. Each amplifier's drain efficiency is its own `Pprobe_fund_W` at `Iout` over its own `Pprobe_W`
 at `IDC`, harmonic 0, and the total DC power is the sum of the two.
 
+**In a measure line**, `ENV1.P("probe")` reads these cubes by name (see
+[Power through an IProbe](measurements.html#power)):
+
+```netlist
+measure Pout_dBm = dBm(ENV1.P("Iout"))
+measure Pin_dBm  = dBm(ENV1.P("Iin"))
+measure Pdc_W    = ENV1.P("IDC", 0)
+measure Gain_dB  = Pout_dBm - Pin_dBm
+measure DE_pct   = 100 * ENV1.P("Iout") / ENV1.P("IDC", 0)
+measure PAE_pct  = 100 * (ENV1.P("Iout") - ENV1.P("Iin")) / ENV1.P("IDC", 0)
+```
+
+The same lines work inside any sweep, and on a harmonic-balance analysis (`HB1.P("Iout")`).
+
 ### Pulsed CW: what is measured {#envelope-pulse}
 
 A [pulsed-CW](signal-designer.html#pulse) source turns the run into a pulse measurement. Harmonic

@@ -18,6 +18,7 @@ keywords: measure, measurement syntax, expression syntax, syntax, how to write a
       <li><a href="#what">What a measurement is</a></li>
       <li><a href="#authoring">Authoring — the MEAS component</a></li>
       <li><a href="#refs">Referencing analysis results (two notations)</a></li>
+      <li><a href="#power">Power through an IProbe: <code>P</code></a></li>
       <li><a href="#sparam">S-parameters: 1-based ports</a></li>
       <li><a href="#compose">Composition &amp; scope</a></li>
       <li><a href="#swept">Swept variables</a></li>
@@ -78,6 +79,8 @@ HB1.V("Vout")          node Vout, all harmonics, all sweep points
 HB1.V("Vout", 1)       node Vout, fundamental, all sweep points
 HB1.I("M1:d", 1, All)  device-port branch current, fundamental, swept
 DC1.I("Iout")          no sweep → a scalar
+HB1.P("Iout")          power through IProbe Iout, fundamental band, in W — see Power through an IProbe
+ENV1.Pt("Iout")        the same power at every envelope step (SaveWaveforms=yes)
 ```
 
 **Why use it:** it is order-independent — the engine locates each axis by name, so adding or
@@ -105,6 +108,8 @@ One token per cube axis, in cube-axis order (numpy-style): `:` keeps the axis, a
 Pout_W = 0.5 * real( HB1.V[:, "Vout", 1] * conj(HB1.I[:, "Iout", 1]) )
 ```
 
+or `HB1.P("Iout")`.
+
 **Why use it:** it is exactly what the Plot Inspector's trace card writes for you. Dial in a
 trace, copy the shorthand string straight into a measurement, done — no remembering argument
 order. The catch: brackets are positional, so a later outer sweep can shift the axis a hand-edited
@@ -115,6 +120,58 @@ bracket addresses.
     <p>Prefer the <strong>accessor</strong> for durable hand-authored measurements; reach for the
     <strong>bracket</strong> when copy-pasting from a trace you already have on screen.</p>
   </div>
+
+## Power through an IProbe: `P` {#power}
+
+`P` reads the power flowing through an [IProbe](components.html#iprobe), from its first node to its
+second, in watts. Place an IProbe in series with each place you want a power — the load, the input,
+each supply — and name it:
+
+| Spelling | Result |
+|---|---|
+| `ENV1.P("Iout")` | fundamental-band power through `Iout` |
+| `ENV1.P("Iout", k)` | power at harmonic `k` (`0` is DC: V₀·I₀), or at a mixing product by its tag, `"(1,0)"` |
+| `ENV1.Pt("Iout")` | instantaneous fundamental-band power against `time` (envelope only) |
+
+It reads an [envelope](simulations.html#envelope-power) or a harmonic-balance analysis the same way,
+so one measure line can point at either. The voltage is taken at the probe's first node, so put that
+node on the source side and every power in a working amplifier is positive.
+
+```netlist
+measure Pout_dBm = dBm(ENV1.P("Iout"))
+measure Pin_dBm  = dBm(ENV1.P("Iin"))
+measure Pdc_W    = ENV1.P("IDC", 0)
+measure Gain_dB  = Pout_dBm - Pin_dBm
+measure DE_pct   = 100 * ENV1.P("Iout") / ENV1.P("IDC", 0)
+measure PAE_pct  = 100 * (ENV1.P("Iout") - ENV1.P("Iin")) / ENV1.P("IDC", 0)
+```
+
+`Iout` is in series with the load, `Iin` between the source and the amplifier's input, and `IDC`
+between the drain supply and the circuit. `dBm()` takes watts. Two amplifiers are the same lines with
+each one's own probes (`Iout1`, `IDC1`, `Iout2`, `IDC2`).
+
+- **Sweeps pass through.** `P` finds the probe and the harmonic by name and keeps every other axis, so
+  the same line gives one number with no sweep, a curve under a `Pin` sweep, and a surface when a
+  `Vdd` sweep is wrapped around that, with no edit. There are no positional sweep arguments. To read
+  one sweep point, pin its axis by name with `at`, which takes the point's position along that axis
+  (0 is the first, −1 the last): `at(ENV1.P("Iout"), "Pin", -1)` is the power at the highest drive.
+- **Probe names** match like `I("…")`: the whole name, any case. An unknown name is an error that
+  lists the analysis's IProbes.
+- **With two or more fundamentals**, `P("Iout")` is the sum over the carrier products, the same band
+  `Pout_avg_dBm` reports; `P("Iout", "(1,0)")` is one carrier.
+- **`Pt` needs the waveforms.** With `SaveWaveforms=no` it is an error naming that setting. `P` never
+  needs them.
+
+`P("Iout")` means the same as the long form
+
+```text
+Pout_W = mean_over(real(0.5*ENV1.V("Vout", 1)*conj(ENV1.I("Iout", 1))), "time")
+```
+
+with `Vout` the probe's first node. The one difference is the window: `P` averages over the run's
+measured window, after the settle a cold start skips, and the long form over the whole record, so at
+a 50 Ω load `P` agrees with `Pout_avg_dBm` and the long form can differ slightly. The long form also
+needs `SaveWaveforms=yes`, and the node listed in `Probes`.
 
 ## S-parameters: 1-based ports {#sparam}
 

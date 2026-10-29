@@ -425,6 +425,16 @@ with no arithmetic at all.</p>
 <p><strong>Two amplifiers</strong>, A and B, each with its own load and supply: place <code>IoutA</code>, <code>IDCA</code>, <code>IoutB</code> and
 <code>IDCB</code>. Each amplifier's drain efficiency is its own <code>Pprobe_fund_W</code> at <code>Iout</code> over its own <code>Pprobe_W</code>
 at <code>IDC</code>, harmonic 0, and the total DC power is the sum of the two.</p>
+<p><strong>In a measure line</strong>, <code>ENV1.P(&quot;probe&quot;)</code> reads these cubes by name (see
+<a href="measurements.html#power">Power through an IProbe</a>):</p>
+<pre><code class="language-netlist">measure Pout_dBm = dBm(ENV1.P(&quot;Iout&quot;))
+measure Pin_dBm  = dBm(ENV1.P(&quot;Iin&quot;))
+measure Pdc_W    = ENV1.P(&quot;IDC&quot;, 0)
+measure Gain_dB  = Pout_dBm - Pin_dBm
+measure DE_pct   = 100 * ENV1.P(&quot;Iout&quot;) / ENV1.P(&quot;IDC&quot;, 0)
+measure PAE_pct  = 100 * (ENV1.P(&quot;Iout&quot;) - ENV1.P(&quot;Iin&quot;)) / ENV1.P(&quot;IDC&quot;, 0)
+</code></pre>
+<p>The same lines work inside any sweep, and on a harmonic-balance analysis (<code>HB1.P(&quot;Iout&quot;)</code>).</p>
 <h3 id="envelope-pulse">Pulsed CW: what is measured</h3>
 <p>A <a href="signal-designer.html#pulse">pulsed-CW</a> source turns the run into a pulse measurement. Harmonic
 balance cannot see what happens inside a pulse: it solves one steady state, so the device sits at one

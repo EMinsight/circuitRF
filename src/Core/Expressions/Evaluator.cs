@@ -324,6 +324,16 @@ public sealed partial class Evaluator
             return new Value(ds.S(pi, pj));
         }
 
+        // ── P("probe"[, k]) / Pt("probe") — power through an IProbe (brief ENV-MEAS-2) ──
+        // Taken when the first argument is a string and no cube is literally named P / Pt; a DataSet that
+        // holds one keeps the generic positional path below (no analysis emits one).
+        if (accessorName is "P" or "Pt" && cl.Args.Length is 1 or 2 && !ds.Contains(accessorName))
+        {
+            var probeVal = EvalExpr(cl.Args[0], scope);
+            if (probeVal.Kind == ValueKind.String)
+                return EvalProbePower(cl, scope, ds, analysisName, accessorName, probeVal.AsString());
+        }
+
         // ── V(nodeName,…) / INl(nodeName,…) — node-indexed ─────────────────
         // ── I(branchName,…) — branch-indexed (unified I cube, branch axis) ───
         // ── OP(name,…)     — a compact model's own operating-point variable ──
@@ -456,6 +466,47 @@ public sealed partial class Evaluator
                 sliceArgs[i] = ArgToSliceObj(EvalExpr(cl.Args[i], scope), cl.Name, i);
             return SliceToValue(cube[sliceArgs]);
         }
+    }
+
+    /// <summary>
+    /// <c>A.P("probe")</c> reads <c>Pprobe_fund_W</c>, <c>A.P("probe", k)</c> reads <c>Pprobe_W</c> at spectral index or
+    /// product tag <c>k</c>, <c>A.Pt("probe")</c> reads <c>Pprobe_t_W</c> — the cubes the envelope and HB engines emit
+    /// for every IProbe. The branch and spectral axes are found BY NAME and every other axis passes through, so the
+    /// same text gives a scalar, a [Pin] curve or a [Vdd, Pin] surface as sweeps are wrapped around the analysis.
+    /// There are deliberately no positional sweep arguments: they are the one thing that changes meaning when a sweep
+    /// is added. One sweep point is <c>at(A.P("probe"), "Pin", i)</c>, by its position along that axis.
+    /// </summary>
+    private Value EvalProbePower(CallExpr cl, Scope scope, DataSet ds, string analysisName, string accessor, string probe)
+    {
+        if (accessor == "Pt" && cl.Args.Length != 1) throw new ArityException(cl.Name, 1, cl.Args.Length);
+        string cubeName = accessor == "Pt" ? "Pprobe_t_W" : cl.Args.Length == 2 ? "Pprobe_W" : "Pprobe_fund_W";
+
+        if (!ds.Contains("Pprobe_fund_W"))
+            throw new ExpressionException(ds.Contains("__ProbeBranches")
+                ? $"{cl.Name}: analysis '{analysisName}' carries no probe power; {accessor} is read on envelope and " +
+                  "harmonic-balance analyses."
+                : $"{cl.Name}: analysis '{analysisName}' has no IProbe. {accessor} reads the power through an IProbe: " +
+                  "place one in series with the load (and one in each supply feed).");
+        if (!ds.Contains(cubeName))
+            throw new ExpressionException(
+                $"{cl.Name}: the instantaneous power needs the waveforms; set SaveWaveforms=yes on '{analysisName}'.");
+
+        var cube = ds[cubeName];
+        int branchAxis = 0;
+        while (cube.Axes[branchAxis].Name != "branch") branchAxis++;
+        var labels = cube.Axes[branchAxis].Labels ?? [];
+        int idx = Array.FindIndex(labels, s => s.Equals(probe, StringComparison.OrdinalIgnoreCase));
+        if (idx < 0)
+            throw new ExpressionException(
+                $"{cl.Name}: no IProbe named '{probe}' in '{analysisName}'. IProbes: [{string.Join(", ", labels)}]");
+
+        var sliceArgs = new object[cube.Rank];
+        for (int a = 0; a < cube.Rank; a++)
+            sliceArgs[a] = a == branchAxis ? idx
+                : cube.Axes[a].Name is "harmonic" or "mixIndex" && cl.Args.Length == 2
+                    ? ResolveSpectralArg(EvalExpr(cl.Args[1], scope), cube.Axes[a])
+                    : Range.All;
+        return SliceToValue(cube[sliceArgs]);
     }
 
     /// <summary>The 0-based index on a wsp row/col axis whose VALUE is the document's 1-based
