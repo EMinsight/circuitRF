@@ -89,22 +89,21 @@ public sealed partial class ArchiveTreeNode : ObservableObject
     {
         if (Option is not null && value is { } v) Option.Selected = v;
 
-        if (!_updatingFromParent && value is { } state)
-        {
-            ApplyToChildren(state);
-            // A group standing in for rows it has not built yet still has to decide for them, so the
-            // choice is remembered on the group and applied by OnIsExpandedChanged above; the
-            // unbuilt options are updated here directly.
-            if (!_populated && _childFactory is not null)
-                foreach (var child in _childFactory())
-                    if (child.Option is not null) child.Option.Selected = state;
-        }
+        if (!_updatingFromParent && value is { } state) ApplyToChildren(state);
 
         Parent?.RefreshFromChildren();
     }
 
     private void ApplyToChildren(bool state)
     {
+        // A group standing in for rows it has not built yet still has to decide for them, so the
+        // choice is remembered on the group and applied by OnIsExpandedChanged above; the unbuilt
+        // options are updated here directly. HERE and not only in OnIsCheckedChanged: a parent pushes
+        // its state down through this method, and a collapsed sub-group reached that way (Results ▸
+        // Other, unticked from Results) once kept every file it stood for, archiving 1.3 GB of field
+        // files with every box on screen empty.
+        if (!_populated && _childFactory is not null) SelectUnbuilt(_childFactory, state);
+
         foreach (var child in Children)
         {
             if (ReferenceEquals(child, Placeholder)) continue;
@@ -112,6 +111,16 @@ public sealed partial class ArchiveTreeNode : ObservableObject
             try { child.IsChecked = state; }
             finally { child._updatingFromParent = false; }
             child.ApplyToChildren(state);
+        }
+    }
+
+    /// <summary>Every option under a group's unbuilt rows, through any nested group's unbuilt rows too.</summary>
+    private static void SelectUnbuilt(Func<IEnumerable<ArchiveTreeNode>> factory, bool state)
+    {
+        foreach (var node in factory())
+        {
+            if (node.Option is not null) node.Option.Selected = state;
+            if (node._childFactory is not null) SelectUnbuilt(node._childFactory, state);
         }
     }
 

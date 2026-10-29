@@ -135,6 +135,25 @@ public sealed class ArchiveTreeAndMenuTests
         Assert.True(npy.Selected);
     }
 
+    [Fact]
+    public void UntickingAnOpenGroup_ReachesTheRowsOfItsCollapsedSubGroups()
+    {
+        // The dialog's own shape: Results opens expanded, its headings (Other, …) stay collapsed. Unticking
+        // Results cleared every box on screen and archived every file under the collapsed headings.
+        var cdd = Option("x.cdd", selected: true);
+        var field = Option("x.palace/postpro/field.pvtu", selected: true);
+        var outer = ArchiveTreeNode.Group("Results", () => new[]
+        {
+            ArchiveTreeNode.Group("Data Displays", () => new[] { ArchiveTreeNode.Leaf(cdd) }),
+            ArchiveTreeNode.Group("Other",         () => new[] { ArchiveTreeNode.Leaf(field) }),
+        });
+        outer.IsExpanded = true;
+
+        outer.IsChecked = false;
+        Assert.False(cdd.Selected);
+        Assert.False(field.Selected);
+    }
+
     // ── The surfaces that reach it ────────────────────────────────────────────
 
     [Fact]

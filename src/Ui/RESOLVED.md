@@ -41265,3 +41265,18 @@ because the window's key binding has already handled it by the time a box's own 
 (`ScratchC3dWorkspace`). Opening a workspace afterwards does not move it, so it goes on resolving that technology,
 not the workspace's default, until it is saved. Saving it inside the workspace re-resolves (`Viewer.Regenerate`
 after `SaveAs`), but objects drawn before then keep the material names the first technology offered.
+
+## Archive Workspace: unticking a heading left the rows of its collapsed sub-headings selected (2026-10-29, DFR31-0)
+
+A field-test archive came out at 486 MB with every box in the dialog unticked, and the footer agreed ("1.3 GB … 151
+item(s) ticked"). The Results heading opens expanded, and its sub-headings (Data Displays, Touchstone, Analysis, Other)
+stay collapsed and unbuilt. Unticking Results pushed the state down through `ApplyToChildren`, which sets each child
+with `_updatingFromParent` raised. A collapsed child's `OnIsCheckedChanged` updated its unbuilt options only when that
+flag was NOT raised, so every option under a collapsed sub-heading kept its old value. Here that included roughly
+900 MB of Palace field files under Other. Unticking a collapsed sub-heading directly had always worked, which is why
+the defect stayed hidden.
+
+Fix: the unbuilt-option update moved into `ApplyToChildren` itself, recursing through nested unbuilt groups
+(`SelectUnbuilt`), so the state reaches the options whichever way it arrives. The footer was never wrong: it polls the
+plan every 250 ms and reported the true selection. Test:
+`ArchiveTreeAndMenuTests.UntickingAnOpenGroup_ReachesTheRowsOfItsCollapsedSubGroups`.
