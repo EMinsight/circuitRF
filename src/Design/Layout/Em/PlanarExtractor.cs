@@ -1039,13 +1039,23 @@ public static class PlanarExtractor
         // (PlanarFeedExtension.TryEndFace/UniformRun), saw the board pad alone as a uniform feed, and
         // grew no lead. The calibration then described a line that is not there and the published
         // S11 was an open circuit. Merged here, once, every per-polygon question downstream asks
-        // about the copper. Only shapes that genuinely OVERLAP another on the same level are merged;
-        // everything else passes through untouched, so artwork with no overlaps is bit-identical.
+        // about the copper.
+        //
+        // ── …AND SO IS COPPER THAT ONLY TOUCHES (brief PM-1 R-pm1-2) ─────────────────────────────
+        //
+        // Shapes that share an EDGE are merged too, as the 3D generator's call already does. Imported
+        // artwork routinely arrives as pieces drawn edge to edge, and every per-polygon question the
+        // mesher asks — narrowness, edge attractors, feed-lead detection, port end faces — was being
+        // asked of the PIECES: a T-junction drawn as two trapezoids measured its wedge tip as the
+        // narrowest metal on the part and set the whole mesh's pitch from it. A shared edge between
+        // two drawn pieces is not a feature of the metal, so this deliberately moves planar answers on
+        // artwork drawn that way. Artwork whose shapes neither overlap nor touch is bit-identical.
         conductorShapes = MergeOverlappingCopper(conductorShapes, tech, out int mergedShapes, out int mergedInto);
         if (mergedShapes > 0)
-            notes.Add($"{mergedShapes} overlapping conductor shape(s) were merged into {mergedInto} before meshing — " +
-                      "copper that overlaps on one level is one conductor (a placed part's pad over a drawn or " +
-                      "imported pad is the usual case), and a port's feed is measured on the merged outline.");
+            notes.Add($"{mergedShapes} overlapping or touching conductor shape(s) were merged into {mergedInto} before meshing — " +
+                      "copper that overlaps or shares an edge on one level is one conductor (a placed part's pad over a drawn or " +
+                      "imported pad, or imported artwork drawn as abutting pieces, is the usual case), and a port's feed " +
+                      "and the mesh's sizing are measured on the merged outline.");
 
         // ── L9d: one polygon list PER LEVEL, in the level order the stack is built in ─────────
         var polysByLevel = new List<PlanarPolygon>[levels.Count];
@@ -2688,8 +2698,8 @@ public static class PlanarExtractor
     private sealed record Band(StackupLayer Layer, double BottomM, double TopM, int Index, double SheetM);
 
     /// <summary>
-    /// Replaces every group of conductor shapes that genuinely overlap on one level with their union;
-    /// a shape overlapping nothing is returned as the SAME object, in its original order.
+    /// Replaces every group of conductor shapes that overlap or touch on one level with their union;
+    /// a shape overlapping and touching nothing is returned as the SAME object, in its original order.
     /// </summary>
     private static List<(LayoutShape Shape, Band Band)> MergeOverlappingCopper(
         List<(LayoutShape Shape, Band Band)> shapes, Technology tech, out int mergedShapes, out int mergedInto)
@@ -2699,7 +2709,7 @@ public static class PlanarExtractor
         var byIndex = new Dictionary<int, Band>();
         foreach (var (_, band) in shapes) byIndex.TryAdd(band.Index, band);
         return [.. MergeOverlapping([.. shapes.Select(x => (x.Shape, x.Band.Index))], tech,
-                                    out mergedShapes, out mergedInto)
+                                    out mergedShapes, out mergedInto, touching: true)
                   .Select(x => (x.Shape, byIndex[x.Level]))];
     }
 
@@ -2710,8 +2720,9 @@ public static class PlanarExtractor
     /// the 3D generator calls (brief-em3d-3 R-em3d3-5b) so the two models agree on what is connected.
     /// <para><paramref name="touching"/> (the 3D generator's, brief-em3d-52) also merges shapes that share an EDGE
     /// without overlapping — a line ending exactly on a pad. As separate solids their coplanar faces fuse in the
-    /// mesher into one surface no single conductor claims, and the mesh is refused. The planar mesher joins cells
-    /// across a shared edge already, so its own call leaves this off and no planar answer moves.</para>
+    /// mesher into one surface no single conductor claims, and the mesh is refused. The planar extractor's call
+    /// sets it too (brief PM-1): its mesher joins cells across a shared edge already, but it SIZES the mesh per
+    /// polygon, so a conductor drawn as abutting pieces was meshed at the pitch of its narrowest fragment.</para>
     /// </summary>
     internal static List<(LayoutShape Shape, int Level)> MergeOverlapping(
         List<(LayoutShape Shape, int Level)> shapes, Technology tech, out int mergedShapes, out int mergedInto,

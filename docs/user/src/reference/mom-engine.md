@@ -251,6 +251,16 @@ inward by a ratio of about 1.5–2. The reference length for that grading is the
 that choice is measured rather than assumed: on the FR-4 reference structure it lands 0.18% from the
 converged limit at N = 552, where the alternative reference needs N = 7,562 for a comparable answer.
 
+Which edges get a graded fan: an axis-parallel edge long enough to carry the crowding (at least a fifth
+of its conductor's extent across it), an edge that ends the conductor (both of its corners convex — an
+end cap or a line's open end), and both edges at every **re-entrant corner** where a horizontal edge
+meets a vertical one: an inset feed's notch, a step in width, a T-junction. The current is most strongly
+singular at a re-entrant corner, so that is where the fan matters most. An edge shorter than the
+detail floor gets none, and a diagonal or curved rim gets none, since a fan on a staircased edge does not
+help. The mesh report says how many re-entrant corners were graded. Copper drawn as several shapes
+that overlap or share an edge is merged into one conductor before any of this is decided, so how the
+artwork was drawn — one polygon, or abutting pieces from an import — does not change which fans it gets.
+
 **The fill.** With a rectangular mesh and source and observer in one plane, the **inner integral is
 closed form** — six of them, checked against adaptive quadrature to 10<sup>-12</sup>. That is why the
 classic "nearly touching cells" problem is not where the difficulty lives here: only the outer integral

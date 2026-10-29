@@ -533,8 +533,9 @@ public static class SurfaceMesher
 
         // ── The grid (D8: one tensor-product grid, shared by every layer) ─────────────────────
         control?.BeginStage("building the grid");
-        var (hardX, hardY, attractX, attractY, staircased) =
-            CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading, detailFloor);
+        var (hardX, hardY, attractX, attractY, staircased, reentrantCorners) =
+            CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading, detailFloor,
+                                 reentrantFans: s.EdgeMesh && s.EdgeCells > 0);
 
         long estX = EstimateLineCount(x0, x1, hardX, hx);
         long estY = EstimateLineCount(y0, y1, hardY, hy);
@@ -1160,6 +1161,10 @@ public static class SurfaceMesher
                                 "it past here only lengthens the fan."
                               : ""));
             }
+
+            // R-pm1-6: said only when it acted, so a mesh with no re-entrant corner reads as before.
+            if (reentrantCorners > 0)
+                notes.Add($"Edge fans at {reentrantCorners} re-entrant corner(s).");
 
             // …and when there is no such edge, SAY SO. "at every axis-parallel conductor edge" is
             // accurate and nobody reads the qualifier, so on an all-curved part the note above
@@ -2200,12 +2205,16 @@ public static class SurfaceMesher
     /// ratio and the λ_g cap all at once, so a test written on it would pass or fail for reasons
     /// that have nothing to do with how many fans the geometry demanded.</para>
     /// </summary>
+    /// <param name="reentrantFans">Include R-pm1-3's re-entrant corner attractors, as
+    /// <see cref="Mesh"/> does whenever the edge mesh is on. Off by default, so D9's counts — which are
+    /// about the EDGE rule — read the edge rule alone.</param>
     public static (IReadOnlyList<double> X, IReadOnlyList<double> Y) EdgeAttractors(
-        PlanarProblem problem, PlanarRimGrading rimGrading = PlanarRimGrading.None)
+        PlanarProblem problem, PlanarRimGrading rimGrading = PlanarRimGrading.None,
+        bool reentrantFans = false)
     {
         ArgumentNullException.ThrowIfNull(problem);
         var (x0, y0, x1, y1) = problem.Bounds();
-        var (_, _, attX, attY, _) = CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading, 0);
+        var (_, _, attX, attY, _, _) = CollectBoundaryLines(problem, x0, y0, x1, y1, rimGrading, 0, reentrantFans);
         // D9's guarantee is about HOW MANY fans the geometry demanded, so the coordinates alone are
         // what this answers with — the per-edge width each one carries is the reference's business.
         return (attX.ConvertAll(a => a.Coord), attY.ConvertAll(a => a.Coord));
@@ -2409,16 +2418,37 @@ public static class SurfaceMesher
     /// stated in wavelengths instead of in fractions of a bounding box — which is the only form of it
     /// that means the same thing on a 1.7 GHz board and a 40 GHz one.</para>
     /// </param>
-    private static (List<double> HardX, List<double> HardY, List<EdgeAttractor> AttractX, List<EdgeAttractor> AttractY, int Staircased)
+    /// <param name="reentrantFans">
+    /// <b>Brief PM-1 R-pm1-3 — a fan at every re-entrant MANHATTAN corner.</b> The caller passes the
+    /// edge mesh's own on/off, so with the edge mesh off nothing here runs and the attractor lists are
+    /// exactly what they were.
+    ///
+    /// <para>A re-entrant corner is where the current is most strongly singular, and until this the
+    /// mesher graded only at convex caps and long edges. A patch's inset feed drawn as its own
+    /// rectangle got a fan at its top edge only because that edge's two corners were convex; merged
+    /// with the patch (R-pm1-2), the same edge is the bottom of the inset notch, its corners are
+    /// re-entrant, and the fan was gone — measured to drift S11 by up to 0.087 on doubling the mesh,
+    /// against 0.020 for the drawing that happened to have it.</para>
+    ///
+    /// <para>Each corner whose two edges are one vertical and one horizontal raises an x-attractor at
+    /// its x and a y-attractor at its y, each carrying <see cref="LocalWidthAt"/> of the adjacent edge
+    /// on that axis. A corner either of whose edges is shorter than the detail floor raises nothing,
+    /// the rule every edge already follows. An attractor that lands on an existing one keeps the
+    /// FINER of the two rather than adding a duplicate. <b>Oblique corners are excluded on
+    /// purpose</b>: a staircased rim gains nothing from a fan (CLAUDE.md §6).</para>
+    /// </param>
+    private static (List<double> HardX, List<double> HardY, List<EdgeAttractor> AttractX, List<EdgeAttractor> AttractY, int Staircased, int ReentrantCorners)
         CollectBoundaryLines(PlanarProblem problem, double x0, double y0, double x1, double y1,
                              PlanarRimGrading rimGrading = PlanarRimGrading.None,
-                             double detailFloorM = 0)
+                             double detailFloorM = 0, bool reentrantFans = false)
     {
         var hardX = new List<double> { x0, x1 };
         var hardY = new List<double> { y0, y1 };
         var attX  = new List<EdgeAttractor>();
         var attY  = new List<EdgeAttractor>();
-        int staircased = 0;
+        var cornerX = new List<EdgeAttractor>();
+        var cornerY = new List<EdgeAttractor>();
+        int staircased = 0, reentrantCorners = 0;
 
         double spanX = x1 - x0, spanY = y1 - y0;
         double tolX = spanX * 1e-12, tolY = spanY * 1e-12;
@@ -2449,12 +2479,17 @@ public static class SurfaceMesher
                 double extX = Math.Max(pbx1 - pbx0, 1e-30);
                 double extY = Math.Max(pby1 - pby0, 1e-30);
                 bool anyOblique = false;
+                bool isHole = false;
 
                 foreach (var ring in Rings(poly))
                 {
                     int n = ring.Count;
                     var oblique = new bool[n];
                     var convex  = ConvexCorners(ring);
+                    if (grade && reentrantFans)
+                        reentrantCorners += AddReentrantCorners(poly, ring, isHole, tolX, tolY,
+                                                                detailFloorM, cornerX, cornerY);
+                    isHole = true;
                     for (int i = 0, j = n - 1; i < n; j = i++)
                     {
                         double ax = ring[j].X, ay = ring[j].Y, bx = ring[i].X, by = ring[i].Y;
@@ -2497,8 +2532,95 @@ public static class SurfaceMesher
                 if (anyOblique && grade) staircased++;
             }
 
-        return (hardX, hardY, attX, attY, staircased);
+        MergeFiner(attX, cornerX, tolX);
+        MergeFiner(attY, cornerY, tolY);
+        return (hardX, hardY, attX, attY, staircased, reentrantCorners);
     }
+
+    /// <summary>
+    /// R-pm1-3: the attractors one ring's re-entrant Manhattan corners raise, appended to
+    /// <paramref name="cornerX"/>/<paramref name="cornerY"/>. Returns how many corners qualified.
+    /// </summary>
+    /// <param name="isHole">A hole ring is re-entrant for the METAL where it is convex for itself —
+    /// the metal wraps 270° around each corner of a rectangular hole.</param>
+    private static int AddReentrantCorners(PlanarPolygon poly, IReadOnlyList<EmPoint> ring, bool isHole,
+                                           double tolX, double tolY, double detailFloorM,
+                                           List<EdgeAttractor> cornerX, List<EdgeAttractor> cornerY)
+    {
+        int n = ring.Count;
+        if (n < 3) return 0;
+        var turns = CornerTurns(ring);
+        int count = 0;
+        for (int i = 0; i < n; i++)
+        {
+            if (turns[i] != (isHole ? 1 : -1)) continue;
+
+            var p0 = ring[(i + n - 1) % n];
+            var p1 = ring[i];
+            var p2 = ring[(i + 1) % n];
+
+            // One edge vertical and the other horizontal, in either order; anything else is oblique.
+            EmPoint vEnd, hEnd;
+            if (Math.Abs(p1.X - p0.X) <= tolX && Math.Abs(p2.Y - p1.Y) <= tolY)      { vEnd = p0; hEnd = p2; }
+            else if (Math.Abs(p1.Y - p0.Y) <= tolY && Math.Abs(p2.X - p1.X) <= tolX) { hEnd = p0; vEnd = p2; }
+            else continue;
+
+            double vLen = Math.Abs(vEnd.Y - p1.Y), hLen = Math.Abs(hEnd.X - p1.X);
+            if (vLen < detailFloorM || hLen < detailFloorM) continue;
+
+            cornerX.Add(new EdgeAttractor(
+                p1.X, LocalWidthAt(poly, p1.X, Math.Min(p1.Y, vEnd.Y), Math.Max(p1.Y, vEnd.Y), vertical: true)));
+            cornerY.Add(new EdgeAttractor(
+                p1.Y, LocalWidthAt(poly, p1.Y, Math.Min(p1.X, hEnd.X), Math.Max(p1.X, hEnd.X), vertical: false)));
+            count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Adds each of <paramref name="extra"/> to <paramref name="into"/> unless one already sits at its
+    /// coordinate (within <paramref name="tol"/>), in which case that one keeps the FINER width — the
+    /// smaller, with 0 ("no local answer, use the global edge cell") the finest of all. An attractor
+    /// already in <paramref name="into"/> keeps its place, so an empty <paramref name="extra"/> leaves
+    /// the list exactly as it was.
+    /// </summary>
+    private static void MergeFiner(List<EdgeAttractor> into, List<EdgeAttractor> extra, double tol)
+    {
+        if (extra.Count == 0) return;
+        var byCoord = new List<(double Coord, int Index)>(into.Count + extra.Count);
+        for (int k = 0; k < into.Count; k++) byCoord.Add((into[k].Coord, k));
+        byCoord.Sort(static (a, b) => a.Coord.CompareTo(b.Coord));
+
+        foreach (var e in extra)
+        {
+            int k = Nearest(e.Coord);
+            if (k >= 0)
+            {
+                if (e.LocalWidthM < into[k].LocalWidthM) into[k] = into[k] with { LocalWidthM = e.LocalWidthM };
+                continue;
+            }
+            into.Add(e);
+            int at = byCoord.BinarySearch((e.Coord, into.Count - 1), CoordOrder);
+            byCoord.Insert(at < 0 ? ~at : at, (e.Coord, into.Count - 1));
+        }
+
+        int Nearest(double c)
+        {
+            int lo = 0, hi = byCoord.Count - 1;
+            while (lo <= hi)
+            {
+                int mid = (lo + hi) >> 1;
+                if (byCoord[mid].Coord < c) lo = mid + 1; else hi = mid - 1;
+            }
+            // lo is the first entry ≥ c; the nearest is it or the one before it.
+            if (lo < byCoord.Count && byCoord[lo].Coord - c <= tol) return byCoord[lo].Index;
+            if (lo > 0 && c - byCoord[lo - 1].Coord <= tol) return byCoord[lo - 1].Index;
+            return -1;
+        }
+    }
+
+    private static readonly Comparer<(double Coord, int Index)> CoordOrder =
+        Comparer<(double Coord, int Index)>.Create(static (a, b) => a.Coord.CompareTo(b.Coord));
 
     /// <summary>
     /// <b>"LONG ENOUGH TO CROWD" — and it is asked TWO ways, because one of them was measured wrong
@@ -2606,9 +2728,21 @@ public static class SurfaceMesher
     /// </summary>
     private static bool[] ConvexCorners(IReadOnlyList<EmPoint> ring)
     {
+        var turns = CornerTurns(ring);
+        var convex = new bool[turns.Length];
+        for (int i = 0; i < turns.Length; i++) convex[i] = turns[i] > 0;
+        return convex;
+    }
+
+    /// <summary>
+    /// Each corner's turn against the ring's own winding: +1 convex, −1 reflex, 0 collinear (within
+    /// the same tolerance <see cref="ConvexCorners"/> has always used).
+    /// </summary>
+    private static int[] CornerTurns(IReadOnlyList<EmPoint> ring)
+    {
         int n = ring.Count;
-        var convex = new bool[n];
-        if (n < 3) return convex;
+        var turns = new int[n];
+        if (n < 3) return turns;
 
         double signed = 0, scale = 0;
         for (int i = 0, j = n - 1; i < n; j = i++)
@@ -2625,9 +2759,9 @@ public static class SurfaceMesher
             var p1 = ring[i];
             var p2 = ring[(i + 1) % n];
             double cross = (p1.X - p0.X) * (p2.Y - p1.Y) - (p1.Y - p0.Y) * (p2.X - p1.X);
-            convex[i] = cross * sign > tol;
+            turns[i] = cross * sign > tol ? 1 : cross * sign < -tol ? -1 : 0;
         }
-        return convex;
+        return turns;
     }
 
     private static IEnumerable<IReadOnlyList<EmPoint>> Rings(PlanarPolygon poly)

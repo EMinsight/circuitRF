@@ -45,7 +45,10 @@ public sealed class AntennaExampleTests(ITestOutputHelper output)
     private const double GainDbi        = 4.664, GainTolDb        = 0.15;
     private const double Efficiency     = 0.626, EfficiencyTol    = 0.030;
     private const double BeamwidthDeg   = 146.1, BeamwidthTolDeg  = 3.0;
-    private const int    UnknownCount   = 1611,  UnknownTol       = 60;
+    /// <summary>Brief PM-1: 1,611 → 1,981. The inset feed is its own rectangle in the artwork and is now merged
+    /// with the patch it touches, which made its top edge the bottom of the inset notch; the four notch corners are
+    /// re-entrant and now carry graded fans (R-pm1-3). S11 moved by at most 7.2×10⁻⁵ — src/Engine/Mom/RESOLVED.md §PM-1.</summary>
+    private const int    UnknownCount   = 1981,  UnknownTol       = 60;
 
     private static string RepoRoot()
     {

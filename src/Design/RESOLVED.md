@@ -24474,3 +24474,26 @@ likely to have the mirror defect at a concave corner beside an outside arc; unme
 
 Gate: `DrcEngineTests.MinWidth_SquareCornerBesideAnInsideArc_IsMeasuredAcrossTheMetal` — the replica
 bend at 0.347 mm passes, the same bend at 0.1 mm is still reported.
+
+## Planar extraction merges TOUCHING copper, not only overlapping copper (brief PM-1, 2026-10-29)
+
+`PlanarExtractor.MergeOverlappingCopper` now passes `touching: true`, as the 3D generator's call already did.
+Before, shapes that shared an edge reached the mesher as separate polygons, and every per-polygon question it
+asks was asked of the pieces: narrowness, edge attractors, feed-lead detection, port end faces. On an internal
+test geometry built outside the repo (26 abutting pieces, the way a DXF import delivers a design), a notched
+T-junction drawn as two trapezoids measured its wedge tip as the narrowest metal on the part, 0.0172 mm against
+the real 0.176 mm line, and the whole mesh was sized from it: 155,000 unknowns. Merged it reads 0.176 mm. The
+mesher half, and the measurements, are in `src/Engine/Mom/RESOLVED.md` §PM-1.
+
+**This deliberately moves planar answers on artwork drawn as abutting pieces.** The old comment said the planar
+call left touching off "so no planar answer moves"; that is the thing that was wrong. Artwork whose shapes neither
+overlap nor touch is bit-identical. The merge note now says "overlapping or touching".
+
+**Port decisions on the shipped fixtures did not move.** Every `testdata/portcal` `.cem`, the Klopfenstein taper
+and the patch example give the same feed-lead, calibration and port notes through `circuitrf check` before and
+after; the only text differences are the merge note's wording, the patch's new merge note (its inset feed is its
+own rectangle) and the mesher's new re-entrant-corner note.
+
+Tests: `OverlappingCopperMergeTests` — `ShapesThatOnlyTouchOrStandApart_AreNotMerged` was the old behaviour pinned,
+and is replaced by `ShapesThatShareAnEdge_AreMerged_AndACornerOnlyTouchIsNot`; plus a mitred L drawn as two pieces
+against the same L drawn whole, and a notched T drawn as two trapezoids and a line.

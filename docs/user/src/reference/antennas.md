@@ -454,7 +454,7 @@ circuitrf em <workspace>/patch/em/patch-5p8GHz.cem
 | Feed | 1.68 mm microstrip (50 Ω), inset 4.0 mm into a notch with 1.0 mm gaps |
 | Ground pour | 40 × 40 mm, drawn on the bottom copper so the run can report its size |
 | Port | one edge port on the feed's end face, 50 Ω, de-embedded |
-| Mesh | radiating sheet, staircase cells, shipped defaults → **N = 1,611** |
+| Mesh | radiating sheet, staircase cells, shipped defaults → **N = 1,981** |
 | Sweep | 5.3–6.3 GHz, 21 points, adaptive sampling + resonance search |
 | Run | **4.9 minutes** on 10 cores, with a pattern at every one of the 21 points |
 

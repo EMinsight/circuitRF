@@ -12213,3 +12213,116 @@ default and inert on any problem without such a face**, segment for segment, so 
 oracle is the same copper lifted off the plane, well posed for any lift, which closes linearly on the omitted-face
 answer. `tests/Engine.Tests/Mom/FaceOnGroundTests`; the board measurement is in `src/Design/RESOLVED.md`
 (brief-impedance-8).
+
+## PM-1 — size the planar mesh from the conductor, and grade its re-entrant corners (2026-10-29)
+
+Two changes, shipped together because the first alone makes the patch example worse:
+
+- **A — merge touching copper** (`PlanarExtractor.MergeOverlappingCopper`, `touching: true`). Narrowness, edge
+  attractors and the port decisions are asked per polygon, so a conductor drawn as abutting pieces was meshed at the
+  pitch of its narrowest fragment. Detail in `src/Design/RESOLVED.md`.
+- **C — graded fans at re-entrant Manhattan corners** (`SurfaceMesher.CollectBoundaryLines`, `AddReentrantCorners`).
+  Each re-entrant vertex whose two edges are one vertical and one horizontal raises an x-attractor at its x and a
+  y-attractor at its y, each carrying `LocalWidthAt` of the adjacent edge on that axis. Only with the edge mesh on;
+  a corner with either edge under the detail floor is skipped; an attractor landing on an existing one keeps the
+  finer width (`MergeFiner`) rather than adding a duplicate. A hole ring's convex corners are re-entrant for the
+  metal and count. Oblique corners are excluded (§6 of CLAUDE.md: a staircased rim gains nothing from a fan). The
+  mesh report says "Edge fans at N re-entrant corner(s)." when it acted.
+
+**Why C is needed.** The patch example's inset feed is its own rectangle. Its top edge, where it meets the patch,
+had two convex corners, so the cap rule gave it a fan. Merged, that edge is the bottom of the inset notch, its
+corners are re-entrant, and the fan was gone: A alone drifted |ΔS11| by 0.087 on doubling the mesh, against 0.020
+for the drawing that happened to have the fan. The old patch mesh was converged because of how its artwork was
+drawn, not by a rule.
+
+### 1. Unknown counts, `circuitrf check` (R-pm1-4 item 1)
+
+| `.cem` | Before | A only | A + C | Note |
+|---|---|---|---|---|
+| Internal test geometry, default mesh | 155,000 | 7,790 | **15,236** | narrowest 0.0172 → 0.176 mm; 26 shapes merged into 1; fans at 14 corners |
+| Internal test geometry, transmission-line model | 35,998 | 5,523 | **11,210** | fits the accelerated ceiling (12,000) |
+| …the same, accelerated, 3-point setup | — | 5,385 | 11,131 | |
+| Patch Antenna example (both copies) | 1,611 | 1,504 | **1,981** | feed merged with the patch; fans at the notch's 4 corners |
+| Klopfenstein Taper | 805 | | 805 | notes identical |
+| `portcal/coupled-asym`, `coupled-pair`, `coupled-pair-passive` | 230 | | 230 | notes identical |
+| `portcal/coupled-triple` | 345 | | 345 | notes identical |
+| `portcal/offset-pair` | 362 | | 362 | notes identical |
+| `portcal/pad-coupled-pair` | 592 | | 592 | 4 re-entrant corners, each on an existing attractor that was already as fine — grid unchanged |
+| `portcal/separated-pair` | 2,012 | | 2,012 | as above; its 5 shapes already overlapped and were merged before |
+| `PDK PCells/SpiralInductor` (`--trust-kit`) | 1,388 | | 1,388 | edge mesh off in the example, so C is inert |
+| `PDK PCells/SpiralResonator` (`--trust-kit`) | 2,723 | | 2,723 | 2 touching shapes now merged; grid unchanged |
+| `em3d/f0/B-via/planar` (3 `.cem`s) | refused | | refused | the planar kernel refuses case B by design (`REFUSED.md` there); same refusal both sides |
+
+The feed-lead, calibration and port notes are identical before and after on every fixture above.
+
+### 2. Patch convergence, 11 points 5.3–6.3 GHz, Auto off (R-pm1-4 item 2; gate 2)
+
+| | Worst \|ΔS11\| |
+|---|---|
+| Today's mesh, 20 → 40 cells/λ (1,611 → 2,556 unknowns) | 0.0200 |
+| A + C, 20 → 40 cells/λ (1,981 → 2,996 unknowns) | 0.0201 |
+| A + C against today, at 20 cells/λ | **7.2 × 10⁻⁵** |
+| A + C against today, at 40 cells/λ | 1.6 × 10⁻⁴ |
+
+The worst point is 5.8 GHz, the resonance, in all four. The gate asked for ≤ 1×10⁻³ against today (met by 14×) and a
+doubling no worse than today's 0.020. A + C's doubling reads 0.0201 against 0.0200: the same at the gate's stated
+precision, 1×10⁻⁴ above it at four digits.
+
+### 3. Off is off (gate 4)
+
+With `Auto` off and `EdgeMesh` off, A + C against A only, through `circuitrf check`: the whole report is identical
+on the patch (933 unknowns) and on the test geometry (default mesh 4,197, transmission-line model 2,563). C is gated
+on the edge mesh, so nothing in it runs. `ReentrantCornerFanTests.WithTheEdgeMeshOff_TheMeshIsTheOneItWasBefore`
+pins the off mesh of an inset-fed patch drawn as one polygon (N, both gridline counts and both gridline sums) to the
+values the mesher produced before this change.
+
+### 3b. Test geometry S-parameters, A against A + C (R-pm1-4 item 3)
+
+Transmission-line current model, accelerated solve, 3 points across the sweep. A (5,385 unknowns) ran in 67 s at
+2.0 GB peak; A + C (11,131) in 350 s at 5.5 GB.
+
+| Point | \|ΔS11\| | \|ΔS22\| | \|ΔS33\| | \|ΔS21\| | \|ΔS31\| | \|ΔS23\| | \|S21\| vs \|S31\|, A | …, A + C |
+|---|---|---|---|---|---|---|---|---|
+| sweep low  | **0.118** | 0.036 | 0.088 | 0.009 | 0.030 | 0.010 | 34.4 % apart | 3.0 % |
+| centre     | **0.140** | 0.040 | 0.075 | 0.012 | 0.031 | 0.009 | 25.5 % | 4.2 % |
+| sweep high | **0.109** | 0.046 | 0.077 | 0.022 | 0.033 | 0.012 | 10.7 % | 2.3 % |
+
+**C matters on this artwork, at every point.** The complex S11 moves by 0.11–0.14 while its magnitude changes by
+under 0.004, so the change is in phase. The geometry is mirror-symmetric about its input, so |S21| and |S31| should
+agree: A puts them 11–34 % apart, A + C 2–4 %. That is consistent with C being the more accurate mesh, not proof of
+it. So D2 stays at (a): the brief takes the cheaper (b) only if C does not move these S-parameters, and it does.
+
+### 4. Tests that moved
+
+- `AntennaExampleTests.UnknownCount` 1,611 → 1,981 — the patch's feed is merged and its notch graded, as above.
+- `OverlappingCopperMergeTests.ShapesThatOnlyTouchOrStandApart_AreNotMerged` pinned the old behaviour and is
+  replaced; the merge note's pinned prefix gains "or touching".
+
+No other pinned count moved in the mesher test classes run (`EdgeAttractorCapTests`, `DetailFloorTests`,
+`MeshGradingTests`, `LocalEdgeReferenceTests`, `EdgeRefinementFloorTests`, `SurfaceMesherTests`,
+`TransmissionLineMeshTests`, `PlanarRimGradingTests`, `MeshingTests`). `SurfaceMesher.EdgeAttractors` keeps the edge
+rule alone by default (`reentrantFans: false`), so D9's attractor counts are unchanged.
+
+### 5. Part 2 — how much local refinement could save (R-pm1-7)
+
+Measured with a throwaway copy of the mesher (not committed). Each attractor carries the extent of the feature that
+raised it: an edge's span, or a corner's point. The **local** size field at a point is
+`min(bulk cap, minᵢ c0ᵢ + gᵢ·dᵢ)`, with dᵢ the 2-D distance to attractor i's feature. The 1-D tensor field uses the
+distance across the gridline only. A horizontal unknown is **spread** when the local field is more than 2× coarser
+than the smaller of its two cells, in either axis. The bulk cap is left as the mesher has it (not localised), which
+keeps the fraction low rather than high.
+
+| Mesh | Unknowns | Spread > 2× | > 4× | > 1.5× | Finer than the 1-D tensor field asks, > 2× |
+|---|---|---|---|---|---|
+| Test geometry, default | 15,236 | **82.8 %** | 58.1 % | 95.1 % | 58.2 % |
+| Test geometry, transmission-line model | 11,210 | **85.3 %** | 60.8 % | 96.0 % | 62.0 % |
+| Patch, shipped settings | 1,981 | **69.2 %** | 29.6 % | 84.8 % | 54.9 % |
+
+**Verdict: Go.** 83 % and 85 % against the 40 % threshold, and still 58 % at 4×. Brief PM-2
+(`docs/sonnet-briefs/brief-planar-mesh-2-rooftop-merging.md`) is written.
+
+**The last column is the finding PM-2 most needs.** Over half the unknowns sit in cells more than 2× finer than even
+the tensor field asks for, so they are not fan lines. They are **hard gridlines**: every axis-parallel edge
+coordinate crosses the whole part, and edges of different features a few tens of µm apart cut sliver rows. Only 5
+of 260 x-intervals and 24 of 129 y-rows on the test geometry are slivers, but those rows run through the metal and
+hold most of the unknowns. Merging fan lines alone would miss most of the saving.
