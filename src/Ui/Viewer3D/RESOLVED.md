@@ -293,3 +293,22 @@ labels covered one another in the Front and Side views.
   whose two triangles face opposite ways from the eye. Adjacency is built once per (scene, object), welding by position so a
   seam's duplicated vertices join; past 200,000 triangles nothing is built. On screen it is `2 / RenderScaling` DIPs, the
   GPU outline's two device pixels; it follows a drag preview's copies like the feature edges.
+
+## Linux, AMD: the 3D view drawn as horizontal streaks (issue #20, 2026-10-28)
+
+- **Symptom:** on an AMD integrated GPU (Mesa: RADV for Vulkan, radeonsi for GL, X11) every solid in the 3D view came out
+  as full-width horizontal bands of its colour, while the labels and outlines Avalonia draws on top were correct.
+- **Cause — the hand-off, not the drawing.** The compositor on X11 is GL (Avalonia's default, GLX then software; circuitRF
+  never selects its Vulkan mode). Avalonia 12.0.3's `ExternalObjectsOpenGlExtensionFeature.ImportImage` goes straight from
+  `glImportMemoryFdEXT` to `glTexStorageMem2DEXT` and never sets `GL_DEDICATED_MEMORY_OBJECT_EXT`. For a memory object not
+  marked dedicated, radeonsi ignores the buffer's tiling metadata and assumes a linear layout (`si_texture.c`, by design).
+  The backend allocated the image dedicated and OPTIMAL, so the compositor read tiled pixels as rows.
+- **Fix (`VulkanViewer3DBackend._linearShared`):** on an AMD device (vendor 0x1002) whose RGBA8 linear tiling can be
+  drawn into, blended, sampled and copied, the images the compositor imports are created LINEAR. Depth, pick, offscreen
+  and export images stay optimal. Both drivers compute a linear image's pitch with the same surface code, which is what
+  makes the two readings agree.
+- **Not verified on hardware here** — macOS cannot run the Vulkan half; the reporter's run is the check. Intel (iris)
+  takes a different guess for an undedicated object and is untested either way.
+- **If X11's Vulkan compositor is ever enabled**, revisit this: Avalonia's Vulkan importer re-creates the image OPTIMAL,
+  so a linear export would then be the mismatch. An Avalonia that marks the memory object dedicated makes the switch
+  unnecessary.

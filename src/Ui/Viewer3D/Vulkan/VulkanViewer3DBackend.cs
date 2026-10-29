@@ -158,6 +158,10 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private VkSampler _shadowSampler;
     /// <summary>Whether the device filters a D32 float image linearly: the comparison sampler then blends four comparisons a tap.</summary>
     private bool _depthLinear;
+    /// <summary>Issue #20 — the images the compositor imports are LINEAR on an AMD device. Avalonia's GL import never marks the
+    /// memory object dedicated, and Mesa's AMD GL driver then reads it as linear whatever RADV drew it as: an optimal image comes
+    /// out as horizontal streaks. Linear here makes the two agree; nothing else this backend draws into changes.</summary>
+    private bool _linearShared;
     private Target? _noShadowMap, _noOcclusion;
     private ShadowMap? _shadowMap;
     private OcclusionTargets? _occlusion;
@@ -266,6 +270,15 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         VkFormatProperties depthProps;
         vi.vkGetPhysicalDeviceFormatProperties(_physical, DepthFormat, &depthProps);
         _depthLinear = (depthProps.optimalTilingFeatures & VkFormatFeatureFlags.SampledImageFilterLinear) != 0;
+        // The compositor is GL on X11 (Avalonia's default, GLX then software; circuitRF never asks for its Vulkan mode, whose
+        // importer re-creates the image OPTIMAL and would then disagree with a linear one).
+        VkPhysicalDeviceProperties props;
+        vi.vkGetPhysicalDeviceProperties(_physical, &props);
+        VkFormatProperties colorProps;
+        vi.vkGetPhysicalDeviceFormatProperties(_physical, ColorFormat, &colorProps);
+        const VkFormatFeatureFlags linearNeeds = VkFormatFeatureFlags.ColorAttachment | VkFormatFeatureFlags.ColorAttachmentBlend |
+                                                 VkFormatFeatureFlags.SampledImage | VkFormatFeatureFlags.TransferSrc | VkFormatFeatureFlags.TransferDst;
+        _linearShared = props.vendorID == 0x1002 && (colorProps.linearTilingFeatures & linearNeeds) == linearNeeds;
         VkPhysicalDeviceFeatures supported;
         vi.vkGetPhysicalDeviceFeatures(_physical, &supported);
         _biasClamp = supported.depthBiasClamp;
@@ -896,7 +909,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             pNext = export ? &emi : null,
             flags = export ? VkImageCreateFlags.MutableFormat : VkImageCreateFlags.None,
             imageType = VkImageType.Image2D, format = fmt, extent = new VkExtent3D { width = (uint)w, height = (uint)h, depth = 1 },
-            mipLevels = 1, arrayLayers = 1, samples = VkSampleCountFlags.Count1, tiling = VkImageTiling.Optimal,
+            mipLevels = 1, arrayLayers = 1, samples = VkSampleCountFlags.Count1,
+            tiling = export && _linearShared ? VkImageTiling.Linear : VkImageTiling.Optimal,
             usage = usage, sharingMode = VkSharingMode.Exclusive, initialLayout = VkImageLayout.Undefined,
         };
         var t = new Target();
