@@ -24579,3 +24579,34 @@ Tests: `tests/Engine.Tests/Em3d/StaticBodiesEngineTests` (elimination, contact r
 `tests/Ui.Tests/Em3d/StaticBodiesTests` (gates 1–4, Other metal, the picker's view model);
 `PalaceStaticTests.Gate6` updated: a setup leaves no conductor unassigned now, and the writer's refusal is shown on a
 problem built without the floating terminal.
+
+## Create SnP schematic after an EM run (brief-dfr31-4, 2026-10-29)
+
+`EmSetup.CreateSnpSchematic` (a `.cem` key, omitted when off, the same in an embedded `.c3d` setup) makes
+`<setup>_sim` once a driven run has written its Touchstone: an SnP of the run, a TermG per port, an S-parameter
+analysis over the setup's sweep and a Data Display. `EmSnpSchematic` builds it; the cell is written by
+`CellCreate.Create` and the display by `CellCreate.WriteTemplateDataDisplay`, so nothing here re-implements a cell or
+a display location.
+
+- **Made inside `EmRunService.Run` / `RunThreeDView`, not by the panel.** The flag lives in the setup, so the run that
+  reads the setup acts on it, and `circuitrf em` honours it with no code of its own beyond printing the sentence. The
+  workspace is the results root's parent, which is the same `<workspace>/results` rule the GUI and `ResultsRoot.For`
+  both use. The outcome rides on `EmRunResult.SnpSchematic`.
+- **A TermG's Z is read from the Touchstone the run just wrote** (`Z0PerPort`, else `Z0`), not re-derived from the
+  setup. The file is the thing the SnP block reads, so its reference is the impedance that gives back the run's own S.
+  Gate: the 2-port and 6-port schematics simulate back to their Touchstone to 1e-9 in every entry.
+- **The SnP's pin arrangement is chosen, not left at Standard.** Standard puts ports 1..⌈N/2⌉ down the left. An EM
+  run numbers a path's two ends 2k−1 and 2k, so on a coupled triple Standard put port 2 on a left pin while its TermG
+  was on the right, and every far-end wire went round the block. The block now takes whichever of
+  Standard / DualRow / SplitLR puts the most pins on the side their TermG is on (Standard wins a tie). For a run's own
+  odd/even ports that is DualRow, and the wires are straight.
+- **Ports on one side are ordered by their pin's angle round the block**, measured from the opposite side. Wires
+  cross only where the faces force it, and a crossing is never a connection (`SchematicAutoRouter`'s rule 1).
+- **A port's face is the opposite of its direction**: the direction points INTO the metal, so `R0` is a port on the
+  conductor's low-x end and faces left. A port with no direction, stated or inferred, faces away from the middle of
+  the ports. A `.c3d`'s ports are placed that way too, seen from above.
+- **The flag is no part of a 3D run's record.** `C3dPersistence.SerializeForRun` strips it from each embedded setup,
+  or ticking it would have marked a finished result out of date.
+- **An existing `<setup>_sim` is never overwritten.** If its SnP reads this run's file, it is `Current` and nothing is
+  written. If the SnP reads the same stem under another port count, only its `File`/`NumPorts` are re-pointed, and the
+  sentence says when the TermG count no longer matches. Anything else is left alone, and the run says so.

@@ -270,6 +270,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(Problem3DDescription));
         OnPropertyChanged(nameof(RadiationPatternDisabledReason));
         OnPropertyChanged(nameof(ReferenceInputPowerEnabled));
+        OnPropertyChanged(nameof(ShowCreateSnpSchematic));
         RaiseEigenVisibility();
     }
 

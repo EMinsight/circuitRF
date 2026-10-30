@@ -199,6 +199,7 @@ public static class C3dPersistence
     {
         var (plots, unit, snap, airBoxHidden, active, look) = (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup, doc.Look);
         var bands = doc.BandSweeps;
+        var setups = doc.Setups;
         var objects = doc.Objects.SelectMany(C3dOperands.SelfAndDescendants)
                                  .Where(o => o.Hidden || o.Transparency is not null || o.Appearance is not null || o.Group is not null || o.DrawingLayer is not null)
                                  .Select(o => (Object: o, o.Hidden, o.Transparency, o.Appearance, o.Group, o.DrawingLayer)).ToList();
@@ -218,6 +219,8 @@ public static class C3dPersistence
         doc.Look = null;
         // brief-sar-12 — a band sweep's power, duty cycle and reference values are read by its table, never by a run.
         doc.BandSweeps = null;
+        // brief-dfr31-4 — what a run does once it has finished (make a schematic of its result) is no part of the result.
+        doc.Setups = [.. setups.Select(WithoutRunInertKeys)];
         foreach (var x in objects) { x.Object.Hidden = false; x.Object.Transparency = null; x.Object.Appearance = null; x.Object.Group = null; x.Object.DrawingLayer = null; }
         foreach (var x in instances) { x.Instance.Transparency = null; x.Instance.Appearance = null; x.Instance.Group = null; }
         foreach (var x in images) { x.Sheet.Image = null; x.Sheet.Locked = false; }
@@ -234,11 +237,21 @@ public static class C3dPersistence
             (doc.Objects, doc.Instances) = (allObjects, allInstances);
             (doc.FieldPlots, doc.DisplayUnit, doc.SnapDbu, doc.AirBoxHidden, doc.ActiveSetup, doc.Look) = (plots, unit, snap, airBoxHidden, active, look);
             doc.BandSweeps = bands;
+            doc.Setups = setups;
             foreach (var x in objects) { x.Object.Hidden = x.Hidden; x.Object.Transparency = x.Transparency; x.Object.Appearance = x.Appearance; x.Object.Group = x.Group; x.Object.DrawingLayer = x.DrawingLayer; }
             foreach (var x in instances) { x.Instance.Transparency = x.Transparency; x.Instance.Appearance = x.Appearance; x.Instance.Group = x.Group; }
             foreach (var x in images) { x.Sheet.Image = x.Image; x.Sheet.Locked = x.Locked; }
             foreach (var x in faceImages) x.Object.FaceImages = x.FaceImages;
         }
+    }
+
+    /// <summary>An embedded setup less the keys that change what happens after a run and never its answer.</summary>
+    private static JsonElement WithoutRunInertKeys(JsonElement setup)
+    {
+        if (setup.ValueKind != JsonValueKind.Object || !setup.TryGetProperty("CreateSnpSchematic", out _)) return setup;
+        var node = System.Text.Json.Nodes.JsonNode.Parse(setup.GetRawText())!.AsObject();
+        node.Remove("CreateSnpSchematic");
+        return JsonSerializer.SerializeToElement(node);
     }
 
     /// <summary>brief-em3d-83 — the field plots as the file spells them (an undo entry's before and after).</summary>

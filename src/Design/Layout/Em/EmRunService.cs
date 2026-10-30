@@ -109,7 +109,12 @@ public sealed record EmRunResult(
     /// run's DC row refused for want of Gmsh. The Messages panel puts <i>Install …</i> on that row, as on a solver's refusal
     /// (<see cref="CircuitRF.Design.Em3d.Install.SolverInstaller.OfferFor"/>'s rule). Null when no sentence offers one.
     /// </summary>
-    IReadOnlyDictionary<string, string>? MessageInstalls = null);
+    IReadOnlyDictionary<string, string>? MessageInstalls = null,
+    /// <summary>
+    /// brief-dfr31-4 R-dfr31-4-4 — what the setup's <see cref="EmSetup.CreateSnpSchematic"/> did once the run had written its
+    /// Touchstone: the cell made, found current, re-pointed or left alone. Null when the setup does not ask.
+    /// </summary>
+    EmSnpSchematicResult? SnpSchematic = null);
 
 /// <summary>One file a run wrote: what it is (<c>touchstone</c>, <c>npy</c>) and where.</summary>
 public sealed record EmRunOutput(string Kind, string Path);
@@ -544,7 +549,11 @@ public static class EmRunService
         long?              memoryCeilingBytes = null,
         CircuitRF.Design.Em3d.EmergeDevice emergeDevice = CircuitRF.Design.Em3d.EmergeDevice.Auto)
     {
-        try { return RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes, emergeDevice); }
+        try
+        {
+            var result = RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes, emergeDevice);
+            return WithSnpSchematic(result, setup, resultsRoot, () => source is null ? new Dictionary<int, EmPortFace>() : EmSnpSchematic.FacesOf(source));
+        }
         catch (OperationCanceledException)
         {
             // A stopped run is a normal outcome, not a failure — and it wrote nothing, because every
@@ -628,7 +637,7 @@ public static class EmRunService
                 }, device, memoryCeilingBytes, emergeDevice);
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
-            return result;
+            return WithSnpSchematic(result, setup, resultsRoot, () => EmSnpSchematic.FacesOf(document));
         }
         catch (OperationCanceledException)
         {
@@ -636,6 +645,30 @@ public static class EmRunService
             return new EmRunResult(EmRunStatus.Cancelled, null, null, null, null, null,
                 cancelled.Render(), [], Diagnostic: cancelled);
         }
+    }
+
+    /// <summary>
+    /// brief-dfr31-4 — a finished run whose setup asks for it makes <c>&lt;setup&gt;_sim</c> in the workspace the results
+    /// root belongs to (its parent: <c>&lt;workspace&gt;/results</c> in the GUI and headless alike). Only a run that wrote a
+    /// Touchstone has anything to make it from; any other says why nothing was made.
+    /// </summary>
+    private static EmRunResult WithSnpSchematic(EmRunResult result, EmSetup setup, string resultsRoot,
+                                                Func<IReadOnlyDictionary<int, EmPortFace>> faces)
+    {
+        if (!setup.CreateSnpSchematic || result.Status != EmRunStatus.Ok) return result;
+        string cellName = EmSnpSchematic.CellNameFor(setup);
+        string? snp = result.SnpPath ?? result.Outputs?.FirstOrDefault(o => o.Kind == "touchstone")?.Path;
+        if (snp is null || !File.Exists(snp))
+            return result with
+            {
+                SnpSchematic = new EmSnpSchematicResult(EmSnpSchematicOutcome.NotCreated, cellName, null,
+                    "No SnP schematic was created: this run wrote no Touchstone, and an SnP block reads one."),
+            };
+        string workspace = Path.GetDirectoryName(Path.GetFullPath(resultsRoot))!;
+        IReadOnlyDictionary<int, EmPortFace> portFaces;
+        try { portFaces = faces(); }
+        catch (Exception e) when (e is IOException or InvalidDataException or ArgumentException) { portFaces = new Dictionary<int, EmPortFace>(); }
+        return result with { SnpSchematic = EmSnpSchematic.Create(workspace, setup, snp, portFaces) };
     }
 
     /// <summary>brief-em3d-120 C5 — a .cem's openEMS setup asking for a cylindrical grid, refused before anything is looked for.</summary>

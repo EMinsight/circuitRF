@@ -445,10 +445,29 @@ schematic that also writes results will collide with it — both resolve to the 
 its own name, or set the output file explicitly.</p>
 </div>
 
-**The `.sNp` is not placed into a schematic for you.** Back-annotation into an `SnP` component exists in
-the engine and is exercised by the test suite, but no button in this release invokes it: place the
-component yourself and point its `File` parameter at the written path. Re-running updates the file in
-place, so the schematic picks the new result up the way it picks up any changed source.
+### A schematic to start from {#snp-schematic}
+
+Tick **Create SnP schematic when the run finishes**, under *After the run*, and a driven run also makes a
+cell named after the setup with `_sim` on the end. Its schematic holds:
+
+- an `SnP` block whose `File` is the run's Touchstone, workspace-relative;
+- a `TermG` on every port, numbered as the port and at the impedance the Touchstone is referenced to,
+  placed on the side of the block its port faces in the layout and turned to face out;
+- an S-parameter analysis over the setup's sweep;
+
+and its [Data Display](data-display.html) plots dB of the through paths, S(2,1), S(4,3) and so on, and
+of every input match. Messages says *Created cell …* with **Open schematic** beside it. Simulate it as it
+stands and it gives back the run's own S-parameters; break a wire to put the parts you are studying
+between a port and its `TermG`.
+
+A cell of that name is **never overwritten**. On a re-run it already reads the same file, which the run
+has just rewritten, so it picks up the new result unchanged. If the port count changed, its `SnP` is
+pointed at the new file and Messages says when its `TermG`s no longer match. A cell of that name that
+reads something else is left alone, and Messages says so. `circuitrf em` honours the same tick.
+
+Without the tick, place an [SnP component](components.html#snp) yourself and point its `File`
+parameter at the written path. Re-running updates the file in place, so the schematic picks the new
+result up the way it picks up any changed source.
 
 ## Running the setup without the GUI {#headless}
 

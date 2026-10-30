@@ -976,6 +976,9 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     [ObservableProperty] private bool   _deembedOutsideCalibrationValidity;
     [ObservableProperty] private bool   _radiationPattern;
 
+    /// <summary>brief-dfr31-4 — <see cref="EmSetup.CreateSnpSchematic"/>.</summary>
+    [ObservableProperty] private bool   _createSnpSchematic;
+
     /// <summary>The dBm TRP and peak EIRP are referenced to — see
     /// <c>EmSetup.ReferenceInputPowerDbm</c>. Live only while the pattern is on, because it is read
     /// by nothing else.</summary>
@@ -1643,6 +1646,19 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         // already produced on the SAME mesh, so no cell moves and no s-parameter changes.
     }
 
+    partial void OnCreateSnpSchematicChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        if (value == Working.CreateSnpSchematic) return;
+        var before = SnapshotJson();
+        Working.CreateSnpSchematic = value;
+        CommitEdit(before, "Change Create SnP schematic");
+        // No InvalidateMesh: it decides what happens after a run, never what the run solves.
+    }
+
+    /// <summary>The check box is shown only where a run writes a Touchstone: a driven setup.</summary>
+    public bool ShowCreateSnpSchematic => !IsStaticSetup && !IsEigenmodeSetup && !IsThermalSetup;
+
     partial void OnReferenceInputPowerDbmChanged(double value)
     {
         if (_suppressCommit) return;
@@ -1958,6 +1974,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         GroundedEdgePorts    = Working.EdgePortReturn == PlanarEdgePortReturn.Ground;
         DeembedOutsideCalibrationValidity = Working.DeembedOutsideCalibrationValidity;
         RadiationPattern     = Working.RadiationPattern;
+        CreateSnpSchematic   = Working.CreateSnpSchematic;
         ReferenceInputPowerDbm = Working.ReferenceInputPowerDbm;
         AnalysisKind = Working.AnalysisKind;
         SyncSolver3DFields();

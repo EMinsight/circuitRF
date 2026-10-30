@@ -1378,6 +1378,10 @@ public sealed class CemFile
     public double? ReferenceInputPowerDbm { get; set; }
     public string? SnpOutputPathOverride { get; set; }
 
+    /// <summary>brief-dfr31-4 — <b>null means off</b>; written only when on, so a file written before it existed loads
+    /// AND re-serialises byte-identically.</summary>
+    public bool?   CreateSnpSchematic    { get; set; }
+
     /// <summary>
     /// D7 — <b>null means the cross-section analysis</b>, which is what every <c>.cem</c> written
     /// before L8b means. Nullable + <c>WhenWritingNull</c> so such a file loads AND re-serialises
@@ -1569,6 +1573,7 @@ public static class EmSetupPersistence
         RadiationPattern      = s.RadiationPattern ? true : null,
         ReferenceInputPowerDbm = s.ReferenceInputPowerDbm != 0.0 ? s.ReferenceInputPowerDbm : null,
         SnpOutputPathOverride = s.SnpOutputPathOverride is { Length: > 0 } p ? p : null,
+        CreateSnpSchematic    = s.CreateSnpSchematic ? true : null,
         AnalysisKind          = s.AnalysisKind == EmAnalysisKind.Auto ? null : s.AnalysisKind,
         SolveRegion           = s.SolveRegion is { } r
             ? new CemSolveRegion { XMinUm = r.XMinUm, YMinUm = r.YMinUm, XMaxUm = r.XMaxUm, YMaxUm = r.YMaxUm }
@@ -1678,6 +1683,7 @@ public static class EmSetupPersistence
         RadiationPattern      = f.RadiationPattern ?? false,
         ReferenceInputPowerDbm = f.ReferenceInputPowerDbm ?? 0.0,
         SnpOutputPathOverride = f.SnpOutputPathOverride ?? "",
+        CreateSnpSchematic    = f.CreateSnpSchematic ?? false,
         AnalysisKind          = f.AnalysisKind ?? EmAnalysisKind.Auto,
         // Normalised on the way in, so a hand-edited file with its corners swapped means the box it
         // plainly describes rather than an inside-out one that clips everything away.

@@ -9202,6 +9202,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (result.SnpPath is { } snp) Messages.Success("Wrote s-parameters", snp);
             if (result.NpyPath is { } npyWritten) Messages.Success("Wrote results", npyWritten);
         }
+        PostSnpSchematic(result.SnpSchematic, owningWorkspace);
 
         // The window moved to another workspace while this was solving. The write above is still
         // correct — it went to the workspace the run was started in — but the Data Display below is
@@ -9232,6 +9233,28 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             await AutoOpenOrCreateDataDisplayAsync(baseDir, displayKey, npy);
         }
         return true;
+    }
+
+    /// <summary>
+    /// brief-dfr31-4 R-dfr31-4-4 — what the setup's Create SnP schematic did, with Open on a schematic there is to open.
+    /// The tree is refreshed only while this window still shows the workspace the cell was made in.
+    /// </summary>
+    private void PostSnpSchematic(EmSnpSchematicResult? made, string? owningWorkspace)
+    {
+        if (made is null) return;
+        var level = made.Outcome switch
+        {
+            EmSnpSchematicOutcome.Created or EmSnpSchematicOutcome.Repointed => MessageLevel.Success,
+            EmSnpSchematicOutcome.NotCreated                                 => MessageLevel.Warning,
+            _                                                                => MessageLevel.Info,
+        };
+        bool here = string.Equals(CurrentWorkspacePath, owningWorkspace, StringComparison.OrdinalIgnoreCase);
+        if (here && made.Outcome is EmSnpSchematicOutcome.Created) _factory.ProjectTreeTool?.Refresh();
+        if (here && made.HasSchematic && made.SchematicPath is { } path)
+            Messages.PostAction(level, made.Sentence, "Open schematic",
+                                () => { OpenOrActivateSchematic(Path.GetFullPath(path)); return Task.CompletedTask; }, path);
+        else
+            Messages.Post(level, made.Sentence, made.SchematicPath);
     }
 
     /// <summary>The .npy files an EM run wrote — every one a both-run lists, else its one.</summary>

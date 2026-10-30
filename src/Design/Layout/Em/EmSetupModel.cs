@@ -528,6 +528,12 @@ public sealed class EmSetup
     /// path <c>EmRunService</c> derives from the layout and setup names (R-em-19).</summary>
     public string SnpOutputPathOverride { get; set; } = "";
 
+    /// <summary>brief-dfr31-4 R-dfr31-4-1 — once a driven run has written its Touchstone, make the cell
+    /// <c>&lt;setup&gt;_sim</c>: an SnP of the run with a TermG on every port, an S-parameter analysis and a Data Display
+    /// (<see cref="EmSnpSchematic"/>). An existing cell of that name is never overwritten. Off by default; omitted from
+    /// the <c>.cem</c> when off. It changes no answer, so it enters no provenance hash.</summary>
+    public bool CreateSnpSchematic { get; set; }
+
     /// <summary>
     /// <b>The part of the layout this setup solves — null solves all of it</b>, which is what every
     /// <c>.cem</c> written before the region existed means. Applied by
@@ -632,6 +638,7 @@ public sealed class EmSetup
             (d.StartExpr, d.StopExpr, d.StepExpr, d.NumPoints, d.Mode, d.Kind, d.StartUnit, d.StopUnit, d.StepUnit))
             set.Add("Frequency");
         if (PortZ0s.Count > 0 || Port1Z0 != new EmSetup().Port1Z0 || Port2Z0 != new EmSetup().Port2Z0) set.Add("PortZ0s");
+        if (CreateSnpSchematic) set.Add("CreateSnpSchematic");
         return set;
     }
 
@@ -721,6 +728,7 @@ public sealed class EmSetup
         RobustMeshing          = RobustMeshing,
         ReferenceInputPowerDbm = ReferenceInputPowerDbm,
         SnpOutputPathOverride  = SnpOutputPathOverride,
+        CreateSnpSchematic     = CreateSnpSchematic,
         SolveRegion            = SolveRegion,    // record, immutable
         Solver3D               = Solver3D,
         OperatingTempC         = OperatingTempC,

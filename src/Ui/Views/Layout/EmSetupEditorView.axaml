@@ -624,7 +624,7 @@
                                                  FilterMode="Custom" ItemFilter="{x:Static local:EmSetupEditorView.PickFilter}"
                                                  MinimumPrefixLength="0" MaxDropDownHeight="260"
                                                  ValueMemberBinding="{Binding Token, DataType=em:Em3dBodyPick}"
-                                                 Watermark="{Binding ViewModel.GroundPlaceholder}"
+                                                 PlaceholderText="{Binding ViewModel.GroundPlaceholder}"
                                                  LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  SelectionChanged="OnGroundPicked"
                                                  ToolTip.Tip="The matrix's reference: a net, an object or a piece of metal. Blank: the technology's ground-reference conductors, and the floor when it is a ground plane.">
@@ -2101,6 +2101,18 @@
                                    Value="{Binding ViewModel.ReferenceInputPowerDbm}"
                                    ToolTip.Tip="dBm. The conducted power TRP and peak EIRP are referenced to - it is an INPUT, because those two are absolute powers and this solve drives a 1 V delta gap that means nothing in watts. At the 0 dBm default, peak EIRP in dBm reads as the realized gain in dBi and TRP in dBm as the total efficiency in dB. Set it to a radio's own conducted power to compare against that radio's measured report. It changes no other metric and no s-parameter. YOU DO NOT NEED TO RE-RUN TO CHANGE IT: this sets what the run records, and the Data Display's trace card reads the same solved data against any other reference exactly."/>
                 </Grid>
+                  </StackPanel>
+                </Border>
+
+                <!-- ── brief-dfr31-4 — what the run makes once it has written its Touchstone. Shown only where a run
+                     writes one (a driven setup), planar and 3D alike. -->
+                <Border Classes="group" IsVisible="{Binding ViewModel.ShowCreateSnpSchematic}">
+                  <StackPanel Spacing="2">
+                <TextBlock Classes="grouphdr" Text="After the run"/>
+                <CheckBox Name="CreateSnpSchematicCheck" FontSize="11"
+                          Content="Create SnP schematic when the run finishes"
+                          IsChecked="{Binding ViewModel.CreateSnpSchematic}"
+                          ToolTip.Tip="Makes a cell named after this setup with _sim on the end: an SnP block reading this run's s-parameter file, a TermG on every port placed on the side its port faces in the layout and turned to face out, an S-parameter analysis over this sweep, and a Data Display of the through paths and the input matches. A cell of that name that already exists is never overwritten; on a re-run it already reads the same file, which the run has just rewritten."/>
                   </StackPanel>
                 </Border>
 

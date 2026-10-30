@@ -1869,6 +1869,20 @@ static int ReportEmRun(EmRunResult result, EmSetup setup, string cemPath)
         if (result.NpyPath is { } npy) { Console.WriteLine($"Wrote {npy}"); JsonRun.AddOutput("npy", npy); }
     }
 
+    // brief-dfr31-4 — the setup's Create SnP schematic, made by the run service exactly as Simulate makes it.
+    if (result.SnpSchematic is { } made)
+    {
+        if (made.Outcome is EmSnpSchematicOutcome.Created or EmSnpSchematicOutcome.Repointed)
+        {
+            Console.WriteLine($"{made.Sentence} ({made.SchematicPath})");
+            JsonRun.AddOutput("schematic", made.SchematicPath!);
+        }
+        else if (made.Outcome == EmSnpSchematicOutcome.NotCreated)
+        { Console.Error.WriteLine($"warning: {made.Sentence}"); JsonRun.Note(CliDiagnostics.EmRunWarning(made.Sentence)); }
+        else
+        { Console.Error.WriteLine($"note: {made.Sentence}");    JsonRun.Note(CliDiagnostics.EmRunNote(made.Sentence)); }
+    }
+
     return 0;
 }
 
