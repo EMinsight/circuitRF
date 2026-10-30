@@ -84,23 +84,23 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.6.0-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.0/circuitRF-1.6.0-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.6.0-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.0/circuitRF-1.6.0-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.6.0-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.0/circuitRF-1.6.0-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.6.1-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.6.1-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.6.1-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.6.0-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.0/circuitRF-1.6.0-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.6.0-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.0/circuitRF-1.6.0-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.6.1-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.6.1-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.6.0-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.0/circuitRF-1.6.0-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.6.0-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.0/circuitRF-1.6.0-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.6.1-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.6.1-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-linux-arm64.tar.gz) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.6.0-linux-x64.tar.gz
-./circuitRF-1.6.0/install.sh
+tar xzf circuitRF-1.6.1-linux-x64.tar.gz
+./circuitRF-1.6.1/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
@@ -199,6 +199,8 @@ cd circuitRF
 dotnet build      # restores packages + compiles everything
 dotnet run --project src/Ui # from the circuitRF/ directory:
 ```
+
+For faster simulations, run the Release build: `dotnet run --project src/Ui -c Release`.
 
 ### 4. Optional — testing & building the device workers
 
