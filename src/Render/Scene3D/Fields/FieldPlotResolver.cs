@@ -254,7 +254,7 @@ public static class FieldPlotResolver
     /// the run's own will have. Empty where the arrays are not known ahead (another solver, a thermal run).</summary>
     public static IReadOnlyList<FieldQuantity> ExpectedQuantities(EmSetup setup)
     {
-        if (setup.IsThermal || FieldSolver(setup, Em3dSolverFit.Fem, null)?.Id != Em3dSolverId.Palace) return [];
+        if (setup.IsThermal || FieldSolver(setup, Em3dSolverFit.Fem, null)?.Capabilities.FieldArraysKnownAhead != true) return [];
         static FieldArrayInfo A(string name, int components, bool complex = false) => new(name, components, complex, PerCell: false);
         return setup.Problem3D switch
         {

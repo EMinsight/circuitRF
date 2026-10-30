@@ -38,7 +38,15 @@ public sealed class GoldenFilesStayFrozenTests(ITestOutputHelper output)
     private static Dictionary<string, string> Snapshot(string root)
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var f in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        // A symbolic link is skipped, and so is everything under one: no writer writes through a
+        // link, and a git-ignored local fixture link (testdata/kit-statistics) may point at a folder
+        // that is not on this machine, which File.OpenRead reports as a missing file.
+        var walk = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip      = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint,
+        };
+        foreach (var f in Directory.EnumerateFiles(root, "*", walk))
         {
             using var stream = File.OpenRead(f);
             map[Path.GetRelativePath(root, f)] = Convert.ToHexString(SHA256.HashData(stream));

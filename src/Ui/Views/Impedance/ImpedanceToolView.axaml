@@ -515,10 +515,10 @@
                  count (brief-impedance-9). -->
             <StackPanel Grid.Row="8" Spacing="3" Margin="0,4,0,0">
                 <WrapPanel Orientation="Horizontal">
-                    <RadioButton GroupName="ImpedanceExportStyle" IsChecked="{Binding Panel.ExportFull}" FontSize="12"
+                    <RadioButton IsChecked="{Binding Panel.ExportFull}" FontSize="12"
                                  Content="{Binding Panel.FullStyleText}" Margin="0,0,12,0"
                                  ToolTip.Tip="Every trace, junction and finding listed, per layer"/>
-                    <RadioButton GroupName="ImpedanceExportStyle" IsChecked="{Binding Panel.ExportSummary}" FontSize="12"
+                    <RadioButton IsChecked="{Binding Panel.ExportSummary}" FontSize="12"
                                  Content="{Binding Panel.SummaryStyleText}"
                                  ToolTip.Tip="Per layer the map and the findings grouped, with the worst written out"/>
                 </WrapPanel>

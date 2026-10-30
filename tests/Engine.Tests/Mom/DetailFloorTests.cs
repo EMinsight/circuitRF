@@ -336,8 +336,13 @@ public class DetailFloorTests(ITestOutputHelper output)
         // 3.485 mm — and lowering cells/λ was exactly what took the same board from 23,416 unknowns
         // to 1,909. The sentence is correct for the per-axis rule and wrong for the field, and it
         // sends a user in the opposite direction from the one that works.
+        // The wording is the subject, not the ceiling: a memory limit sized at the old 5,000-unknown
+        // dense point keeps this fixture refused wherever the shipped ceiling moves (it is 10,000
+        // since 2026-10-29, and this patch then only warns).
         var p = PatchWithConnectorDetail();
-        var withField = SurfaceMesher.Mesh(p, At(0, tl: true), PlanarEdgeReference.LocalConductorWidth);
+        long? limit = PlanarSystem.ResidentBytes(5_000);
+        var withField = SurfaceMesher.Mesh(p, At(0, tl: true) with { MemoryLimitBytes = limit },
+                                           PlanarEdgeReference.LocalConductorWidth);
         Assert.Equal(PlanarBudgetVerdict.Refused, withField.Verdict);
         _out.WriteLine(withField.Refusal!);
 
@@ -346,7 +351,8 @@ public class DetailFloorTests(ITestOutputHelper output)
         Assert.Contains("coarsen the Detail floor", withField.Refusal);
 
         // …and the per-axis rule's own refusal is unchanged, because there the sentence is TRUE.
-        var perAxis = SurfaceMesher.Mesh(p, At(0, tl: false), PlanarEdgeReference.LocalConductorWidth);
+        var perAxis = SurfaceMesher.Mesh(p, At(0, tl: false) with { MemoryLimitBytes = limit },
+                                         PlanarEdgeReference.LocalConductorWidth);
         Assert.Equal(PlanarBudgetVerdict.Refused, perAxis.Verdict);
         Assert.Contains("WILL NOT REDUCE THIS COUNT", perAxis.Refusal);
     }

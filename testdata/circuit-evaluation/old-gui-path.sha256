@@ -3,4 +3,6 @@
 # <rid> <example cell> <bytes> <sha256>. Read by CircuitEvaluationParityTests.
 osx-arm64 Amplifier 42639 72431cfe77b2b90523e5bc3aab255d244a4e5ceee96e4edfb3b5a8c219e2e581
 osx-arm64 Loadpull 1570220 ea7eaecf6bd8a812bce3bb13a9ca4fe9e32fd32a505ab8600e8243bf54bd2532
-osx-arm64 PowerAmplifier 90831 354518b962e54b4acaf5c45f92eb4271baf090c3ba0711619713eb9a41c8e874
+# PowerAmplifier recaptured 2026-10-29: its run gained the IProbe power cubes (Pprobe_W, Pprobe_fund_W,
+# __ProbeBranches) of briefs ENV-MEAS-1..3.
+osx-arm64 PowerAmplifier 96690 cb2fec495c7d9ea73d92ab2e70808a1983d7b0fe13dbad32aee081b17d299b1c

@@ -69,10 +69,12 @@ public class CircuitEvaluationParityTests
             .Where(l => !l.StartsWith('#'))
             .Select(l => Regex.Split(l.Trim(), @"\s+"))
             .FirstOrDefault(p => p.Length == 4 && p[0] == rid && p[1] == cell);
+        // Compared as the whole line, so a failure prints, untruncated, the line that would replace it.
         if (capture is not null)
         {
-            Assert.Equal(long.Parse(capture[2]), bytes.LongLength);
-            Assert.Equal(capture[3], Convert.ToHexStringLower(SHA256.HashData(bytes)));
+            string actual = $"{rid} {cell} {bytes.LongLength} {Convert.ToHexStringLower(SHA256.HashData(bytes))}";
+            Assert.True(string.Join(' ', capture) == actual,
+                        $"captured: {string.Join(' ', capture)}\nnow:      {actual}");
         }
 
         // The one-call form a tuner or the optimizer uses, from the same netlist: the same bytes.

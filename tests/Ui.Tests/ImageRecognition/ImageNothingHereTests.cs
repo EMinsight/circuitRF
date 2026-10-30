@@ -125,7 +125,8 @@ public sealed class ImageNothingHereTests : IDisposable
         var vm = new ImageSourceViewModel(_ws, [new ImageTechnologyChoice("board", tech)], 0,
                                           ImageSource.FromBytes(Pictures.Png(Picture(picture)), picture + ".png").Source!,
                                           makeSchematic: true, ImageRecognitionRunner.Instance, debounce: TimeSpan.Zero,
-                                          presetDirectory: Path.Combine(_ws, "presets"));
+                                          presetDirectory: Path.Combine(_ws, "presets"))
+                 { SchematicOffered = true };   // the reader is withheld from the application, not from its tests
         await vm.Recognition;
 
         Assert.True(vm.HasFailure);

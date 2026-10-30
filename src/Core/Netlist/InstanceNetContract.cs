@@ -61,6 +61,8 @@ public static class InstanceNetContract
         ViaModel or ViaGroundModel                                                            => 2,
         // A test pad: pin 1 the feed, pin 2 the pad centre, over the implicit reference.
         TestPadModel                                                                          => 2,
+        // A GSG probe pad: pin 1 the signal tip, pin 2 the line's far end, over the implicit reference.
+        GsgPadModel                                                                           => 2,
         // The MMIC passives (AA-1): two terminals over the implicit reference, as MLIN; the air bridge
         // three — its two landings and the line it crosses.
         MimCapModel or SpiralInductorModel or ThinFilmResistorModel                          => 2,

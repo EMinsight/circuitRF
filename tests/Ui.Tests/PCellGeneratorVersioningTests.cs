@@ -115,6 +115,7 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
             { "AIRBRIDGE", (2, "2327f8e71ab15d8a") },
             { "BCLIN",     (1, "b370447e6f8f97a1") },
             { "CPWG",      (1, "e730cfa94852b2bc") },
+            { "GSGPAD",    (1, "b82e14468afbcc83") },
             { "MBCLIN",    (1, "b370447e6f8f97a1") },
             { "MBEND",     (3, "80f9396ad325bd7e") },
             { "MCLIN",     (1, "488d1a069953cc52") },

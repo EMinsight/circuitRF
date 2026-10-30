@@ -41411,3 +41411,24 @@ A live progress row is written twice: when it starts and when it settles, never 
 calls `MessagesLog.Start()` right after `CrashReporter.Install`. It deletes files dated more than 14 days back, by the
 date in the file NAME. Like the crash reporter, nothing in it throws. Open Log Folder is on the Messages row menu only:
 a toolbar button would have moved every window figure that draws the Messages strip. Gate: `MessagesLogTests`.
+
+## Suite failures after the 2026-10-29 mesh and ceiling changes
+
+**`EmRunSeverityCliTests.TheEmVerb_PrintsEveryWarningBeforeEveryNote` ran 17 minutes, and was cheap only by
+accident.** It asserts on the order of lines the `em` verb prints before any frequency point is solved, but it ran
+the whole solve. Until 2026-10-29 the shipped unknown ceiling refused the MIM fixture's port calibration standard,
+so the run ended at once. After PM-1 and the 10,000 ceiling the standard (2,386 unknowns) is solved at every
+frequency, which in a Debug build is the 17 minutes. The test now sets a `.cem` memory limit that admits the
+853-unknown DUT and refuses the standard, so the stop is stated rather than inherited. A test that needs a run to
+stop early has to say why it stops.
+
+**`FixtureFact` ran a test whose fixture was a dangling link.** `File.Exists` is true of a symbolic link whose target
+is gone, so a git-ignored fixture linked in from a folder that later moved was taken as present, and the test failed
+with `DirectoryNotFoundException` instead of skipping. `FixturePaths` now counts a link as present only when its
+target exists. `GoldenFilesStayFrozenTests` walked into the same link; its snapshot skips links, since no golden
+writer writes through one.
+
+**The IProbe power cubes changed the HB example's `run.npy`.** `CircuitEvaluationParityTests` compares Simulate's
+bytes to a capture; ENV-MEAS-1…3 added `Pprobe_W`, `Pprobe_fund_W` and `__ProbeBranches` to an HB run, so
+PowerAmplifier was recaptured. The assertion now prints the full replacement line, since xunit truncates both values
+of a string comparison.

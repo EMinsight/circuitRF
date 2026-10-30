@@ -19,6 +19,10 @@ public sealed record Em3dSolverCapabilities
     /// <summary>brief-emi-5 — its run saves fields a field plot can draw, at frequencies a setup lists.</summary>
     public bool Fields { get; init; }
 
+    /// <summary>brief-dfr31-3 — the arrays its run writes for a problem are known before it runs (the FEM writer's fixed
+    /// set), so a field plot's Quantity picker can list them ahead of the first run.</summary>
+    public bool FieldArraysKnownAhead { get; init; }
+
     /// <summary>It produces a driven run's far field (the radiation pattern group).</summary>
     public bool RadiationPattern { get; init; }
 

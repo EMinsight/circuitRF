@@ -69,7 +69,11 @@ internal static class FixturePaths
         if (star < 0)
         {
             var cand = Path.Combine(dir, relativePath);
-            return Directory.Exists(cand) || File.Exists(cand) ? cand : null;
+            // File.Exists is true of a link whose target is gone, so a fixture linked in from a
+            // folder that has since moved would run rather than skip; such a link is not present.
+            return Directory.Exists(cand)
+                || (File.Exists(cand) && new FileInfo(cand).ResolveLinkTarget(true) is not { Exists: false })
+                   ? cand : null;
         }
         string parent = Path.Combine([dir, .. segments[..star]]);
         if (!Directory.Exists(parent)) return null;
