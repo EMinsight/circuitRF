@@ -5,6 +5,7 @@
              xmlns:conv="using:CircuitRF.Ui.Converters"
              xmlns:shared="using:CircuitRF.Ui.Views.Shared"
              xmlns:ctl="using:CircuitRF.Ui.Controls"
+             xmlns:local="using:CircuitRF.Ui.Views.Layout"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Layout.EmSetupEditorView"
              x:DataType="em:EmSetupDocument"
@@ -561,28 +562,51 @@
                     </StackPanel>
                     <TextBlock IsVisible="{Binding ViewModel.ShowProblem3D}" Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
                                Text="{Binding ViewModel.Problem3DDescription}"/>
+                    <!-- brief-dfr31-1 R-dfr31-1-4: each conductor box takes typing (filtered) and lists the problem's pieces of
+                         metal (▾); Pick fills the row from a click in the 3D view. Other metal is what an electrostatic solve
+                         does with metal in no terminal (UnassignedConductors3D). -->
                     <StackPanel IsVisible="{Binding ViewModel.IsStaticSetup}" Spacing="2" Margin="0,6,0,0">
-                        <Grid ColumnDefinitions="110,110,70,Auto" ColumnSpacing="6">
+                        <Grid ColumnDefinitions="110,220,70,Auto" ColumnSpacing="6">
                             <TextBlock Grid.Column="0" Classes="colhdr" Text="Terminal"/>
                             <TextBlock Grid.Column="1" Classes="colhdr" Text="{Binding ViewModel.TerminalConductorHeader}"/>
                             <TextBlock Grid.Column="2" Classes="colhdr" Text="Source port"
                                        IsVisible="{Binding ViewModel.IsMagnetostaticSetup}"/>
                         </Grid>
-                        <ItemsControl ItemsSource="{Binding ViewModel.TerminalRows}">
+                        <ItemsControl Name="TerminalRowsList" ItemsSource="{Binding ViewModel.TerminalRows}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="em:Em3dTerminalRow">
-                                    <Grid ColumnDefinitions="110,110,70,Auto" ColumnSpacing="6" Margin="0,1">
+                                    <Grid ColumnDefinitions="110,220,70,Auto,Auto,Auto" ColumnSpacing="6" Margin="0,1">
                                         <TextBox Grid.Column="0" Classes="cell" Tag="Terminals3D" Text="{Binding Name}"
                                                  LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  ToolTip.Tip="The terminal's name: the label of its row and column in the matrix."/>
-                                        <TextBox Grid.Column="1" Classes="cell" Tag="Terminals3D" Text="{Binding Net}"
-                                                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
-                                                 ToolTip.Tip="A net of the layout, or a .wBond wire array's name. Every conductor on it is in this terminal."/>
+                                        <Grid Grid.Column="1" ColumnDefinitions="*,Auto">
+                                            <AutoCompleteBox Grid.Column="0" Classes="cell" Tag="Terminals3D" Text="{Binding Net}"
+                                                             ItemsSource="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.BodyPicks, FallbackValue={x:Null}}"
+                                                             FilterMode="Custom" ItemFilter="{x:Static local:EmSetupEditorView.PickFilter}"
+                                                             MinimumPrefixLength="0" MaxDropDownHeight="260"
+                                                             ValueMemberBinding="{Binding Token, DataType=em:Em3dBodyPick}"
+                                                             LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown" GotFocus="OnTerminalRowFocus"
+                                                             SelectionChanged="OnBodyPicked"
+                                                             ToolTip.Tip="A piece of metal: a net, an object's path, or the end of a path. Naming any part of a piece of metal takes all of it.">
+                                                <AutoCompleteBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="em:Em3dBodyPick">
+                                                        <TextBlock Text="{Binding Label}"/>
+                                                    </DataTemplate>
+                                                </AutoCompleteBox.ItemTemplate>
+                                            </AutoCompleteBox>
+                                            <Button Grid.Column="1" Content="▾" Padding="5,0" Click="OnOpenPickerClick"
+                                                    ToolTip.Tip="List the pieces of metal in this problem."/>
+                                        </Grid>
                                         <TextBox Grid.Column="2" Classes="cell" Tag="Terminals3D" Text="{Binding Source}"
                                                  IsVisible="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.IsMagnetostaticSetup, FallbackValue=False}"
                                                  LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                                  ToolTip.Tip="The port (its number) whose sheet drives this terminal's current, in and back."/>
-                                        <Button Grid.Column="3" Content="✕" Padding="6,0"
+                                        <ToggleButton Grid.Column="3" Content="Pick" Padding="6,0"
+                                                      IsVisible="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.CanPickInView, FallbackValue=False}"
+                                                      IsChecked="{Binding IsPicking, Mode=OneWay}"
+                                                      Click="OnPickTerminalClick"
+                                                      ToolTip.Tip="Click a conductor in the 3D view to make its piece of metal this terminal."/>
+                                        <Button Grid.Column="4" Content="✕" Padding="6,0"
                                                 Command="{Binding $parent[ItemsControl].((em:EmSetupDocument)DataContext).ViewModel.RemoveTerminalCommand}"
                                                 CommandParameter="{Binding}"
                                                 ToolTip.Tip="Remove this terminal."/>
@@ -592,12 +616,36 @@
                         </ItemsControl>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Content="Add terminal" Command="{Binding ViewModel.AddTerminalCommand}"/>
-                            <TextBlock Classes="colhdr" Text="Ground net" VerticalAlignment="Center"/>
-                            <TextBox Classes="cell" MinWidth="110" Tag="Terminals3D" Text="{Binding ViewModel.Ground3DText}"
-                                     PlaceholderText="ground-reference"
-                                     LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
-                                     ToolTip.Tip="The net that is the matrix's reference. Blank: the technology's ground-reference conductors, and the floor when it is a ground plane."/>
+                            <TextBlock Classes="colhdr" Text="Ground" VerticalAlignment="Center"/>
+                            <Grid ColumnDefinitions="180,Auto">
+                                <AutoCompleteBox Name="GroundPickerBox" Grid.Column="0" Classes="cell" Tag="Terminals3D"
+                                                 Text="{Binding ViewModel.Ground3DText}"
+                                                 ItemsSource="{Binding ViewModel.GroundPicks}"
+                                                 FilterMode="Custom" ItemFilter="{x:Static local:EmSetupEditorView.PickFilter}"
+                                                 MinimumPrefixLength="0" MaxDropDownHeight="260"
+                                                 ValueMemberBinding="{Binding Token, DataType=em:Em3dBodyPick}"
+                                                 Watermark="{Binding ViewModel.GroundPlaceholder}"
+                                                 LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                                 SelectionChanged="OnGroundPicked"
+                                                 ToolTip.Tip="The matrix's reference: a net, an object or a piece of metal. Blank: the technology's ground-reference conductors, and the floor when it is a ground plane.">
+                                    <AutoCompleteBox.ItemTemplate>
+                                        <DataTemplate x:DataType="em:Em3dBodyPick">
+                                            <TextBlock Text="{Binding Label}"/>
+                                        </DataTemplate>
+                                    </AutoCompleteBox.ItemTemplate>
+                                </AutoCompleteBox>
+                                <Button Grid.Column="1" Content="▾" Padding="5,0" Click="OnOpenPickerClick"
+                                        ToolTip.Tip="List the pieces of metal in this problem."/>
+                            </Grid>
                         </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ViewModel.IsElectrostaticSetup}">
+                            <TextBlock Classes="colhdr" Text="Other metal" VerticalAlignment="Center"/>
+                            <ComboBox Classes="cell" MinWidth="180"
+                                      ItemsSource="{x:Static em:EmSetupEditorViewModel.UnassignedChoices}"
+                                      SelectedItem="{Binding ViewModel.UnassignedChoice}"
+                                      ToolTip.Tip="Metal in no terminal and not ground: Float solves it as connected to nothing (exact, one extra solve per piece); Ground makes it the reference, as plane copper and its vias are."/>
+                        </StackPanel>
+                        <TextBlock Classes="colhdr" Text="{Binding ViewModel.BodiesStatus}" MinHeight="14"/>
                     </StackPanel>
                     <!-- brief-em3d-23: each port's kind (lumped or wave, mixable), a wave port's extent and offset
                          (Ports3D); an eigenmode setup's count and target (Eigenmode); and the modes of its last run.

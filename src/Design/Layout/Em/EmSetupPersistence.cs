@@ -1444,6 +1444,10 @@ public sealed class CemFile
     /// (and the PEC floor when there is one).</summary>
     public string? Ground3D { get; set; }
 
+    /// <summary>brief-dfr31-1 R-dfr31-1-5 — what an electrostatic solve does with metal in no terminal and not ground. Null is
+    /// Float, the default, so a file written before it gains no byte.</summary>
+    public EmUnassignedConductors? UnassignedConductors3D { get; set; }
+
     /// <summary>brief-em3d-23 — per-port 3D settings (the port's kind, a wave port's extent and offset).
     /// Null when every port is lumped with nothing stated.</summary>
     public List<CemPort3D>? Ports3D { get; set; }
@@ -1619,6 +1623,7 @@ public static class EmSetupPersistence
                                                                  Source = t.Source is { Length: > 0 } src ? src : null,
                                                                  Objects = t.ByObjects ? [.. t.Objects!] : null })],
         Ground3D       = s.Ground3D is { Length: > 0 } g3 ? g3 : null,
+        UnassignedConductors3D = s.UnassignedConductors3D == EmUnassignedConductors.Float ? null : s.UnassignedConductors3D,
         // R-em3d23-2a — a port with nothing but the default kind writes nothing, so every lumped-port
         // file keeps its bytes (gate 9).
         Ports3D        = s.Ports3D.Where(p => !p.IsDefault).ToList() is { Count: > 0 } p3
@@ -1705,6 +1710,7 @@ public static class EmSetupPersistence
         Problem3D             = f.Problem3D ?? CircuitRF.Engine.Em3d.Em3dProblemType.Driven,
         Terminals3D           = f.Terminals3D is { } ts ? [.. ts.Select(t => new EmTerminal3D(t.Name ?? "", t.Net ?? "", t.Source, t.Objects is { Count: > 0 } o ? [.. o] : null))] : [],
         Ground3D              = f.Ground3D ?? "",
+        UnassignedConductors3D = f.UnassignedConductors3D ?? EmUnassignedConductors.Float,
         Ports3D               = f.Ports3D is { } ps
             ? [.. ps.Select(p => new EmPort3D(p.Port, p.Kind ?? CircuitRF.Engine.Em3d.Em3dPortKind.Lumped, p.Width, p.Height, p.OffsetUm,
                                      p.Return is { Length: > 0 } r ? r : null))]

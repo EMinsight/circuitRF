@@ -574,7 +574,13 @@ public sealed record Em3dAnnulus(double InnerRadiusM, double OuterRadiusM, bool 
 /// <paramref name="SourcePort"/> names the port whose sheet a magnetostatic solve drives its current
 /// through; an electrostatic solve reads none.
 /// </summary>
-public sealed record Em3dTerminal(string Name, IReadOnlyList<string> Objects, string? SourcePort = null);
+public sealed record Em3dTerminal(string Name, IReadOnlyList<string> Objects, string? SourcePort = null)
+{
+    /// <summary>brief-dfr31-1 R-dfr31-1-6 — a FLOATING body of an electrostatic solve: solved as one more terminal and then
+    /// eliminated from the matrix (<see cref="Em3dStaticResult.EliminateFloating"/>), which is exact for metal carrying no net
+    /// charge. It is not a row of the result.</summary>
+    public bool Floating { get; init; }
+}
 
 /// <summary>The six faces of the air box, each saying what it does to the field.</summary>
 public sealed record Em3dFaces(

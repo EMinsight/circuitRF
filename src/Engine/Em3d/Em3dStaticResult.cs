@@ -81,6 +81,70 @@ public static class Em3dStaticResult
     }
 
     /// <summary>
+    /// brief-dfr31-1 R-dfr31-1-6 — the Maxwell matrix of the terminals that are not floating, from the one solved with every
+    /// floating body as a terminal too. A floating body carries no net charge, so with the kept terminals at V_t its
+    /// potential is whatever makes C_ft·V_t + C_ff·V_f = 0; putting that V_f back into the kept rows leaves
+    /// C_red = C_tt − C_tf·C_ff⁻¹·C_ft. Exact, not an approximation (src/Design/RESOLVED.md §brief-dfr31-1).
+    /// </summary>
+    public static double[,] EliminateFloating(double[,] c, IReadOnlyList<bool> floating)
+    {
+        int n = c.GetLength(0);
+        if (c.GetLength(1) != n || floating.Count != n) throw new ArgumentException("The matrix and the floating flags disagree in size.");
+        int[] t = [.. Enumerable.Range(0, n).Where(k => !floating[k])];
+        int[] f = [.. Enumerable.Range(0, n).Where(k => floating[k])];
+        var red = new double[t.Length, t.Length];
+        for (int i = 0; i < t.Length; i++)
+            for (int j = 0; j < t.Length; j++) red[i, j] = c[t[i], t[j]];
+        if (f.Length == 0) return red;
+
+        // X = C_ff⁻¹ · C_ft, by Gaussian elimination with partial pivoting on [C_ff | C_ft].
+        int m = f.Length, w = m + t.Length;
+        var a = new double[m, w];
+        for (int i = 0; i < m; i++)
+        {
+            for (int j = 0; j < m; j++) a[i, j] = c[f[i], f[j]];
+            for (int j = 0; j < t.Length; j++) a[i, m + j] = c[f[i], t[j]];
+        }
+        for (int col = 0; col < m; col++)
+        {
+            int piv = col;
+            for (int r = col + 1; r < m; r++) if (Math.Abs(a[r, col]) > Math.Abs(a[piv, col])) piv = r;
+            if (!(Math.Abs(a[piv, col]) > 0)) throw new InvalidOperationException("The floating bodies' block of the matrix is singular.");
+            if (piv != col)
+                for (int j = 0; j < w; j++) (a[col, j], a[piv, j]) = (a[piv, j], a[col, j]);
+            for (int r = 0; r < m; r++)
+            {
+                if (r == col || a[r, col] == 0) continue;
+                double k = a[r, col] / a[col, col];
+                for (int j = col; j < w; j++) a[r, j] -= k * a[col, j];
+            }
+        }
+        for (int i = 0; i < t.Length; i++)
+            for (int j = 0; j < t.Length; j++)
+            {
+                double s = 0;
+                for (int k = 0; k < m; k++) s += c[t[i], f[k]] * a[k, m + j] / a[k, k];
+                red[i, j] -= s;
+            }
+        return red;
+    }
+
+    /// <summary>brief-dfr31-1 — the mutual (lumped-circuit) form of a Maxwell matrix: Cm[i][i] = Σⱼ C[i][j] (i to ground
+    /// alone) and Cm[i][j] = −C[i][j].</summary>
+    public static double[,] MutualFromMaxwell(double[,] c)
+    {
+        int n = c.GetLength(0);
+        var m = new double[n, n];
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+            {
+                if (i != j) m[i, j] = -c[i, j];
+                m[i, i] += c[i, j];
+            }
+        return m;
+    }
+
+    /// <summary>
     /// R-em3d22-4b — what a magnetostatic result leaves out, said with its size. Conductors are voids
     /// (F0 Q6), so all current is on their surfaces and the solve returns EXTERNAL inductance — the
     /// high-frequency value — with no internal term. For a round wire of length ℓ that term is μ₀ℓ/8π

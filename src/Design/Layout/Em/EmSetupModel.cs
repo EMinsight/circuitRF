@@ -64,6 +64,21 @@ public sealed record EmTerminal3D(string Name, string Net, string? Source = null
 }
 
 /// <summary>
+/// brief-dfr31-1 R-dfr31-1-5 — what an electrostatic solve does with a body of metal that is in no terminal and is not the
+/// ground (<c>UnassignedConductors3D</c>). <b>Float is the default</b>: such a body carries no net charge, which is what
+/// unconnected metal does, and it is solved exactly (<see cref="CircuitRF.Engine.Em3d.Em3dStaticResult.EliminateFloating"/>).
+/// </summary>
+public enum EmUnassignedConductors
+{
+    /// <summary>Each such body is solved as one more terminal and eliminated from the matrix.</summary>
+    Float,
+    /// <summary>Each such body is ground — plane copper and its stitching vias.</summary>
+    Ground,
+    /// <summary>The run is refused, naming the bodies.</summary>
+    Refuse,
+}
+
+/// <summary>
 /// brief-em3d-23 R-em3d23-2 — one port's 3D settings, as the <c>.cem</c> states them.
 /// </summary>
 /// <param name="Port">The port's number.</param>
@@ -582,6 +597,9 @@ public sealed class EmSetup
     /// generator already uses: the ground-reference conductors, and the PEC floor when there is one.</summary>
     public string Ground3D { get; set; } = "";
 
+    /// <summary>brief-dfr31-1 R-dfr31-1-5 — what an electrostatic solve does with metal in no terminal and not ground.</summary>
+    public EmUnassignedConductors UnassignedConductors3D { get; set; } = EmUnassignedConductors.Float;
+
     /// <summary>brief-em3d-23 R-em3d23-2a — per-port 3D settings. A port with no entry is lumped.</summary>
     public List<EmPort3D> Ports3D { get; set; } = [];
 
@@ -713,6 +731,7 @@ public sealed class EmSetup
         Problem3D              = Problem3D,
         Terminals3D            = [.. Terminals3D],   // records, immutable
         Ground3D               = Ground3D,
+        UnassignedConductors3D = UnassignedConductors3D,
         Ports3D                = [.. Ports3D],       // records, immutable
         Eigenmode              = Eigenmode,
         Thermal                = Thermal?.Clone(),

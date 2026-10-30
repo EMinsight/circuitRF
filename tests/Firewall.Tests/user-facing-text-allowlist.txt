@@ -1525,3 +1525,5 @@ src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to a CSS carrier
 src/RfCore/Signals/SignalSpec.cs|carrier field {key} belongs to an FSK{(alsoDbpsk ? 
 src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a spreading factor: a whole number, 7 to 12
 src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS or FILE)
+src/Engine/Em3d/Em3dStaticResult.cs|The floating bodies' block of the matrix is singular.
+src/Engine/Em3d/Em3dStaticResult.cs|The matrix and the floating flags disagree in size.

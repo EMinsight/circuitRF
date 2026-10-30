@@ -410,12 +410,10 @@ public static class C3dProblemAssembly
         // its terminals name ports by their document numbers.
         var context = PortContext(setup, document, drawn, box);
         var ports = new List<Em3dPort>();
-        if (setup.Problem3D == Em3dProblemType.Electrostatic)
-        {
-            if (document.Ports.Count > 0)
-                notes.Add($"An electrostatic solve has no ports: the 3D view's {document.Ports.Count} port(s) are not in the problem.");
-        }
-        else
+        // brief-dfr31-1 R-dfr31-1-7 — said only once the problem is built: under a refusal it read as a second error.
+        string? noPortsNote = setup.Problem3D == Em3dProblemType.Electrostatic && document.Ports.Count > 0
+            ? $"An electrostatic solve has no ports: the 3D view's {document.Ports.Count} port(s) are not in the problem." : null;
+        if (setup.Problem3D != Em3dProblemType.Electrostatic)
         {
             var sources = setup.Problem3D == Em3dProblemType.Magnetostatic
                 ? setup.Terminals3D.Select(t => t.Source?.Trim()).OfType<string>()
@@ -471,9 +469,10 @@ public static class C3dProblemAssembly
             return No(viaNetRefusal, e.Warnings);
         if (setup.IsStatic3D &&
             Em3dGenerator.Terminals(setup, solids, sheets, ports, pecFloor: false, e.ObjectNets.ToDictionary(kv => kv.Key, kv => kv.Value),
-                                    [.. e.GroundBandObjects], out terminals, out ground) is { } terminalRefusal)
+                                    [.. e.GroundBandObjects], out terminals, out ground, notes, e.CylinderSheets) is { } terminalRefusal)
             return No(terminalRefusal, e.Warnings);
 
+        if (noPortsNote is not null) notes.Add(noPortsNote);
         var problem = new Em3dProblem(solids, sheets, materials, ports, box, frequency, tempC)
         {
             Type = setup.Problem3D,

@@ -157,9 +157,11 @@ full description.
   port numbered `PortNum`, wherever the part is placed, turned or mirrored, and in 3D it is the pad-to-plane
   port above. A planar setup takes it as an internal port to ground. Its number is checked against the
   board's own port labels and every other component's: a number used twice is refused, naming both.
-- **Terminals** (`Terminals3D`, static solves): the matrix's rows and columns, each named by a net.
-  Every conductor on that net belongs to the terminal. A magnetostatic terminal also names the port its
-  current enters by.
+- **Terminals** (`Terminals3D`, static solves): the matrix's rows and columns, each named by a net, an
+  object's path or the end of one. An electrostatic terminal takes the whole piece of metal it names; a
+  magnetostatic terminal also names the port its current enters by. Metal in no terminal floats, is
+  ground or refuses the run, as **Other metal** (`UnassignedConductors3D`) says.
+  [Static problems](em-setup.html#package-rlc).
 - **The air box** (`AirBox`): how far each face of the solved region lies beyond the geometry, and what
   the face does to the field. It can be *Absorbing* (open space), *Pec* (a metal wall), *Pmc* or
   *Symmetry*. By default the floor sits on the lowest ground plane and the other five faces are

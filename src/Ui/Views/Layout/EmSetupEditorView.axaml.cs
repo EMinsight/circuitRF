@@ -2,6 +2,7 @@ using System.IO;
 using System.Linq;
 using Avalonia.Platform.Storage;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -65,6 +66,8 @@ public partial class EmSetupEditorView : UserControl
         Em3dSolverInstallState.Changed += OnSolverInstallChanged;
         Vm?.UpdateSolverAvailability();
         _ = Em3dSolverInstallState.RefreshAsync();
+        // brief-dfr31-1 R-dfr31-1-4 — the pickers' rows, built once off the UI thread when the panel opens.
+        if (Vm is { } setupVm) _ = setupVm.ListBodiesAsync();
         DetachWindowHandlers();
         if (TopLevel.GetTopLevel(this) is not Window w) return;
         _hostWindow = w;
@@ -205,6 +208,60 @@ public partial class EmSetupEditorView : UserControl
     }
 
     private void OnThermalSelection(object? sender, SelectionChangedEventArgs e) => Vm?.CommitThermal();
+
+    // ── brief-dfr31-1 R-dfr31-1-4 — the terminal and ground pickers ────────────────────────────────────────────────────
+
+    /// <summary>Type-to-filter for both pickers: a row whose label or name holds the typed text.</summary>
+    public static AutoCompleteFilterPredicate<object?> PickFilter { get; } = EmSetupEditorViewModel.PickMatches;
+
+    /// <summary>▾ — the whole list, whatever is typed: the box's own filter shows only matches.</summary>
+    private void OnOpenPickerClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Parent is not Panel p || p.Children.OfType<AutoCompleteBox>().FirstOrDefault() is not { } box) return;
+        OpenPicker(box);
+    }
+
+    /// <summary>Opens <paramref name="box"/>'s list unfiltered.</summary>
+    internal static void OpenPicker(AutoCompleteBox box)
+    {
+        box.Focus();
+        var filter = box.ItemFilter;
+        box.ItemFilter = (_, _) => true;
+        box.PopulateComplete();
+        box.IsDropDownOpen = true;
+        box.ItemFilter = filter;
+    }
+
+    // A commit rebuilds the terminal rows (the snapshot is re-applied), so it runs after the box's own selection event has
+    // finished: committing inside it tore the box's list down mid-event.
+    private void OnBodyPicked(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not AutoCompleteBox { SelectedItem: Em3dBodyPick pick, DataContext: Em3dTerminalRow row } || Vm is not { } vm) return;
+        row.Net = pick.Token;
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            vm.CommitTerminals();
+            vm.HighlightRow(vm.TerminalRows.FirstOrDefault(r => r.Name == row.Name) ?? row);
+        });
+    }
+
+    private void OnGroundPicked(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is AutoCompleteBox { SelectedItem: Em3dBodyPick pick } && Vm is { } vm)
+            Avalonia.Threading.Dispatcher.UIThread.Post(() => vm.PickGround(pick));
+    }
+
+    private void OnTerminalRowFocus(object? sender, FocusChangedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is Em3dTerminalRow row) Vm?.HighlightRow(row);
+    }
+
+    private void OnPickTerminalClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleButton { DataContext: Em3dTerminalRow row } button || Vm is not { } vm) return;
+        vm.PickTerminalCommand.Execute(row);
+        button.IsChecked = row.IsPicking;
+    }
 
     private void OnFieldKeyDown(object? sender, KeyEventArgs e)
     {

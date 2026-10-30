@@ -6,6 +6,7 @@
 // name and net are both blank is not written at all.
 
 using System.Collections.ObjectModel;
+using CircuitRF.Design.Layout.Em3d;
 using CircuitRF.Engine.Em3d;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -18,12 +19,28 @@ public sealed record Em3dProblemChoice(Em3dProblemType Value, string Label)
     public override string ToString() => Label;
 }
 
+/// <summary>brief-dfr31-1 R-dfr31-1-4 — one row of a terminal or ground picker: what it shows, and what it writes.</summary>
+/// <param name="Body">The body it stands for; null for the ground's "every body not in a terminal" row.</param>
+public sealed record Em3dBodyPick(string Label, string Token, Em3dBodyChoice? Body)
+{
+    public override string ToString() => Token;
+}
+
+/// <summary>brief-dfr31-1 R-dfr31-1-5 — one row of the Other metal picker.</summary>
+public sealed record Em3dUnassignedChoice(EmUnassignedConductors Value, string Label)
+{
+    public override string ToString() => Label;
+}
+
 /// <summary>One row of the terminal table, as typed.</summary>
 public sealed partial class Em3dTerminalRow : ObservableObject
 {
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _net = "";
     [ObservableProperty] private string _source = "";
+
+    /// <summary>brief-dfr31-1 — a pick in the 3D view is armed for this row.</summary>
+    [ObservableProperty] private bool _isPicking;
 
     /// <summary>brief-em3d-49 — the Net column names the terminal's conductors by object (comma-separated), which is how
     /// a 3D view's terminal is written; false for a terminal stated by net.</summary>
@@ -48,6 +65,155 @@ public sealed partial class EmSetupEditorViewModel
 
     [ObservableProperty] private string _ground3DText = "";
 
+    // ── brief-dfr31-1 R-dfr31-1-4/5 — the bodies a terminal can name, Other metal, and a pick in the 3D view ──────────────
+
+    /// <summary>What the ground picker's first row says: every body in no terminal is ground (UnassignedConductors3D: Ground).</summary>
+    public const string EveryBodyLabel = "Every body not in a terminal";
+
+    /// <summary>Lists the problem's bodies — the elaboration a run would build. Set by the host; slow on a board, so it is run
+    /// off the UI thread by <see cref="ListBodiesAsync"/>. Null: no picker rows, the boxes take typing only.</summary>
+    public Func<CancellationToken, IReadOnlyList<Em3dBodyChoice>>? BodyLister { get; set; }
+
+    /// <summary>The terminal picker's rows. A stable reference: refilled, never replaced.</summary>
+    public ObservableCollection<Em3dBodyPick> BodyPicks { get; } = [];
+
+    /// <summary>The ground picker's rows: <see cref="EveryBodyLabel"/>, then the bodies.</summary>
+    public ObservableCollection<Em3dBodyPick> GroundPicks { get; } = [];
+
+    /// <summary>"listing conductors…" while the list is built, then how many bodies it found (or why it found none).</summary>
+    [ObservableProperty] private string _bodiesStatus = "";
+
+    /// <summary>The row a one-shot pick in the 3D view will fill; null when none is armed.</summary>
+    [ObservableProperty] private Em3dTerminalRow? _pickingRow;
+
+    /// <summary>The bodies of the row being edited, by member object name: what the 3D view highlights.</summary>
+    public event Action<IReadOnlyList<string>>? HighlightRequested;
+
+    public static IReadOnlyList<Em3dUnassignedChoice> UnassignedChoices { get; } =
+    [
+        new(EmUnassignedConductors.Float,  "Float (carries no charge)"),
+        new(EmUnassignedConductors.Ground, "Ground"),
+        new(EmUnassignedConductors.Refuse, "Refuse the run"),
+    ];
+
+    [ObservableProperty] private Em3dUnassignedChoice _unassignedChoice = UnassignedChoices[0];
+
+    /// <summary>True for an electrostatic 3D setup: Other metal applies to it alone.</summary>
+    public bool IsElectrostaticSetup => Is3DSetup && Problem3DChoice.Value == Em3dProblemType.Electrostatic;
+
+    /// <summary>What a blank ground box means now.</summary>
+    public string GroundPlaceholder => UnassignedChoice.Value == EmUnassignedConductors.Ground && IsElectrostaticSetup
+        ? EveryBodyLabel.ToLowerInvariant() : "ground-reference";
+
+    /// <summary>True when the host can arm a pick in its 3D view (a .c3d's setup): the rows' Pick button.</summary>
+    public bool CanPickInView { get; set; }
+
+    /// <summary>Type-to-filter for both pickers: a row whose label holds the typed text, ignoring case.</summary>
+    public static bool PickMatches(string? typed, object? item)
+        => item is Em3dBodyPick p && (string.IsNullOrWhiteSpace(typed) ||
+                                      p.Label.Contains(typed.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                                      p.Token.Contains(typed.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private IReadOnlyList<Em3dBodyChoice> _bodies = [];
+
+    /// <summary>Builds the picker rows once, off the UI thread. Called when the setup window opens.</summary>
+    public async Task ListBodiesAsync(CancellationToken ct = default)
+    {
+        if ((BodyLister ?? LayoutBodyLister()) is not { } lister || !IsStaticSetup) return;
+        BodiesStatus = "listing conductors…";
+        IReadOnlyList<Em3dBodyChoice> bodies;
+        try { bodies = await Task.Run(() => lister(ct), ct); }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex) { BodiesStatus = "The conductors could not be listed: " + ex.Message; return; }
+        SetBodies(bodies);
+    }
+
+    /// <summary>A <c>.cem</c>'s lister: its layout's solids, as the generator builds them for this setup.</summary>
+    private Func<CancellationToken, IReadOnlyList<Em3dBodyChoice>>? LayoutBodyLister()
+    {
+        if (IsEmbedded || ResolveLayout?.Invoke(Working.LayoutRef) is not { Technology: { } tech } source) return null;
+        var setup = Working.Clone();
+        double? fMax = null;
+        try { fMax = setup.Frequency.Expand().Where(f => f > 0).DefaultIfEmpty().Max(); }
+        catch (Exception) { /* no sweep: no skin depth, so only a zero thickness makes a sheet */ }
+        return _ => Em3dBodyList.Of(Em3dLayoutSolids.From(source, tech, null,
+            new Em3dLayoutSolidsOptions(fMax is > 0 ? fMax : null, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC, Instance: false)
+            { RegionSetup = setup }));
+    }
+
+    /// <summary>Fills both pickers from <paramref name="bodies"/> (what <see cref="ListBodiesAsync"/> lands).</summary>
+    public void SetBodies(IReadOnlyList<Em3dBodyChoice> bodies)
+    {
+        _bodies = bodies;
+        BodyPicks.Clear();
+        GroundPicks.Clear();
+        GroundPicks.Add(new Em3dBodyPick(EveryBodyLabel, "", null));
+        foreach (var b in bodies)
+        {
+            var pick = new Em3dBodyPick(b.Label, b.Token, b);
+            BodyPicks.Add(pick);
+            GroundPicks.Add(pick);
+        }
+        BodiesStatus = bodies.Count == 0 ? "No conductor in this problem." : $"{bodies.Count} piece(s) of metal.";
+    }
+
+    /// <summary>The member objects of every body <paramref name="text"/> names (a row's text, comma-separated).</summary>
+    public IReadOnlyList<string> MembersOf(string text)
+        => [.. text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                   .SelectMany(t => _bodies.Where(b => b.IsNamedBy(t))).Distinct().SelectMany(b => b.Members)];
+
+    /// <summary>Asks the 3D view to highlight the bodies <paramref name="row"/> names.</summary>
+    public void HighlightRow(Em3dTerminalRow? row)
+    {
+        if (row is not null) HighlightRequested?.Invoke(MembersOf(row.Net));
+    }
+
+    /// <summary>A pick in the 3D view while a row is armed: fills that row with the picked object's body, writes the table, and
+    /// disarms. False when nothing is armed or the object is in no body.</summary>
+    public bool PickConductor(string objectName)
+    {
+        if (PickingRow is not { } row) return false;
+        if (_bodies.FirstOrDefault(b => b.Members.Contains(objectName, StringComparer.Ordinal)) is not { } body) return false;
+        PickingRow = null;
+        row.Net = body.Token;
+        CommitTerminals();
+        HighlightRow(row);
+        return true;
+    }
+
+    partial void OnPickingRowChanged(Em3dTerminalRow? oldValue, Em3dTerminalRow? newValue)
+    {
+        if (oldValue is not null) oldValue.IsPicking = false;
+        if (newValue is not null) newValue.IsPicking = true;
+    }
+
+    [RelayCommand]
+    private void PickTerminal(Em3dTerminalRow? row) => PickingRow = ReferenceEquals(PickingRow, row) ? null : row;
+
+    partial void OnUnassignedChoiceChanged(Em3dUnassignedChoice value)
+    {
+        OnPropertyChanged(nameof(GroundPlaceholder));
+        if (_suppressCommit || value.Value == Working.UnassignedConductors3D) return;
+        var before = SnapshotJson();
+        Working.UnassignedConductors3D = value.Value;
+        CommitEdit(before, "Change other metal");
+    }
+
+    /// <summary>The ground picker's row was chosen: "every body not in a terminal" clears the box and grounds the rest.</summary>
+    public void PickGround(Em3dBodyPick? pick)
+    {
+        if (pick is null) return;
+        if (pick.Body is null)
+        {
+            Ground3DText = "";
+            CommitTerminals();
+            UnassignedChoice = UnassignedChoices.First(c => c.Value == EmUnassignedConductors.Ground);
+            return;
+        }
+        Ground3DText = pick.Token;
+        CommitTerminals();
+    }
+
     /// <summary>The Problem picker and its note: an EM setup's. A thermal setup's problem is its solver's choice.</summary>
     public bool ShowProblem3D => Is3DSetup && !IsThermalSetup;
 
@@ -55,7 +221,7 @@ public sealed partial class EmSetupEditorViewModel
     public bool IsStaticSetup => Is3DSetup && Problem3DChoice.Value is Em3dProblemType.Electrostatic or Em3dProblemType.Magnetostatic;
 
     /// <summary>brief-em3d-49 — the table's conductor column: a 3D view's terminals name objects (a drawn object has no net).</summary>
-    public string TerminalConductorHeader => IsEmbedded ? "Objects" : "Net";
+    public string TerminalConductorHeader => "Conductor";
 
     /// <summary>True when the table's Source column is read (magnetostatic only).</summary>
     public bool IsMagnetostaticSetup => Is3DSetup && Problem3DChoice.Value == Em3dProblemType.Magnetostatic;
@@ -64,7 +230,8 @@ public sealed partial class EmSetupEditorViewModel
     {
         Em3dProblemType.Electrostatic =>
             "The capacitance matrix between the terminals below, referred to the ground. Palace only; the sweep " +
-            "and the port impedances are kept but not used. Every conductor must be in a terminal or be the ground.",
+            "and the port impedances are kept but not used. Naming any part of a piece of metal takes all of it; metal in " +
+            "no terminal floats, is ground, or refuses the run, as Other metal says.",
         Em3dProblemType.Magnetostatic =>
             "The inductance matrix between the terminals below, each driven through the port named as its source. " +
             "Palace only; conductors are surfaces, so this is the external (RF) inductance, without the internal term.",
@@ -98,6 +265,8 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(ShowProblem3D));
         OnPropertyChanged(nameof(IsStaticSetup));
         OnPropertyChanged(nameof(IsMagnetostaticSetup));
+        OnPropertyChanged(nameof(IsElectrostaticSetup));
+        OnPropertyChanged(nameof(GroundPlaceholder));
         OnPropertyChanged(nameof(Problem3DDescription));
         OnPropertyChanged(nameof(RadiationPatternDisabledReason));
         OnPropertyChanged(nameof(ReferenceInputPowerEnabled));
@@ -108,14 +277,28 @@ public sealed partial class EmSetupEditorViewModel
     {
         // A thermal setup shows no Problem picker: it holds the first EM problem, which nothing reads until Thermal is left.
         Problem3DChoice = Problem3DChoices.FirstOrDefault(c => c.Value == Working.Problem3D) ?? Problem3DChoices[0];
-        TerminalRows.Clear();
-        foreach (var t in Working.Terminals3D)
-            TerminalRows.Add(new Em3dTerminalRow
+        // brief-dfr31-1 — rows are updated in place when their number is unchanged: every commit re-applies the snapshot, and
+        // clearing the list tore down the row whose picker had just been used (an exception inside the list's own teardown),
+        // and lost the focus of the row being typed in.
+        var rows = Working.Terminals3D.Select(t => new Em3dTerminalRow
+        {
+            Name = t.Name, Net = t.ByObjects ? string.Join(", ", t.Objects!) : t.Net, Source = t.Source ?? "",
+            ByObjects = t.ByObjects || (IsEmbedded && t.Net.Length == 0),
+        }).ToList();
+        if (rows.Count == TerminalRows.Count && rows.Zip(TerminalRows).All(p => p.First.ByObjects == p.Second.ByObjects))
+            for (int i = 0; i < rows.Count; i++)
             {
-                Name = t.Name, Net = t.ByObjects ? string.Join(", ", t.Objects!) : t.Net, Source = t.Source ?? "",
-                ByObjects = t.ByObjects || (IsEmbedded && t.Net.Length == 0),
-            });
+                TerminalRows[i].Name = rows[i].Name;
+                TerminalRows[i].Net = rows[i].Net;
+                TerminalRows[i].Source = rows[i].Source;
+            }
+        else
+        {
+            TerminalRows.Clear();
+            foreach (var r in rows) TerminalRows.Add(r);
+        }
         Ground3DText = Working.Ground3D;
+        UnassignedChoice = UnassignedChoices.FirstOrDefault(c => c.Value == Working.UnassignedConductors3D) ?? UnassignedChoices[0];
         SyncEigenFields();
         RaiseStaticVisibility();
     }

@@ -313,7 +313,7 @@ public static class Em3dGenerator
             {
                 if (ViaNetRefusal(setup, _g.ViaNetConflictMap) is { } viaNetRefusal) return No(viaNetRefusal);
                 if (Terminals(setup, solids, sheets, ports, pecFloor, _g.ObjectNetMap, _g.GroundBandObjectList,
-                              out terminals, out groundObjects) is { } terminalRefusal)
+                              out terminals, out groundObjects, _notes) is { } terminalRefusal)
                     return No(terminalRefusal);
                 if (setup.Problem3D == Em3dProblemType.Magnetostatic)
                 {
@@ -1060,30 +1060,46 @@ public static class Em3dGenerator
                "Give the via the net of the copper it joins, or clear its net so it takes that copper's.";
     }
 
+    /// <summary>brief-dfr31-1 R-dfr31-1-6 — the most floating bodies a run solves: each is one more solve on the same operator,
+    /// so a whole board's unconnected copper is refused with the counts rather than becoming hundreds of solves unasked.</summary>
+    public const int MaxFloatingBodies = 50;
+
     /// <summary>
-    /// R-em3d22-2a — each terminal's conductors (every one on its net), and the ground: the
-    /// setup's Ground3D net, else the ground-reference conductors and anything sharing their net.
-    /// Refuses a terminal whose net holds no conductor, naming it (R-em3d22-2c), and a magnetostatic
-    /// terminal whose source is not a port of the layout.
+    /// R-em3d22-2a — each terminal's conductors and the ground. A terminal or the ground is named by an object path, a net or
+    /// a unique path suffix (<see cref="Em3dConductorNames"/>, brief-dfr31-1 R-dfr31-1-3); without Ground3D the ground is the
+    /// ground-reference conductors and anything sharing their net. <b>An electrostatic terminal is whole bodies</b>
+    /// (R-dfr31-1-2): naming any object or net of a piece of metal takes all of it (<see cref="Em3dBodies"/>), two terminals
+    /// on one body are refused with both names, and every body left over is floated, grounded or refused as the setup's
+    /// UnassignedConductors3D says (R-dfr31-1-5). A magnetostatic terminal stays the objects named, less the ground: its
+    /// current path runs through the ground, so its metal touching the ground is the circuit, not a short.
+    /// Refuses a name that resolves to no conductor (R-em3d22-2c), and a magnetostatic terminal whose source is not a port.
     /// </summary>
     internal static string? Terminals(EmSetup setup, List<Em3dSolid> solids, List<Em3dSheet> sheets, List<Em3dPort> ports,
                                      bool pecFloor, Dictionary<string, HashSet<string>> _objectNets,
                                      List<string> _groundBandObjects,
-                                     out List<Em3dTerminal> terminals, out List<string> ground)
+                                     out List<Em3dTerminal> terminals, out List<string> ground,
+                                     List<string>? notes = null, IReadOnlyList<Em3dCylinderSheet>? cylinderSheets = null)
     {
         terminals = [];
         ground = [];
+        bool es = setup.Problem3D == Em3dProblemType.Electrostatic;
         var conductors = solids.Where(s => s.Role == Em3dRole.Conductor).Select(s => s.Name)
-                               .Concat(sheets.Select(s => s.Name)).ToList();
-        List<string> OnNet(string net) =>
-            [.. conductors.Where(c => _objectNets.TryGetValue(c, out var nets) && nets.Contains(net))];
+                               .Concat(sheets.Select(s => s.Name)).Concat((cylinderSheets ?? []).Select(s => s.Name)).ToList();
+        var names = new Em3dConductorNames(conductors, _objectNets);
+        var bodies = es ? Em3dBodies.Group(solids, sheets, cylinderSheets,
+                                           n => _objectNets.TryGetValue(n, out var set) ? set : []) : null;
+        IEnumerable<int> BodiesOf(IEnumerable<string> objects) => objects.Select(o => bodies!.BodyOf(o)).Where(b => b >= 0).Distinct();
 
-        if (setup.Ground3D is { Length: > 0 } groundNet)
+        if (setup.Ground3D is { Length: > 0 } groundName)
         {
-            ground = OnNet(groundNet);
-            if (ground.Count == 0 && !pecFloor)
-                return $"This setup's ground is net '{groundNet}' (Ground3D), and no conductor in the 3D problem is on it. " +
-                       "Name a net the layout draws, or leave Ground3D empty for the ground-reference conductors.";
+            var r = names.Resolve(groundName);
+            if (r.Ambiguous.Count > 0)
+                return $"This setup's ground (Ground3D) is {Em3dConductorNames.AmbiguousText(groundName, r.Ambiguous)}";
+            if (!r.Ok && !pecFloor)
+                return $"This setup's ground is '{groundName}' (Ground3D), and no conductor in the 3D problem is on it or named so. " +
+                       "Name a net, an object or the end of an object's path, or leave Ground3D empty for the ground-reference conductors." +
+                       Em3dConductorNames.NearText(r.Near);
+            ground = [.. r.Objects];
         }
         else
         {
@@ -1091,31 +1107,57 @@ public static class Em3dGenerator
             ground = [.. conductors.Where(c => _groundBandObjects.Contains(c) ||
                                                (_objectNets.TryGetValue(c, out var nets) && nets.Overlaps(groundNets)))];
         }
+        var groundBodies = es ? BodiesOf(ground).ToHashSet() : [];
 
         if (setup.Terminals3D.Count == 0)
-            return $"This {(setup.Problem3D == Em3dProblemType.Electrostatic ? "electrostatic" : "magnetostatic")} setup " +
+            return $"This {(es ? "electrostatic" : "magnetostatic")} setup " +
                    "names no terminal, so there is no matrix to compute. List each conductor's net under Terminals3D.";
+        var taken = new Dictionary<int, (string Terminal, string By)>();
         foreach (var t in setup.Terminals3D)
         {
-            var groundSet = ground;
-            List<string> objects;
-            // brief-em3d-49 — a terminal may name its conductors instead of a net (a drawn object carries none).
-            if (t.ByObjects)
+            if (t.ByObjects && t.Net is { Length: > 0 })
+                return $"Terminal '{t.Name}' states both a net ('{t.Net}') and objects; a terminal is one or the other.";
+            var named = new List<string>();
+            var termBodies = new List<int>();
+            foreach (string token in t.ByObjects ? t.Objects! : [t.Net])
             {
-                if (t.Net is { Length: > 0 })
-                    return $"Terminal '{t.Name}' states both a net ('{t.Net}') and objects; a terminal is one or the other.";
-                if (t.Objects!.FirstOrDefault(o => !conductors.Contains(o)) is { } missing)
-                    return $"Terminal '{t.Name}' names '{missing}', which is not a conductor of the 3D problem" +
-                           (solids.Any(s => s.Name == missing) ? " (it is a dielectric or air solid)" : "") + ".";
-                if (t.Objects!.FirstOrDefault(groundSet.Contains) is { } grounded)
-                    return $"Terminal '{t.Name}' names '{grounded}', which is the ground; a conductor is at one potential.";
-                objects = [.. t.Objects!.Distinct(StringComparer.Ordinal)];
+                var r = names.Resolve(token);
+                if (r.Ambiguous.Count > 0)
+                    return $"Terminal '{t.Name}' names {Em3dConductorNames.AmbiguousText(token.Trim(), r.Ambiguous)}";
+                if (!r.Ok)
+                    return (t.ByObjects
+                        ? $"Terminal '{t.Name}' names '{token}', which is not a conductor of the 3D problem" +
+                          (solids.Any(s => s.Name == token) ? " (it is a dielectric or air solid)" : "") + "."
+                        : $"Terminal '{t.Name}' names net '{t.Net}', and no conductor in the 3D problem is on it. A terminal is the " +
+                          "metal of one net: name a net the layout (or a .wBond wire array) carries, or an object.") +
+                        Em3dConductorNames.NearText(r.Near);
+                if (!es)
+                {
+                    var groundSet = ground;
+                    if (t.ByObjects && r.Objects.FirstOrDefault(groundSet.Contains) is { } grounded)
+                        return $"Terminal '{t.Name}' names '{grounded}', which is the ground; a conductor is at one potential.";
+                    named.AddRange(r.Objects.Where(o => !groundSet.Contains(o)));
+                    continue;
+                }
+                foreach (int b in BodiesOf(r.Objects))
+                {
+                    if (groundBodies.Contains(b))
+                        return $"Terminal '{t.Name}' names '{token}', which is one piece of metal with the ground " +
+                               $"('{bodies!.Bodies[b].Name}', {Count(bodies.Bodies[b].Members.Count)}); a conductor is at one potential." +
+                               (setup.Ground3D is { Length: > 0 } ? "" :
+                                   " With Ground3D empty the ground is every conductor on a ground-reference layer and the metal " +
+                                   "touching it: name the ground (Ground3D) as a plane's object or net instead.");
+                    if (taken.TryGetValue(b, out var other) && other.Terminal != t.Name)
+                        return $"Terminals '{other.Terminal}' and '{t.Name}' are one piece of metal ('{bodies!.Bodies[b].Name}'): " +
+                               $"'{other.By}' and '{token}' touch, so they are at one potential. Make them one terminal, or name another conductor.";
+                    taken[b] = (t.Name, token);
+                    if (!termBodies.Contains(b)) termBodies.Add(b);
+                }
             }
-            else objects = OnNet(t.Net).Where(o => !groundSet.Contains(o)).ToList();
+            var objects = es ? termBodies.Order().SelectMany(b => bodies!.Bodies[b].Members).ToList() : named.Distinct(StringComparer.Ordinal).ToList();
             if (objects.Count == 0)
-                return $"Terminal '{t.Name}' names net '{t.Net}', and no conductor in the 3D problem is on it" +
-                       (OnNet(t.Net).Count > 0 ? " that is not also the ground" : "") +
-                       ". A terminal is the metal of one net: name a net the layout (or a .wBond wire array) carries.";
+                return $"Terminal '{t.Name}' names net '{t.Net}', and no conductor in the 3D problem is on it that is not also the ground. " +
+                       "A terminal is the metal of one net: name a net the layout (or a .wBond wire array) carries.";
             string? source = null;
             if (setup.Problem3D == Em3dProblemType.Magnetostatic)
             {
@@ -1129,8 +1171,53 @@ public static class Em3dGenerator
             }
             terminals.Add(new Em3dTerminal(t.Name, objects, source));
         }
+        if (!es) return null;
+
+        // ── R-dfr31-1-5 — every body in no terminal and not ground ─────────────────────────────────────────────────────
+        var groundObjects = groundBodies.Order().SelectMany(b => bodies!.Bodies[b].Members).ToList();
+        var rest = Enumerable.Range(0, bodies!.Bodies.Count).Where(b => !groundBodies.Contains(b) && !taken.ContainsKey(b)).ToList();
+        if (rest.Count > 0)
+        {
+            string Listed(int max) => string.Join(", ", rest.Take(max).Select(b => $"'{bodies.Bodies[b].Name}' ({Count(bodies.Bodies[b].Members.Count)})")) +
+                                      (rest.Count > max ? $" and {rest.Count - max} more" : "");
+            switch (setup.UnassignedConductors3D)
+            {
+                case EmUnassignedConductors.Refuse:
+                    return $"{rest.Count} piece(s) of metal are in no terminal and are not the ground: {Listed(5)}. An electrostatic " +
+                           "solve has to hold each at some potential. Set Other metal (UnassignedConductors3D) to Float, for metal " +
+                           "connected to nothing, or Ground, for plane copper and its vias; or make it a terminal.";
+                case EmUnassignedConductors.Ground:
+                {
+                    int largest = rest.MaxBy(b => bodies.Bodies[b].Members.Count);
+                    groundObjects = [.. groundBodies.Concat(rest).Order().SelectMany(b => bodies.Bodies[b].Members)];
+                    notes?.Add($"{rest.Count} piece(s) of metal in no terminal are ground (UnassignedConductors3D: Ground), the largest " +
+                               $"'{bodies.Bodies[largest].Name}' ({Count(bodies.Bodies[largest].Members.Count)}).");
+                    break;
+                }
+                default:
+                {
+                    if (rest.Count > MaxFloatingBodies)
+                        return $"{rest.Count} piece(s) of metal are in no terminal and not the ground, and floating each would add " +
+                               $"{rest.Count} solves; a run floats at most {MaxFloatingBodies}. Ground the plane copper (Other metal: " +
+                               $"Ground, or name it as Ground3D), or make the pieces terminals. The first: {Listed(5)}.";
+                    var used = new HashSet<string>(terminals.Select(x => x.Name), StringComparer.Ordinal);
+                    foreach (int b in rest)
+                    {
+                        string name = bodies.Bodies[b].Name;
+                        for (int k = 2; !used.Add(name); k++) name = $"{bodies.Bodies[b].Name} ({k})";
+                        terminals.Add(new Em3dTerminal(name, bodies.Bodies[b].Members) { Floating = true });
+                    }
+                    notes?.Add($"{rest.Count} floating piece(s) of metal add {rest.Count} solve(s): {Listed(3)}. Each carries no net charge, " +
+                               "so it is solved as one more terminal and then eliminated from the matrix, which is exact.");
+                    break;
+                }
+            }
+        }
+        ground = groundObjects;
         return null;
     }
+
+    private static string Count(int objects) => objects == 1 ? "1 object" : $"{objects} objects";
 
     /// <summary>
     /// <b>R-em3d3-6 — the air box around a content extent</b>: the setup's padding per face (its default

@@ -327,11 +327,13 @@ internal static class ExplainEm3d
     {
         if (!p.IsStatic) return null;
         bool es = p.Type == Em3dProblemType.Electrostatic;
-        var terminals = p.Terminals.Select((t, k) => new Em3dTerminalJson(
+        var terminals = p.Terminals.Where(t => !t.Floating).Select((t, k) => new Em3dTerminalJson(
             k + 1, t.Name, setup.Terminals3D.FirstOrDefault(s => s.Name == t.Name)?.Net ?? "", t.Objects, t.SourcePort)).ToList();
-        return new Em3dStaticJson(p.Type.ToString(), terminals, p.GroundObjects, p.FloatingConductors(),
-            es ? "An electrostatic run refuses a floating conductor: Palace 0.18.1 has no isolated equipotential, " +
-                 "only a terminal's potential, ground and a zero-charge wall."
+        // brief-dfr31-1 — a floating body is solved as a terminal and eliminated, so it floats rather than being a row.
+        var floating = p.Terminals.Where(t => t.Floating).SelectMany(t => t.Objects).Concat(p.FloatingConductors()).ToList();
+        return new Em3dStaticJson(p.Type.ToString(), terminals, p.GroundObjects, floating,
+            es ? "A floating conductor carries no net charge: each piece of metal is solved as one more terminal and eliminated " +
+                 "from the matrix, which is exact (UnassignedConductors3D: Float)."
                : "A floating conductor carries no source current, only the screening current a perfect conductor carries.");
     }
 

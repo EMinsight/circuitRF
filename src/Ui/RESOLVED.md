@@ -41280,3 +41280,31 @@ Fix: the unbuilt-option update moved into `ApplyToChildren` itself, recursing th
 (`SelectUnbuilt`), so the state reaches the options whichever way it arrives. The footer was never wrong: it polls the
 plan every 250 ms and reported the true selection. Test:
 `ArchiveTreeAndMenuTests.UntickingAnOpenGroup_ReachesTheRowsOfItsCollapsedSubGroups`.
+
+## The static terminal column became a picker; the 3D setup window is no longer modal (brief-dfr31-1, 2026-10-29)
+
+**The Conductor column is an AutoCompleteBox with a ▾**. Typing filters (label or token, any case). ▾ opens the whole
+list: the box's own filter is swapped for an accept-all one around `PopulateComplete()`, then restored. Rows come
+from `Em3dBodyList`, built once when the panel attaches, off the UI thread ("listing conductors…"). A 3D view's setup
+groups the elaboration the view already holds; a `.cem` builds its layout's solids through `Em3dLayoutSolids.From`. A
+row writes the body's net, or its generated `body:<largest member>` name, which the run resolves to the same body.
+The ground picker leads with **Every body not in a terminal**: it clears Ground3D and sets Other metal to Ground. The
+box's watermark then reads that phrase.
+
+**Committing from inside the AutoCompleteBox's SelectionChanged crashed** (NRE in `ContentPresenter.ContentChanged`,
+from `ItemsControl.ClearContainerForItemOverride`). Every commit re-applies the snapshot, and `SyncStaticFields`
+cleared and refilled `TerminalRows`, tearing down the row whose box had focus. Posting the commit to the dispatcher was
+not enough. The rows are now updated in place whenever their number is unchanged, and only rebuilt when rows are added
+or removed. That also keeps the focus of a row being typed in.
+
+**Pick and highlight (a `.c3d`'s setup).** The setup window opens with `Show(owner)`, not `ShowDialog`, so the view
+behind it can be clicked. A row's Pick arms a one-shot pick: the next viewer selection fills that row with the picked
+object's body (`Scene3DObject.Name` is the elaborated object name the body lists). The bodies a row names are selected
+in the view when the row gets focus. That selection is not a pick, so an armed row cannot take the bodies of the row
+being looked at.
+
+`src/Ui/Layout/Em` stays framework-free (R-em-1): the filter delegate (`AutoCompleteFilterPredicate`) lives in the
+view's code-behind, and the view model exposes only `PickMatches`.
+
+Seen with `tools/UiSnapshot --cem` on the synthetic board: the list, a body chosen and written, the ground's first
+row, and add/remove after a pick. Gate: `StaticBodyPickerTests`.

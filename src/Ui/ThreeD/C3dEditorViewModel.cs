@@ -142,6 +142,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         };
         Viewer.SceneAdopted += OnSceneAdopted;
         Viewer.SelectionChanged += OnViewerSelectionChanged;
+        Viewer.SelectionChanged += PickForSetup;
         WatchFieldPlots();
         // 3D menu cleanup — the menu bar's Modify items follow the selection and the select mode.
         Viewer.SelectionChanged += RaiseMenuStateChanged;

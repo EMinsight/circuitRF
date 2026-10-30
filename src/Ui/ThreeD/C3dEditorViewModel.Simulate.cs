@@ -28,6 +28,8 @@ using CircuitRF.Ui.Viewer3D;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
+using CircuitRF.Design.Layout.Em3d;
+
 namespace CircuitRF.Ui.ThreeD;
 
 /// <summary>
@@ -366,11 +368,45 @@ public sealed partial class C3dEditorViewModel
             vm.EmbeddedCommit = (_, after, description) => CommitSetupFromPanel(name, after, description);
         }
         vm.RunRequested = _ => RunRequested?.Invoke(this, item.IsExternal ? null : item.Name) ?? Task.CompletedTask;
+        // brief-dfr31-1 R-dfr31-1-4 — the terminal picker lists this view's pieces of metal (from the elaboration the view
+        // already holds, grouped off the UI thread), a row's Pick takes the next object clicked in the view, and the bodies
+        // a row names are selected in the view while it is edited.
+        if (Elaboration is { } elaboration)
+        {
+            var document = Document;
+            vm.BodyLister = _ => Em3dBodyList.Of(document, elaboration);
+        }
+        vm.CanPickInView = true;
+        vm.HighlightRequested += HighlightSetupBodies;
         _editorFor = (item.Name, item.IsExternal);
         SetupEditor = new EmSetupDocument(item.Name, vm, item.IsExternal ? item.ExternalPath! : FilePath);
     }
 
     private (string Name, bool External)? _editorFor;
+
+    /// <summary>brief-dfr31-1 — selects in the view every object of the bodies a terminal row names.</summary>
+    private void HighlightSetupBodies(IReadOnlyList<string> members)
+    {
+        if (members.Count == 0) return;
+        var wanted = members.ToHashSet(StringComparer.Ordinal);
+        // A highlight is not a pick: an armed row must not take the bodies of the row being looked at.
+        _highlightingSetupBodies = true;
+        try
+        {
+            Viewer.SetSelection(Viewer.Scene.Objects.Where(o => o.Pickable && wanted.Contains(o.Name))
+                                                    .Select(o => Scene3DItem.OfObject(o.Id)));
+        }
+        finally { _highlightingSetupBodies = false; }
+    }
+
+    private bool _highlightingSetupBodies;
+
+    /// <summary>brief-dfr31-1 — a click in the view while a terminal row's Pick is armed fills that row.</summary>
+    private void PickForSetup()
+    {
+        if (_highlightingSetupBodies || SetupEditor?.ViewModel is not { PickingRow: not null } setup) return;
+        if (Viewer.SelectedObjects() is [var picked, ..]) setup.PickConductor(picked.Name);
+    }
 
     private static EmSetup? TryRead(JsonElement e)
     {

@@ -28,6 +28,9 @@ public static partial class Em3dRunService
     /// <summary>The diagnostics group a Palace <c>.npy</c> carries beside S.</summary>
     public const string PalaceGroup = "palace";
 
+    /// <summary>brief-dfr31-1 R-dfr31-1-6 — the Maxwell matrix with every floating body still a terminal, before elimination.</summary>
+    public const string FullCapacitanceCube = "C_full";
+
     /// <summary>brief-em3d-116 R-em3d116-3 — the note a Both run carries when Palace refuses its terminal ports and it runs on
     /// openEMS alone. Null when Palace runs them.</summary>
     public static string? TerminalPortsSkipPalace(IReadOnlyList<(string Label, int Terminals)> ports, bool lumpedPorts = false,
@@ -480,6 +483,16 @@ public static partial class Em3dRunService
         if (matrix is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(error!));
         var mutual = PalaceRun.ReadTerminalMatrix(Path.Combine(post, mutualFile), mutualSymbol, unit, indices, out string? mutualError);
         if (mutual is null) log.Notes.Add($"The {(es ? "mutual capacitance" : "current-difference inductance")} form was not read: {mutualError}");
+        // brief-dfr31-1 R-dfr31-1-6 — floating bodies were solved as terminals; eliminated here, exactly. The full matrix is
+        // kept in the diagnostics group, and the mutual form is the reduced matrix's (Palace's is the full one's).
+        double[,]? full = null;
+        var floating = problem.Terminals.Select(t => t.Floating).ToList();
+        if (es && floating.Contains(true))
+        {
+            full = matrix;
+            matrix = Em3dStaticResult.EliminateFloating(full, floating);
+            mutual = Em3dStaticResult.MutualFromMaxwell(matrix);
+        }
 
         var notes = new List<string>();
         string groundText = GroundText(problem, setup);
@@ -507,7 +520,13 @@ public static partial class Em3dRunService
         log.Notes.AddRange(notes);
 
         var facts = PalaceRun.ReadFacts(post);
-        var data = Em3dStaticResult.Build(problem.Type, [.. problem.Terminals.Select(t => t.Name)], matrix, mutual, notes);
+        if (full is not null)
+            notes.Add($"{floating.Count(f => f)} floating piece(s) of metal were solved as terminals and eliminated: C is the matrix " +
+                      "of the named terminals with that metal carrying no net charge. The matrix before elimination is " +
+                      $"{PalaceGroup}.{FullCapacitanceCube}.");
+        var data = Em3dStaticResult.Build(problem.Type, [.. problem.Terminals.Where(t => !t.Floating).Select(t => t.Name)], matrix, mutual, notes);
+        if (full is not null)
+            data.AddToGroup(PalaceGroup, FullCapacitanceCube, Em3dStaticResult.Matrix(full, [.. problem.Terminals.Select(t => t.Name)], "F"));
         void Scalar(string name, double? v)
         {
             if (v is { } x) data.AddToGroup(PalaceGroup, name, DataCube.Scalar(x));
@@ -657,7 +676,7 @@ public static partial class Em3dRunService
         bool pecFace = new[] { problem.Boundary.Faces.XMin, problem.Boundary.Faces.XMax, problem.Boundary.Faces.YMin,
                                problem.Boundary.Faces.YMax, problem.Boundary.Faces.ZMin, problem.Boundary.Faces.ZMax }
                        .Contains(Em3dBoundaryKind.Pec);
-        string who = setup.Ground3D is { Length: > 0 } g ? $"net '{g}'" : "the ground-reference conductors";
+        string who = setup.Ground3D is { Length: > 0 } g ? $"'{g}'" : "the ground-reference conductors";
         var parts = new List<string>();
         if (problem.GroundObjects.Count > 0) parts.Add($"{who} ({problem.GroundObjects.Count} conductor(s))");
         if (pecFace) parts.Add("the air box's PEC face(s)");

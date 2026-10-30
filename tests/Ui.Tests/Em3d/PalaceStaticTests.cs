@@ -213,13 +213,23 @@ public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
         foreach (var (setup, source) in new[] { (noMetal, src1), (sourceless, src2) })
             Assert.Equal(EmRunStatus.Refused, EmRunService.Run(setup, source, Path.Combine(_root, "r-" + setup.Problem3D)).Status);
 
-        // An electrostatic conductor in no terminal: Palace has no floating conductor, so it is named.
+        // An electrostatic conductor in no terminal: Palace has no floating conductor. brief-dfr31-1 — by default the setup
+        // floats it (one more terminal, eliminated after the solve); Other metal: Refuse names it; and a problem that
+        // leaves it in no terminal at all is still refused by the writer, naming it.
         var (floating, src3) = TwoLines(Em3dProblemType.Electrostatic);
         floating.Terminals3D = [new("A", "A")];
         var g3 = Em3dGenerator.Generate(floating, src3, src3.Technology!);
         Assert.True(g3.Ok, g3.Refusal);
-        Assert.Equal(["Top Copper (1 oz)/B"], g3.Problem!.FloatingConductors());
-        Assert.Contains("'Top Copper (1 oz)/B' is in no terminal", PalaceConfigWriter.StaticRefusal(g3.Problem));
+        Assert.Empty(g3.Problem!.FloatingConductors());
+        Assert.Equal(["Top Copper (1 oz)/B"], Assert.Single(g3.Problem.Terminals, t => t.Floating).Objects);
+        Assert.Null(PalaceConfigWriter.StaticRefusal(g3.Problem));
+        var unassigned = g3.Problem with { Terminals = [.. g3.Problem.Terminals.Where(t => !t.Floating)] };
+        Assert.Equal(["Top Copper (1 oz)/B"], unassigned.FloatingConductors());
+        Assert.Contains("'Top Copper (1 oz)/B' is in no terminal", PalaceConfigWriter.StaticRefusal(unassigned));
+        floating.UnassignedConductors3D = EmUnassignedConductors.Refuse;
+        var refused = Em3dGenerator.Generate(floating, src3, src3.Technology!);
+        Assert.False(refused.Ok);
+        Assert.Contains("'B' (1 object)", refused.Refusal);
 
         Assert.Equal(gmsh, PalaceRun.GmshInvocations);
     }

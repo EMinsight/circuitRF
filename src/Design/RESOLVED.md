@@ -24509,3 +24509,73 @@ only appeared when a port sat on a layer with such a rule, which is why it was i
 A port label is a marker that is never fabricated (Gerber, the board writer and flatten all skip it), so it now
 takes no rule floor. A stated `StrokeWidth` still wins, and non-port labels are unchanged. Test:
 `StrokeTextTests.AMinWidthRuleFloorsALabelsPenButNotAPorts`.
+
+## Electrostatic on a board with no nets: connected bodies, names, floating metal (brief-dfr31-1, 2026-10-29)
+
+**A terminal is a piece of metal, not a list of objects.** On a board whose import dropped every net, the static setup
+had no way to say "this test point": its pad, barrel, landing pad and far-side pad are four objects with nothing tying
+them together, and naming one left the other three as unassigned conductors. `Em3dBodies` (Engine) groups the
+conductors of a problem by contact. Two objects join when their height ranges meet and their plan footprints meet, so
+a barrel joins the copper it passes on every level it spans and two layers never join through a dielectric. A
+footprint is exact where the primitive has one (extruded polygon with holes, box, vertical barrel, ball, horizontal
+sheet) and the bounding rectangle otherwise (each segment of a swept wire, polyhedra, ellipsoids, tilted sheets). A
+rectangle can join two objects that only come close, and can never part two that touch.
+
+**Cost.** The layout spatial index is in DBU and keyed to layout shapes, so it does not serve metre-valued 3D
+objects. Candidate pairs come from a uniform grid over the plan instead: each footprint goes in the cells its rectangle
+covers, and a pair is tested once, in the cell holding the lower-left corner of the two rectangles' overlap. A
+footprint covering more than 64 cells (a plane) is tested against every other footprint. A large polygon (over 64
+edges) also grids its own edges and holes, because a plane cleared round thousands of vias would otherwise walk every
+hole edge for every via. 20,000 objects (5,000 vias with pads, 5,000 loose pads, two planes with 5,000 clearance holes
+each) group in about 0.2 s, and `PairVisits` stays under 20 per object. The gate holds the count, not the time.
+
+**Which rule groups, and which does not.** Only an electrostatic solve groups into bodies. A magnetostatic
+terminal's current returns through the ground, so its metal touching the ground is the circuit, not a short; it
+keeps the objects named, less the ground. A body's members may carry several names (a wire array's name, a drawn 3D
+object's own name, the pads' nets), so "two nets on one body" is not refused by itself. What is refused is asking one
+body to be at two potentials: two terminals on one body (named, with the two names that touch), or a terminal on
+the ground's body. With Ground3D empty, the ground is every conductor on a ground-reference layer plus what touches
+it, so a test pad on a ground-reference bottom layer is ground. That refusal now says to name the ground explicitly.
+Before this, the pad was silently ground while the rest of its metal was a terminal.
+
+**Names (`Em3dConductorNames`).** An exact object path, then a net, then a unique path suffix, then `body:<path>` (the
+picker's generated name, which is the largest member's path). An ambiguous suffix is refused with the candidates
+listed. A name that matches nothing is refused with up to five near names (edit distance on the last path segment).
+Ground3D uses the same resolution, so a ground can be an object.
+
+**Floating metal is exact, not a refusal.** Palace 0.18.1 still has no floating-conductor boundary, so
+`PalaceConfigWriter.StaticRefusal` keeps refusing a problem with a conductor in no terminal. The generator now never
+builds one for electrostatics. `UnassignedConductors3D` (Float by default, written only when not Float) makes each
+left-over body either ground or a FLOATING terminal (`Em3dTerminal.Floating`), solved like any other.
+
+The derivation. Write the full Maxwell matrix in blocks, kept terminals t and floating bodies f: Q_t = C_tt V_t +
+C_tf V_f and Q_f = C_ft V_t + C_ff V_f. A floating body is isolated metal, so its net charge is zero: Q_f = 0. That
+fixes its potential, V_f = −C_ff⁻¹ C_ft V_t. Putting that back into the first row gives Q_t = (C_tt − C_tf C_ff⁻¹
+C_ft) V_t. The bracket is the matrix of the kept terminals with the floating metal present and uncharged. No field is
+approximated; the only cost is one solve per floating body on the same operator. C_ff is a principal block of a
+positive-definite matrix, so it is invertible. `Em3dStaticResult.EliminateFloating` does it by Gaussian elimination
+with partial pivoting. The mutual form is recomputed from the reduced matrix (`MutualFromMaxwell`), because Palace's
+`terminal-Cm.csv` is the full matrix's. The `.npy` carries the reduced C and C_mutual as the result, and the full
+matrix as `palace.C_full`. More than 50 floating bodies is refused with the count (`Em3dGenerator.MaxFloatingBodies`),
+so a whole board does not turn into hundreds of solves unasked.
+
+Measured: a hand-built 3×3 with one floating conductor matches the series/parallel closed form to 1e-24 F. Through
+Palace, plates A, M, B stacked with PMC sides and M floating give C_AB equal to the two gaps in series to 0.000 %. On
+the synthetic net-less board, `Ground` and GND-by-hand with `Ground3D: GND` lower to byte-identical Palace configs.
+That makes them the same capacitance, not merely within 0.5 %.
+
+**`MutualFromMaxwell` had a bug the closed form caught before it shipped**: it zeroed the diagonal on reaching j = i,
+discarding the row entries summed before it. The test with B's ground capacitor (row 1, where j = 0 precedes the
+diagonal) is what exposed it.
+
+**One golden moved on purpose**: `testdata/em3d/generator-dumps/fixture_microstrip-Electrostatic.txt`, whose
+refusal now ends "…carries, or an object. The nearest names are 'Top Copper (1 oz)/1'."
+
+**The "no ports" note** of an electrostatic 3D view (`C3dProblemAssembly.Assemble`) is now added only once the problem
+is built. It had been added before the terminal and boundary refusals, and so printed directly under a refusal as if
+it were a second error.
+
+Tests: `tests/Engine.Tests/Em3d/StaticBodiesEngineTests` (elimination, contact rules, the 20,000-object count),
+`tests/Ui.Tests/Em3d/StaticBodiesTests` (gates 1–4, Other metal, the picker's view model);
+`PalaceStaticTests.Gate6` updated: a setup leaves no conductor unassigned now, and the writer's refusal is shown on a
+problem built without the floating terminal.

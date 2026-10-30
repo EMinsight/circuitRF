@@ -138,6 +138,7 @@ public partial class C3dSetupAnalysesView : UserControl
             Content = body,
         };
         close.Click += (_, _) => window.Close();
-        if (TopLevel.GetTopLevel(this) is Window owner) _ = window.ShowDialog(owner); else window.Show();
+        // brief-dfr31-1 R-dfr31-1-4 — not modal: a terminal is picked by clicking the 3D view behind it.
+        if (TopLevel.GetTopLevel(this) is Window owner) window.Show(owner); else window.Show();
     }
 }
