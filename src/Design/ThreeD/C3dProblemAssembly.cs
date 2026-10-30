@@ -217,7 +217,7 @@ public static class C3dProblemAssembly
         refusal = null;
         if (e.ModelledExtent() is not { } extent) return null;     // brief-em3d-93 — the run's box: modelled content only
         double fMin;
-        try { fMin = setup.Frequency.Expand().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
+        try { fMin = setup.ExpandFrequencies().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
         catch (Exception) { fMin = 1e9; }
         return Em3dGenerator.PaddedAirBox(setup, (extent.X0, extent.Y0, extent.X1, extent.Y1, extent.Z0, extent.Z1),
                                           fMin, floorZ: null, waves: [], [], out refusal);
@@ -229,7 +229,7 @@ public static class C3dProblemAssembly
     {
         if (e.ModelledExtent() is not { } x) return null;
         double fMin;
-        try { fMin = setup.Frequency.Expand().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
+        try { fMin = setup.ExpandFrequencies().Where(f => f > 0).DefaultIfEmpty(1e9).Min(); }
         catch (Exception) { fMin = 1e9; }
         return Em3dGenerator.DefaultPadding(setup, fMin, Math.Max(Math.Max(x.X1 - x.X0, x.Y1 - x.Y0), x.Z1 - x.Z0)).Basis;
     }
@@ -346,7 +346,7 @@ public static class C3dProblemAssembly
 
         // ── The sweep and the temperature, as the generator reads them ──────────────────────────
         double[] freqs;
-        try { freqs = setup.Frequency.Expand(); }
+        try { freqs = setup.ExpandFrequencies(); }
         catch (Exception ex) { return No(EmDiagnostics.FrequencySweepUnresolvable(ex.Message).Render()); }
         var positive = freqs.Where(f => f > 0).ToArray();
         if (positive.Length == 0) return No(EmDiagnostics.FrequencySweepEmpty().Render());
@@ -354,8 +354,7 @@ public static class C3dProblemAssembly
         // brief-emdc-2 R-emdc2-1 — a driven sweep's 0 Hz point is circuitRF's conduction solve (Em3dDcRow), not the solver's.
         bool wantsDc = positive.Length < freqs.Length && setup.Problem3D == Em3dProblemType.Driven;
         if (wantsDc) notes.Add(CircuitRF.Design.Em3d.Em3dDcRow.ZeroHzNote);
-        var frequency = new Em3dFrequency(fMin, fMax, positive.Length,
-            setup.Frequency.Kind == CircuitRF.Core.Design.SweepKind.Log ? Em3dSweepKind.Log : Em3dSweepKind.Linear);
+        var frequency = setup.ToEm3dFrequency(positive);
         double tempC = setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC;
         if (fromCem && document.Setups.Count > 0)
             notes.Add($"The 3D view's own {document.Setups.Count} embedded setup(s) are not consulted: this .cem is the setup.");

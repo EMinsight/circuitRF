@@ -1244,3 +1244,43 @@ Pass/fail families, the nominal, envelopes, scatters, the contribution Pareto an
 - **Contributions from a file go through the run's own ranking.** `ResultContributions.Of` rebuilds `TrialRecord`s
   from the result's `z:` cubes, worst values, measures and status and calls `StatisticalContributions.Of`, rather
   than re-implementing the regression grouping (mismatch streams per instance) a second time.
+
+## Unwrapped phase: the "Unwrap°" transform and unwrap() (GitHub discussion 27, 2026-10-30)
+
+A wrapped phase hides the slope a delay or an electrical length is read from. Two halves, ONE implementation
+(`RfCore.Data.PhaseUnwrap`), so a goal written as `unwrap(…)` and the curve on the card cannot disagree:
+
+- **`unwrap(x [, "axis"])`** in the expression engine, an axis function (`Evaluator.AxisFunctions`) so a trace
+  expression evaluates it once over whole cubes. A complex operand gives its phase in degrees; a real one is read as
+  degrees already, as `phase()` returns them. The axis defaults to `freq`, then a rank-1 cube's only axis — never to
+  `trial`, which is not a sequence a phase runs along. Every other axis is kept and unwrapped line by line. A NaN is
+  stepped over (the next present sample compares with the last present one); a step of exactly half a turn is left
+  as it is. **`MidpointRounding.ToZero` is NOT "ties toward zero" — it truncates every value**, which unwrapped
+  nothing at all; the rule is written out as `sign·ceil(|t| − 0.5)`.
+- **`CubeTransform.PhaseUnwrapped`**, shown as **Unwrap°** (a longer label clips in the fixed-width combo) and spelled
+  `unwrap(…)` in the spec box, so the text is the expression language's own. Appended LAST to the enum — `.cdd`
+  spells members by name and the menu order is `Trace.TransformMenuOrder`, which puts it beside Phase°.
+
+**Where it is applied, and why there.** Every downstream site — the curve, a marker, a table cell, a family curve —
+reads one sample at a time, and unwrapping needs the whole curve. So `TraceResolve.Unwrap` turns the values into a
+real series in degrees at the four places cube data enters a trace (single slice, family, versus, and a complex
+expression result), and every per-sample switch passes an unknown transform's real value through unchanged. Two
+consequences that had to be carried explicitly:
+
+- **The trace still has to know the data was complex.** `CubeDataIsComplex` drives the transform list's enabled
+  entries and the plot-type remap (Rect → Smith must return to None); `SetCubeData`/`SetFamilyData` take
+  `unwrappedFromComplex` and the trace keeps it beside the data it describes.
+- **A complex expression result is passed NOT baked** when unwrapped, or `TransformIsInert` would grey the combo and
+  `SyncTransformItem` would pin it to None — taking away the control that chose it.
+
+**Touchstone (network) traces key it out.** Their markers read `DataPoint` one frequency at a time, so the curve
+would be unwrapped while the marker read-out stayed wrapped. Supporting them means unwrapping in the network path's
+own point builder and its `DataPoint`/table readers together.
+
+**Two places assumed a transform's name is its enum name lower-cased**, which `PhaseUnwrapped` is not:
+`CubeTraceSpecParser`'s bare-name path rebuilt `phaseunwrapped(…)` and failed to parse (it now uses
+`Trace.TransformFunctionName`), and `circuitrf plot`'s axis-function check routed `unwrap(S[:, 2, 1])` to the
+expression path before the card's own parser could read it as a transform (it now asks `CubeTraceSpecParser` first).
+"Add as goal…" maps it to `unwrap(…)` with an equality goal, as Phase° maps to `phase(…)`.
+
+Gates: `Core.Tests` `UnwrapTests`, `Ui.Tests` `PhaseUnwrappedTransformTests` and the `TraceToGoalTests` row.

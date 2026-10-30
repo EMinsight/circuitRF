@@ -160,7 +160,7 @@ public sealed partial class EmSetupEditorViewModel
     {
         try
         {
-            var f = Working.Frequency.Expand().Where(v => v > 0).ToArray();
+            var f = Working.ExpandFrequencies().Where(v => v > 0).ToArray();
             return f.Length == 0 ? null : 0.5 * (f.Min() + f.Max()) / 1e9;
         }
         catch (Exception e) when (e is not OutOfMemoryException) { return null; }

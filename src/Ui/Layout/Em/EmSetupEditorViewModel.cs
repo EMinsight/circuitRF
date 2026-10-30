@@ -14,6 +14,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Numerics;
+using CircuitRF.Core.Design;
 using CircuitRF.Engine;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Engine.Mom;
@@ -736,6 +737,21 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
 
     public ViewModels.FrequencySpecViewModel Frequency { get; private set; }
 
+    /// <summary>GitHub discussion 26 — the frequency plan, one row per segment, <see cref="Frequency"/> first. Every
+    /// row is the same <c>FrequencySpecViewModel</c> R-em-11 asks for, offered the Single mode a plan's single points
+    /// need; the run takes the union of them all (<see cref="EmSetup.ExpandFrequencies"/>).</summary>
+    public ObservableCollection<ViewModels.FrequencySpecViewModel> FrequencySegments { get; } = [];
+
+    /// <summary>Adds a segment, as a single point at the plan's first frequency — the commonest addition is one
+    /// frequency of interest, and a single point is one click from a sweep.</summary>
+    [RelayCommand]
+    private void AddFrequencySegment()
+    {
+        var first = Working.Frequency;
+        AddFrequencyRow(new FrequencySpec(first.StartExpr, first.StartExpr, 1, SweepKind.Linear, first.StartUnit, first.StartUnit));
+        CommitFrequency();
+    }
+
     // ── Port Z0, as staged text so a complex value can be typed ────────────────────────────────
 
     [ObservableProperty] private string _port1Z0Text = "50";
@@ -1035,12 +1051,30 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// </summary>
     private ViewModels.FrequencySpecViewModel NewFrequencyVm()
     {
-        var vm = new ViewModels.FrequencySpecViewModel(new SchematicEditModel(), Working.Frequency)
+        FrequencySegments.Clear();
+        foreach (var segment in Working.FrequencyPlan) AddFrequencyRow(segment);
+        return FrequencySegments[0];
+    }
+
+    private void AddFrequencyRow(FrequencySpec segment)
+    {
+        var vm = new ViewModels.FrequencySpecViewModel(new SchematicEditModel(), segment, offersSinglePoint: true);
+        vm.PropertyChanged += (_, e) =>
         {
-            CanRemoveSelf = false,
+            if (e.PropertyName != nameof(ViewModels.FrequencySpecViewModel.CanRemoveSelf)) CommitFrequency();
         };
-        vm.PropertyChanged += (_, _) => CommitFrequency();
-        return vm;
+        vm.SetRemoveCallback(RemoveFrequencyRow);
+        FrequencySegments.Add(vm);
+        foreach (var row in FrequencySegments) row.CanRemoveSelf = FrequencySegments.Count > 1;
+    }
+
+    private void RemoveFrequencyRow(ViewModels.FrequencySpecViewModel row)
+    {
+        if (FrequencySegments.Count <= 1 || !FrequencySegments.Remove(row)) return;
+        foreach (var r in FrequencySegments) r.CanRemoveSelf = FrequencySegments.Count > 1;
+        Frequency = FrequencySegments[0];
+        OnPropertyChanged(nameof(Frequency));
+        CommitFrequency();
     }
 
     // ── Save ───────────────────────────────────────────────────────────────────────────────────
@@ -1163,9 +1197,11 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     private void CommitFrequency()
     {
         if (_suppressCommit) return;
-        var spec = Frequency.Build();
+        var spec = FrequencySegments[0].Build();
+        var more = FrequencySegments.Skip(1).Select(r => r.Build()).ToList();
         var before = SnapshotJson();
         Working.Frequency = spec;
+        Working.AdditionalFrequencies = more;
         CommitEdit(before, "Change EM frequency sweep");
 
         // The mesh-frequency field is edited in the SWEEP's own unit and stored in hertz, so a
@@ -2289,7 +2325,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         try
         {
             double f = 0;
-            foreach (double v in Working.Frequency.Expand()) f = Math.Max(f, v);
+            foreach (double v in Working.ExpandFrequencies()) f = Math.Max(f, v);
             return f;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException)
@@ -2490,7 +2526,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         double fMax = 0;
         try
         {
-            var freqs = Working.Frequency.Expand();
+            var freqs = Working.ExpandFrequencies();
             for (int i = 0; i < freqs.Length; i++) fMax = Math.Max(fMax, freqs[i]);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException)

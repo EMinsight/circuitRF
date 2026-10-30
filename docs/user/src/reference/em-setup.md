@@ -158,6 +158,13 @@ entered. See [Units](units.html) for what the text boxes accept.
 
 Default: **1 to 20 GHz, 101 points, linear.**
 
+**A frequency plan.** **+ Segment** adds a row, and the run solves every row's frequencies together, sorted, each
+once. A row's **Single** button makes it one frequency rather than a sweep, which is what a new row starts as. So a
+coarse broadband sweep, a finer sweep around the centre and a spot frequency are three rows, and an optimization
+that only needs one frequency is one row on **Single**. The **×** on a row removes it; the last row stays. Every
+solver takes the same list, the Touchstone file holds exactly those frequencies, and **Create SnP schematic**
+sweeps them too.
+
 For the cross-section kernel the sweep is nearly free — the quasi-static answer does not change with
 frequency, and the sweep exists so that the written Touchstone has the frequencies your test bench wants.
 For the full-wave kernel **every point is a solve**, and the sweep is the single biggest driver of run

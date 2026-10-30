@@ -769,6 +769,7 @@ public static partial class Em3dRunService
     /// <summary>The sweep's frequencies, as Palace's <c>NSample</c> spaces them: both ends included.</summary>
     public static double[] FrequenciesHz(Em3dFrequency f)
     {
+        if (f.ListHz is { Count: > 0 } list) return [.. list];
         if (f.Points <= 1 || f.StopHz == f.StartHz) return [f.StartHz];
         var v = new double[f.Points];
         for (int k = 0; k < f.Points; k++)

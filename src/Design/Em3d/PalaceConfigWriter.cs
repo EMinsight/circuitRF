@@ -352,7 +352,15 @@ public static class PalaceConfigWriter
         w.WriteStartObject("Driven");
         w.WriteStartArray("Samples");
         w.WriteStartObject();
-        if (f.Points == 1 || f.StopHz == f.StartHz)
+        if (f.ListHz is { Count: > 0 } plan)
+        {
+            // GitHub discussion 26 — a frequency plan's exact frequencies, as Palace's own list form.
+            w.WriteString("Type", "Point");
+            w.WriteStartArray("Freq");
+            foreach (double hz in plan) w.WriteNumberValue(hz / 1e9);
+            w.WriteEndArray();
+        }
+        else if (f.Points == 1 || f.StopHz == f.StartHz)
         {
             w.WriteString("Type", "Point");
             w.WriteStartArray("Freq");
@@ -452,12 +460,11 @@ public static class PalaceConfigWriter
     public static double? SweepCentreGHz(EmSetup setup)
     {
         double[] freqs;
-        try { freqs = setup.Frequency.Expand(); }
+        try { freqs = setup.ExpandFrequencies(); }
         catch (Exception) { return null; }
         var positive = freqs.Where(f => f > 0).ToArray();
         if (positive.Length == 0) return null;
-        var f = new Em3dFrequency(positive.Min(), positive.Max(), positive.Length,
-                                  setup.Frequency.Kind == CircuitRF.Core.Design.SweepKind.Log ? Em3dSweepKind.Log : Em3dSweepKind.Linear);
+        var f = setup.ToEm3dFrequency(positive);
         return SaveFrequenciesGHz(f, PalaceSettings.Resolve(null))[0];
     }
 

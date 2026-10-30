@@ -66,7 +66,7 @@ namespace CircuitRF.Render.DataDisplay
                 var bareTokens = Enumerable.Repeat(":", bareCube.Rank).ToArray();
                 // Build the slice by recursively parsing as if the user typed "[transform ]Name[:, :, ...]"
                 string transformStr = bareTransform != CubeTransform.None
-                    ? bareTransform.ToString().ToLowerInvariant() + " "
+                    ? Trace.TransformFunctionName(bareTransform) + " "
                     : "";
                 string synth = transformStr + cubeName + "[" + string.Join(", ", bareTokens) + "]";
                 return TryParse(synth, ds, out cubeName, out slice, out transform, out error);
@@ -292,6 +292,7 @@ namespace CircuitRF.Render.DataDisplay
                 case "real":  transform = CubeTransform.Real;  return true;
                 case "imag":  transform = CubeTransform.Imag;  return true;
                 case "conj":  transform = CubeTransform.Conj;  return true;
+                case "unwrap": transform = CubeTransform.PhaseUnwrapped; return true;
                 case "none":  transform = CubeTransform.None;  return true;
                 default:      transform = CubeTransform.None;  return false;
             }

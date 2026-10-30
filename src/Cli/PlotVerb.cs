@@ -908,8 +908,11 @@ internal static class PlotVerb
 
         // An axis function (mean_over, histogram, cdf, … — YA-5 R-ya5-6) reads whole cubes, so the trace is an
         // EXPRESSION, evaluated once by the trace card's own evaluator; its one remaining axis is the X. Checked
-        // here so a refusal names the problem instead of a picture with no curve in it.
-        if (CircuitRF.Core.Expressions.Evaluator.CallsAxisFunction(text))
+        // here so a refusal names the problem instead of a picture with no curve in it. One axis function is also a
+        // card transform — unwrap(S[:, 2, 1]) is the card's "Unwrap°" — so text the card's own spec parser
+        // reads stays a card trace, with its transform on the combo (GitHub discussion 27).
+        if (CircuitRF.Core.Expressions.Evaluator.CallsAxisFunction(text)
+            && !CubeTraceSpecParser.TryParse(text, data, out _, out _, out _, out _))
         {
             if (spec.I is not null || spec.J is not null || spec.Cut is not null || spec.Port is not null || spec.FreqHz is not null)
                 return (null, JsonRun.Fail(CliDiagnostics.PlotTracePortsWithSlice(spec.Raw)));

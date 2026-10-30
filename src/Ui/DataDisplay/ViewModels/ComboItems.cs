@@ -166,6 +166,7 @@ public sealed class CubeTransformItem
             CubeTransform.Real  => "Real",
             CubeTransform.Imag  => "Imag",
             CubeTransform.Conj  => "Conj",
+            CubeTransform.PhaseUnwrapped => "Unwrap°",
             _                   => transform.ToString()
         };
     }

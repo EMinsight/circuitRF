@@ -137,13 +137,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     // All cube transform options — every entry enabled (used for cube-bound traces).
     public static IReadOnlyList<CubeTransformItem> AllCubeTransforms { get; } =
-        Enum.GetValues<CubeTransform>().Select(t => new CubeTransformItem(t)).ToList();
+        Trace.TransformMenuOrder.Select(t => new CubeTransformItem(t)).ToList();
 
-    // Transform options for network/S-param traces — dB10, dB, Conj are cube-only and disabled.
+    // Transform options for network/S-param traces — dB10, dB, Conj and the unwrapped phase are cube-only and disabled.
     public static IReadOnlyList<CubeTransformItem> AllTransformsForNetwork { get; } =
-        Enum.GetValues<CubeTransform>()
+        Trace.TransformMenuOrder
             .Select(t => new CubeTransformItem(t,
-                enabled: t is not CubeTransform.dB10 and not CubeTransform.dB and not CubeTransform.Conj))
+                enabled: t is not CubeTransform.dB10 and not CubeTransform.dB and not CubeTransform.Conj
+                          and not CubeTransform.PhaseUnwrapped))
             .ToList();
 
     public static IReadOnlyList<ColorItem> ColorItems { get; } = BuildColorItems();

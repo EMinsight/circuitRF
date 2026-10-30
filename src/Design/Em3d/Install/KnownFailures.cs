@@ -56,6 +56,14 @@ public static class KnownFailures
             "circuitRF's spaced-path trial, macOS 27.0 on an Apple M4, 2026-09-25 (Spack v1.2.2 building " +
             "gmake under a directory named 'space test')"),
 
+        new("bash-too-old-for-empty-array",
+            new Regex(@"\[[@*]\]: unbound variable", RegexOptions.Compiled),
+            "A build script ran under macOS's own bash 3.2, which under 'set -u' calls an empty array unbound " +
+            "where bash 4.4 and later do not. circuitRF's openEMS recipe patches the one line its path reaches; " +
+            "a script it does not patch needs a newer bash first on the PATH.",
+            "a user's openEMS 0.37.0 install on macOS, 2026-10-30 (GitHub discussion 28: update_openEMS.sh " +
+            "line 243), reproduced with /bin/bash 3.2.57"),
+
         new("spack-variants-dropped",
             new Regex(@"cannot run (?:wave ports|eigenmode solves)", RegexOptions.Compiled),
             "Spack's concretizer turns off Palace's +slepc, +gslib and +sundials variants without a message " +

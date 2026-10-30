@@ -45,6 +45,11 @@
              may silently fail to render on BorderBrush — always use a SolidColorBrush resource. -->
         <SolidColorBrush x:Key="CrfTileBorderBrush" Color="#55808080"/>
 
+        <!-- A card INSIDE a card — one segment of the EM setup's frequency plan: a wash just strong enough to
+             separate neighbouring rows on the group's own background. Semi-transparent mid-grey so one value
+             darkens a light panel and lightens a dark one, CrfTileBorderBrush's convention. -->
+        <SolidColorBrush x:Key="CrfSubCardBrush" Color="#14808080"/>
+
         <!-- Owner, 2026-09-08: the SUBTLE mark on an editor field an EM run cannot use — an empty
              thickness, a permittivity below 1, a conductivity of zero. Amber and NOT red, on
              CrfForeignBandBrush's own precedent: red means the application refused something, and an

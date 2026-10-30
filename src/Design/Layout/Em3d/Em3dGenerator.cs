@@ -224,7 +224,7 @@ public static class Em3dGenerator
         {
             // ── The sweep ─────────────────────────────────────────────────────────────────────
             double[] freqs;
-            try { freqs = setup.Frequency.Expand(); }
+            try { freqs = setup.ExpandFrequencies(); }
             catch (Exception ex) { return No(EmDiagnostics.FrequencySweepUnresolvable(ex.Message).Render()); }
             var positive = freqs.Where(f => f > 0).ToArray();
             if (positive.Length == 0) return No(EmDiagnostics.FrequencySweepEmpty().Render());
@@ -232,8 +232,7 @@ public static class Em3dGenerator
             // brief-emdc-2 R-emdc2-1 — a driven sweep's 0 Hz point is circuitRF's conduction solve (Em3dDcRow), not the solver's.
             _wantsDc = positive.Length < freqs.Length && setup.Problem3D == Em3dProblemType.Driven;
             if (_wantsDc) _notes.Add(CircuitRF.Design.Em3d.Em3dDcRow.ZeroHzNote);
-            var frequency = new Em3dFrequency(fMin, fMax, positive.Length,
-                setup.Frequency.Kind == CircuitRF.Core.Design.SweepKind.Log ? Em3dSweepKind.Log : Em3dSweepKind.Linear);
+            var frequency = setup.ToEm3dFrequency(positive);
 
             // ── Temperature (R-em3d3-4) ───────────────────────────────────────────────────────
             _tempC = setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC;

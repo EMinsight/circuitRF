@@ -288,6 +288,32 @@ public sealed class SolverInstallTests : IDisposable
         Assert.Contains("unsafe srcdir value", File.ReadAllText(outcome.LogPath!));
     }
 
+    /// <summary>GitHub discussion 28: macOS's bash 3.2 stopped openEMS's build script at line 243 on an empty array.
+    /// The recipe's own sed arguments, run as the installer runs them, must turn the pinned line into the one its
+    /// check step expects — which is what proves the JSON's escaping survived — and the original failure is named.</summary>
+    [Fact]
+    public void Gate7c_TheMacOsOpenEmsRecipePatchesLine243ForBash32_AndTheFailureIsNamed()
+    {
+        var match = KnownFailures.Match(["/x/src/update_openEMS.sh: line 243: PYTHON_ARGS[*]: unbound variable"]);
+        Assert.Equal("bash-too-old-for-empty-array", match?.Id);
+
+        var recipe = SolverRecipes.All.Single(r => r.Id == "openems-0.37.0-macos-arm64");
+        var names = recipe.Steps.Select(s => s.Name).ToList();
+        int patch = names.IndexOf("Make the build script run on macOS's bash");
+        int check = names.IndexOf("Check the build script's patched line");
+        Assert.True(names.IndexOf("Check openEMS's commit") < patch && patch < check && check < names.IndexOf("Build openEMS"));
+
+        if (!OperatingSystem.IsMacOS()) return;   // BSD sed's in-place spelling
+        string script = Path.Combine(_tmp, "update_openEMS.sh");
+        File.WriteAllLines(script, [.. Enumerable.Repeat("#", 242),
+            "  if [ \"$BUILD_PY_EXT\" -eq 0 ] && [ -n \"${PYTHON_ARGS[*]}\" ]; then", "  fi"]);
+        var psi = new System.Diagnostics.ProcessStartInfo(recipe.Steps[patch].Command!) { WorkingDirectory = _tmp };
+        foreach (string a in recipe.Steps[patch].Arguments) psi.ArgumentList.Add(a);
+        using (var p = System.Diagnostics.Process.Start(psi)!) { p.WaitForExit(); Assert.Equal(0, p.ExitCode); }
+
+        Assert.Equal(recipe.Steps[check].Expect, File.ReadAllLines(script)[242].Trim());
+    }
+
     // ── 8. the user's Spack is untouched ────────────────────────────────────────────────────────
 
     [Fact]

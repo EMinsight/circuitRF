@@ -1531,3 +1531,8 @@ src/Core/Expressions/Evaluator.cs|{cl.Name}: the instantaneous power needs the w
 src/Engine/Mom/PlanarFillMerged.cs|FillMerged needs a mesh carrying a rooftop merge (PlanarMesh.Merge); this one has none. 
 src/Engine/Mom/PlanarRooftopMerge.cs|Rooftop merging could not express a run boundary in elemental rooftops after 
 src/Engine/Mom/PlanarSystem.cs|Rooftop merging is built for a single conductor level with no vias, and the mesher 
+# GitHub discussion 27: unwrap() reports its operand and axis the way every other function in Evaluator.Reductions.cs
+# does — the expression engine has no Diagnostic family, so its messages stay on this list together.
+src/Core/Expressions/Evaluator.Reductions.cs|unwrap(): give it a phase in degrees, or a complex quantity to take the phase of.
+src/Core/Expressions/Evaluator.Reductions.cs|unwrap(): no axis named '{axisName}'. Its axes are: {axes}.
+src/Core/Expressions/Evaluator.Reductions.cs|unwrap(): this value has no 'freq' axis; name the axis to unwrap along as the last argument. Its axes are: {axes}.

@@ -359,7 +359,10 @@ internal static class DocumentSchema
           * SignalStackupLayerName is a STACKUP entry's Name ("Top Copper (1 oz)"), not a drawing
             layer's ("Top Copper"). The technology's Stackup lists them.
           * Frequency: StartExpr and StopExpr are expressions in StartUnit and StopUnit. Mode
-            PointCount uses NumPoints; Mode StepSize uses StepExpr in StepUnit.
+            PointCount uses NumPoints; Mode StepSize uses StepExpr in StepUnit. AdditionalFrequencies
+            is a list of further segments in the same shape; the run solves every segment's
+            frequencies together, sorted, each once. A single frequency is a segment with NumPoints 1
+            and StopExpr equal to StartExpr.
           * Port impedances: Port1Z0Real/Imag and Port2Z0Real/Imag cover two ports. For more, PortZ0s
             is a flat [re, im, re, im, ...] list in port-number order, and wins where present.
           * AnalysisKind: Planar is the full-wave planar solver; CrossSection is the 2-D per-unit-

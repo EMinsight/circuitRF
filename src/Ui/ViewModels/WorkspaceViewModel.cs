@@ -9398,7 +9398,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     internal static int ResolveEmPointCount(EmSetup setup)
     {
-        try { return setup.Frequency.Expand().Length; }
+        try { return setup.ExpandFrequencies().Length; }
         catch { return 0; }
     }
 

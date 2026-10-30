@@ -24683,3 +24683,60 @@ which were regenerated with `CRF_WRITE_PALACE_GOLDENS=1`; the diff is the table 
 Gates: `BoardEdgeSliverTests` (the synthetic board meshes; the same sliver drawn by hand with Robust meshing off is
 refused naming both objects). `RobustMeshingTests`, `ViaOnTheBoardEdgeTests`, `PalaceBackendTests` and
 `PalaceStaticTests` still pass.
+
+## openEMS would not build on a stock Mac: bash 3.2 and an empty array (GitHub discussion 28, 2026-10-30)
+
+A user's openEMS 0.37.0 install stopped in "Build openEMS" with `update_openEMS.sh: line 243: PYTHON_ARGS[*]: unbound
+variable`. The report blamed zsh; zsh plays no part. The script is `#!/usr/bin/env bash` with `set -u`, and macOS's own
+`/bin/bash` is 3.2, which treats `"${A[*]}"` of an EMPTY array as unbound under `set -u` (bash 4.4 does not). The array
+is empty because the recipe deliberately leaves `--python` off, so the guard on line 243 is evaluated rather than
+short-circuited. Upstream master still has the line. Any Mac whose first `bash` on the recipe's PATH is Apple's fails;
+Linux ships a newer bash.
+
+**Fixed by patching the one line, not by asking for Homebrew's bash.** Two steps after the commit check: `/usr/bin/sed`
+rewrites line 243 to `"${PYTHON_ARGS[*]+${PYTHON_ARGS[*]}}"`, the spelling the script already uses for every other
+optional array; then `sed -n 243p` is captured and compared, because sed exits 0 when its pattern matches nothing. This
+adds nothing to install, and both steps run programs with argument lists, so the no-shell rule (R-em3d24-1c) holds.
+
+**Why line 243 is the only one.** Every other array expansion on this recipe's path either always has members (`build`
+is always called with two cmake flags; Homebrew's `PKGS_CORE` has five) or is already guarded; `hyp2mat`, CTB and the
+Python build are skipped. `${#A[@]}` and `"${@:6}"` on empty input were checked directly under `/bin/bash` 3.2 and do
+not fail. The three scripts on the path (`update_openEMS.sh`, `build_tinyxml.sh`, `install_deps.sh`) parse under 3.2
+and use no bash-4-only feature. Upstream's scripts could not be EXECUTED from the session that made the fix, so one
+real install on a Mac with only `/bin/bash` remains the end-to-end proof.
+
+The known-failure table gains `bash-too-old-for-empty-array` (`[@]`/`[*]: unbound variable`), so the same failure in a
+script circuitRF does not patch is named instead of reported as unseen. Gate:
+`SolverInstallTests.Gate7c_TheMacOsOpenEmsRecipePatchesLine243ForBash32_AndTheFailureIsNamed`, which runs the recipe's own
+sed arguments on the pinned line and compares the result with the check step's expected text.
+
+The same report mentioned editing an install script to get EMerge installed. EMerge's macOS recipes run no shell script
+(only uv, the Python it installs and git; the accelerators build with Rust), recipes are embedded and cannot be edited,
+and both pinned accelerator commits still fetch. What was edited is not known yet.
+
+## An EM setup's frequency PLAN: several segments and single points (GitHub discussion 26, 2026-10-30)
+
+`EmSetup.Frequency` stays the first segment and `EmSetup.AdditionalFrequencies` holds the rest; a single frequency
+is a one-point segment with Stop equal to Start. **Read the plan through `EmSetup.ExpandFrequencies()`** (the sorted
+union, each frequency once — what the circuit S-parameter analysis already does over its own segments), never
+`Frequency.Expand()`: every consumer that expanded the first segment was moved (the planar run, the 3D generator,
+`C3dProblemAssembly`, the Palace save-frequency default, band sweeps, the panel's own readouts). The `.cem` key is
+omitted when empty, so a single-sweep file is written byte for byte as before.
+
+**The 3D solvers take it as an exact list.** `Em3dFrequency` was four numbers describing one even sweep; it now
+carries `ListHz` when the plan is anything else (`EmSetup.ToEm3dFrequency`, the one place it is built), with
+Start/Stop/Points its lowest, highest and count so everything that sizes a mesh or an excitation from them is
+unchanged. Every solver already read its frequencies through `Em3dRunService.FrequenciesHz`, which returns the list;
+the one writer that spelled a sweep itself, `PalaceConfigWriter`, writes it as Palace's own `Point` samples. A band
+sweep scales each segment by the band ratio; Create SnP schematic gives its analysis every segment.
+
+**The planar solver needed nothing**: adaptive sampling seeds and bisects by INDEX over whatever sorted grid it is
+given, and a one-point grid is its own seed set.
+
+**The panel** is a list of the same `FrequencySpecViewModel` rows (R-em-11 holds). Single-point mode is OPT-IN on that
+view model (`offersSinglePoint`), because the circuit S-parameter editor has no Single button: a one-point sweep
+seeded there must stay a sweep, not be read as Single and have its Stop rewritten. "+ Segment" adds a single point
+at the plan's first frequency. On a Single row the Stop column hides its CONTENT and keeps its width, and each row's
+× has a fixed column shown only while another row exists, so no control moves under the pointer.
+
+Gates: `Ui.Tests` `EmFrequencyPlanTests` and `PalaceBackendTests.Gate1b_AFrequencyPlan_IsWrittenAsPalacePointSamples`.

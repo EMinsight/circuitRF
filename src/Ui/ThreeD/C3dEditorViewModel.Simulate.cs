@@ -66,9 +66,10 @@ public sealed partial class C3dSetupItem(string name, int index, string? refusal
                 Em3dProblemType.Magnetostatic => "magnetostatic",
                 Em3dProblemType.Eigenmode     => $"eigenmodes above {f.StartExpr} {f.StartUnit}",
                 Em3dProblemType.Thermal       => "thermal",
-                _ => f.NumPoints is { } n
+                _ => (f.NumPoints is { } n
                     ? $"{f.StartExpr}–{f.StopExpr} {f.StopUnit}, {n} pts"
-                    : $"{f.StartExpr}–{f.StopExpr} {f.StopUnit}, step {f.StepExpr} {f.StepUnit}",
+                    : $"{f.StartExpr}–{f.StopExpr} {f.StopUnit}, step {f.StepExpr} {f.StepUnit}")
+                    + setup.AdditionalFrequencies.Count switch { 0 => "", 1 => " + 1 more segment", var k => $" + {k} more segments" },
             };
             return $"{solver} · {body}" + (IsExternal ? $" · read-only, from {Path.GetFileName(ExternalPath)}" : "");
         }

@@ -2021,7 +2021,7 @@ public partial class TraceRowViewModel : ViewModelBase
     internal static IReadOnlyList<CubeTransformItem> BuildTransformItems(
         bool isCubeBound, PlotType plotType, bool isComplexData,
         DerivedParameters derived = DerivedParameters.None, bool isPatternPlot = false) =>
-        Enum.GetValues<CubeTransform>()
+        Trace.TransformMenuOrder
             .Select(t => new CubeTransformItem(
                 t, TransformEntryEnabled(t, isCubeBound, plotType, isComplexData, derived, isPatternPlot)))
             .ToList();
@@ -2037,6 +2037,10 @@ public partial class TraceRowViewModel : ViewModelBase
         // the combo still reads as the same control on every trace.
         if (derived == DerivedParameters.MaxGain)
             return Array.IndexOf(Trace.MaxGainTransforms, t) >= 0;
+
+        // The unwrapped phase is cube-only too: TraceResolve unwraps a cube's curve before it reaches the trace, and a
+        // Touchstone trace's markers read their samples one at a time, so they would show the wrapped phase.
+        if (!isCubeBound && t == CubeTransform.PhaseUnwrapped) return false;
 
         // Pre-existing rule, unaffected by plot type: dB10/dB/Conj are cube-only.
         if (!isCubeBound && t is CubeTransform.dB10 or CubeTransform.dB or CubeTransform.Conj)

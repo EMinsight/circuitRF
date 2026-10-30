@@ -134,7 +134,7 @@ public sealed partial class EmSetupEditorViewModel
         if (IsEmbedded || ResolveLayout?.Invoke(Working.LayoutRef) is not { Technology: { } tech } source) return null;
         var setup = Working.Clone();
         double? fMax = null;
-        try { fMax = setup.Frequency.Expand().Where(f => f > 0).DefaultIfEmpty().Max(); }
+        try { fMax = setup.ExpandFrequencies().Where(f => f > 0).DefaultIfEmpty().Max(); }
         catch (Exception) { /* no sweep: no skin depth, so only a zero thickness makes a sheet */ }
         return _ => Em3dBodyList.Of(Em3dLayoutSolids.From(source, tech, null,
             new Em3dLayoutSolidsOptions(fMax is > 0 ? fMax : null, setup.OperatingTempC ?? EmSetup.DefaultOperatingTempC, Instance: false)

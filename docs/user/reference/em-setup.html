@@ -840,6 +840,12 @@ linear or log. Each field takes a coefficient and a unit from the combo beside i
 resolved value underneath — so <code>1</code> + <code>GHz</code> reads back as <code>1 GHz</code> and there is no ambiguity about what was
 entered. See <a href="units.html">Units</a> for what the text boxes accept.</p>
 <p>Default: <strong>1 to 20 GHz, 101 points, linear.</strong></p>
+<p><strong>A frequency plan.</strong> <strong>+ Segment</strong> adds a row, and the run solves every row's frequencies together, sorted, each
+once. A row's <strong>Single</strong> button makes it one frequency rather than a sweep, which is what a new row starts as. So a
+coarse broadband sweep, a finer sweep around the centre and a spot frequency are three rows, and an optimization
+that only needs one frequency is one row on <strong>Single</strong>. The <strong>×</strong> on a row removes it; the last row stays. Every
+solver takes the same list, the Touchstone file holds exactly those frequencies, and <strong>Create SnP schematic</strong>
+sweeps them too.</p>
 <p>For the cross-section kernel the sweep is nearly free — the quasi-static answer does not change with
 frequency, and the sweep exists so that the written Touchstone has the frequencies your test bench wants.
 For the full-wave kernel <strong>every point is a solve</strong>, and the sweep is the single biggest driver of run

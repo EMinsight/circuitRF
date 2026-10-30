@@ -202,6 +202,34 @@ public sealed class EmSetup
     /// <c>FrequencySpecViewModel</c> — rather than growing a second frequency editor (R-em-11).</summary>
     public FrequencySpec Frequency { get; set; } = new("1", "20", 101, SweepKind.Linear, "GHz", "GHz");
 
+    /// <summary>GitHub discussion 26 — further segments of the frequency plan after <see cref="Frequency"/>: a coarse
+    /// broadband sweep plus a finer one around the centre, or single points (a segment of one point). Empty for the
+    /// ordinary single sweep, and omitted from the file then, so a <c>.cem</c> written before it round-trips
+    /// byte-identically. Read the plan through <see cref="ExpandFrequencies"/>, never <c>Frequency.Expand()</c>.</summary>
+    public List<FrequencySpec> AdditionalFrequencies { get; set; } = [];
+
+    /// <summary>Every segment of the plan, <see cref="Frequency"/> first.</summary>
+    public IReadOnlyList<FrequencySpec> FrequencyPlan => [Frequency, .. AdditionalFrequencies];
+
+    /// <summary>The frequencies the plan asks for: every segment's, sorted, each once — the union the circuit S-parameter
+    /// analysis takes over its own segments.</summary>
+    /// <summary>The plan as the 3D solvers take it, from <paramref name="positiveHz"/> — its frequencies above 0 Hz,
+    /// sorted. One sweep stays the even sweep it always was; a plan carries its exact list.</summary>
+    public Em3dFrequency ToEm3dFrequency(IReadOnlyList<double> positiveHz)
+    {
+        var even = new Em3dFrequency(positiveHz.Min(), positiveHz.Max(), positiveHz.Count,
+            Frequency.Kind == SweepKind.Log ? Em3dSweepKind.Log : Em3dSweepKind.Linear);
+        return AdditionalFrequencies.Count == 0 ? even : even with { Kind = Em3dSweepKind.Linear, ListHz = [.. positiveHz] };
+    }
+
+    public double[] ExpandFrequencies()
+    {
+        var all = new SortedSet<double>();
+        foreach (var segment in FrequencyPlan)
+            foreach (double f in segment.Expand()) all.Add(f);
+        return [.. all];
+    }
+
     /// <summary>Per-port reference impedance. Complex is permitted — <c>RFNetwork.ZToS</c> already
     /// handles it, and <c>EmPortZ0Tests</c> pins that it survives the whole path.
     ///
@@ -637,6 +665,7 @@ public sealed class EmSetup
         if ((f.StartExpr, f.StopExpr, f.StepExpr, f.NumPoints, f.Mode, f.Kind, f.StartUnit, f.StopUnit, f.StepUnit) !=
             (d.StartExpr, d.StopExpr, d.StepExpr, d.NumPoints, d.Mode, d.Kind, d.StartUnit, d.StopUnit, d.StepUnit))
             set.Add("Frequency");
+        if (AdditionalFrequencies.Count > 0) set.Add("AdditionalFrequencies");
         if (PortZ0s.Count > 0 || Port1Z0 != new EmSetup().Port1Z0 || Port2Z0 != new EmSetup().Port2Z0) set.Add("PortZ0s");
         if (CreateSnpSchematic) set.Add("CreateSnpSchematic");
         return set;
@@ -710,6 +739,7 @@ public sealed class EmSetup
         GroundStackupLayerName = GroundStackupLayerName,
         AnalysisLevelNames     = [.. AnalysisLevelNames],
         Frequency              = Frequency,      // immutable
+        AdditionalFrequencies  = [.. AdditionalFrequencies],
         Port1Z0                = Port1Z0,
         Port2Z0                = Port2Z0,
         PortZ0s                = [.. PortZ0s],   // a fresh list: Complex is immutable, the list is not

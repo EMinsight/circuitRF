@@ -183,7 +183,10 @@ namespace CircuitRF.Render.DataDisplay
     // ============================================================
 
     /// <summary>Element-wise transform applied to a cube-bound trace value.</summary>
-    public enum CubeTransform { None, dB20, dB10, dB, Mag, Phase, Real, Imag, Conj }
+    /// <summary>What a cube trace's values become before they are drawn. <see cref="PhaseUnwrapped"/> needs the
+    /// whole curve, so <c>TraceResolve</c> applies it to the values before they reach the trace (GitHub discussion 27);
+    /// it is last because <c>.cdd</c> files spell members by name and the menu order is <see cref="Trace.TransformMenuOrder"/>.</summary>
+    public enum CubeTransform { None, dB20, dB10, dB, Mag, Phase, Real, Imag, Conj, PhaseUnwrapped }
 
     /// <summary>How a DataCube axis is consumed when building a 1-D trace.</summary>
     public enum AxisRole { PinToIndex, KeepAsX, FamilyIterate }
@@ -1745,6 +1748,7 @@ namespace CircuitRF.Render.DataDisplay
             CubeTransform.Real  => "real",
             CubeTransform.Imag  => "imag",
             CubeTransform.Conj  => "conj",
+            CubeTransform.PhaseUnwrapped => "unwrap",
             _                   => t.ToString().ToLowerInvariant(),
         };
 
@@ -1967,9 +1971,22 @@ namespace CircuitRF.Render.DataDisplay
         /// trace's underlying arrays live in <see cref="FamilyCurve.RawComplex"/>/RawReal, not the
         /// single-slice <c>_cubeComplexValues</c> cache). Also drives <c>TraceRowViewModel</c>'s
         /// per-plot-type transform-list filtering (§4).</summary>
-        internal bool CubeDataIsComplex => IsFamily
+        internal bool CubeDataIsComplex => _unwrappedFromComplex || (IsFamily
             ? FamilyCurves.Count > 0 && FamilyCurves[0].RawComplex is not null
-            : _cubeComplexValues is not null;
+            : _cubeComplexValues is not null);
+
+        /// <summary>The values were complex and <c>TraceResolve</c> turned them into an unwrapped phase, so the trace
+        /// holds a real series of what was a complex quantity — the transform list and the plot-type remap still need
+        /// to know it was complex. Set by every <see cref="SetCubeData"/>/<see cref="SetFamilyData"/>, so it
+        /// describes the data it came with.</summary>
+        private bool _unwrappedFromComplex;
+
+        /// <summary>The transform combo's order: the unwrapped phase beside the phase, not after Conj.</summary>
+        public static readonly CubeTransform[] TransformMenuOrder =
+        {
+            CubeTransform.None, CubeTransform.dB20, CubeTransform.dB10, CubeTransform.dB, CubeTransform.Mag,
+            CubeTransform.Phase, CubeTransform.PhaseUnwrapped, CubeTransform.Real, CubeTransform.Imag, CubeTransform.Conj,
+        };
 
         /// <summary>True when this trace's cube axes look like an S/Y/Z port matrix (both "i" and
         /// "j" axes present in <see cref="Slice"/>) — mirrors <c>TraceRowViewModel.IsParameterCube</c>'s
@@ -2044,10 +2061,11 @@ namespace CircuitRF.Render.DataDisplay
                                 bool transformBaked = false,
                                 Complex[]? backComplex = null, double[]? backReal = null,
                                 double backPhiDeg = double.NaN,
-                                bool[]? sampleSolved = null)
+                                bool[]? sampleSolved = null, bool unwrappedFromComplex = false)
         {
             _cubeIsScalar      = false;
             _transformBaked    = transformBaked;
+            _unwrappedFromComplex = unwrappedFromComplex;
             // Set before the path is built and cleared by every call that does not carry one, for
             // the same reason the back branch is: it describes THIS data, and a mask left over from
             // the cube a trace used to be bound to would hide markers at samples that were solved.
@@ -2212,10 +2230,11 @@ namespace CircuitRF.Render.DataDisplay
         public void SetFamilyData(double[] xValues, string xAxisName, string? xUnit, string familyAxisName,
             IReadOnlyList<(double axisValue, string? axisLabel, Complex[]? cz, double[]? rv)> curves,
             PlotType plotType, FreqUnit freqUnit, string? familyAxisUnit = null,
-            IReadOnlyList<double[]>? perCurveX = null)
+            IReadOnlyList<double[]>? perCurveX = null, bool unwrappedFromComplex = false)
         {
             _cubeIsScalar = false;
             _transformBaked = false;
+            _unwrappedFromComplex = unwrappedFromComplex;
             SetPatternBackBranch(null, null, double.NaN);
             SetPinnedSpectral(null, null, double.NaN);   // a family trace shows the per-curve tag, not a
                                                          // pinned line — clear any stale pinned context

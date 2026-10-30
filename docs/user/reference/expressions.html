@@ -115,7 +115,7 @@ may not shadow them.</p>
       <tr><td>Hyperbolic</td><td><code>sinh cosh tanh</code></td></tr>
       <tr><td>Exp / log / power</td><td><code>exp log</code> (natural) <code>log10 sqrt pow(x,y) abs</code></td></tr>
       <tr><td>Misc</td><td><code>min(a,b) max(a,b) sign(x)</code>, <code>if(cond,then,else)</code>, <code>validrange(x, lo, hi)</code> — <code>x</code>, with a warning when it lies outside lo … hi</td></tr>
-      <tr><td>Complex → Real</td><td><code>real(z) imag(z) abs(z) mag(z)</code> (= abs) <code>phase(z)</code> (degrees) <code>phase_rad(z)</code> (radians)</td></tr>
+      <tr><td>Complex → Real</td><td><code>real(z) imag(z) abs(z) mag(z)</code> (= abs) <code>phase(z)</code> (degrees) <code>phase_rad(z)</code> (radians) <code>unwrap(z)</code> — the phase in degrees, continued across ±180° along the frequency axis instead of jumping by 360°; <code>unwrap(p)</code> does the same to a phase <code>p</code> already in degrees, and <code>unwrap(x, "axis")</code> names another axis</td></tr>
       <tr><td>Real,Real → Complex</td><td><code>polar(mag, phase_deg)</code> — e.g. <code>polar(0.1, 10)</code> is 0.1∠10°</td></tr>
       <tr><td>Network metrics</td><td><code>mu(S) mu_prime(S) K(S) delta_mag(S) max_gain(S)</code> (dB) <code>max_gain_lin(S) passivity(S)</code>, each also <code>(S, in, out)</code> for an N-port — <code>S</code> is an analysis's S cube, e.g. <code>mu(SP1.S)</code></td></tr>
       <tr><td>Delay / match</td><td><code>group_delay(z)</code> (seconds; or <code>group_delay(S, in, out)</code>) <code>vswr(Γ)</code></td></tr>

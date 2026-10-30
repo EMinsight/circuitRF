@@ -16,7 +16,7 @@ public enum TraceGoalKind
 
 /// <summary>The trace card's element-wise transform. <see cref="PowerDb"/> is the card's plain
 /// <c>dB</c>, which is 10·log10 — not the 20·log10 a measure line's <c>dB()</c> is.</summary>
-public enum TraceValueTransform { None, dB20, dB10, PowerDb, Mag, Phase, Real, Imag, Conj }
+public enum TraceValueTransform { None, dB20, dB10, PowerDb, Mag, Phase, Real, Imag, Conj, PhaseUnwrapped }
 
 /// <summary>A network trace's format (the card's dependent-variable choice).</summary>
 public enum TraceNetworkFormat { Complex, Db, Mag, Phase, Real, Imaginary }
@@ -173,6 +173,7 @@ public static class TraceToGoal
             TraceValueTransform.PowerDb => ($"dB10({body})", magnitudeType, null),
             TraceValueTransform.Mag     => ($"mag({body})",  magnitudeType, null),
             TraceValueTransform.Phase   => ($"phase({body})", GoalType.Eq, null),
+            TraceValueTransform.PhaseUnwrapped => ($"unwrap({body})", GoalType.Eq, null),
             TraceValueTransform.Real    => ($"real({body})", GoalType.Le, null),
             TraceValueTransform.Imag    => ($"imag({body})", GoalType.Le, null),
             _ => (null, default, "A conjugate is still complex, and a complex value has no order to hold a limit against. " +

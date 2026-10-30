@@ -209,6 +209,7 @@ public static class TraceGoalReader
         CubeTransform.Real  => TraceValueTransform.Real,
         CubeTransform.Imag  => TraceValueTransform.Imag,
         CubeTransform.Conj  => TraceValueTransform.Conj,
+        CubeTransform.PhaseUnwrapped => TraceValueTransform.PhaseUnwrapped,
         _                   => TraceValueTransform.None,
     };
 }

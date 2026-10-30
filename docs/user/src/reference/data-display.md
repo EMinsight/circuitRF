@@ -160,7 +160,9 @@ and editing it rewrites every control. The grammar is:
 ```
 
 - **transform** — optional, either prefixed (`dB20 V[…]`) or as a function (`mag(V[…])`). One of
-  `dB20 dB10 dB mag phase real imag conj`.
+  `dB20 dB10 dB mag phase unwrap real imag conj`. `unwrap` is the card's **Unwrap°**: the phase in
+  degrees, continued across ±180° instead of jumping by 360°, so the slope a delay or an electrical length is read
+  from stays visible. It is offered for simulation results; a Touchstone file's trace offers it greyed.
 - **CubeName** — qualified (`HB1.V`) or bare (`PDC`).
 - **token** — one per axis, in the cube's own axis order:
 

@@ -67,6 +67,22 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
 
     // ── 1. Writer goldens ───────────────────────────────────────────────────────────────────────
 
+    /// <summary>GitHub discussion 26 — a frequency plan reaches Palace as its exact list, in Palace's own Point form.</summary>
+    [Fact]
+    public void Gate1b_AFrequencyPlan_IsWrittenAsPalacePointSamples()
+    {
+        var (problem, settings) = Lowerable("microstrip");
+        problem = problem with { Frequency = problem.Frequency with { Points = 3, ListHz = [2e9, 5e9, 5.8e9] } };
+        var low = GmshGeoWriter.Write(problem, settings);
+        Assert.True(low.Ok, low.Refusal);
+        var cfg = PalaceConfigWriter.Write(problem, low.Groups, settings);
+        Assert.True(cfg.Ok, cfg.Refusal);
+
+        var sample = JsonDocument.Parse(cfg.Json!).RootElement.GetProperty("Solver").GetProperty("Driven").GetProperty("Samples")[0];
+        Assert.Equal("Point", sample.GetProperty("Type").GetString());
+        Assert.Equal([2.0, 5.0, 5.8], sample.GetProperty("Freq").EnumerateArray().Select(e => e.GetDouble()));
+    }
+
     [Theory]
     [InlineData("microstrip")]
     [InlineData("via")]

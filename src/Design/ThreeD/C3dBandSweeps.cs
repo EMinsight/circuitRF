@@ -181,7 +181,7 @@ public static class C3dBandSweeps
         if (!template.Is3D || template.Problem3D != Em3dProblemType.Driven || Em3dSolvers.FirstWith(template.Solver3D, c => c.Sar) is null)
             return ([], $"The template '{template.Name}' is not a driven openEMS setup; SAR is computed only on the raw dump an openEMS run writes.");
         double[] hz;
-        try { hz = template.Frequency.Expand(); }
+        try { hz = template.ExpandFrequencies(); }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
             return ([], $"The template '{template.Name}''s sweep cannot be read as numbers ({e.Message}); give its start and stop as numbers to scale it.");
@@ -197,7 +197,8 @@ public static class C3dBandSweeps
             double r = ghz * 1e9 / reference;
             var s = template.Clone();
             s.Name = name;
-            s.Frequency = Scaled(template.Frequency, hz, r);
+            s.Frequency = Scaled(template.Frequency, template.Frequency.Expand(), r);
+            s.AdditionalFrequencies = [.. template.AdditionalFrequencies.Select(seg => Scaled(seg, seg.Expand(), r))];
             var sar = template.Sar?.Clone() ?? new CemSar();
             sar.FrequenciesGHz = [ghz];
             sar.MassesGrams = [.. (sar.MassesGrams ?? []).Concat(Masses).Distinct().Order()];

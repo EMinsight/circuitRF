@@ -46,6 +46,16 @@ public sealed partial class FrequencySpecViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsStepMode), nameof(IsPointsMode))]
     private FreqSpecMode _mode = FreqSpecMode.PointCount;
 
+    /// <summary>GitHub discussion 26 — one frequency rather than a sweep: Stop, the step or count and Lin/Log stand
+    /// down, and <see cref="Build"/> writes a one-point segment at Start. Only an editor that passed
+    /// <c>offersSinglePoint</c> offers it, so the circuit S-parameter editor, which has no Single button, never
+    /// reads a seeded one-point sweep as this mode and rewrites its Stop.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsStepMode), nameof(IsPointsMode), nameof(IsSweep))]
+    private bool _isSinglePoint;
+
+    public bool OffersSinglePoint { get; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsLinear), nameof(IsLog))]
     private SweepKind _kind = SweepKind.Linear;
@@ -62,16 +72,19 @@ public sealed partial class FrequencySpecViewModel : ObservableObject
     private bool _canRemoveSelf = true;
 
     // ── Derived toggle bools ──────────────────────────────────────────────────
-    public bool IsStepMode   => Mode == FreqSpecMode.StepSize;
-    public bool IsPointsMode => Mode == FreqSpecMode.PointCount;
+    public bool IsStepMode   => !IsSinglePoint && Mode == FreqSpecMode.StepSize;
+    public bool IsPointsMode => !IsSinglePoint && Mode == FreqSpecMode.PointCount;
+    public bool IsSweep      => !IsSinglePoint;
     public bool IsLinear     => Kind == SweepKind.Linear;
     public bool IsLog        => Kind == SweepKind.Log;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
-    public FrequencySpecViewModel(SchematicEditModel model, FrequencySpec? seed = null)
+    public FrequencySpecViewModel(SchematicEditModel model, FrequencySpec? seed = null, bool offersSinglePoint = false)
     {
         _model = model;
+        OffersSinglePoint = offersSinglePoint;
+        _isSinglePoint = offersSinglePoint && seed is { Mode: FreqSpecMode.PointCount, NumPoints: 1 };
 
         if (seed is not null)
         {
@@ -115,7 +128,8 @@ public sealed partial class FrequencySpecViewModel : ObservableObject
             }
             else
             {
-                _numPointsExpr = (seed.NumPoints ?? 101).ToString(CultureInfo.InvariantCulture);
+                // A single point's count of 1 is the mode, not a choice: Points then opens on the usual count.
+                _numPointsExpr = (_isSinglePoint ? 101 : seed.NumPoints ?? 101).ToString(CultureInfo.InvariantCulture);
             }
         }
         // Default case: field initializers set 1 GHz start, 10 GHz stop, 101 pts — shown in the
@@ -165,12 +179,23 @@ public sealed partial class FrequencySpecViewModel : ObservableObject
     [RelayCommand]
     private void SetModeStep()
     {
+        IsSinglePoint = false;
         Mode = FreqSpecMode.StepSize;
         if (StepCoeff.Length == 0) StepCoeff = "100"; // StepUnit defaults to MHz
     }
 
     [RelayCommand]
-    private void SetModePoints() => Mode = FreqSpecMode.PointCount;
+    private void SetModePoints()
+    {
+        IsSinglePoint = false;
+        Mode = FreqSpecMode.PointCount;
+    }
+
+    [RelayCommand]
+    private void SetModeSingle()
+    {
+        if (OffersSinglePoint) IsSinglePoint = true;
+    }
 
     // ── Kind toggle commands ──────────────────────────────────────────────────
 
@@ -192,6 +217,7 @@ public sealed partial class FrequencySpecViewModel : ObservableObject
     public FrequencySpec Build()
     {
         // Store raw coeff + unit — do NOT bake via ToHzExpr.
+        if (IsSinglePoint) return new FrequencySpec(StartCoeff, StartCoeff, 1, SweepKind.Linear, StartUnit, StartUnit);
         if (Mode == FreqSpecMode.PointCount)
         {
             int pts = int.TryParse(NumPointsExpr.Trim(), out var n) ? Math.Max(1, n) : 101;

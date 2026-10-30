@@ -315,7 +315,7 @@ public static class EmRunService
 
         double fMax = 0;
         double[] freqs = [];
-        try { freqs = setup.Frequency.Expand(); }
+        try { freqs = setup.ExpandFrequencies(); }
         catch (Exception ex)
         {
             return new EmPreflightResult(EmAnalysisKind.CrossSection, "", [],
@@ -745,7 +745,7 @@ public static class EmRunService
         double[] freqs;
         try
         {
-            freqs = setup.Frequency.Expand();
+            freqs = setup.ExpandFrequencies();
         }
         catch (Exception ex)
         {

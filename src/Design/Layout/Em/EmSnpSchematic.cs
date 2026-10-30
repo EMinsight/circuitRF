@@ -281,7 +281,8 @@ public static class EmSnpSchematic
         foreach (var (x, y, net) in routed.Unrouted)
             model.NetLabels.Add(new EditableNetLabel { X = x, Y = y, Name = net });
 
-        model.Analyses.Add(new SParameterAnalysis(AnalysisName, setup.Frequency));
+        // Every segment of the plan, so the schematic sweeps the frequencies the EM run solved (GitHub discussion 26).
+        model.Analyses.Add(new SParameterAnalysis(AnalysisName, setup.FrequencyPlan));
         return model;
     }
 

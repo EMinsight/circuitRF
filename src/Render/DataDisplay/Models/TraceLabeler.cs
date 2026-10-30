@@ -170,6 +170,7 @@ namespace CircuitRF.Render.DataDisplay
             CubeTransform.Real  => " Real",
             CubeTransform.Imag  => " Imag",
             CubeTransform.Conj  => " Conj",
+            CubeTransform.PhaseUnwrapped => " Phase (unwrapped)",
             _                   => "",
         };
 

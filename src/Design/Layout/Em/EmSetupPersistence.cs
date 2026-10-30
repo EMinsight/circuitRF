@@ -1260,6 +1260,10 @@ public sealed class CemFile
 
     public CemFrequency Frequency { get; set; } = new();
 
+    /// <summary>GitHub discussion 26 — the plan's further segments (<see cref="EmSetup.AdditionalFrequencies"/>). Null
+    /// when there are none (WhenWritingNull), so a single-sweep <c>.cem</c> is written exactly as before.</summary>
+    public List<CemFrequency>? AdditionalFrequencies { get; set; }
+
     public double Port1Z0Real { get; set; } = 50;
     public double Port1Z0Imag { get; set; }
     public double Port2Z0Real { get; set; } = 50;
@@ -1533,18 +1537,8 @@ public static class EmSetupPersistence
         LayoutRef              = s.LayoutRef,
         SignalStackupLayerName = s.SignalStackupLayerName is { Length: > 0 } n ? n : null,
         GroundStackupLayerName = s.GroundStackupLayerName is { Length: > 0 } g ? g : null,
-        Frequency = new CemFrequency
-        {
-            StartExpr = s.Frequency.StartExpr,
-            StopExpr  = s.Frequency.StopExpr,
-            StepExpr  = s.Frequency.StepExpr,
-            NumPoints = s.Frequency.NumPoints,
-            Mode      = s.Frequency.Mode,
-            Kind      = s.Frequency.Kind,
-            StartUnit = s.Frequency.StartUnit,
-            StopUnit  = s.Frequency.StopUnit,
-            StepUnit  = s.Frequency.StepUnit,
-        },
+        Frequency = ToCem(s.Frequency),
+        AdditionalFrequencies = s.AdditionalFrequencies.Count > 0 ? [.. s.AdditionalFrequencies.Select(ToCem)] : null,
         Port1Z0Real = s.Port1Z0.Real,
         Port1Z0Imag = s.Port1Z0.Imaginary,
         Port2Z0Real = s.Port2Z0.Real,
@@ -1659,6 +1653,7 @@ public static class EmSetupPersistence
         SignalStackupLayerName = f.SignalStackupLayerName ?? "",
         GroundStackupLayerName = f.GroundStackupLayerName ?? "",
         Frequency              = BuildSpec(f.Frequency),
+        AdditionalFrequencies  = f.AdditionalFrequencies is { } more ? [.. more.Select(BuildSpec)] : [],
         Port1Z0                = new Complex(f.Port1Z0Real, f.Port1Z0Imag),
         Port2Z0                = new Complex(f.Port2Z0Real, f.Port2Z0Imag),
         PortZ0s                = UnflattenPortZ0s(f.PortZ0s),
@@ -1806,6 +1801,19 @@ public static class EmSetupPersistence
         for (int i = 0; i + 1 < flat.Count; i += 2) z.Add(new Complex(flat[i], flat[i + 1]));
         return z;
     }
+
+    private static CemFrequency ToCem(FrequencySpec f) => new()
+    {
+        StartExpr = f.StartExpr,
+        StopExpr  = f.StopExpr,
+        StepExpr  = f.StepExpr,
+        NumPoints = f.NumPoints,
+        Mode      = f.Mode,
+        Kind      = f.Kind,
+        StartUnit = f.StartUnit,
+        StopUnit  = f.StopUnit,
+        StepUnit  = f.StepUnit,
+    };
 
     private static FrequencySpec BuildSpec(CemFrequency f)
         => f.Mode == FreqSpecMode.StepSize

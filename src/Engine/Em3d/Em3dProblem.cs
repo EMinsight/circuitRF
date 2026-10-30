@@ -617,7 +617,14 @@ public sealed record Em3dAirBox(Point3 Min, Point3 Max, Em3dFaces Faces)
 }
 
 /// <summary>The sweep, Hz.</summary>
-public sealed record Em3dFrequency(double StartHz, double StopHz, int Points, Em3dSweepKind Kind);
+public sealed record Em3dFrequency(double StartHz, double StopHz, int Points, Em3dSweepKind Kind)
+{
+    /// <summary>GitHub discussion 26 — a frequency PLAN (several segments, or single points) is not one even sweep, so it
+    /// travels as the exact sorted frequencies it asks for; null for one even sweep, which the four fields describe.
+    /// <see cref="StartHz"/>, <see cref="StopHz"/> and <see cref="Points"/> are then its lowest, highest and count,
+    /// so everything that sizes a mesh or an excitation from them is unchanged.</summary>
+    public IReadOnlyList<double>? ListHz { get; init; }
+}
 
 /// <summary>
 /// brief-em3d-74 R-em3d74-4b — a named box, metres, inside which the mesh's elements are at most <paramref name="SizeM"/>;

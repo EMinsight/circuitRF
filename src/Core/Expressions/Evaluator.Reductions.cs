@@ -31,7 +31,7 @@ public sealed partial class Evaluator
     public static IReadOnlySet<string> AxisFunctions { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         "max_over", "min_over", "mean_over", "std_over", "median_over", "pctl_over", "skew_over", "kurt_over",
-        "yield_over", "cpk", "sigma_to", "histogram", "cdf", "normq", "yield_sens",
+        "yield_over", "cpk", "sigma_to", "histogram", "cdf", "normq", "yield_sens", "unwrap",
     };
 
     /// <summary>Whether <paramref name="expression"/> calls one of <see cref="AxisFunctions"/> — a name followed by
@@ -241,6 +241,49 @@ public sealed partial class Evaluator
             ["width"] = new DataCube([axis], [.. centres.Select(_ => width)]) { Unit = x.Unit },
         };
         return new Value(new DataCube([axis], fraction));
+    }
+
+    // ── Along an axis, keeping it ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <c>unwrap(x [, "axis"])</c> — a phase in degrees continued across ±180° (GitHub discussion 27): of a complex
+    /// quantity, its phase; of a real one, the value read as a phase in degrees, as <c>phase()</c> returns it. The axis
+    /// defaults to <c>freq</c>, then a rank-1 cube's only axis — never to <c>trial</c>, since trials are not a sequence
+    /// a phase runs along. Every other axis is kept, so a swept run unwraps each sweep point's curve on its own.
+    /// </summary>
+    private Value EvalUnwrap(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length is < 1 or > 2) throw new ArityException("unwrap", 1, cl.Args.Length);
+        var v = EvalExpr(cl.Args[0], scope);
+        string? axisName = null;
+        if (cl.Args.Length == 2)
+        {
+            var a = EvalExpr(cl.Args[1], scope);
+            axisName = a.Kind == ValueKind.String ? a.AsString() : a.ToString()!;
+        }
+
+        if (v.Kind == ValueKind.Real)    return v;
+        if (v.Kind == ValueKind.Complex) return new Value(v.AsComplex().Phase * (180.0 / Math.PI));
+        if (v.Kind != ValueKind.Cube)
+            throw new ExpressionException("unwrap(): give it a phase in degrees, or a complex quantity to take the phase of.");
+
+        var cube = v.AsCube();
+        string axes = string.Join(", ", cube.Axes.Select(x => x.Name));
+        if (axisName is null)
+        {
+            if (cube.Axes.Any(x => x.Name == "freq")) axisName = "freq";
+            else if (cube.Rank == 1)                  axisName = cube.Axes[0].Name;
+            else throw new ExpressionException(
+                $"unwrap(): this value has no 'freq' axis; name the axis to unwrap along as the last argument. Its axes are: {axes}.");
+        }
+        int dim = -1;
+        for (int d = 0; d < cube.Rank; d++) if (cube.Axes[d].Name == axisName) { dim = d; break; }
+        if (dim < 0) throw new ExpressionException($"unwrap(): no axis named '{axisName}'. Its axes are: {axes}.");
+
+        bool complex = cube.DataKind == DataKind.Complex;
+        double[] degrees = complex ? cube.Phase(degrees: true).RealValues : cube.RealValues;
+        PhaseUnwrap.DegreesAlong(degrees, [.. cube.Axes.Select(x => x.Length)], dim);
+        return new Value(new DataCube([.. cube.Axes], degrees) { Unit = complex ? "" : cube.Unit });
     }
 
     // ── The operand rule ───────────────────────────────────────────────────────────

@@ -471,9 +471,14 @@ public static class TraceResolve
                 t.ExpressionError = null;
                 t.InvalidSpecText = null;
                 t.SetSpectrumFundamentals(null);
+                // A COMPLEX result still takes the card's transform (only a real one is baked), and the unwrapped
+                // phase is applied here, to the whole curve; the real series it leaves is not baked, so the combo
+                // that chose it stays live.
+                bool unwrapped = cz is not null && Unwrap(t, ref cz, ref rz);
                 // The multi-cube expression text already encodes any transform — mark the values baked so a
                 // real result renders as-is (the transform combo must not double-apply on top of it).
-                t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit, xLabels, transformBaked: true,
+                t.SetCubeData(xVals, cz, rz, xName, xUnit, plotType, freqUnit, xLabels, transformBaked: !unwrapped,
+                              unwrappedFromComplex: unwrapped,
                               // A "versus" X is somebody else's axis, so the mask — which is indexed
                               // by the sample, not by the coordinate — is the Y side's only when the
                               // X side is this cube's own sweep.
@@ -708,13 +713,14 @@ public static class TraceResolve
                 return;
             }
             t.SetSpectrumFundamentals(null);
+            bool versusUnwrapped = complexValues is not null && Unwrap(t, ref complexValues, ref realValues);
             t.SampleAxis = xAxis;   // a scatter's trial axis, before the X spec replaces it (brief-yield-9)
             // No unit: cube VALUES carry none anywhere in the data model (only axes do), so a versus
             // X axis is labelled by its spec text alone — same as every Y label already is.
             // The mask indexes SAMPLES of the cube's own swept axis, which is what vx re-coordinates
             // — so it still applies when the X values come from somewhere else.
             t.SetCubeData(vx, complexValues, realValues, t.XSpec!, null, plotType, freqUnit,
-                          sampleSolved: SampleProvenance.SolvedMaskFor(ds, xAxis));
+                          sampleSolved: SampleProvenance.SolvedMaskFor(ds, xAxis), unwrappedFromComplex: versusUnwrapped);
             ApplyPinnedAxisDisplay(t, ds, freqUnit);
             return;
         }
@@ -748,14 +754,31 @@ public static class TraceResolve
 
         var toneFreqs1 = GetToneFreqsCube(ds, t.CubeName);
         t.SetSpectrumFundamentals(ResolveFundamentalByX(toneFreqs1, slice, xAxis.Values.Length, probe));
+        bool sliceUnwrapped = complexValues is not null && t.Transform == CubeTransform.PhaseUnwrapped;
+        Unwrap(t, ref complexValues, ref realValues);
         t.SetCubeData(xAxis.Values, complexValues, realValues,
                       xAxis.Name, xAxis.Unit, plotType, freqUnit, xAxis.Labels,
                       backComplex: backComplex, backReal: backReal, backPhiDeg: backPhi,
                       // Which of these samples the run SOLVED, when the source says — null for every
                       // source that does not, which leaves every marker exactly where it was.
-                      sampleSolved: SampleProvenance.SolvedMaskFor(ds, xAxis));
+                      sampleSolved: SampleProvenance.SolvedMaskFor(ds, xAxis), unwrappedFromComplex: sliceUnwrapped);
         ApplyPinnedSpectral(t, ds);
         ApplyPinnedAxisDisplay(t, ds, freqUnit);
+    }
+
+    /// <summary>
+    /// GitHub discussion 27 — the unwrapped phase needs the whole curve, and every site downstream reads one sample at
+    /// a time (the curve, a marker, a table cell). So it is applied HERE, before the values reach the trace, and the
+    /// trace is handed a real series in degrees, which those sites draw as it is. A real input is read as a phase in
+    /// degrees already, exactly as <c>unwrap()</c> reads one. True when <paramref name="cz"/> was complex and is now
+    /// <paramref name="rz"/>.
+    /// </summary>
+    private static bool Unwrap(Trace t, ref Complex[]? cz, ref double[]? rz)
+    {
+        if (t.Transform != CubeTransform.PhaseUnwrapped) return false;
+        if (cz is not null) { rz = PhaseUnwrap.Degrees(cz); cz = null; return true; }
+        if (rz is not null) rz = PhaseUnwrap.Degrees(rz);
+        return false;
     }
 
     /// <summary>
@@ -1062,9 +1085,17 @@ public static class TraceResolve
 
         var toneFreqs2 = GetToneFreqsCube(ds, t.CubeName);
         t.SetSpectrumFundamentals(t.IsVersus ? null : ResolveFundamentalByX(toneFreqs2, slice, xVals.Length));
+        bool familyUnwrapped = t.Transform == CubeTransform.PhaseUnwrapped && curves.Any(c => c.Item3 is not null);
+        if (t.Transform == CubeTransform.PhaseUnwrapped)
+            for (int k = 0; k < curves.Count; k++)
+            {
+                var (axisValue, label, cz, rv) = curves[k];
+                Unwrap(t, ref cz, ref rv);
+                curves[k] = (axisValue, label, cz, rv);
+            }
         t.SetFamilyData(xVals, xName, xUnit, fAxis.Name, curves, plotType, freqUnit,
                         familyAxisUnit: string.IsNullOrEmpty(fAxis.Unit) ? null : fAxis.Unit,
-                        perCurveX: perCurveX);
+                        perCurveX: perCurveX, unwrappedFromComplex: familyUnwrapped);
         // A family trace has no pinned SPECTRAL line (each curve carries its own tag), but it can
         // still carry ordinary pinned axes, and those appear in its label like any other trace's.
         ApplyPinnedAxisDisplay(t, ds, freqUnit);

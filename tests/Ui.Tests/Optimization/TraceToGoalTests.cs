@@ -93,6 +93,7 @@ public sealed class TraceToGoalTests
     [Theory]
     [InlineData(TraceValueTransform.Phase,   1, 1, "phase(SP1.S[:, 1, 1])", GoalType.Eq)]
     [InlineData(TraceValueTransform.PowerDb, 2, 1, "dB10(SP1.S[:, 2, 1])",  GoalType.Ge)]   // the card's dB is 10·log10
+    [InlineData(TraceValueTransform.PhaseUnwrapped, 2, 1, "unwrap(SP1.S[:, 2, 1])", GoalType.Eq)]   // GitHub discussion 27
     public void ACubeTransform_BecomesTheMeasureFunction(TraceValueTransform t, int i, int j, string expected, GoalType type)
     {
         var g = TraceToGoal.Translate(new TraceGoalSource
