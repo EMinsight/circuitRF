@@ -65,6 +65,7 @@ Fourteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `new cell` | a workspace + a name | `CellCreate.Create` | a cell folder and one empty-but-valid file per `--views` |
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
 | `import schematic` | a schematic design file (`.kicad_sch`, EDIF 2.0.0, a binary `.DSN`) + `--into` | `SchematicImport.Read` + `SchematicImport.Import` | a cell folder with its schematic, and a `<stem>_parts/` folder of symbol cells beside it — §30 |
+| `import pdk` | a kit folder + `--into <workspace>` | `PdkWorkspaceImport.Import` | the `.cws` kit reference, and the kit's parametric-cell declaration when it ships one — §34 |
 | `import voxels` | a label volume (`.nii[.gz]`, DiscMaterial `.h5`, raw, or a `.node`/`.ele` mesh voxelised) + `--into x.c3d` | `AnatomyImport.PlanVoxels` + `ApplyVoxels` | the volume copied beside the `.c3d` and one `VoxelBody` (sar.md §13) |
 | `import surfaces` | closed surfaces (STL, OBJ, PLY) or a folder of them + `--into x.c3d` | `AnatomyImport.PlanSurfaces` + `ApplySurfaces` | each file copied beside the `.c3d` and one `Mesh` per surface, outermost first |
 | `check` | a workspace, a cell folder, or one document | the validators that already exist | **nothing** — §10 |
@@ -1427,7 +1428,7 @@ be found by its name.
 | `check` | `check` |
 | `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents`, `--footprints` and `--tunables` |
 | `create` | `new workspace` / `new cell` |
-| `import` | `import part` / `import schematic` / `import voxels` / `import surfaces`, selected by `what` (brief-sar-11, brief-schimp-5): every mode brings something in, so an export still never lands here |
+| `import` | `import part` / `import pdk` / `import schematic` / `import voxels` / `import surfaces`, selected by `what` (brief-sar-11, brief-schimp-5, brief-gdf-1): every mode brings something in, so an export still never lands here |
 | `convert` | `convert` — one import and one export between any two formats, so an export is a `convert` |
 | `render` | `render` — **one tool over every document kind**, as the verb is (R-rnd0-4/R-rnd5-2). The kind comes from the path, so there is no selector; making the view type one would advertise three modes where there is one verb |
 | `netlist` | `netlist` — the extraction Simulate performs, as a document |
@@ -4471,3 +4472,49 @@ would be a second judgement of the same numbers.
 `SParameterViewerPreset.FileFacts`' lines; `--json` carries `result.snp`; `-o x.cdd` run in process is
 byte for byte what `SParameterViewerPreset.Build` writes for the same file, which is what the window
 saves. Beside them: a term the file lacks, an extension the verb does not write, and a refusal by kind.
+
+## 34. `import pdk` — File ▸ Import PDK, headless (brief-gdf-1)
+
+```
+circuitrf import pdk <kit-folder> --into <workspace> [--name <n>] [--allow-code] [--json]
+```
+
+A **noun on `import`**, and it **owns no import logic**. `PdkWorkspaceImport` in `src/Design` is the
+sequence the GUI's own import runs after its picker closes — `Read` (the importer), `Install` (the parts,
+translated in memory, against the model libraries the workspace references) and `Commit` (the `.cws`
+kit reference, and the kit's parametric-cell declaration) — and `WorkspaceViewModel` calls those three
+rather than holding a copy. A referenced kit read on a workspace OPEN goes through the same class
+(`ReadReferenced`).
+
+- **Stdout** is the kit's name and folder, the import's tally, the "can anything be placed" sentence, the
+  corner axes it declares and the layer technology it found. **Stderr** carries every finding of the
+  import report and every note and diagnostic of the install, each at its own level
+  (`import.pdk.note` / `.warning` / `.blocker`).
+- **`--name`** is the name the kit's parts are referenced by; a workspace open reads the kit back under
+  the recorded name, so a renamed kit resolves the same as one imported under its own.
+- **Kit code runs only with consent.** The kit's generators are DECLARED (the declaration is a file and
+  runs nothing) and started only with a decision recorded at the keyboard, `--trust-kit`, or
+  `--allow-code`, which grants it for this one process and is never recorded. Without any of them the
+  import exits 0 and says the generators were not started and why (`import.pdk.generators-not-started`).
+  **The MCP `import what=pdk` mode offers no `allowCode`**: a client granting itself consent to run a kit's
+  code is what consent exists to stop — the same rule as `--trust-kit`, which only the operator passes to
+  `serve`.
+- **Exit 1** when the kit could not be read at all, its parts could not be installed, or the `.cws` could
+  not be written — nothing usable was recorded. A kit with no placeable parts is recorded, as the GUI
+  records it, with the warning that says why.
+
+**A schematic or netlist inside a workspace now runs against that workspace's kits.** Every `.csch`
+extraction and every `.cnl` run verb loads the kits its workspace's `.cws` references first
+(`WorkspaceKits` → `PdkWorkspaceImport.LoadReferenced`, once per workspace per process) and registers the
+device-provider resolver for them — what a workspace open does in the GUI. Before this nothing outside
+the window populated the kit registry, so a schematic holding one kit part could not be netlisted or run
+headlessly. It writes nothing. A kit that cannot be loaded is `run.kit.not-loaded`.
+
+**An extraction's conflicts are said** (`run.extraction.conflict`) by `netlist` and the run verbs — the
+sentences the GUI posts after Simulate, an instance the extraction SKIPPED above all, which was otherwise
+simply absent from the netlist.
+
+Gate: `tests/Ui.Tests/Cli/ImportPdkCliVerbTests.cs` — the verb as a process against the in-process
+`PdkWorkspaceImport.Import` (the `.cws` reference and both declaration files, byte for byte), the
+comment-stripped source scan of the view model, the consent seam (`ImportPdk.InterpreterFinder` is never
+asked for an interpreter without consent), and a placed kit part netlisted with no window.

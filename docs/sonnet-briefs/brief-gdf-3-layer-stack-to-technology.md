@@ -94,6 +94,11 @@ most.
 
 ## 4. Tests
 
+**UI is rendered headlessly and inspected** (overview §6): the "Also build the kit's technology" option in the import flow, its overwrite question, and the built technology as the technology editor shows it (layers, stackup and materials). Render each with `tools/UiSnapshot`
+(add a mode where none hosts it), look at the PNG, fix what it shows, and list the pictures in the completion
+note.
+
+
 Run only the classes you touch.
 
 **Tier A (routine, synthetic JSON, no Python):**

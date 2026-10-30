@@ -90,10 +90,15 @@ Findings that shape the briefs:
 
 - **The symbols come from each kit's UPSTREAM tree**, the repository each gdsfactory package links in
   its README. Those trees ship text symbol files, SPICE-dialect model libraries with corners, and
-  Verilog-A sources. File ▸ Import PDK already reads all three. Kit A's upstream tree is already
-  proven: its parts place on schematics, simulate through OSDI, and draw the kit's own artwork through
-  `cni`. Kits C and D are the same shape but have never been run through the importer. **Brief 1 does
-  that**, and its report is the real answer for those two.
+  Verilog-A sources, and File ▸ Import PDK reads all three. **Measured by brief 1 (2026-10-30): every
+  part of all three kits lands in the Library palette with a symbol** — kit A 43 of 43, kit C 628 of 628
+  (79 of them its device library, the rest digital cells), kit D 73 of 73 — and every kit's corners are
+  offered. **Placeable is not yet simulatable.** Kit A's MOSFETs and MIM capacitors solve (the MOSFETs
+  through the Verilog-A the kit ships, once compiled by its own install step); kit C's MIM capacitor
+  solves; most other families stop at one shared gap — a plain SPICE card inside a kit netlist is routed
+  only to a compiled model, never to circuitRF's own physics — and kit C/D's MOSFETs use a model their
+  simulator builds in, with no source to compile. Brief 1's completion note has the table and the open
+  items. Kit A's parametric cells are found through `cni` and run only with consent.
 - **A gdsfactory cell with no matching part gets a layout-only tile.** This is `KitPaletteMerge`'s
   existing rule: a generator matching no part still gets a placeable tile of its own. Examples are
   kit A's lines, couplers, divider and filters, every kit-B cell, and kits C/D's layout cells.
@@ -164,6 +169,7 @@ Findings that shape the briefs:
 | # | Brief | What it adds | Depends on |
 |---|---|---|---|
 | 1 | [Open kits on the existing importer](brief-gdf-1-open-kits-on-the-existing-importer.md) | the upstream trees of kits A, C and D through File ▸ Import PDK; fixes for whatever breaks; `circuitrf import pdk` | — |
+| 1b | [Kit devices on plain model cards](brief-gdf-1b-kit-devices-on-plain-model-cards.md) | brief 1's open items: a level gate, kit devices on cards routed to circuitRF's own physics, pairing on the symbol's stated call (owner decision), an external reference | 1 |
 | 2 | [The gdsfactory cell adapter](brief-gdf-2-cell-adapter.md) | `gdsfactory_bridge`, discovery without running code, consent, the per-user interpreter, describe/generate, palette tiles | — |
 | 3 | [Layer stack and materials to `.ctech`](brief-gdf-3-layer-stack-to-technology.md) | a technology built from a kit's stack, materials and layer views, through the ONE `ProcessTechnologyBuilder` | 2 |
 | 4 | [Symbols from a kit's own glyphs](brief-gdf-4-symbols-from-kit-glyphs.md) | *optional (D9)* | 2 |
@@ -188,3 +194,11 @@ with itself is not (`tools/pcell-python/README.md`).
 
 Write one test per claim and run only the classes you touch. Tier B is never part of the default gate:
 it starts real Python.
+
+**Every piece of UI the series adds or changes is rendered headlessly and inspected** (owner, 2026-10-30):
+a dialog, a dialog row, a step in the Import PDK flow, a Settings entry, a palette tile, a parameter-editor
+row or tooltip, a report view. Render it with `tools/UiSnapshot` (see its `README.md`); where no mode hosts
+that view yet, add one, because the GUI cannot be launched from a shell. Look at each PNG before the brief
+closes — overlapping or clipped text, a control that shifts, an empty combo, wrong theme colours — and fix
+what it shows. The completion note lists each picture and what was checked. A unit test asserting a view
+model's state does not stand in for looking at the view.

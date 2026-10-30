@@ -65,13 +65,7 @@ public static class PdkReferenceManager
     /// </summary>
     public static IReadOnlyList<string> LibraryRootsIn(
         string workspaceRootDir, IEnumerable<CwsPdkRef> refs)
-    {
-        ArgumentNullException.ThrowIfNull(refs);
-
-        return [.. refs.Where(r => r.IsLibraryOnly)
-                       .Select(r => WorkspaceRefs.Resolve(r.Path, workspaceRootDir))
-                       .Where(Directory.Exists)];
-    }
+        => PdkWorkspaceImport.LibraryRootsIn(workspaceRootDir, refs);
 
     public static IReadOnlyList<RefStatus> Describe(string workspaceRootDir, IEnumerable<CwsPdkRef> refs)
     {
@@ -331,14 +325,7 @@ public static class PdkReferenceManager
     /// overwhelming majority of kits, and the case whose <c>.cws</c> must stay byte-identical.
     /// </summary>
     public static List<CwsCornerAxis>? ToStoredCorners(IReadOnlyList<PdkCornerAxis>? axes)
-        => axes is null || axes.Count == 0
-            ? null
-            : [.. axes.Select(a => new CwsCornerAxis
-              {
-                  AxisId      = a.AxisId,
-                  DisplayName = a.DisplayName,
-                  Options     = [.. a.Options],
-              })];
+        => PdkWorkspaceImport.ToStoredCorners(axes);
 
     /// <summary>
     /// Drops a reference. Nothing is deleted from any schematic — parts placed from it keep their

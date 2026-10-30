@@ -357,6 +357,7 @@ public static class Authoring
         if (noun == "surfaces") return AnatomyImportVerb.RunSurfaces(args[1..]);
         if (noun == "schematic") return ImportSchematic(args[1..]);
         if (noun == "library") return VendorLibraryVerbs.ImportLibrary(args[1..]);
+        if (noun == "pdk") return ImportPdk.Run(args[1..]);
         if (noun != "part")
         {
             JsonRun.Report(CliDiagnostics.ImportUnknownNoun(noun));
@@ -738,6 +739,7 @@ public static class Authoring
             + "       circuitrf import schematic <file> --into <workspace-or-dir> [--cell N] [--port <ref-or-net>]... "
             + "[--symbol-cell <ref>]... [--codepage N] [--list]\n"
             + VendorLibraryVerbs.ImportUsageText + "\n"
+            + ImportPdk.UsageText + "\n"
             + AnatomyImportVerb.UsageText);
         return 1;
     }

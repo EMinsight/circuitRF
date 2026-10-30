@@ -1507,19 +1507,42 @@ public static class NetExtractor
         // The symbol and the subcircuit come from the same kit, so their terminal counts agreeing is
         // the whole basis for binding pin k to port k. Disagreement means one of them is not the
         // part it claims to be, and guessing an alignment would wire the design wrong in silence.
-        if (definition.Ports.Count != pinDefs.Count)
+        //
+        // The one stated exception: terminals the kit's netlist line writes AFTER the drawn pins, by
+        // naming a parameter whose value is the net (a body connection, body=sub!). They count only
+        // when they make up the difference exactly.
+        var extras = ccell.ExternalExtraTerminals ?? [];
+        if (definition.Ports.Count != pinDefs.Count &&
+            definition.Ports.Count != pinDefs.Count + extras.Count)
         {
             conflicts.Add($"Instance '{comp.InstanceName}': the symbol exposes {pinDefs.Count} " +
                           $"pin(s) but '{wanted}' defines {definition.Ports.Count}; skipped.");
             return null;
         }
 
-        var nets = new List<string>(pinDefs.Count);
+        var nets = new List<string>(definition.Ports.Count);
         foreach (var def in pinDefs)
         {
             var (px, py) = model.PortWorldOf(comp, def);
             nets.Add(NetForPort(comp, def.PortIndex, px, py, uf, QK, netNames, detachedKeys));
         }
+
+        // Each extra terminal is wired to the net its parameter NAMES — the instance's own value, else
+        // the kit's default — in the schematic the part is placed in; a net label of that name ties it.
+        if (nets.Count < definition.Ports.Count)
+            foreach (string terminal in extras)
+            {
+                string? net = comp.Parameters.FirstOrDefault(p => p.Name.Equals(terminal, StringComparison.Ordinal))
+                                  ?.Expression.Trim();
+                if (string.IsNullOrEmpty(net) && ccell.ExternalFixedParameters?.TryGetValue(terminal, out var d) == true)
+                    net = d.Trim();
+                if (string.IsNullOrEmpty(net))
+                {
+                    conflicts.Add($"Instance '{comp.InstanceName}': its '{terminal}' terminal names no net; skipped.");
+                    return null;
+                }
+                nets.Add(EditableNetLabel.NormalizeName(net));
+            }
 
         var overrides = new List<ParameterAssignment>();
 
@@ -1542,6 +1565,22 @@ public static class NetExtractor
         // named is an error in the elaborator, and the kit's own interface is the authority on which
         // of a part's parameters reach the circuit and which only pick which circuit it is.
         var declared = new HashSet<string>(definition.Parameters.Select(x => x.Name), StringComparer.Ordinal);
+
+        // …in the DEFINITION's spelling. The kit's netlist dialect is case-insensitive and circuitRF
+        // compares names ordinally, so a symbol stating W, L and MF against a subcircuit declaring w,
+        // l and mf had every value it stated dropped by the filter below, silently — the part then
+        // simulated at the subcircuit's own defaults (brief-gdf-1). Renamed only when the definition
+        // declares no exact match and exactly one by case, the reader's own rule
+        // (SpicePassiveModelBinding.AlignSubcircuitParameterCase): a definition declaring both M and
+        // m means two different parameters, and nothing is invented.
+        for (int k = 0; k < overrides.Count; k++)
+        {
+            var o = overrides[k];
+            if (declared.Contains(o.Name)) continue;
+            var byCase = declared.Where(d => d.Equals(o.Name, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (byCase.Count == 1 && !overrides.Any(x => x.Name == byCase[0]))
+                overrides[k] = new ParameterAssignment(byCase[0], o.Expression, o.Unit);
+        }
         overrides.RemoveAll(o => !declared.Contains(o.Name));
 
         return new Instance(comp.InstanceName, definition.Name, nets, overrides);

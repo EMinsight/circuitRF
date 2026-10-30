@@ -294,6 +294,14 @@ public sealed class CcellFile
     public string? ExternalNetlistCell { get; set; }
 
     /// <summary>
+    /// Parameters whose VALUE names a net the part's subcircuit is wired to after its drawn pins — a
+    /// kit symbol's body connection (<c>body=sub!</c>), which its netlist line writes among the
+    /// terminals. Null for every part without one (brief-gdf-1).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? ExternalExtraTerminals { get; set; }
+
+    /// <summary>
     /// The <c>Match</c> design this cell was flattened from — base64 of its JSON, exactly the blob a
     /// <c>Match</c> component carries (match.md §11.1). Present only on a cell that <b>Flatten to
     /// Cell</b> wrote; omitted from every other <c>.ccell</c>, which therefore stays byte-identical.

@@ -151,6 +151,11 @@ at module level, else a problem naming the module) and **activates it**. Then, f
 
 ## 6. Tests
 
+**UI is rendered headlessly and inspected** (overview §6): the trust dialog's new package/version/location/interpreter rows, each step of the Import PDK Python-package source (interpreter list, kit list, consent), the per-user interpreter preference, a gdsfactory cell's palette tile and its parameter-editor rows with the "kit units" tooltip, and the import report's new sections. Render each with `tools/UiSnapshot`
+(add a mode where none hosts it), look at the PNG, fix what it shows, and list the pictures in the completion
+note.
+
+
 Run only the classes you touch. Tier B is never in the default gate.
 
 **Tier A (routine, no Python packages):**

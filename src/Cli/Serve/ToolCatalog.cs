@@ -741,7 +741,8 @@ internal static class ToolCatalog
         // named and described as bringing artwork IN, where an agent looking for an export does not
         // look. Both are single-mode now, like `render`.
         new("import",
-            "Bring something in: a component as a cell (a footprint and its symbol); a schematic design (.kicad_sch, EDIF "
+            "Bring something in: a component as a cell (a footprint and its symbol); a process design kit, referenced from the "
+          + "workspace with its parts placeable; a schematic design (.kicad_sch, EDIF "
           + "2.0.0, or a binary .DSN of version 2.0 or 3.2) as a new cell with its own schematic, reporting the connectivity check against the source (exit 1 when "
           + "it is not matched, the cell still written); a segmented voxel model (NIfTI, raw, a "
           + "DiscMaterial .h5, or a tetrahedral .node/.ele voxelised) or per-tissue closed surfaces (STL, OBJ, PLY) into a .c3d. "
@@ -761,6 +762,18 @@ internal static class ToolCatalog
                         Summary,
                     ],
                     "A footprint and its symbol, as a cell."),
+                // brief-gdf-1 R-gdf1-4c — File ▸ Import PDK. --allow-code is deliberately NOT offered: a client
+                // granting itself consent to run a kit's code is what the consent exists to stop. The
+                // operator's `serve --trust-kit` and a decision recorded at the keyboard still apply.
+                new("pdk", ["import", "pdk"],
+                    [new("path", true, "The kit's folder (an archive is unpacked first).")],
+                    [
+                        new("into", "--into", OptKind.Path, "The workspace whose .cws references the kit."),
+                        new("name", "--name", OptKind.Str,  "The name its parts are referenced by. Default: the kit folder's name."),
+                    ],
+                    "A process design kit, read in place and referenced from the workspace — never copied. Prints the "
+                  + "import's tally, how many parts reach the Library palette with a symbol, the corners it declares and "
+                  + "every finding. Its layout generators are declared, and started only with consent."),
                 // brief vendorlib-1 R-vl1-5c — a manufacturer's part library, referenced in place.
                 new("library", ["import", "library"],
                     [new("path", true, "The library's root folder of plain-text SPICE files.")],

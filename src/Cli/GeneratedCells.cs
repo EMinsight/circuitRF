@@ -77,7 +77,7 @@ internal static class GeneratedCells
     /// it may — the decision a user made at the keyboard, read and never written. Anything else is
     /// "not allowed", and no kit code runs.
     /// </summary>
-    private static Func<string, PCellTrustDecision> Trust()
+    internal static Func<string, PCellTrustDecision> Trust()
     {
         var granted = new HashSet<string>(_trusted.Concat(_operatorTrusted), StringComparer.OrdinalIgnoreCase);
         var recorded = PCellTrustStore.FromRecordedPreferences();

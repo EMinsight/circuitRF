@@ -78,6 +78,7 @@ internal static class CircuitSource
     /// its host-cell choices reported.</summary>
     public static (NetExtractor.ExtractionResult Extracted, string Name) ExtractFile(string cschPath)
     {
+        WorkspaceKits.EnsureLoadedFor(cschPath);
         var result = SchematicCircuit.ExtractFile(cschPath, CliEntry.HostWorkspace);
         ReportHostCellChoices(result.Extracted);
         return result;
@@ -87,6 +88,7 @@ internal static class CircuitSource
     /// host-cell choices reported — what <c>opt</c>, <c>yield</c> and <c>fields</c> read a schematic with.</summary>
     public static PreparedCircuit PrepareSchematic(string cschPath)
     {
+        WorkspaceKits.EnsureLoadedFor(cschPath);
         var circuit = PreparedCircuit.FromSchematic(cschPath, CliEntry.HostWorkspace);
         ReportHostCellChoices(circuit.HostCellChoices);
         ReportVendorParts(circuit.PartRefusals, circuit.PartRangeWarnings);
@@ -111,6 +113,25 @@ internal static class CircuitSource
         foreach (var text in rangeWarnings)
         {
             var d = CliDiagnostics.VendorPartOutOfRange(text);
+            Console.Error.WriteLine("warning: " + d.Render());
+            JsonRun.Note(d);
+        }
+    }
+
+    /// <summary>
+    /// What the extraction could not build, as the GUI posts it after Simulate — an instance it SKIPPED
+    /// above all, which is otherwise simply absent from the netlist with nothing said (brief-gdf-1: a kit
+    /// part whose symbol and subcircuit disagree on their terminal count vanished from a headless run).
+    /// Warnings; the exit code is the run's own. A vendor part's refusal is also a conflict and is said
+    /// by <see cref="ReportVendorParts"/>, so it is not said twice.
+    /// </summary>
+    public static void ReportConflicts(NetExtractor.ExtractionResult extracted)
+    {
+        var saidElsewhere = new HashSet<string>(extracted.PartRefusals, StringComparer.Ordinal);
+        foreach (var text in extracted.Conflicts)
+        {
+            if (saidElsewhere.Contains(text)) continue;
+            var d = CliDiagnostics.RunExtractionConflict(text);
             Console.Error.WriteLine("warning: " + d.Render());
             JsonRun.Note(d);
         }
@@ -161,6 +182,7 @@ internal static class CircuitSource
     public static string CnlTextOf(string cschPath)
     {
         var (extracted, name) = ExtractFile(cschPath);
+        ReportConflicts(extracted);
         return SchematicCircuit.CnlTextOf(extracted, name);
     }
 
@@ -198,11 +220,15 @@ internal static class CircuitSource
         switch (kind)
         {
             case DocumentKind.Netlist:
+                // A netlist inside a workspace runs against that workspace's kits, as Simulate's own
+                // written netlist does: a kit device names its provider and nothing else serves it.
+                WorkspaceKits.EnsureLoadedFor(path);
                 return CnlTechnologyBinding.ReadFile(path);
 
             case DocumentKind.Schematic:
             {
                 var (extracted, name) = ExtractFile(path);
+                ReportConflicts(extracted);
                 ReportVendorParts(extracted.PartRefusals, extracted.PartRangeWarnings);
                 return SchematicCircuit.FromExtraction(extracted, name, path, CliEntry.HostWorkspace);
             }

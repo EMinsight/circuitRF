@@ -783,6 +783,14 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "import.nothing-created",
         "import.part.ambiguous",
         "import.part.not-found",
+        // brief-gdf-1 R-gdf1-4b — `import pdk`.
+        "import.pdk.blocker",
+        "import.pdk.generators-not-started",
+        "import.pdk.into-required",
+        "import.pdk.not-a-workspace",
+        "import.pdk.note",
+        "import.pdk.refused",
+        "import.pdk.warning",
         "import.refused",
         // brief-schimp-5 R-si5-5 — `import schematic`: an argument missing or malformed, and the connectivity check
         // not matched (the cell written, exit 1).
@@ -1191,6 +1199,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "review.path.not-found",
         "review.path.unreadable",
         "review.refused",
+        // brief-gdf-1: what an extraction could not build, and a referenced kit a run could not load.
+        "run.extraction.conflict",
+        "run.kit.not-loaded",
         // brief vendorlib-3 R-vl3-3b: a placed vendor part outside its characterised range.
         "run.vendor-part.out-of-range",
         "run.vendor-part.unreadable",

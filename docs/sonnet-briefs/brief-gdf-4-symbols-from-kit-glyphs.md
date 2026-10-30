@@ -53,6 +53,11 @@ EM-to-SnP flow). The completion note must say this to the owner plainly.
 
 ## 3. Tests (synthetic glyphs, tier A)
 
+**UI is rendered headlessly and inspected** (overview §6): each symbol built from a kit glyph, placed on a schematic canvas and as its palette tile, with its pins where the cell's ports are. Render each with `tools/UiSnapshot`
+(add a mode where none hosts it), look at the PNG, fix what it shows, and list the pictures in the completion
+note.
+
+
 1. A two-lead horizontal glyph with ports at 180°/0° gives pins on the lead ends.
 2. Four ports on one edge with two lead ends gives four pins, and the report says two are not on a
    lead.

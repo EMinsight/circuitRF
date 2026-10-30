@@ -3332,3 +3332,22 @@ named check outside it would otherwise not run with nothing said. `--list-checks
 text and the JSON projection. A path not ending in `.pdf` is refused before the layout is read
 (`review.args.output-not-pdf`), a failed write is `review.output.write-failed`, and a cancelled run still writes its
 PDF (the first page says it was cancelled) before exiting 130. The MCP `review` tool gained `output`.
+
+## `import pdk`; a workspace's kits for a headless run; extraction conflicts said (brief-gdf-1, 2026-10-30)
+
+- **`import pdk`** (`src/Cli/ImportPdk.cs`) is parsing, sentences and the consent decision only; the
+  import is `PdkWorkspaceImport.Import`. The kit's generators are started only with a recorded decision,
+  `--trust-kit`, or `--allow-code` (this process only, never recorded) — `GeneratedCells.Trust()` is the
+  one policy, now internal so both use it. The started resolver trusts ONLY this kit's declaration folder.
+  `ImportPdk.InterpreterFinder` is the counting seam. The MCP mode has no `allowCode` (cli.md §34).
+- **Nothing headless loaded a workspace's kits**, so a schematic holding one kit part could not be
+  netlisted or run (`check` already said so: "a kit part lives in a registry the GUI populates").
+  `WorkspaceKits.EnsureLoadedFor` runs in `CircuitSource.ExtractFile`, `PrepareSchematic` and the `.cnl`
+  branch of `ReadRunInput` — a `.cnl` in a workspace needs the kit's device-provider resolver too, or a
+  kit device fails with "no providers are registered". Memoised per workspace per process; `import pdk`
+  forgets its workspace so a `serve` session sees the new kit.
+- **Extraction conflicts were never printed** by `netlist` or the run verbs; the GUI posts them after
+  Simulate. A kit part whose symbol and subcircuit disagree on their terminal count was skipped and simply
+  missing from the netlist. `CircuitSource.ReportConflicts` says each one (`run.extraction.conflict`),
+  minus vendor-part refusals, which `ReportVendorParts` already says. On a real kit this surfaced 115
+  sentences that had been hidden — most of them the compiled-model gap recorded in the brief.

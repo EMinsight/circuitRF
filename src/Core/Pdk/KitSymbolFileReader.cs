@@ -16,11 +16,16 @@ namespace CircuitRF.Core.Pdk;
 /// lets a consumer tell a part that came from a drawing apart from one that came from a symbol
 /// library and has no drawing at all.
 /// </param>
+/// <param name="ExtraTerminals">
+/// Template attributes the symbol's netlist line places AMONG ITS TERMINALS, after the drawn pins —
+/// a body connection written as <c>body=sub!</c> is a net, not a value. Empty for nearly every symbol.
+/// </param>
 public sealed record KitSymbolFile(
     IReadOnlyList<KitSymbolPin>      Pins,
     IReadOnlyList<PdkPartParameter>  Parameters,
     string                           TypeWord,
-    IReadOnlyList<KitSymbolShape>    Body);
+    IReadOnlyList<KitSymbolShape>    Body,
+    IReadOnlyList<string>?           ExtraTerminals = null);
 
 /// <summary>
 /// Reads a schematic symbol from a plain-text RECORD format: one symbol per file, each line a
@@ -97,6 +102,12 @@ public static class KitSymbolFileReader
     /// <summary>Attribute carrying the symbol's default parameter assignments.</summary>
     private const string TemplateAttribute = "template";
 
+    /// <summary>Attribute stating how an instance is written into a netlist, terminals first.</summary>
+    private const string FormatAttribute = "format";
+
+    /// <summary>The token in <see cref="FormatAttribute"/> that stands for the drawn pins, in order.</summary>
+    private const string PinListToken = "@pinlist";
+
     /// <summary>Attribute carrying the kit's own word for what kind of device this is.</summary>
     private const string TypeAttribute = "type";
 
@@ -139,6 +150,7 @@ public static class KitSymbolFileReader
         var parameters = new List<PdkPartParameter>();
         var body       = new List<KitSymbolShape>();
         string typeWord = "";
+        IReadOnlyList<string> extraTerminals = [];
         bool sawRecord  = false;
         bool everyPinOrdered = true;
 
@@ -152,6 +164,8 @@ public static class KitSymbolFileReader
                 if (attrs.TryGetValue(TypeAttribute, out var t)) typeWord = t.Value;
                 if (attrs.TryGetValue(TemplateAttribute, out var tpl))
                     ReadTemplate(tpl.Value, parameters);
+                if (attrs.TryGetValue(FormatAttribute, out var fmt))
+                    extraTerminals = ExtraTerminalsIn(fmt.Value);
                 continue;
             }
 
@@ -203,7 +217,7 @@ public static class KitSymbolFileReader
         // No records at all means this is not the format. No PINS, though, is a real symbol that
         // happens to declare none — a title block, a decoration — and is reported as such rather
         // than as a parse failure, so the caller can tell the two apart.
-        return sawRecord ? new KitSymbolFile(ordered, parameters, typeWord, body) : null;
+        return sawRecord ? new KitSymbolFile(ordered, parameters, typeWord, body, extraTerminals) : null;
     }
 
     /// <summary>
@@ -391,7 +405,7 @@ public static class KitSymbolFileReader
 
             atLineStart = c == '\n';
 
-            if (c == '"') inQuotes = !inQuotes;
+            if (c == '"') { if (!IsEscapedQuote(text, i)) inQuotes = !inQuotes; }
             else if (!inQuotes && c == '{')
             {
                 depth++;
@@ -453,9 +467,20 @@ public static class KitSymbolFileReader
             {
                 i++;
                 int start = i;
-                while (i < block.Length && block[i] != '"') i++;
+                while (i < block.Length && (block[i] != '"' || IsEscapedQuote(block, i))) i++;
                 value = block[start..i];
                 if (i < block.Length) i++;
+            }
+            else if (block.AsSpan(i).StartsWith(EscapedQuote))
+            {
+                // A value delimited by ESCAPED quotes — how a quoted value is written inside a quoted
+                // template. Read up to the matching one, so an expression with spaces stays whole.
+                quoted = true;
+                i += EscapedQuote.Length;
+                int end = block.IndexOf(EscapedQuote, i, StringComparison.Ordinal);
+                if (end < 0) end = block.Length;
+                value = block[i..end];
+                i = Math.Min(block.Length, end + EscapedQuote.Length);
             }
             else
             {
@@ -468,6 +493,44 @@ public static class KitSymbolFileReader
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The escaped quote: a quote preceded by exactly two backslashes. <b>The only spelling observed</b>
+    /// — 738 occurrences across three kits' symbol trees, no other form — and it is matched exactly
+    /// rather than by any backslash, so a value ending in a single backslash keeps the meaning it had.
+    /// Read as a delimiter it cut a value short at its first escaped quote, and the two-character
+    /// remainder was then forwarded to the device as that parameter's value (brief-gdf-1).
+    /// </summary>
+    private const string EscapedQuote = @"\\""";
+
+    private static bool IsEscapedQuote(string text, int quoteAt)
+        => quoteAt >= 2 && text[quoteAt - 1] == '\\' && text[quoteAt - 2] == '\\'
+           && (quoteAt < 3 || text[quoteAt - 3] != '\\');
+
+    /// <summary>
+    /// The template attributes a netlist format places among the terminals: the <c>@name</c> tokens
+    /// between <c>@pinlist</c> and the last positional token, which is the model or subcircuit being
+    /// called. <c>@pinlist @body @model w=@w</c> yields <c>body</c>. Anything else between them, or no
+    /// <c>@pinlist</c>, yields nothing — this reads the one shape kits use, and guesses at no other.
+    /// </summary>
+    private static IReadOnlyList<string> ExtraTerminalsIn(string format)
+    {
+        var tokens = format.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        int at = Array.FindIndex(tokens, t => t.Equals(PinListToken, StringComparison.Ordinal));
+        if (at < 0) return [];
+
+        var positional = tokens.Skip(at + 1).TakeWhile(t => !t.Contains('=')).ToList();
+        if (positional.Count < 2) return [];
+
+        var extras = new List<string>();
+        foreach (string t in positional.Take(positional.Count - 1))
+        {
+            if (t.Length < 2 || t[0] != '@' || !t.Skip(1).All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
+                return [];
+            extras.Add(t[1..]);
+        }
+        return extras;
     }
 
     /// <summary>

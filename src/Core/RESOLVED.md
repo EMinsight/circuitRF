@@ -4053,3 +4053,47 @@ Gates: `Core.Tests` `ProbePowerAccessorErrorTests` (errors, precedence); `Engine
 (values, sweep shapes, `at`, the PA block); `Ui.Tests` `ProbePowerTraceRerunTests` (a `P` measure's trace and a
 `Pprobe_fund_W` trace both become a family when a re-run wraps an outer sweep, through the existing carry).
 
+
+## Four SPICE-reader defects found by importing open process kits (brief-gdf-1, 2026-10-30)
+
+Each one was invisible on the kits circuitRF had been tried against and silent when it struck.
+
+- **A file over 512 KB was classified by NAME only, never opened** (`PdkImporter.PeekLimitBytes`). One
+  kit keeps every corner it offers in a single 755 KB model library; it landed as "unknown (.spice)", so
+  the kit offered no corners and no part got a model. The cap had been chosen for cost and became a
+  correctness rule — the same mistake the 4,096-byte peek window already records, one level up. Every
+  file now gets the 64 KB head window; the read is chunked and stops at the first zero byte, so a large
+  binary file costs one 4 KB chunk. `PeekLimitBytes` now only bounds the whole-file reads discovery does
+  (×8). Cost on a kit whose 44 per-corner MOSFET model files are 1.1–1.3 MB each: import 2.5 s → 6.8 s
+  cold, because those are now read — they are the kit's models. Gate: `PdkCornerImportTests.I5`.
+- **A cloned kit's `.git` folder was enumerated as kit content** — hooks, packs and indexes in the
+  report as "unrecognised" (69 files across one kit's two clones), and its pack files peeked.
+  `EnumerateFolder` walks one folder at a time in the order the recursive enumeration used and skips
+  `.git`/`.svn`/`.hg`. Gate: `PdkCornerImportTests.I6`.
+- **A trailing `$`/`;` comment on one `+` continuation line cut off the rest of the statement.** The
+  comment was stripped AFTER `Join` had glued the physical lines, so `+ p5 = 2e-15 $ units` on line 5
+  of a `.param` block bound `p5` and silently dropped every parameter after it — 64 of one kit's process
+  constants; the first symptom was an "Unresolved name" from a capacitor that named the next one.
+  `Join` strips each physical line's trailing comment before joining (the post-join strip stays: a quote
+  can span lines). Gate: `SpiceReaderHygieneTests.H19`.
+- **`SpicePassiveModelBinding` composed values WITH spaces** — `({rsh}) * ({l}) / ({w})`,
+  `(({w}) - ({narrow}))`, `(({c}) * ({scale}))` — breaking the rule this file already states: a rewritten
+  value carries no whitespace. `CnlWriter` wrote them verbatim and `CnlReader` read `*` as an unknown
+  unit, so ONE bound resistor in a kit made every netlist extracted from a design using that kit
+  unreadable — the GUI's own Simulate netlist included. Gate: `SpicePassiveModelBindingTests.B9b` (the
+  round trip); B2/B4/B9 re-pinned to the spaceless form.
+- **`CAP` was not read as a capacitor card's fixed capacitance** — the dialect's own name beside `C`;
+  a kit stating only `cap=` had every capacitor left unbound. Gate: `SpicePassiveModelBindingTests.B5b`.
+
+## A record symbol's escaped quotes, and its body terminal (brief-gdf-1 follow-up, 2026-10-30)
+
+- **`\\"` inside a quoted template is an escaped quote, not a delimiter.** `KitSymbolFileReader` ended the
+  value at it, so `value=\\"expr( … )\\"` read as two backslashes, every attribute after it in the
+  template was lost (three of one kit's MOSFET symbols' four geometry expressions), and the remainder was
+  forwarded to the device as a fixed parameter. Matched EXACTLY — a quote preceded by two backslashes, the
+  only spelling in 738 occurrences across three kits — so a value ending in one backslash is unchanged; a
+  template value opening with one now reads to the matching one, whole. Gate:
+  `KitSymbolFileReaderTests.K20`.
+- **A `format` line that writes a parameter among the terminals** (`@pinlist @body @model`) is read into
+  `KitSymbolFile.ExtraTerminals` → `PdkPart.ExtraTerminals`. It is the only such shape in the three kits
+  (30 symbols). Anything else between `@pinlist` and the model reference yields nothing. Gate: `…K21`.

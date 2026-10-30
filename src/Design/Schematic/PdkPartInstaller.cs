@@ -1009,6 +1009,7 @@ public static class PdkPartInstaller
             // parameter-editing surface is needed for kit parts.
             ccell.Parameters              = BuildDeclaredParameters(part, variants, fileParameters);
             ccell.ExternalFixedParameters = BuildFixedParameters(part);
+            ccell.ExternalExtraTerminals  = part.ExtraTerminals is { Count: > 0 } extra ? [.. extra] : null;
 
             return new PdkKitPart(part.Id, symbol, ccell, iconPath);
         }

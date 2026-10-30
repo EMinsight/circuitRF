@@ -103,7 +103,40 @@ because it does not need to.
   - the attribution rule
   - the measured kit table **by process**
 - **The user page.** "Using a gdsfactory kit": what to install, choosing the environment, the consent
-  prompt, what you get, and what you do not get. Cover:
+  prompt, what you get, and what you do not get. **It opens with "Two kinds of open kit"** (owner,
+  2026-10-30), because which one a user needs is the first question, and nothing else on the page makes
+  sense until it is answered:
+  - **A table, one column per kind.** *The kit's own tree*: a folder downloaded from the kit's
+    publisher, brought in with File ▸ Import PDK, no Python needed. It gives the **schematic side**:
+    parts with symbols, their models and corners, and whatever layout cells circuitRF can run.
+    *A gdsfactory kit*: a Python package installed with `pip` into the user's own Python (≥ 3.12),
+    which installs gdsfactory and its layout engine with it. It gives the **layout side**: parametric
+    layout cells circuitRF runs, their ports (position, width, direction), and the kit's layer stack
+    and materials as a technology.
+  - **Which do I need?** Schematic and simulation: the kit's own tree. Layout artwork, or a technology
+    for EM: the gdsfactory kit. Both: import both, and a layout cell that names the same device as a
+    part merges onto that part's palette tile (symbol and model from the tree, artwork from the
+    package). Either works alone.
+  - **What gdsfactory adds over the kit's own tree:**
+    - layout cells where the kit's own are written for another layout tool's macro system, which
+      circuitRF cannot run;
+    - RF structures the kit's own tree does not have, such as lines, couplers and filters;
+    - a kit that exists only as a gdsfactory package;
+    - ports with geometry;
+    - the layer stack with material properties.
+  - **What it does not add:** schematic symbols, circuit models and corners. Those come only from the
+    kit's own tree.
+  - **Nothing else to install.** The layout engine is installed by `pip` with gdsfactory; no separate
+    layout application is needed, and circuitRF installs nothing. A kit's own tree needs no Python unless
+    its layout cells are Python, in which case they run under the consent prompt.
+  - **GDS export is circuitRF's.** A gdsfactory cell's geometry becomes an ordinary generated cell in the
+    layout and exports through File ▸ Export and `circuitrf convert` like any other; exporting never
+    needs Python.
+  - Name no kit, foundry or process, and no outside tool other than gdsfactory (overview §0): the layout
+    engine is "the layout engine gdsfactory installs", another tool's macros are "another layout tool's
+    macro system".
+
+  Cover also:
   - **What you get:** layout cells in the Library palette (merged onto a kit part's tile when they
     pair, otherwise layout-only), a technology built from the kit's stack, and every filled value
     listed.
@@ -111,11 +144,19 @@ because it does not need to.
     those, through Import PDK), and drag handles on gdsfactory cells. Parameters are in the kit's own
     units: "µm for dimensions".
   - **Kits that list a proprietary dependency** can be installed without it, worded generically (D6).
-  - Edit the source page only. **DocGen is the owner's, at the end of the series**, never per
+  - **`docs/user/src/reference/pdk-integration.md`** gains a short "Two kinds of open kit" section beside
+    its existing open-kit section, the table's two columns in two sentences each, linking to the new
+    page. The reader importing a kit's own tree is on that page and needs to learn the other kind exists.
+  - Edit the source pages only. **DocGen is the owner's, at the end of the series**, never per
     brief.
 - **`src/Design/RESOLVED.md`:** the attribution findings that were circuitRF's, once each.
 
 ## 5. Completion note (here, by process)
+
+**UI is rendered headlessly and inspected** (overview §6): every screenshot the user page uses, and the palette for one kit per row of the matrix (symbol and artwork, symbol only, layout-only tiles). Render each with `tools/UiSnapshot`
+(add a mode where none hosts it), look at the PNG, fix what it shows, and list the pictures in the completion
+note.
+
 
 - The §2 table, filled in.
 - Per kit: cells offered / matched / not offered (by reason) / failing (by attribution), and timings.

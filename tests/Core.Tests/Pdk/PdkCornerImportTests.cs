@@ -88,4 +88,33 @@ public sealed class PdkCornerImportTests : IDisposable
 
         Assert.Empty(PdkImporter.Import(_root).CornerAxes);
     }
+
+    /// <summary>
+    /// A model library larger than the old "classify by name only" limit is still read by its
+    /// content. A kit's one corner library — every corner in a single 755 KB file — used to land as
+    /// unrecognised, and no part of that kit got a model (brief-gdf-1).
+    /// </summary>
+    [Fact]
+    public void I5_LargeCornerLibrary_IsStillRecognisedByItsContent()
+    {
+        string padding = string.Concat(Enumerable.Repeat("* a long model card comment line, as kits ship\n", 16_000));
+        Write("models/big.spice", ".lib typical\n.param p = 1\n.endl typical\n.lib fast\n.param p = 2\n.endl fast\n" + padding);
+        Assert.True(new FileInfo(Path.Combine(_root, "models/big.spice")).Length > 600 * 1024);
+
+        var axis = Assert.Single(PdkImporter.Import(_root).CornerAxes);
+        Assert.Equal(["typical", "fast"], axis.Options);
+    }
+
+    /// <summary>A cloned kit's version-control folder is the tool's bookkeeping, not the kit's content.</summary>
+    [Fact]
+    public void I6_AVersionControlFolder_IsNotPartOfTheKit()
+    {
+        Write("models/c.lib", ".LIB typ\n.param carea = 1\n.ENDL typ\n");
+        Write(".git/hooks/pre-commit.sample", "#!/bin/sh\n");
+        Write(".git/HEAD", "ref: refs/heads/main\n");
+
+        var report = PdkImporter.Import(_root);
+        Assert.DoesNotContain(report.Assets, a => a.RelativePath.StartsWith(".git/", StringComparison.Ordinal));
+        Assert.Contains(report.Assets, a => a.RelativePath == "models/c.lib");
+    }
 }

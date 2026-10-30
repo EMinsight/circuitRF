@@ -24740,3 +24740,35 @@ at the plan's first frequency. On a Single row the Stop column hides its CONTENT
 × has a fixed column shown only while another row exists, so no control moves under the pointer.
 
 Gates: `Ui.Tests` `EmFrequencyPlanTests` and `PalaceBackendTests.Gate1b_AFrequencyPlan_IsWrittenAsPalacePointSamples`.
+
+## The PDK import sequence moved out of the view model; a kit part's parameter case (brief-gdf-1, 2026-10-30)
+
+**`PdkWorkspaceImport` is File ▸ Import PDK after its picker closes**, framework-free: `Read` (the
+importer), `Install` (parts in memory, against the workspace's model-library references), `Commit` (the
+`.cws` kit reference and the kit's parametric-cell declaration), `Import` (the three), `ReadReferenced`
+(one referenced kit on a workspace open) and `LoadReferenced` (every referenced kit, registered, for a
+caller with no window — it writes nothing). The view model's `RecordPdkReference`,
+`DeclareKitPCellLibrary`, `ReadReferencedKit` and `ReportPdkPlaceability` were thin shells or copies and
+now call it; the tally and placeability sentences live here so `circuitrf import pdk` prints what the GUI
+posts. `PdkReferenceManager.LibraryRootsIn`/`ToStoredCorners` forward to it.
+
+- **`ReadReferenced` reads the kit under the RECORDED name** (`PdkImporter.Import(path, kitName)`), which a
+  placed part's reference carries. The open used to re-derive the name from the folder, so a kit
+  imported under another name (`--name`) would have registered parts nobody could resolve.
+- **A kit part's parameters reached its subcircuit only when spelled in the definition's case.**
+  `TryEmitNetlistBackedCellInstance` keeps only the names the definition declares, compared ordinally; one
+  kit's symbols state `W`, `L`, `MF` against subcircuits declaring `w`, `l`, `mf`, so every value a placed
+  part stated was dropped and it simulated at the subcircuit's defaults, with nothing said. A name with no
+  exact match and exactly ONE case-insensitive match is now renamed to the definition's spelling — the
+  reader's own `AlignSubcircuitParameterCase` rule; a definition declaring both `M` and `m` keeps both
+  meanings. Gate: `tests/Ui.Tests/KitPartParameterCaseTests.cs`.
+
+## A kit part's body terminal (brief-gdf-1 follow-up, 2026-10-30)
+
+A symbol with two drawn pins whose netlist line adds `@body` binds to a THREE-port subcircuit; extraction
+refused the count mismatch and skipped the part (one kit's varactor). `CcellFile.ExternalExtraTerminals`
+carries the parameter names, and `TryEmitNetlistBackedCellInstance` accepts the definition when they make
+up the difference EXACTLY, wiring each to the net its value names — the instance's own, else the kit's
+default (`sub!`) — in the schematic the part sits in. A net label of that name ties it; nothing makes it
+global or grounds it, because the kit does not say to. Any other mismatch is still refused by count.
+Gate: `KitPartSubcircuitBindingTests.ABodyTerminalIsWiredToTheNetItsParameterNames`.

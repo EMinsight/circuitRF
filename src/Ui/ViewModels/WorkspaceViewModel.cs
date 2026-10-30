@@ -6048,20 +6048,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private bool HasWorkspaceOpen() => CurrentWorkspacePath is not null;
 
     /// <summary>
-    /// The model-library packages this workspace references. A part kit finds its models by sitting
-    /// beside them; once it is referenced from elsewhere that adjacency is gone, and this is the
-    /// workspace saying where they went.
-    /// </summary>
-    private IReadOnlyList<string> WorkspaceLibraryRoots()
-    {
-        if (CurrentWorkspacePath is null) return [];
-
-        return PdkReferenceManager.LibraryRootsIn(
-            Path.GetDirectoryName(CurrentWorkspacePath)!,
-            TryLoadCws(CurrentWorkspacePath).PdkRefs ?? []);
-    }
-
-    /// <summary>
     /// Re-reads EVERY referenced kit after the Manage PDKs dialog changed the reference set, and
     /// re-wires the palette, the provider resolver and open schematics from the result.
     ///
@@ -6153,7 +6139,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         PdkImportReport report;
         try
         {
-            report = await Task.Run(() => PdkImporter.Import(path));
+            report = await Task.Run(() => PdkWorkspaceImport.Read(path));
         }
         catch (Exception ex)
         {
@@ -6181,12 +6167,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var level = report.Status is PdkImportStatus.NotRecognized or PdkImportStatus.Failed
             ? MessageLevel.Error
             : MessageLevel.Info;
-        live.Complete(level,
-            $"Import PDK — {report.KitName}: " +
-            $"{PdkPartInstaller.Plural(report.Parts.Count, "part", "parts")}, " +
-            $"{PdkPartInstaller.Plural(report.Supported.Count(), "file", "files")} read, " +
-            $"{report.KnownGaps.Count()} recognised but unsupported, " +
-            $"{report.Unrecognized.Count()} unrecognised.");
+        live.Complete(level, $"Import PDK — {PdkWorkspaceImport.TallySentence(report)}");
 
         ReportPdkPlaceability(report, outcome);
 
@@ -6428,7 +6409,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // moves the work off the UI thread's stack without shortening it.
             var kits = refs.Where(x => !x.IsLibraryOnly).ToList();
             var reads = kits
-                .Select(r => Task.Run(() => ReadReferencedKit(r, wsRoot, libraryRoots)))
+                .Select(r => Task.Run(() => PdkWorkspaceImport.ReadReferenced(r, wsRoot, libraryRoots)))
                 .ToArray();
 
             for (int i = 0; i < kits.Count; i++)
@@ -6776,93 +6757,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private readonly List<(string Kit, DeviceWorkerManifest Manifest)> _kitManifests = [];
 
     /// <summary>
-    /// Records a kit in <c>.cws</c>: where it is, and what circuitRF settled about it. Never its
-    /// translated content — that is the vendor's, and is rebuilt on every open.
-    ///
-    /// <para>Written immediately rather than at the next save, so a workspace that is closed without
-    /// saving still remembers a kit that was just imported — the import is not an edit to a document
-    /// the user might reasonably discard.</para>
+    /// <see cref="PdkWorkspaceImport.RecordReference"/>, with its problem posted. The recording itself
+    /// lives there, so <c>circuitrf import pdk</c> writes the same reference this does.
     /// </summary>
-    private void RecordPdkReference(string workspaceRootDir, string kitName, string kitPath,
+    private void RecordPdkReference(string kitName, string kitPath,
                                     JsonNode? settings, IReadOnlyList<PdkCornerAxis>? corners)
     {
-        try
-        {
-            var cws  = TryLoadCws(CurrentWorkspacePath!);
-            var refs = cws.PdkRefs ?? [];
-            // The corners this kit already had recorded, so a re-record that has not re-derived them
-            // (a settings-only write on open) never silently drops them.
-            var keptCorners = refs.FirstOrDefault(r =>
-                string.Equals(r.Provider, kitName, StringComparison.OrdinalIgnoreCase))?.Corners;
-            refs.RemoveAll(r => string.Equals(r.Provider, kitName, StringComparison.OrdinalIgnoreCase));
-            refs.Add(new CwsPdkRef
-            {
-                Path               = WorkspaceRefs.ToStoredRef(kitPath, workspaceRootDir),
-                Provider           = kitName,
-                TranslationVersion = DsnSymbolReader.TranslationVersion,
-                Settings           = settings,
-                Corners            = PdkReferenceManager.ToStoredCorners(corners) ?? keptCorners,
-            });
-            cws.PdkRefs = refs;
-            WorkspacePersistence.SaveToFileAtomic(CurrentWorkspacePath!, cws);
-        }
-        catch (Exception ex)
-        {
-            Messages.Warning($"Import PDK — the kit was loaded but could not be recorded in this " +
-                             $"workspace, so it will not be there next time: {ex.Message}");
-        }
+        if (PdkWorkspaceImport.RecordReference(CurrentWorkspacePath!, kitName, kitPath, settings, corners)
+            is { } problem)
+            Messages.Warning($"Import PDK — {PdkWorkspaceImport.RecordProblemSentence(problem)}");
     }
 
     /// <summary>
-    /// What reading one referenced kit off disk produced, before any of it has been applied.
-    ///
-    /// <para><see cref="Refusal"/> non-null means the kit was found but not read, and says why in the
-    /// user's own terms; <see cref="Missing"/> means there was nothing there to read. Both are
-    /// carried as values rather than acted on inside the read, because the read runs on a worker
-    /// thread and reporting is the apply half's job.</para>
-    /// </summary>
-    private readonly record struct KitRead(
-        string KitPath,
-        PdkImportReport? Report,
-        PdkPartInstaller.InstallOutcome? Outcome,
-        string? Refusal,
-        bool Missing);
-
-    /// <summary>
-    /// Reads one referenced kit off disk. <b>Runs on a worker thread</b> — a few hundred milliseconds
-    /// of file enumeration and netlist parsing, and a pure function of what is on disk.
-    ///
-    /// <para>Touches no view-model, registry or palette state, posts no message and writes no file:
-    /// everything that does is <see cref="ApplyReferencedKit"/>, on the UI thread. <b>Keep it that
-    /// way</b> — it is the only reason reading several kits at once is safe.</para>
-    ///
-    /// <para>The recorded settings are handed back in, so the library discovery and variant choices
-    /// are READ rather than re-derived — which is what keeps an open both fast and repeatable.</para>
-    /// </summary>
-    private static KitRead ReadReferencedKit(
-        CwsPdkRef r, string workspaceRootDir, IReadOnlyList<string> libraryRoots)
-    {
-        string kitPath = WorkspaceRefs.Resolve(r.Path, workspaceRootDir);
-        if (!Directory.Exists(kitPath))
-            return new KitRead(kitPath, null, null, null, Missing: true);
-
-        // A reader change moves pins, and wires attached to them silently disconnect. Refused and
-        // reported rather than applied — the upgrade is the user's to ask for.
-        if (r.TranslationVersion != 0 && r.TranslationVersion != DsnSymbolReader.TranslationVersion)
-            return new KitRead(kitPath, null, null,
-                $"'{r.Provider}' was translated by an older reader (version {r.TranslationVersion}; " +
-                $"this build uses {DsnSymbolReader.TranslationVersion}). It was NOT re-translated: " +
-                $"pin positions could move and disconnect wires. Re-import it from File ▸ Manage Libraries " +
-                $"when you are ready.",
-                Missing: false);
-
-        var report  = PdkImporter.Import(kitPath);
-        var outcome = PdkPartInstaller.Install(report, r.Settings, libraryRoots);
-        return new KitRead(kitPath, report, outcome, null, Missing: false);
-    }
-
-    /// <summary>
-    /// Applies what <see cref="ReadReferencedKit"/> read. Returns the kit's palette entries, or null
+    /// Applies what <see cref="PdkWorkspaceImport.ReadReferenced"/> read. Returns the kit's palette entries, or null
     /// when it could not be reached or was refused.
     ///
     /// <para><b>UI thread.</b> This is the half that mutates the kit registry, records derived
@@ -6871,7 +6778,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// inline. Only WHERE the reading happens changed.</para>
     /// </summary>
     private IReadOnlyList<PaletteItem>? ApplyReferencedKit(
-        CwsPdkRef r, string workspaceRootDir, KitRead read)
+        CwsPdkRef r, string workspaceRootDir, PdkWorkspaceImport.ReferencedRead read)
     {
         string kitPath = read.KitPath;
 
@@ -6916,8 +6823,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         bool cornersAreNew  = (r.Corners is null || r.Corners.Count == 0)
                               && outcome.CornerAxes is { Count: > 0 };
         if (settingsAreNew || cornersAreNew)
-            RecordPdkReference(workspaceRootDir, r.Provider, kitPath,
-                               outcome.Settings ?? r.Settings, outcome.CornerAxes);
+            RecordPdkReference(r.Provider, kitPath, outcome.Settings ?? r.Settings, outcome.CornerAxes);
 
         DeclareKitPCellLibrary(r.Provider, kitPath, workspaceRootDir);
 
@@ -6945,48 +6851,23 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// layout cells, not the import.</para>
     /// </summary>
     private void DeclareKitPCellLibrary(string kitName, string kitPath, string workspaceRootDir)
+        => ReportPCellDeclaration(kitName, PdkWorkspaceImport.DeclarePCellLibrary(kitName, kitPath, workspaceRootDir));
+
+    /// <summary>
+    /// Posts what <see cref="PdkWorkspaceImport.DeclarePCellLibrary"/> did, and notes a NEW declaration so
+    /// the generator resolver is told to look again.
+    /// </summary>
+    private void ReportPCellDeclaration(
+        string kitName, (PdkWorkspaceImport.PCellDeclaration? Declaration, string? Problem) declared)
     {
-        try
-        {
-            var pkg = CircuitRF.Design.Layout.PCells.Wire.KitPCellLibrary.Find(kitPath, out var alsoFound);
-            if (pkg is null) return;
+        if (declared.Problem is { } problem) { Messages.Warning(PdkWorkspaceImport.PCellExamineProblem(kitName, problem)); return; }
+        if (declared.Declaration is not { } d) return;
 
-            // kitPath is passed so the declaration is anchored on the kit rather than written out as
-            // an absolute path. This is what makes repairing a moved kit in Manage PDKs repair its
-            // layout cells too — the parts and the artwork now follow ONE recorded location.
-            string? dir = CircuitRF.Design.Layout.PCells.Wire.KitPCellLibrary.EnsureDeclared(
-                workspaceRootDir, kitName, pkg, out string? problem, out bool created,
-                kitRoot: kitPath);
+        if (d.Folder is null) { Messages.Warning(d.Sentence(kitName)!); return; }
+        if (!d.Created) return;   // already declared — nothing changed, so nothing to say
 
-            if (dir is null)
-            {
-                Messages.Warning(
-                    $"'{kitName}' ships a parametric-cell library ({pkg.PackageName}), but circuitRF " +
-                    $"could not record it: {problem} Its parts still place and draw; only their layout " +
-                    $"artwork needs it.");
-                return;
-            }
-
-            if (!created) return;   // already declared — nothing changed, so nothing to say
-
-            _pcellDeclarationsAdded = true;
-
-            string extra = alsoFound.Count > 0
-                ? $" It also holds {alsoFound.Count} other cell package(s) " +
-                  $"({string.Join(", ", alsoFound.Take(3).Select(p => p.PackageName))}" +
-                  $"{(alsoFound.Count > 3 ? ", …" : "")}); edit that folder to register one instead."
-                : "";
-
-            Messages.Success(
-                $"'{kitName}' offers {pkg.CellModuleCount} parametric layout cell(s) " +
-                $"({pkg.PackageName}). circuitRF recorded how to run them in " +
-                $"'{Path.GetFileName(dir)}'.{extra}",
-                dir);
-        }
-        catch (Exception ex)
-        {
-            Messages.Warning($"'{kitName}': its parametric-cell library could not be examined: {ex.Message}");
-        }
+        _pcellDeclarationsAdded = true;
+        Messages.Success(d.Sentence(kitName)!, d.Folder);
     }
 
     /// <summary>
@@ -7047,13 +6928,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <summary>
     /// Installs a just-imported kit's parts into the Library Palette: its symbols become cells the
-    /// workspace can place, and its own browser icons become the palette tiles.
+    /// workspace can place, and its own browser icons become the palette tiles. The READ half runs on a
+    /// worker thread.
     ///
     /// <para>Re-importing a kit REPLACES its previous entries rather than adding a second copy —
     /// keyed on kit name, which is what a user re-importing after fixing something expects.</para>
-    /// </summary>
-    /// <summary>
-    /// <see cref="InstallPdkIntoPalette"/> with the READ half on a worker thread.
     ///
     /// <para>Installing is not the cheap end of an import: it reads the kit's symbols, and it starts
     /// one worker process per compiled model to ask what each implements. On the UI thread that is a
@@ -7063,28 +6942,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private async Task<PdkPartInstaller.InstallOutcome?> InstallPdkIntoPaletteAsync(PdkImportReport report)
     {
-        var roots = WorkspaceLibraryRoots();
+        string? cwsPath = CurrentWorkspacePath;
 
         PdkPartInstaller.InstallOutcome outcome;
         try
         {
-            outcome = await Task.Run(() => PdkPartInstaller.Install(report, libraryRoots: roots));
-        }
-        catch (Exception ex)
-        {
-            Messages.Warning($"Import PDK — the palette could not be updated: {ex.Message}");
-            return null;
-        }
-
-        return ApplyInstalledPdk(report, outcome);
-    }
-
-    private PdkPartInstaller.InstallOutcome? InstallPdkIntoPalette(PdkImportReport report)
-    {
-        PdkPartInstaller.InstallOutcome outcome;
-        try
-        {
-            outcome = PdkPartInstaller.Install(report, libraryRoots: WorkspaceLibraryRoots());
+            outcome = await Task.Run(() => PdkWorkspaceImport.Install(report, cwsPath));
         }
         catch (Exception ex)
         {
@@ -7118,16 +6981,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (wsRoot is not null)
         {
-            RecordPdkReference(wsRoot, kit, report.RootPath, outcome.Settings, outcome.CornerAxes);
+            // The .cws reference and the kit's layout cells, if it has any — declared here as well as
+            // on a workspace open so the kit is complete the moment it is imported. One call, the one
+            // `circuitrf import pdk` makes.
+            var committed = PdkWorkspaceImport.Commit(CurrentWorkspacePath!, report, outcome);
+            if (committed.RecordProblem is { } recordProblem)
+                Messages.Warning($"Import PDK — {PdkWorkspaceImport.RecordProblemSentence(recordProblem)}");
 
             // The Corners block follows what the workspace references, so a kit that declares
             // corners must make it appear the moment it is imported, not on the next open.
             RefreshCornerAxes(wsRoot);
 
-            // Its layout cells, if it has any. Declared here as well as on a workspace open so the
-            // kit is complete the moment it is imported, rather than on the next open.
             _pcellDeclarationsAdded = false;
-            DeclareKitPCellLibrary(kit, report.RootPath, wsRoot);
+            ReportPCellDeclaration(kit, (committed.PCells, committed.PCellProblem));
             if (_pcellDeclarationsAdded)
             {
                 _pcellDeclarationsAdded = false;
@@ -7166,29 +7032,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void ReportPdkPlaceability(PdkImportReport report, PdkPartInstaller.InstallOutcome? outcome)
     {
-        int placeable = outcome?.Items.Count ?? 0;
-
-        if (placeable > 0)
-        {
-            string omitted = outcome!.OmittedNotPlaceable > 0
-                ? $" {outcome.OmittedNotPlaceable} further part(s) have no symbol and are internal to the " +
-                  "kit; they are listed in the import report but kept out of the palette."
-                : "";
-            Messages.Success($"Import PDK — \"{report.KitName}\": {placeable} part(s) available to place " +
-                             $"from the Library palette " +
-                             $"({PdkPartInstaller.Plural(outcome.IconsFound, "icon", "icons")}, " +
-                             $"{outcome.SymbolsInstalled} symbol(s) installed).{omitted}");
-            return;
-        }
-
-        string reason =
-            outcome is null                       ? "the palette could not be updated"
-            : CurrentWorkspacePath is null        ? "no workspace is open"
-            : outcome.OmittedNotPlaceable > 0     ? "no part has a symbol circuitRF can read"
-            : report.Parts.Count == 0             ? "the kit declares no parts"
-            :                                       "no part could be installed";
-        Messages.Warning($"Import PDK — \"{report.KitName}\": no parts are available to place — {reason}. " +
-                         "The import report lists what was found.");
+        var (placeable, sentence) = PdkWorkspaceImport.PlaceabilitySentence(
+            report, outcome, workspaceOpen: CurrentWorkspacePath is not null);
+        if (placeable) Messages.Success($"Import PDK — {sentence}");
+        else           Messages.Warning($"Import PDK — {sentence}");
     }
 
     /// <summary>

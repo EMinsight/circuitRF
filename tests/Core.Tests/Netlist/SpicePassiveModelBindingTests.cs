@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Netlist;
 using CircuitRF.Core.Netlist.Spice;
 using Xunit;
 
@@ -67,8 +68,8 @@ public sealed class SpicePassiveModelBindingTests
             """);
 
         var c1 = Inst(Cell(r, "part"), "C1");
-        Assert.Equal("((10) - (0.2))", Over(c1, "W"));
-        Assert.Equal("((20) - (0.2))", Over(c1, "L"));
+        Assert.Equal("((10)-(0.2))", Over(c1, "W"));
+        Assert.Equal("((20)-(0.2))", Over(c1, "L"));
     }
 
     [Fact]
@@ -100,8 +101,8 @@ public sealed class SpicePassiveModelBindingTests
             """);
 
         var c1 = Inst(Cell(r, "part"), "C1");
-        Assert.Equal("((2E-15) * (3))", Over(c1, "Cj"));
-        Assert.Equal("((1E-18) * (3))", Over(c1, "Cjsw"));
+        Assert.Equal("((2E-15)*(3))", Over(c1, "Cj"));
+        Assert.Equal("((1E-18)*(3))", Over(c1, "Cjsw"));
         Assert.Equal("10", Over(c1, "W"));
         Assert.Equal("20", Over(c1, "L"));
     }
@@ -119,6 +120,22 @@ public sealed class SpicePassiveModelBindingTests
         var c1 = Inst(Cell(r, "part"), "C1");
         Assert.Equal("9E-06", Over(c1, "TC1"));   // the instance's
         Assert.Equal("1E-09", Over(c1, "TC2"));   // the card's, untouched
+    }
+
+    [Fact]
+    public void B5b_ACardStatingCapIsAFixedCapacitance()
+    {
+        var r = Read("""
+            .model plate C (CAP=2p TC1=1m)
+            .subckt part a b
+            C1 a b plate
+            .ends
+            """);
+
+        var c1 = Inst(Cell(r, "part"), "C1");
+        Assert.Equal("SemiC", c1.Reference);
+        Assert.Equal("2E-12", Over(c1, "C"));
+        Assert.Empty(r.IncompleteCells);
     }
 
     [Fact]
@@ -184,9 +201,30 @@ public sealed class SpicePassiveModelBindingTests
 
         var r1 = Inst(Cell(r, "part"), "R1");
         Assert.Equal("R", r1.Reference);
-        Assert.Equal("(7) * (10) / (2)", Over(r1, "R"));
+        Assert.Equal("(7)*(10)/(2)", Over(r1, "R"));
         Assert.Equal("0.001", Over(r1, "TC1"));
         Assert.Equal("27",    Over(r1, "Tnom"));
+    }
+
+    [Fact]
+    public void B9b_ABoundResistorSurvivesTheCnlRoundTrip()
+    {
+        // The value is composed, not read — and a composed value written with spaces came back from
+        // the .cnl instance line as a value plus a unit nobody wrote, so a kit holding one such
+        // resistor made every netlist extracted from it unreadable (brief-gdf-1).
+        var r = Read("""
+            .model sheet R (RSH=7 NARROW=0.1)
+            .subckt part a b
+            R1 a b sheet w=2 l=10
+            .ends
+            """);
+
+        var tb = new TestBench("tb");
+        tb.Instances.Add(new Instance("X1", "part", ["n1", "0"], []));
+        var (lib2, _) = new CnlReader().Read(CnlWriter.Write(tb, r.Library));
+
+        var r1 = Inst(Assert.Single(lib2.Cells, c => c.Name == "part"), "R1");
+        Assert.Equal(Over(Inst(Cell(r, "part"), "R1"), "R"), Over(r1, "R"));
     }
 
     [Fact]

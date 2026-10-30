@@ -371,4 +371,44 @@ public sealed class KitSymbolFileReaderTests
         Assert.NotNull(s!.Body);
         Assert.Empty(s.Body);
     }
+
+    /// <summary>A value delimited by escaped quotes inside a quoted template is read whole — read as a
+    /// delimiter, the first escaped quote cut it to two backslashes, and every attribute after it was lost.</summary>
+    [Fact]
+    public void K20_AnEscapedlyQuotedTemplateValueIsReadWhole()
+    {
+        var s = KitSymbolFileReader.Read("""
+            v {version=1.2}
+            K {type=res
+            template="name=R1
+            w=1u
+            value=\\"expr( 2 * @w )\\"
+            l=3u
+            "}
+            B 5 -2.5 -2.5 2.5 2.5 {name=p dir=inout}
+            B 5 17.5 -2.5 22.5 2.5 {name=n dir=inout}
+            """);
+
+        var value = Assert.Single(s!.Parameters, p => p.Name == "value");
+        Assert.Equal("expr( 2 * @w )", value.DefaultExpression);
+        Assert.True(value.IsText);
+        Assert.Contains(s.Parameters, p => p.Name == "l");
+    }
+
+    /// <summary>A netlist format that writes a parameter among the terminals names it as a terminal.</summary>
+    [Fact]
+    public void K21_AFormatsTerminalAfterThePinListIsReported()
+    {
+        var s = KitSymbolFileReader.Read("""
+            v {version=1.2}
+            K {type=res
+            format="@spiceprefix@name @pinlist @body @model w=@w"
+            template="name=R1 model=res_a body=sub! w=1u"}
+            B 5 -2.5 -2.5 2.5 2.5 {name=p dir=inout}
+            B 5 17.5 -2.5 22.5 2.5 {name=n dir=inout}
+            """);
+
+        Assert.Equal(["body"], s!.ExtraTerminals);
+        Assert.Empty(KitSymbolFileReader.Read(ThreeTerminal)!.ExtraTerminals ?? []);
+    }
 }

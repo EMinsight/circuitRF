@@ -1390,6 +1390,12 @@ public static class SpiceNetlistReader
     /// <para>Continuation is a leading <c>+</c> on the FOLLOWING line, which is the dialect's rule
     /// and is the opposite way round from a trailing marker. Full-line comments between a line and
     /// its continuation do not break it, because that is where people put them.</para>
+    ///
+    /// <para><b>A trailing comment belongs to its own PHYSICAL line</b>, so it is removed before the
+    /// line joins its statement. Stripped after the join, one <c>$ units</c> note on the fifth line
+    /// of a <c>.param</c> block cut off every parameter after it — silently, with the ones before it
+    /// bound, so the first sign was a process constant "unresolved" in a part that named it
+    /// (brief-gdf-1).</para>
     /// </summary>
     internal static IEnumerable<(string Text, int Number)> Join(IReadOnlyList<string> lines)
     {
@@ -1398,7 +1404,9 @@ public static class SpiceNetlistReader
 
         for (int i = 0; i < lines.Count; i++)
         {
-            string trimmed = lines[i].Trim();
+            string trimmed = lines[i].TrimStart();
+            if (trimmed.Length > 0 && trimmed[0] != '*') trimmed = StripComment(trimmed);
+            trimmed = trimmed.Trim();
 
             if (trimmed.Length == 0 || trimmed[0] == '*') continue;
 

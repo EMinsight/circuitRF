@@ -808,11 +808,11 @@ internal static class CliDiagnostics
 
     public static Diagnostic ImportNounRequired() => new(
         "import.args.noun-required", DiagnosticSeverity.Error,
-        "import: say what to import — 'import part', 'import schematic', 'import voxels' or 'import surfaces'.");
+        "import: say what to import — 'import part', 'import pdk', 'import schematic', 'import voxels' or 'import surfaces'.");
 
     public static Diagnostic ImportUnknownNoun(string noun) => Diagnostic.Create(
         "import.args.unknown-noun", DiagnosticSeverity.Error,
-        "import: there is nothing called '{noun}' to import. Known: part, schematic, voxels, surfaces. "
+        "import: there is nothing called '{noun}' to import. Known: part, pdk, schematic, library, voxels, surfaces. "
         + "For layout interchange (GDSII, DXF, Gerber, boards) use `convert`.", ("noun", noun));
 
     /// <summary>brief-sar-11 — an anatomy import's argument that is missing or does not parse; the sentence is whole.</summary>
@@ -852,6 +852,45 @@ internal static class CliDiagnostics
     /// <summary>A reader's or a scan's own refusal, forwarded whole.</summary>
     public static Diagnostic ImportRefused(string reason) => Diagnostic.Create(
         "import.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
+
+    // ── import pdk (brief-gdf-1 R-gdf1-4b) ─────────────────────────────────────────────────────
+
+    public static Diagnostic ImportPdkIntoRequired() => new(
+        "import.pdk.into-required", DiagnosticSeverity.Error,
+        "import pdk: --into <workspace> says which workspace references the kit.");
+
+    public static Diagnostic ImportPdkNotAWorkspace(string path) => Diagnostic.Create(
+        "import.pdk.not-a-workspace", DiagnosticSeverity.Error,
+        "'{path}' is not in a workspace (no .cws there or above it). A kit is referenced from a "
+        + "workspace's .cws.", ("path", path));
+
+    /// <summary>The import's own refusal — an unreadable kit, a kit with nothing usable — whole.</summary>
+    public static Diagnostic ImportPdkRefused(string reason) => Diagnostic.Create(
+        "import.pdk.refused", DiagnosticSeverity.Error, "{reason}", ("reason", reason));
+
+    /// <summary>One sentence of the import report or the install, forwarded at its own level — an id per
+    /// level, so a caller can key on what kind of finding it is.</summary>
+    public static Diagnostic ImportPdkFinding(DiagnosticSeverity severity, string text) => severity switch
+    {
+        DiagnosticSeverity.Error   => Diagnostic.Create("import.pdk.blocker", DiagnosticSeverity.Error,   "{text}", ("text", text)),
+        DiagnosticSeverity.Warning => Diagnostic.Create("import.pdk.warning", DiagnosticSeverity.Warning, "{text}", ("text", text)),
+        _                          => Diagnostic.Create("import.pdk.note",    DiagnosticSeverity.Info,    "{text}", ("text", text)),
+    };
+
+    /// <summary>R-gdf1-4b: the kit's generators were declared but not started — consent decides, and the
+    /// sentence says which decision and how to give one.</summary>
+    public static Diagnostic ImportPdkGeneratorsNotStarted(string text) => Diagnostic.Create(
+        "import.pdk.generators-not-started", DiagnosticSeverity.Info, "{text}", ("text", text));
+
+    /// <summary>Something the extraction of a schematic could not build — the sentence the GUI posts after
+    /// Simulate, whole (brief-gdf-1).</summary>
+    public static Diagnostic RunExtractionConflict(string text) => Diagnostic.Create(
+        "run.extraction.conflict", DiagnosticSeverity.Warning, "{text}", ("text", text));
+
+    /// <summary>A kit the schematic's workspace references that could not be loaded for this run; parts
+    /// placed from it are unresolved. The loader's own sentence, whole.</summary>
+    public static Diagnostic KitNotLoaded(string text) => Diagnostic.Create(
+        "run.kit.not-loaded", DiagnosticSeverity.Warning, "{text}", ("text", text));
 
     // ── import library / new workspace --vendor-library (brief vendorlib-1 R-vl1-5a) ──────────
 

@@ -55,7 +55,14 @@ public sealed record PdkPart(
     /// states its value in terms of those constants.</para>
     /// </summary>
     string?                           DefinitionRelativePath = null,
-    string?                           DefinitionCell = null);
+    string?                           DefinitionCell = null,
+
+    /// <summary>
+    /// Parameters the kit's netlist line places among the TERMINALS after the drawn pins — a body
+    /// connection, <c>body=sub!</c>, is a net named by the parameter's value. Null for nearly every
+    /// part. See <see cref="KitSymbolFile.ExtraTerminals"/>.
+    /// </summary>
+    IReadOnlyList<string>?            ExtraTerminals = null);
 
 /// <summary>
 /// One parameter a part declares, and the kit's own default for it.

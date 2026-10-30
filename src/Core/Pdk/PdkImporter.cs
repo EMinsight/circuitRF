@@ -19,7 +19,10 @@ namespace CircuitRF.Core.Pdk;
 /// </summary>
 public static class PdkImporter
 {
-    /// <summary>Files bigger than this are classified by name only; nothing peeks inside them.</summary>
+    /// <summary>
+    /// The size discovery reads a netlist whole up to, as a multiple of eight. It no longer decides
+    /// whether a file is OPENED for classification — see <see cref="PeekChars"/>.
+    /// </summary>
     private const long PeekLimitBytes = 512 * 1024;
     /// <summary>
     /// How much of a candidate file a recogniser gets to look at.
@@ -31,14 +34,26 @@ public static class PdkImporter
     /// same shape of mistake as reading a network's port labels off a capped read: a format's marker
     /// is wherever the file puts it, and a cap chosen for cost quietly becomes a correctness rule.</para>
     ///
-    /// <para><b>Cost is bounded by <see cref="PeekLimitBytes"/>, not by this.</b> A file larger than
-    /// that is classified by name and never opened at all, so this only widens the window on files
-    /// already deemed cheap to read — and the read stops at end of file, which nearly every one of
-    /// them reaches first.</para>
+    /// <para><b>Every file gets this window, whatever its size.</b> A file over
+    /// <see cref="PeekLimitBytes"/> used to be classified by name only and never opened — and a kit's
+    /// one model library, every corner it offers in a single 755 KB file, landed in the import as
+    /// unrecognised, so no part of that kit got a model. The same cap-becomes-a-rule mistake as the
+    /// window above, one level up. What bounds the cost is this window, never the file: the head is
+    /// read in chunks and the read stops at the first zero byte, so a large binary file — a layout
+    /// stream, an archive — costs one chunk.</para>
     /// </summary>
     private const int  PeekChars      = 64 * 1024;
 
-    public static PdkImportReport Import(string path)
+    /// <summary>How much of the window is read before checking it for a zero byte.</summary>
+    private const int  PeekChunk      = 4 * 1024;
+
+    public static PdkImportReport Import(string path) => Import(path, kitName: null);
+
+    /// <summary>
+    /// <see cref="Import(string)"/>, with the kit called <paramref name="kitName"/> rather than what its
+    /// folder or manifest says — the name every part reference is built from. Null keeps the kit's own.
+    /// </summary>
+    public static PdkImportReport Import(string path, string? kitName)
     {
         if (string.IsNullOrWhiteSpace(path))
             return Failed(path ?? "", "No path was given.", "Choose the kit's folder or .zip file.");
@@ -57,7 +72,8 @@ public static class PdkImporter
                 // An additions folder may be called anything — it is not the kit. The kit's own name
                 // comes from what the manifest declares, or from the kit's folder; getting it wrong
                 // would leave every step working except the one that asks for the provider by name.
-                string name = additions is null
+                string name = kitName is { Length: > 0 } given ? given
+                    : additions is null
                     ? Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
                     : additions.Value.Provider is { Length: > 0 } declared
                         ? declared
@@ -69,7 +85,8 @@ public static class PdkImporter
 
             if (File.Exists(path) && Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase))
                 using (var zip = ZipFile.OpenRead(path))
-                    return ImportEntries(path, Path.GetFileNameWithoutExtension(path), EnumerateZip(zip));
+                    return ImportEntries(path, kitName is { Length: > 0 } given ? given
+                                                   : Path.GetFileNameWithoutExtension(path), EnumerateZip(zip));
 
             return File.Exists(path)
                 ? Failed(path, "That file is not a kit.",
@@ -97,14 +114,33 @@ public static class PdkImporter
 
     private readonly record struct Entry(string RelativePath, long Length, Func<Stream> Open);
 
+    /// <summary>
+    /// A version-control tool's own bookkeeping, never a kit's content. A kit is very often a CLONE, and
+    /// walking into its history folder listed hooks, packs and indexes as kit files in the report — one
+    /// clone of an open kit added 50 "unrecognised" files, and peeked a pack file the size of the kit.
+    /// </summary>
+    private static readonly HashSet<string> VersionControlDirs =
+        new([".git", ".svn", ".hg"], StringComparer.OrdinalIgnoreCase);
+
     private static IEnumerable<Entry> EnumerateFolder(string root)
     {
-        foreach (var f in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        // Walked one folder at a time, in the order the recursive enumeration it replaces used (a folder's
+        // files, then its subfolders queued), and with the same handling of an unreadable folder.
+        var options = new EnumerationOptions { IgnoreInaccessible = false, AttributesToSkip = 0 };
+        var pending = new Queue<string>();
+        pending.Enqueue(root);
+        while (pending.Count > 0)
         {
-            string rel = Path.GetRelativePath(root, f).Replace('\\', '/');
-            long len;
-            try { len = new FileInfo(f).Length; } catch { continue; }
-            yield return new(rel, len, () => File.OpenRead(f));
+            string dir = pending.Dequeue();
+            foreach (var f in Directory.EnumerateFiles(dir, "*", options))
+            {
+                string rel = Path.GetRelativePath(root, f).Replace('\\', '/');
+                long len;
+                try { len = new FileInfo(f).Length; } catch { continue; }
+                yield return new(rel, len, () => File.OpenRead(f));
+            }
+            foreach (var sub in Directory.EnumerateDirectories(dir, "*", options))
+                if (!VersionControlDirs.Contains(Path.GetFileName(sub))) pending.Enqueue(sub);
         }
     }
 
@@ -179,7 +215,7 @@ public static class PdkImporter
             // is the whole of what is being asked for. The recognisers themselves are unchanged;
             // nothing here decides which of them wins.
             string? peeked = null;
-            string Peek() => peeked ??= e.Length > PeekLimitBytes ? "" : PeekText(e.Open);
+            string Peek() => peeked ??= PeekText(e.Open);
 
             PdkAsset? asset = null;
             foreach (var r in recognizers)
@@ -406,7 +442,8 @@ public static class PdkImporter
                 // The kit's own drawing. Non-null even when empty — see PdkPart.Body for why the
                 // distinction between "drew nothing" and "has no drawing" is load-bearing: the two
                 // sources place their pins under different axis conventions.
-                Body:       symbol.Body));
+                Body:       symbol.Body,
+                ExtraTerminals: symbol.ExtraTerminals is { Count: > 0 } extra ? extra : null));
         }
 
         if (report.Parts.Count > 0) return;
@@ -1263,10 +1300,15 @@ public static class PdkImporter
         {
             using var s = open();
             var buf = new byte[PeekChars];
-            int n = s.Read(buf, 0, buf.Length);
-            if (n <= 0) return "";
-            for (int i = 0; i < n; i++) if (buf[i] == 0) return "";   // binary
-            return Encoding.UTF8.GetString(buf, 0, n);
+            int n = 0;
+            while (n < buf.Length)
+            {
+                int got = s.Read(buf, n, Math.Min(PeekChunk, buf.Length - n));
+                if (got <= 0) break;
+                for (int i = n; i < n + got; i++) if (buf[i] == 0) return "";   // binary
+                n += got;
+            }
+            return n == 0 ? "" : Encoding.UTF8.GetString(buf, 0, n);
         }
         catch { return ""; }
     }

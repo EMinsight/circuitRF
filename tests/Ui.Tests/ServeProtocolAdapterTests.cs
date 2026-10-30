@@ -980,6 +980,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["import/part"]       = ["path"],
             ["import/schematic"]  = ["path"],
             ["import/library"]    = ["path"],
+            ["import/pdk"]        = ["path"],
             ["import/voxels"]     = ["path"],
             ["import/surfaces"]   = ["path"],
             ["convert/"]          = ["path"],

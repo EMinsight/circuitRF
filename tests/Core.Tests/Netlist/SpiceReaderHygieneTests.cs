@@ -430,4 +430,21 @@ public sealed class SpiceReaderHygieneTests
         Assert.Equal("1E-06", inst.Overrides.Single(o => o.Name == "C").Expression);
         Assert.Contains("initial condition", Notes(r), StringComparison.Ordinal);
     }
+
+    // ── a comment on one continuation line ────────────────────────────────────
+
+    /// <summary>A trailing comment ends its own physical line, not the statement it continues: a
+    /// <c>$</c> note on one line of a <c>.param</c> block cut off every parameter after it.</summary>
+    [Fact]
+    public void H19_ACommentOnAContinuationLineCostsNothingAfterIt()
+    {
+        var r = Read("""
+            .param
+            + first = 1 $ units: farad
+            + second = 2 ; a note
+            + third = 3
+            """);
+
+        Assert.Equal(["first", "second", "third"], r.Variables.Select(v => v.Name));
+    }
 }

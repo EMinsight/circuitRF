@@ -142,7 +142,9 @@ internal static class SpicePassiveModelBinding
 
         string? cj     = Card("CJ");
         string? cjsw   = Card("CJSW");
-        string? fixedC = Inst("c") ?? Card("C");
+        // CAP is the card's own name for a fixed capacitance in this dialect, beside C; a kit writing
+        // only CAP had every capacitor left unbound (brief-gdf-1).
+        string? fixedC = Inst("c") ?? Card("C") ?? Card("CAP");
         string? narrow = Card("NARROW");
         string? scale  = Inst("scale");
 
@@ -230,7 +232,9 @@ internal static class SpicePassiveModelBinding
 
         var over = new List<ParameterAssignment>
         {
-            new("R", $"({rsh}) * ({Shrink(l, narrow)}) / ({Shrink(w, narrow)})"),
+            // No whitespace, as every rewritten value: the .cnl instance line splits on it, so a spaced
+            // value read back as a value plus a unit nobody wrote (brief-gdf-1).
+            new("R", $"({rsh})*({Shrink(l, narrow)})/({Shrink(w, narrow)})"),
         };
 
         void Add(string name, string? expr)
@@ -296,14 +300,14 @@ internal static class SpicePassiveModelBinding
     {
         if (dimension is null) return "0";
         if (narrow is null || IsZero(narrow)) return dimension;
-        return $"(({dimension}) - ({narrow}))";
+        return $"(({dimension})-({narrow}))";
     }
 
     private static string? Scaled(string? expr, string? scale)
     {
         if (expr is null) return null;
         if (scale is null || IsOne(scale)) return expr;
-        return $"(({expr}) * ({scale}))";
+        return $"(({expr})*({scale}))";
     }
 
     private static bool IsZero(string e) => IsLiteral(e, 0.0);
