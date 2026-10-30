@@ -14,6 +14,12 @@ public enum InstallShape
 
     /// <summary>A plain directory of files: the per-machine <c>.msi</c> and the <c>.deb</c>. Never updated in place.</summary>
     Flat,
+
+    /// <summary>
+    /// A Linux AppImage: one file, run from a read-only mount. <c>Root</c> is the directory holding
+    /// the file. Never updated in place; a newer release is offered as a Download beside it.
+    /// </summary>
+    AppImage,
 }
 
 /// <summary>Where this application is installed, and whether the running user may rewrite it.</summary>
@@ -25,7 +31,8 @@ public sealed record InstallSite(string Root, InstallShape Shape, bool IsWritabl
 {
     /// <summary>
     /// True when this installation can be updated silently. Everything else is
-    /// <b>notify-only</b>: check, post one Message Panel line with a link, write nothing.
+    /// <b>notify-only</b>: check, post one Message Panel line with a link, write nothing. An
+    /// <see cref="InstallShape.AppImage"/> is never silently updated, however writable its directory.
     /// </summary>
     public bool CanSelfUpdate => IsWritable && Shape is InstallShape.MacOsBundle or InstallShape.VersionedPointer;
 }
@@ -70,7 +77,47 @@ public static class UpdateInstallSite
     /// </summary>
     public static InstallSite Detect()
     {
-        lock (CacheLock) return _cached ??= DetectFrom(AppContext.BaseDirectory);
+        lock (CacheLock)
+            return _cached ??= DetectFrom(AppContext.BaseDirectory,
+                                          Environment.GetEnvironmentVariable(AppDirVariable),
+                                          Environment.GetEnvironmentVariable(AppImageVariable));
+    }
+
+    /// <summary>The AppImage runtime's mount point, set for the process it starts.</summary>
+    public const string AppDirVariable = "APPDIR";
+
+    /// <summary>The AppImage runtime's absolute path of the <c>.AppImage</c> file itself.</summary>
+    public const string AppImageVariable = "APPIMAGE";
+
+    /// <summary>
+    /// <see cref="DetectFrom(string)"/>, with the two variables an AppImage's runtime sets taken as
+    /// parameters so a test can supply them.
+    ///
+    /// <para><b>The variables alone prove nothing.</b> Every child process inherits them, so a tarball
+    /// install started from a terminal an AppImage opened sees both. What makes this process an
+    /// AppImage is that it RUNS from inside the mount: its base directory lies under
+    /// <paramref name="appDir"/>, and <paramref name="appImage"/> names a regular file that exists.
+    /// Anything else falls through to the shape the directory itself has.</para>
+    /// </summary>
+    public static InstallSite DetectFrom(string baseDirectory, string? appDir, string? appImage)
+    {
+        if (!string.IsNullOrEmpty(appDir) && !string.IsNullOrEmpty(appImage) &&
+            Path.IsPathFullyQualified(appImage) && File.Exists(appImage) &&
+            IsInside(baseDirectory, appDir))
+        {
+            string file = Path.GetFullPath(appImage);
+            string dir  = Path.GetDirectoryName(file) ?? file;
+            return new InstallSite(dir, InstallShape.AppImage, IsDirectoryWritable(dir), dir);
+        }
+
+        return DetectFrom(baseDirectory);
+    }
+
+    private static bool IsInside(string path, string directory)
+    {
+        string p = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        string d = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        return p == d || p.StartsWith(d + Path.DirectorySeparatorChar, StringComparison.Ordinal);
     }
 
     /// <summary>For tests, which build a fresh temp-directory fixture per case.</summary>

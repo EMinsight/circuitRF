@@ -19,8 +19,17 @@ public sealed class RecordingSink : IMessageSink
 {
     public List<(MessageLevel Level, string Text)> Posted { get; } = [];
 
+    /// <summary>Every line that carried a button, with the button — also recorded in <see cref="Posted"/>.</summary>
+    public List<(string Text, string Label, Func<Task> Action)> Actions { get; } = [];
+
     public void Post(MessageLevel level, string text, string? filePath = null)
         => Posted.Add((level, text));
+
+    public void PostAction(MessageLevel level, string text, string actionLabel, Func<Task> action, string? filePath = null)
+    {
+        Posted.Add((level, text));
+        Actions.Add((text, actionLabel, action));
+    }
 
     public void Clear() => Posted.Clear();
 }
@@ -351,6 +360,108 @@ public sealed class UpdateServiceBehaviourTests : IDisposable
 
         return (FakeUpdateFeed.WithBytes([release], bytes),
                 Convert.ToBase64String(key.ExportSubjectPublicKeyInfo()));
+    }
+
+    // -- an AppImage install: a Download button, and nothing written until it is pressed -----------
+
+    private static readonly byte[] ImageBytes = Encoding.UTF8.GetBytes("#!/bin/sh\necho a new AppImage\n");
+
+    /// <summary>Serves <see cref="ImageBytes"/> for every request, and counts them. No network.</summary>
+    private sealed class CannedBytesHandler : System.Net.Http.HttpMessageHandler
+    {
+        public int Requests { get; private set; }
+
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request, CancellationToken ct)
+        {
+            Requests++;
+            return Task.FromResult(new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new System.Net.Http.ByteArrayContent(ImageBytes),
+            });
+        }
+    }
+
+    /// <summary>A release carrying both architectures' AppImages (and the tarballs), with the digest given.</summary>
+    private static ReleaseInfo AppImageRelease(string sha256)
+    {
+        var assets = new List<ReleaseAsset>();
+        foreach (string arch in new[] { "x64", "arm64" })
+        {
+            string img = UpdateAssetNames.ExpectedAppImage(UpdateApp.Name, "9.9.9", arch);
+            assets.Add(new ReleaseAsset(img, "https://objects.githubusercontent.com/" + img, ImageBytes.Length, sha256));
+            string tar = UpdateAssetNames.Expected(UpdateApp.Name, "9.9.9", UpdatePlatform.Linux, arch);
+            assets.Add(new ReleaseAsset(tar, "https://objects.githubusercontent.com/" + tar, ImageBytes.Length, sha256));
+        }
+        return new ReleaseInfo("v9.9.9", SemanticVersion.Parse("9.9.9"), false, false, assets);
+    }
+
+    private static string ImageSha() => Convert.ToHexString(SHA256.HashData(ImageBytes)).ToLowerInvariant();
+
+    private readonly CannedBytesHandler _http = new();
+    private readonly List<string> _opened = [];
+
+    private UpdateService AppImageService(string sha256, bool writable = true)
+    {
+        var site = new InstallSite(_install, InstallShape.AppImage, writable, _install);
+        return new UpdateService(() => new FakeUpdateFeed([AppImageRelease(sha256)]),
+                                 new FakeFreeSpaceProbe(long.MaxValue), _sink, () => site, new ReleaseTrust(""))
+        {
+            DownloadClient = () => new System.Net.Http.HttpClient(_http),
+            OpenLink       = _opened.Add,
+            RevealFile     = _ => { },
+        };
+    }
+
+    [Fact]
+    public async Task AnAppImageSite_PostsOneDownloadLine_AndWritesNothingBeforeTheClick()
+    {
+        CheckResult r = await AppImageService(ImageSha()).CheckAsync(manual: false, CancellationToken.None);
+
+        Assert.Equal(CheckOutcome.NotifyOnly, r.Outcome);
+        (string text, string label, _) = Assert.Single(_sink.Actions);
+        Assert.Equal(UpdateService.DownloadLabel, label);
+        Assert.Equal($"{UpdateApp.Name} 9.9.9 is available", text);
+        Assert.Empty(Directory.GetFileSystemEntries(_install));
+        Assert.Equal(0, _http.Requests);
+    }
+
+    [Fact]
+    public async Task TheDownloadClick_WritesTheFinalFile_Executable_AndLeavesNoPartial()
+    {
+        await AppImageService(ImageSha()).CheckAsync(manual: false, CancellationToken.None);
+        await _sink.Actions[0].Action();
+
+        string expected = UpdateAssetNames.ExpectedAppImage(UpdateApp.Name, "9.9.9",
+            UpdateAssetNames.ArchToken(UpdatePlatform.Linux, System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture));
+        string file = Assert.Single(Directory.GetFiles(_install));
+        Assert.Equal(expected, Path.GetFileName(file));
+        Assert.Equal(ImageBytes, File.ReadAllBytes(file));
+        if (!OperatingSystem.IsWindows())
+            Assert.True(File.GetUnixFileMode(file).HasFlag(UnixFileMode.UserExecute));
+        Assert.Contains(_sink.Actions, a => a.Text.Contains("downloaded to " + file, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AHashMismatch_LeavesNoFile_ReportsOnTheRow_AndBlacklistsTheVersion()
+    {
+        await AppImageService(new string('0', 64)).CheckAsync(manual: false, CancellationToken.None);
+        await _sink.Actions[0].Action();
+
+        Assert.Empty(Directory.GetFileSystemEntries(_install));
+        Assert.Contains(_sink.Posted, p => p.Level == MessageLevel.Warning && p.Text.Contains("digest"));
+        Assert.True(UpdateStateIo.Load().IsBlacklisted("9.9.9"));
+    }
+
+    [Fact]
+    public async Task AnUnwritableAppImageFolder_OpensTheReleasePage_AndWritesNothing()
+    {
+        await AppImageService(ImageSha(), writable: false).CheckAsync(manual: false, CancellationToken.None);
+        await _sink.Actions[0].Action();
+
+        Assert.Equal($"{UpdateService.ReleasesPageUrl}/tag/v9.9.9", Assert.Single(_opened));
+        Assert.Empty(Directory.GetFileSystemEntries(_install));
+        Assert.Equal(0, _http.Requests);
     }
 
     private static ReleaseInfo MacRelease(string tag, long size)

@@ -127,6 +127,27 @@ public class UpdateAssetNameTests
             UpdateAssetNames.Select(release, "circuitRF", UpdatePlatform.MacOS, Architecture.Arm64)?.Name);
     }
 
+    /// <summary>
+    /// An AppImage install is offered the AppImage, and the tarball beside it in the same release is
+    /// a different install that it must not pick.
+    /// </summary>
+    [Fact]
+    public void AnAppImageSite_SelectsTheAppImage_OverTheTarball()
+    {
+        Assert.Equal("circuitRF-1.0.0-beta.1-linux-arm64.AppImage",
+                     UpdateAssetNames.ExpectedAppImage("circuitRF", "1.0.0-beta.1", "arm64"));
+
+        var release = CannedReleases.Release("v1.0.0", false, false,
+            "circuitRF-1.0.0-linux-x64.tar.gz", "circuitRF-1.0.0-linux-x64.AppImage");
+
+        Assert.Equal("circuitRF-1.0.0-linux-x64.AppImage",
+            UpdateAssetNames.Select(release, "circuitRF", UpdatePlatform.Linux, Architecture.X64,
+                                    InstallShape.AppImage)?.Name);
+        Assert.Equal("circuitRF-1.0.0-linux-x64.tar.gz",
+            UpdateAssetNames.Select(release, "circuitRF", UpdatePlatform.Linux, Architecture.X64,
+                                    InstallShape.VersionedPointer)?.Name);
+    }
+
     [Fact]
     public void TheRunningApplicationNamesItself_FromTheAssemblyProduct()
     {

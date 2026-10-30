@@ -42,6 +42,7 @@ Where circuitRF stood before this work:
 | `.dmg` (drag to Applications) | `/Applications/circuitRF.app` | yes for an admin user; **no** for a standard user | mostly |
 | `.msi` (`Scope="perMachine"`) | `%ProgramFiles%\circuitRF` | **no** | no |
 | `.deb` | `/opt/circuitrf` | **no** | no |
+| `.AppImage` | wherever the user keeps the file; runs from a read-only mount | the file's folder, usually | no: offers a **Download** beside it |
 
 **The decision (owner, 2026-08-25): add a user-local install channel on Windows and Linux and make it
 the default download.** The `.msi` and `.deb` remain, for machine-wide and centrally-managed installs;
@@ -120,9 +121,18 @@ stable `current/` path so nothing needs re-registering on update. Distributed as
 `install.sh`. Replacing files under a running Linux process is safe in any case — the kernel keeps the
 open inode alive — but the versioned layout means we never rely on that.
 
-*(AppImage was considered as the Linux channel. It is a single file, trivially replaceable, and its
-zsync-based updater would give delta downloads for free — which matters at our payload size, §12. It is
-also an entirely new build path. Deferred, not rejected; §17.)*
+**The AppImage** (`circuitRF-<ver>-linux-<arch>.AppImage`, built by the same `build-linux.sh` from the
+same publish tree) is a second Linux download alongside the tarball, never a replacement for it. It runs
+from a read-only mount, so the versioned `app-<ver>/` + `current` swap has nowhere to write, and it is
+**never updated silently**. The updater recognises it from where the process runs: its base directory
+lies inside `$APPDIR` and `$APPIMAGE` names an existing file, because both variables are inherited by
+every child process. Its install root is the directory holding the file. When a newer release has an
+AppImage for this architecture, the update line reads `circuitRF <ver> is available` and carries a
+**Download** button. A click fetches the new AppImage into that directory as `.partial`, checks its
+SHA-256 against the signed manifest, makes it executable, and renames it to its release name. The row
+then names the path with an Open Folder button. Nothing is replaced, deleted or relaunched; the user
+starts the new file when they choose. A folder this account cannot write gets a button that opens the
+release page instead. The tarball remains the self-updating Linux install and the update payload.
 
 ### 2.3 macOS — the exception
 
@@ -1263,7 +1273,9 @@ Recorded so that they stay visible rather than quietly becoming permanent omissi
 - **Delta updates.** Full payloads every time. §12 explains why splitting the Linux VM image out is the
   cheaper first move, and zsync/bsdiff the more expensive second one. **§18 records a Windows-only
   route that gets them for free**, at the cost of a certificate and a host.
-- **AppImage as the Linux channel**, with its zsync-based delta updates (§2.2).
+- **A self-updating AppImage.** The AppImage ships (§2.2) and offers each new version as a Download saved
+  beside the running file. It does not replace itself, and the zsync delta updates its format allows
+  are not used; the tarball is the Linux install that updates itself.
 - ~~**A signed manifest**~~ — **built** (§15.5), and shipping inert: the client half is complete and
   every release from the one that carries a key onward must be signed. What is left is the key ceremony,
   which is the owner's to perform and is deliberately not something a build script can do.

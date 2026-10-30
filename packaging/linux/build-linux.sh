@@ -5,19 +5,22 @@ set -euo pipefail
 #
 #   packaging/linux/build-linux.sh
 #
-# With no arguments it builds EVERYTHING this platform ships - both architectures, both package
+# With no arguments it builds EVERYTHING this platform ships - both architectures, all three package
 # kinds:
 #
-#   dist/circuitRF-<version>-x64.deb            /opt/circuitrf, needs root      notify-only
+#   dist/circuitRF-<version>-x64.deb              /opt/circuitrf, needs root    notify-only
 #   dist/circuitRF-<version>-arm64.deb
-#   dist/circuitRF-<version>-linux-x64.tar.gz   ~/.local, no root               updates itself
+#   dist/circuitRF-<version>-linux-x64.tar.gz     ~/.local, no root             updates itself
 #   dist/circuitRF-<version>-linux-arm64.tar.gz
+#   dist/circuitRF-<version>-linux-x64.AppImage   one file, runs anywhere       offers a Download
+#   dist/circuitRF-<version>-linux-arm64.AppImage
 #
 # Narrow it only when you mean to:
 #
-#   packaging/linux/build-linux.sh x64            both kinds, x64 only
-#   packaging/linux/build-linux.sh both tarball   both architectures, no .deb
+#   packaging/linux/build-linux.sh x64             all kinds, x64 only
+#   packaging/linux/build-linux.sh both tarball    both architectures, tarballs only
 #   packaging/linux/build-linux.sh arm64 deb
+#   packaging/linux/build-linux.sh both appimage
 #
 # WHY THE DEFAULT IS EVERYTHING. The .deb and the tarball used to be two scripts, each defaulting to
 # one architecture, so a complete Linux release was four invocations and looked like one. A release
@@ -27,22 +30,28 @@ set -euo pipefail
 # notify-only line, nobody is TOLD about it either. That happened (1.0.0-beta.2). A release script
 # whose obvious invocation produces an incomplete release is the script's bug, not the operator's.
 #
-# THE TWO KINDS, AND WHY THERE ARE TWO. The .deb installs to /opt/circuitrf, which only root can
+# THE KINDS, AND WHY THERE IS MORE THAN ONE. The .deb installs to /opt/circuitrf, which only root can
 # write, so it is the managed, machine-wide story and it is NOTIFY-ONLY: circuitRF checks for
 # updates, posts one Message Panel line with a link, and writes nothing. A silent background update
 # requires an install location the running USER can write (docs/design/auto-update.md section 1), so
 # the channel that actually auto-updates is the tarball - ~/.local/share/circuitRF, no root at any
-# point, versioned directories behind a `current` symlink so an update is a pointer flip.
+# point, versioned directories behind a `current` symlink so an update is a pointer flip. The
+# AppImage is one executable file holding the publish tree in a compressed read-only image: no install
+# step, no root, keep it anywhere. It cannot update itself (it runs from a read-only mount), so when a
+# newer release exists its update line carries a Download button that saves the new AppImage beside
+# the running one; nothing is replaced (docs/design/auto-update.md section 2.2).
 #
-# THE TARBALL'S NAME IS A CONTRACT. src/Ui/Updates/UpdateAssetNames.cs parses exactly this spelling
-# and tests/Ui.Tests/ assert it. Rename it and updates stop - with no error anywhere and no user
+# THE TARBALL'S AND THE APPIMAGE'S NAMES ARE A CONTRACT. src/Ui/Updates/UpdateAssetNames.cs parses
+# exactly these spellings and tests/Ui.Tests/ assert them. Rename it and updates stop - with no error anywhere and no user
 # report, because a user who is not being offered an update has nothing to notice.
 #
-# ONE PUBLISH SERVES BOTH KINDS: they differ in where the files go, never in the files themselves.
+# ONE PUBLISH SERVES EVERY KIND: they differ in where the files go, never in the files themselves.
 #
 # Requires: .NET 10 SDK, and fpm (https://fpm.readthedocs.io) only if you are building .deb files:
 #     sudo apt-get install ruby-dev build-essential && sudo gem install fpm
 # fpm, not dotnet-deb: that tool targets .NET 9 and does not work with .NET 10.
+# The AppImage needs curl or wget once, to fetch the tools packaging/linux/appimage.env pins, and no
+# FUSE: the packing tool runs with APPIMAGE_EXTRACT_AND_RUN=1, so a container or a CI runner can pack.
 # Cross-building is fine - an arm64 package can be produced on an x64 machine.
 
 ARCH_ARG="${1:-both}"
@@ -59,19 +68,81 @@ case "$ARCH_ARG" in
     both|all) ARCHES="x64 arm64" ;;
     x64)      ARCHES="x64"       ;;
     arm64)    ARCHES="arm64"     ;;
-    *) echo "Usage: $0 [x64|arm64|both] [deb|tarball|both]"; exit 1 ;;
+    *) echo "Usage: $0 [x64|arm64|both] [deb|tarball|appimage|all]"; exit 1 ;;
 esac
 
 case "$KIND_ARG" in
-    both|all) KINDS="deb tarball" ;;
-    deb)      KINDS="deb"         ;;
-    tarball)  KINDS="tarball"     ;;
-    *) echo "Usage: $0 [x64|arm64|both] [deb|tarball|both]"; exit 1 ;;
+    both|all) KINDS="deb tarball appimage" ;;
+    deb)      KINDS="deb"                  ;;
+    tarball)  KINDS="tarball"              ;;
+    appimage) KINDS="appimage"             ;;
+    *) echo "Usage: $0 [x64|arm64|both] [deb|tarball|appimage|all]"; exit 1 ;;
 esac
 
 # Only a .deb needs fpm, so a tarball-only run works on a machine that has never seen ruby.
 case " $KINDS " in
     *" deb "*) command -v fpm >/dev/null || { echo "fpm not found - see the header of this script."; exit 1; } ;;
+esac
+
+case "$(uname -m)" in
+    x86_64)        HOST_ARCH=x64   ;;
+    aarch64|arm64) HOST_ARCH=arm64 ;;
+    *)             HOST_ARCH="$(uname -m)" ;;
+esac
+
+# -- The AppImage tools (brief APPIMG R-appimg-2) -----------------------------
+#
+# appimagetool for THIS machine and the type-2 static runtime for each TARGET architecture, every one
+# pinned in packaging/linux/appimage.env by a fixed release's URL and its SHA-256. Cached per user
+# beside the kernel caches; the hash is re-checked on every use and a mismatch is a refusal. Fetched
+# here, before anything is published, so a missing tool costs seconds rather than a publish.
+APPIMAGE_ENV="${HERE}/appimage.env"
+APPIMAGE_CACHE="${CRF_APPIMAGE_CACHE:-$HOME/.circuitRF-build/appimage}"
+appimage_val() { sed -n "s/^$1=//p" "$APPIMAGE_ENV"; }
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+    else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
+# Prints the cached path of <KEY>_URL after checking it against <KEY>_SHA256; fails otherwise.
+appimage_pinned() {
+    local key="$1" url sha file got
+    url="$(appimage_val "${key}_URL")"
+    sha="$(appimage_val "${key}_SHA256")"
+    if [ -z "$url" ] || [ -z "$sha" ]; then
+        echo "ERROR: ${APPIMAGE_ENV} has no ${key}_URL or no ${key}_SHA256." >&2; return 1
+    fi
+    file="${APPIMAGE_CACHE}/${sha}/$(basename "$url")"
+    if [ ! -f "$file" ]; then
+        mkdir -p "$(dirname "$file")"
+        echo "Fetching ${url} ..." >&2
+        if command -v curl >/dev/null 2>&1; then curl -fL --retry 3 -o "${file}.part" "$url" >&2 || return 1
+        else wget -O "${file}.part" "$url" >&2 || return 1; fi
+        mv "${file}.part" "$file"
+    fi
+    got="$(sha256_of "$file")"
+    if [ "$got" != "$sha" ]; then
+        echo "ERROR: ${file} has SHA-256 ${got}, and ${APPIMAGE_ENV} pins ${sha} for ${key}." >&2
+        echo "       Refusing to pack with it. Delete the file to fetch it again, or correct the pin." >&2
+        return 1
+    fi
+    echo "$file"
+}
+
+case " $KINDS " in
+    *" appimage "*)
+        [ "$(uname -s)" = Linux ] || { echo "The AppImage is packed on Linux (appimagetool is a Linux program)."; exit 1; }
+        case "$HOST_ARCH" in
+            x64|arm64) ;;
+            *) echo "No appimagetool is pinned for a ${HOST_ARCH} build machine."; exit 1 ;;
+        esac
+        HOST_KEY="$(echo "$HOST_ARCH" | tr '[:lower:]' '[:upper:]')"
+        APPIMAGETOOL="$(appimage_pinned "APPIMAGETOOL_${HOST_KEY}")" || exit 1
+        chmod +x "$APPIMAGETOOL"
+        for ARCH in $ARCHES; do
+            appimage_pinned "RUNTIME_$(echo "$ARCH" | tr '[:lower:]' '[:upper:]')" >/dev/null || exit 1
+        done
+        APPIMAGE_COMPRESSION="$(appimage_val APPIMAGE_COMPRESSION)"
+        ;;
 esac
 
 DIST="${ROOT}/dist"
@@ -120,12 +191,6 @@ GDSTK_RECIPE="${ROOT}/tools/gdstk-worker/recipe.env"
 GDSTK_VERSION=$(sed -n 's/^GDSTK_VERSION=//p' "$GDSTK_RECIPE")
 GDSTK_RIDS=$(sed -n 's/^KERNEL_RIDS=//p' "$GDSTK_RECIPE")
 NO_GDSTK=""
-
-case "$(uname -m)" in
-    x86_64)        HOST_ARCH=x64   ;;
-    aarch64|arm64) HOST_ARCH=arm64 ;;
-    *)             HOST_ARCH="$(uname -m)" ;;
-esac
 
 # -- The kernel's toolchain, checked once, and offered for install -------------
 #
@@ -393,7 +458,10 @@ for ARCH in $ARCHES; do
         arm64) QEMU_BINFMT=/proc/sys/fs/binfmt_misc/qemu-aarch64 ;;
     esac
 
-    if [ "$ARCH" = "$HOST_ARCH" ] || [ -e "$QEMU_BINFMT" ]; then
+    CAN_SMOKE=0
+    if [ "$ARCH" = "$HOST_ARCH" ] || [ -e "$QEMU_BINFMT" ]; then CAN_SMOKE=1; fi
+
+    if [ "$CAN_SMOKE" = 1 ]; then
         echo "Smoke-testing the command line in ${PUBLISH} ..."
         dotnet "$SMOKE_DLL" "${PUBLISH}/circuitRF" "$CRF_VERSION" "${KERNEL_SMOKE[@]}" "${GDSTK_SMOKE[@]}" || {
             echo "ERROR: the command line in ${PUBLISH} does not answer (see above)."
@@ -497,6 +565,79 @@ for ARCH in $ARCHES; do
             echo "    This archive is ALSO the update payload; its name is parsed by UpdateAssetNames.cs."
             BUILT+=("$OUT")
             ;;
+
+        appimage)
+            # -- The AppDir (brief APPIMG R-appimg-1) -------------------------
+            #
+            # The publish tree goes under usr/lib/circuitrf/ unchanged, so the AppImage carries exactly
+            # the files the tarball does. AppRun hands EVERY argument through: the executable is the
+            # CLI as well as the GUI (AUT-13), so `./circuitRF-<ver>-linux-x64.AppImage sparam pad.cnl`
+            # works as it does from the tarball.
+            case "$ARCH" in
+                x64)   IMG_ARCH=x86_64  ;;
+                arm64) IMG_ARCH=aarch64 ;;
+            esac
+            RUNTIME="$(appimage_pinned "RUNTIME_$(echo "$ARCH" | tr '[:lower:]' '[:upper:]')")" || exit 1
+
+            IMG="${TMPROOT}/${ARCH}-AppDir"
+            rm -rf "$IMG"
+            LIB="${IMG}/usr/lib/circuitrf"
+            mkdir -p "$LIB" "${IMG}/usr/share/mime/packages" "${IMG}/usr/share/icons/hicolor/512x512/apps"
+            cp -a "${PUBLISH}/." "$LIB/"
+            chmod +x "${LIB}/circuitRF" 2>/dev/null || true
+            [ -f "${LIB}/senior_worker" ] && chmod +x "${LIB}/senior_worker"
+            [ -f "${LIB}/osdi-worker" ]   && chmod +x "${LIB}/osdi-worker"
+            [ -f "${LIB}/geometry-kernel/geometry-worker" ] && chmod +x "${LIB}/geometry-kernel/geometry-worker"
+            [ -f "${LIB}/gdstk-kernel/gdstk-worker" ] && chmod +x "${LIB}/gdstk-kernel/gdstk-worker"
+
+            cat > "${IMG}/AppRun" <<'APPRUN'
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/lib/circuitrf/circuitRF" "$@"
+APPRUN
+            chmod +x "${IMG}/AppRun"
+
+            # The desktop entry is DERIVED from the .deb's, with only Exec= rewritten (the image puts
+            # nothing on PATH, so it names the program, which AppRun is). A change to the name, the
+            # categories or the MIME list therefore reaches every kind; menu-integration tools read
+            # this copy out of the image.
+            sed 's|^Exec=.*|Exec=circuitRF %F|' "${HERE}/circuitrf.desktop" > "${IMG}/circuitrf.desktop"
+            cp "${HERE}/icons/circuitrf.png" "${IMG}/circuitrf.png"
+            ln -s circuitrf.png "${IMG}/.DirIcon"
+            cp "${HERE}/circuitrf-mime.xml"  "${IMG}/usr/share/mime/packages/circuitrf.xml"
+            cp "${HERE}/icons/circuitrf.png" "${IMG}/usr/share/icons/hicolor/512x512/apps/circuitrf.png"
+
+            OUT="${DIST}/circuitRF-${CRF_VERSION}-linux-${ARCH}.AppImage"
+            rm -f "$OUT"
+
+            # The HOST's appimagetool with the TARGET's runtime, which is what cross-packs the other
+            # architecture; ARCH tells the tool which one it is packing. Extract-and-run: no FUSE.
+            echo "Packing ${OUT}..."
+            ARCH="$IMG_ARCH" APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL" --no-appstream \
+                --comp "$APPIMAGE_COMPRESSION" --runtime-file "$RUNTIME" "$IMG" "$OUT"
+            rm -rf "$IMG"
+            chmod +x "$OUT"
+
+            # -- The AppImage itself, smoke-tested (R-appimg-3) ---------------
+            #
+            # The same five checks the publish tree passed, run against the FILE: that is what proves
+            # AppRun and the argument pass-through. CliSmoke runs it with APPIMAGE_EXTRACT_AND_RUN=1 and
+            # finds the workers inside the image. An architecture this machine cannot execute was
+            # already counted as NOT SMOKE-TESTED above.
+            if [ "$CAN_SMOKE" = 1 ]; then
+                echo "Smoke-testing ${OUT} ..."
+                APPIMAGE_EXTRACT_AND_RUN=1 dotnet "$SMOKE_DLL" "$OUT" "$CRF_VERSION" "${KERNEL_SMOKE[@]}" "${GDSTK_SMOKE[@]}" || {
+                    echo "ERROR: the command line in ${OUT} does not answer (see above)."
+                    echo "       This image must not be shipped; it has been deleted."
+                    rm -f "$OUT"
+                    exit 1
+                }
+            fi
+
+            echo "OK  ${OUT}"
+            echo "    Run with:  chmod +x $(basename "$OUT") && ./$(basename "$OUT")"
+            BUILT+=("$OUT")
+            ;;
         esac
     done
 done
@@ -507,12 +648,14 @@ echo "=== Done. ${#BUILT[@]} file(s) in ${DIST}"
 # still what macOS ships; the +"..." form is the portable spelling and costs nothing here.
 for f in ${BUILT[@]+"${BUILT[@]}"}; do echo "    $(basename "$f")"; done
 
-# A full run ships four files and a release needs every one of them. Stated here rather than left to
+# A full run ships six files and a release needs every one of them. Stated here rather than left to
 # be noticed, because the failure this guards against is silent: a missing tarball stops Linux
-# updates with no error anywhere.
-if [ "$ARCH_ARG" = "both" ] && [ "$KIND_ARG" = "both" ] && [ "${#BUILT[@]}" -ne 4 ]; then
+# updates with no error anywhere, and a missing AppImage stops its Download line the same way.
+FULL_RUN=0
+case "${ARCH_ARG}:${KIND_ARG}" in both:both|both:all|all:both|all:all) FULL_RUN=1 ;; esac
+if [ "$FULL_RUN" = 1 ] && [ "${#BUILT[@]}" -ne 6 ]; then
     echo ""
-    echo "WARNING: expected 4 files for a full run, got ${#BUILT[@]}."
+    echo "WARNING: expected 6 files for a full run, got ${#BUILT[@]}."
 fi
 
 # Reported after the packages exist, so nothing built is thrown away - but the run still fails.

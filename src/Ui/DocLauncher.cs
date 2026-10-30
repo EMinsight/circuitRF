@@ -183,6 +183,13 @@ public static class DocLauncher
         catch { /* Help must never throw. */ }
     }
 
+    /// <summary>Opens a web page in the system's browser — an update's release page.</summary>
+    public static void OpenLink(string url)
+    {
+        try { OpenUrl(url); }
+        catch { /* a browser that will not start is not worth an exception. */ }
+    }
+
     // ── Cross-platform open (mirrors WorkspaceViewModel.Reveal) ──────────────
     private static void OpenUrl(string url)
     {

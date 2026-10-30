@@ -88,6 +88,14 @@ public sealed class UpdateService
     /// <summary>Marks a check that found the newest version already downloaded. Not an error.</summary>
     public const string AlreadyStagedDetail = "already staged";
 
+    /// <summary>Why an AppImage is notify-only, as the manual check's dialog says it.</summary>
+    public const string AppImageReason =
+        "An AppImage does not update itself; Download on its line in the Messages panel saves the new "
+        + "one beside it.";
+
+    /// <summary>The label on an AppImage's update line.</summary>
+    public const string DownloadLabel = "Download";
+
     private readonly Func<IUpdateFeed> _feedFactory;
     private readonly IFreeSpaceProbe _space;
     private readonly IMessageSink? _messages;
@@ -117,6 +125,22 @@ public sealed class UpdateService
     public int FeedsCreated { get; private set; }
 
     /// <summary>
+    /// The client an AppImage Download fetches with. The shipping value is
+    /// <see cref="UpdateDownloader.CreateDownloadHttpClient"/>; settable only so a test can hand in a
+    /// client whose handler serves canned bytes, since no test may make a network call.
+    /// </summary>
+    internal Func<HttpClient> DownloadClient { get; init; } = UpdateDownloader.CreateDownloadHttpClient;
+
+    /// <summary>Opens a release page in the browser. Settable only so a test can observe it.</summary>
+    internal Action<string> OpenLink { get; init; } = DocLauncher.OpenLink;
+
+    /// <summary>Shows a downloaded file in its folder. Settable only so a test can observe it.</summary>
+    internal Action<string> RevealFile { get; init; } = path => FileReveal.Reveal(path);
+
+    /// <summary>1 while an AppImage Download is running, so a second click does not start a second one.</summary>
+    private int _appImageBusy;
+
+    /// <summary>
     /// One complete check.
     ///
     /// <para><paramref name="manual"/> is Help ▸ Check for Updates…: it ignores the 24-hour throttle
@@ -142,7 +166,14 @@ public sealed class UpdateService
         // second review, 2026-08-25). The half that must not happen is the WRITING; the check is
         // the point of the mode.
         string? notifyOnlyReason = null;
-        if (!site.CanSelfUpdate)
+        if (site.Shape == InstallShape.AppImage)
+        {
+            // Never updated silently (it runs from a read-only mount), and NOT the read-only sentence
+            // below: an AppImage in ~/Applications is exactly where it should be. Its line offers a
+            // Download instead; see AnnounceAppImage.
+            notifyOnlyReason = AppImageReason;
+        }
+        else if (!site.CanSelfUpdate)
         {
             notifyOnlyReason = $"This {UpdateApp.Name} installation is in a location this account "
                              + "cannot write, so it does not update itself.";
@@ -195,7 +226,7 @@ public sealed class UpdateService
             candidate = await UpdateSelector.SelectAsync(
                 feed, await feed.ListReleasesAsync(ct).ConfigureAwait(false),
                 running, policy.IncludeBetas, UpdateApp.Name, platform.Value,
-                RuntimeInformation.ProcessArchitecture, ct, _trust).ConfigureAwait(false);
+                RuntimeInformation.ProcessArchitecture, ct, _trust, site.Shape).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { return new CheckResult(CheckOutcome.Failed, Detail: "cancelled"); }
         catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException)
@@ -217,6 +248,17 @@ public sealed class UpdateService
         string version = candidate.Release.VersionText;
 
         // ── 2b. notify-only: one line with a link, and not one byte written ─────────────────
+        if (site.Shape == InstallShape.AppImage)
+        {
+            // A version whose AppImage already failed its hash is not offered again: the button would
+            // fetch the same bytes and refuse them the same way.
+            if (state.IsBlacklisted(version))
+                return new CheckResult(CheckOutcome.UpToDate, Detail: "blacklisted");
+
+            AnnounceAppImage(candidate, site, manual);
+            return new CheckResult(CheckOutcome.NotifyOnly, version, Detail: notifyOnlyReason!);
+        }
+
         if (notifyOnlyReason is not null)
         {
             AnnounceNotifyOnly(version, notifyOnlyReason, manual);
@@ -631,7 +673,8 @@ public sealed class UpdateService
     /// <see cref="ReportSpace"/>, for the same reason.</para>
     ///
     /// <para>And no button: the user goes to the releases page in their own browser, in their own
-    /// time (R-AU-48).</para>
+    /// time. That is this line's own choice, not a rule it inherits: R-AU-48 is about a control that
+    /// RELAUNCHES the application, which a link to a web page never was.</para>
     /// </summary>
     private void AnnounceNotifyOnly(string version, string reason, bool manual)
     {
@@ -643,6 +686,170 @@ public sealed class UpdateService
             + $"You can download it from {ReleasesPageUrl}");
 
         UpdateStateIo.Update(st => st.Announced_Add(version));
+    }
+
+    /// <summary>
+    /// An AppImage install's line: <c>circuitRF &lt;ver&gt; is available</c>, with a Download button.
+    ///
+    /// <para><b>R-AU-48 does not apply to this button.</b> R-AU-48 forbids a control that relaunches
+    /// the application, because the application may hold unsaved work. Download closes nothing and
+    /// starts nothing: it saves a new file beside the running one, and the user starts it when they
+    /// choose.</para>
+    ///
+    /// <para>Once per version in the background, through <c>Announced</c>, and every time on a manual
+    /// check — the same asymmetry as <see cref="AnnounceNotifyOnly"/>.</para>
+    ///
+    /// <para><b>A folder this account cannot write</b> (an AppImage run from a read-only share) gets
+    /// the same button, which opens the release page instead; nothing is written, and the line says
+    /// what the browser's download will need before it runs.</para>
+    /// </summary>
+    private void AnnounceAppImage(UpdateCandidate candidate, InstallSite site, bool manual)
+    {
+        string version = candidate.Release.VersionText;
+        UpdateState s = UpdateStateIo.Load();
+        if (!manual && s.Announced is not null && s.Announced.Contains(version)) return;
+
+        if (site.IsWritable)
+        {
+            _messages?.PostAction(MessageLevel.Info, $"{UpdateApp.Name} {version} is available",
+                                  DownloadLabel, () => DownloadAppImageAsync(candidate, site));
+        }
+        else
+        {
+            string page = $"{ReleasesPageUrl}/tag/{Uri.EscapeDataString(candidate.Release.TagName)}";
+            _messages?.PostAction(MessageLevel.Info,
+                $"{UpdateApp.Name} {version} is available. This folder cannot be written, so Download "
+                + "opens its release page; make the downloaded file executable (chmod +x) before running it.",
+                DownloadLabel, () => { OpenLink(page); return Task.CompletedTask; });
+        }
+
+        UpdateStateIo.Update(st => st.Announced_Add(version));
+    }
+
+    /// <summary>
+    /// The Download click: fetch the new AppImage beside the running one, verify it, make it
+    /// executable, and say where it is. Nothing is replaced, deleted or relaunched.
+    ///
+    /// <para><b>Failure is reported, on the row.</b> R-AU-50's background silence is about checks the
+    /// user never asked for; this is a click, and silence after a click is no answer at all — the
+    /// asymmetry R-AU-49 already makes for a manual check.</para>
+    /// </summary>
+    internal async Task DownloadAppImageAsync(UpdateCandidate candidate, InstallSite site)
+    {
+        if (Interlocked.Exchange(ref _appImageBusy, 1) == 1) return;
+        try { await DownloadAppImageCoreAsync(candidate, site).ConfigureAwait(false); }
+        finally { Volatile.Write(ref _appImageBusy, 0); }
+    }
+
+    private async Task DownloadAppImageCoreAsync(UpdateCandidate candidate, InstallSite site)
+    {
+        string version = candidate.Release.VersionText;
+        ReleaseAsset asset = candidate.Asset;
+        string title = $"Downloading {UpdateApp.Name} {version}";
+
+        using var cts = new CancellationTokenSource();
+        IProgressMessage? row = _messages?.BeginProgress(title);
+        row?.BindCancellation(new RunCancellation("the download", cts.Cancel));
+
+        void Fail(string why) => row?.Complete(MessageLevel.Warning, $"{title} - {why}");
+
+        // A keyed build takes its digest from the SIGNED manifest and from nowhere else; without one
+        // the bytes are anchored by nothing but the host that served them.
+        if (_trust.RequireSignedManifest &&
+            (!candidate.ManifestSigned || !UpdateManifest.IsSha256Hex(asset.Sha256)))
+        {
+            Fail("the release's signed manifest names no digest for it, so it was not downloaded.");
+            return;
+        }
+
+        if (!UpdateAssetNames.IsSafeAssetFileName(asset.Name))
+        {
+            Fail("the release names it in a way that cannot be a file name, so it was not downloaded.");
+            return;
+        }
+
+        string final   = Path.Combine(site.Root, asset.Name);
+        string partial = final + UpdatePaths.PartialSuffix;
+
+        void Done() => row?.CompleteWithAction(MessageLevel.Info,
+            $"{UpdateApp.Name} {version} downloaded to {final}", "Open Folder",
+            () => { RevealFile(final); return Task.CompletedTask; });
+
+        // Already here, and the right bytes: nothing to fetch.
+        if (File.Exists(final) && UpdateManifest.IsSha256Hex(asset.Sha256) &&
+            (await PayloadVerifier.VerifyHashAsync(final, asset.Sha256, cts.Token).ConfigureAwait(false)).Ok)
+        {
+            Done();
+            return;
+        }
+
+        long required = UpdateSpace.RequiredFreeSpace(asset.Size > 0 ? asset.Size : 0, 0);
+        long available = _space.AvailableFreeSpace(site.Root);
+        if (available < required)
+        {
+            Fail($"it needs about {UpdateSpace.FormatBytes(required)} of free disk space and there is "
+                 + $"{UpdateSpace.FormatBytes(available)} available.");
+            return;
+        }
+
+        void Discard()
+        {
+            try { File.Delete(partial); } catch { /* best effort */ }
+            try { File.Delete(partial + UpdatePaths.PartialSuffix); } catch { /* best effort */ }
+        }
+
+        try
+        {
+            // The downloader lands a transfer in <name>.partial and gives it <name> once the byte count
+            // is right. Handing it "<asset>.partial" as the name makes ITS final name our .partial, so
+            // the real name is given only after the hash and the mode below — nothing unverified ever
+            // sits beside the running AppImage under a name someone would start.
+            using HttpClient http = DownloadClient();
+            var downloader = new UpdateDownloader(http, _space);
+            IProgress<long>? progress = row is null ? null : new DownloadProgressReporter(row, title, asset.Size);
+
+            DownloadResult dl = await downloader
+                .DownloadAsync(asset with { Name = asset.Name + UpdatePaths.PartialSuffix },
+                               site.Root, required, progress, cts.Token)
+                .ConfigureAwait(false);
+
+            switch (dl.Outcome)
+            {
+                case DownloadOutcome.Completed when dl.Path is not null: break;
+                case DownloadOutcome.Cancelled:  Discard(); row?.Complete(MessageLevel.Info, $"{title} - stopped."); return;
+                case DownloadOutcome.OutOfSpace: Discard(); Fail("the disk filled during the download."); return;
+                default:                         Discard(); Fail("the download did not complete."); return;
+            }
+
+            row?.Update(title, "verifying", indeterminate: true);
+            VerifyResult hash = await PayloadVerifier.VerifyHashAsync(partial, asset.Sha256, cts.Token).ConfigureAwait(false);
+            if (!hash.Ok)
+            {
+                Discard();
+                UpdateStateIo.Update(st => st.Blacklist_Add(version));
+                Fail("it does not match the digest the release published, so it was deleted.");
+                return;
+            }
+
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(partial,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+
+            AtomicFile.ReplaceOrMove(partial, final);
+            Done();
+        }
+        catch (OperationCanceledException)
+        {
+            Discard();
+            row?.Complete(MessageLevel.Info, $"{title} - stopped.");
+        }
+        catch (Exception e) when (e is HttpRequestException or IOException or UnauthorizedAccessException)
+        {
+            Discard();
+            Fail(e.Message);
+        }
     }
 
     /// <summary>

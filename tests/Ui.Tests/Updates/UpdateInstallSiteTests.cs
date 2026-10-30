@@ -68,6 +68,43 @@ public class UpdateInstallSiteTests : IDisposable
         Assert.True(s.CanSelfUpdate);
     }
 
+    /// <summary>
+    /// An AppImage: the process runs from inside the mount (<c>APPDIR</c>) and <c>APPIMAGE</c> names
+    /// the file, so the site is the file's directory, and it never updates itself.
+    /// </summary>
+    [Fact]
+    public void AppImage_IsDetectedFromInsideItsMount_AndItsRootIsTheFilesDirectory()
+    {
+        string mount   = Make("mnt", ".mount_circuiAbc123");
+        string baseDir = Make("mnt", ".mount_circuiAbc123", "usr", "lib", "circuitrf");
+        string apps    = Make("Applications");
+        string file    = Path.Combine(apps, "circuitRF-1.0.0-linux-x64.AppImage");
+        File.WriteAllText(file, "an image");
+
+        InstallSite s = UpdateInstallSite.DetectFrom(baseDir, mount, file);
+
+        Assert.Equal(InstallShape.AppImage, s.Shape);
+        Assert.Equal(apps, s.Root);
+        Assert.True(s.IsWritable);
+        Assert.False(s.CanSelfUpdate);
+    }
+
+    /// <summary>
+    /// The same two variables, inherited by a tarball install started from a terminal an AppImage
+    /// opened: this process does not run from the mount, so the directory's own shape answers.
+    /// </summary>
+    [Fact]
+    public void AppImageVariables_InheritedByAProcessOutsideTheMount_DoNotMakeItAnAppImage()
+    {
+        string mount = Make("mnt", ".mount_circuiAbc123");
+        string file  = Path.Combine(Make("Applications"), "circuitRF-1.0.0-linux-x64.AppImage");
+        File.WriteAllText(file, "an image");
+
+        InstallSite s = UpdateInstallSite.DetectFrom(VersionedBaseDir(), mount, file);
+
+        Assert.Equal(InstallShape.VersionedPointer, s.Shape);
+    }
+
     [Fact]
     public void VersionedPointer_IsDetected_AndItsRootIsThePointersDirectory()
     {

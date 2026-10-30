@@ -865,6 +865,70 @@ public class PackagingScriptTests
             + "without it stops Linux updates with no error anywhere.");
     }
 
+    // -- the AppImage (brief APPIMG) ---------------------------------------------------------------
+
+    /// <summary>
+    /// <b>The AppImage's name is the one the updater asks for.</b> Built through <c>CRF_VERSION</c>
+    /// exactly as the tarball is; a rename stops the Download line with no error anywhere.
+    /// </summary>
+    [Theory]
+    [InlineData("x64")]
+    [InlineData("arm64")]
+    public void TheAppImageNameTheLinuxScriptBuilds_IsWhatTheUpdaterMatches(string arch)
+    {
+        string script = File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh"));
+        System.Text.RegularExpressions.Match m = Regex.Match(script, @"circuitRF-\$\{CRF_VERSION\}-linux-\$\{ARCH\}\.AppImage");
+        Assert.True(m.Success, "build-linux.sh no longer constructs the documented AppImage name.");
+
+        Assert.Equal(UpdateAssetNames.ExpectedAppImage("circuitRF", "1.0.0-beta.1", arch),
+                     m.Value.Replace("${CRF_VERSION}", "1.0.0-beta.1").Replace("${ARCH}", arch));
+    }
+
+    /// <summary><b>The no-argument run builds the AppImage, and expects six files.</b></summary>
+    [Fact]
+    public void TheLinuxScriptsDefaultKinds_IncludeTheAppImage_AndAFullRunIsSix()
+    {
+        string script = File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh"));
+        Assert.Matches(@"both\|all\)\s+KINDS=""[^""]*\bappimage\b", script);
+        Assert.Contains("\"${#BUILT[@]}\" -ne 6", script, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>Every AppImage tool is pinned by a fixed release and a SHA-256.</b> A moving build behind a
+    /// pinned hash fails the day it moves; a moving build with no hash ships whatever it became.
+    /// </summary>
+    [Fact]
+    public void AppImageTools_ArePinnedByHash_AndNoMovingBuildIsNamed()
+    {
+        string[] env = File.ReadAllLines(RepoFile("packaging", "linux", "appimage.env"));
+        var values = env.Where(l => !l.StartsWith('#') && l.Contains('='))
+                        .ToDictionary(l => l[..l.IndexOf('=')], l => l[(l.IndexOf('=') + 1)..]);
+
+        string[] urls = [.. values.Keys.Where(k => k.EndsWith("_URL", StringComparison.Ordinal))];
+        Assert.Equal(4, urls.Length);   // appimagetool and the runtime, for each architecture
+        foreach (string key in urls)
+        {
+            Assert.Contains("/releases/download/", values[key], StringComparison.Ordinal);
+            Assert.Matches("^[0-9a-f]{64}$", values[key[..^"_URL".Length] + "_SHA256"]);
+        }
+
+        string script = File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh"));
+        foreach (string text in new[] { script, string.Join('\n', values.Values) })
+            Assert.DoesNotContain("continuous", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// <b>The AppImage's desktop entry is the .deb's, with only Exec= rewritten</b> — not a second
+    /// hand-written one, which would drift from the MIME list and the categories.
+    /// </summary>
+    [Fact]
+    public void TheAppImageDesktopEntry_IsDerivedFromTheDebs()
+    {
+        string script = File.ReadAllText(RepoFile("packaging", "linux", "build-linux.sh"));
+        Assert.Contains("sed 's|^Exec=.*|Exec=circuitRF %F|' \"${HERE}/circuitrf.desktop\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("[Desktop Entry]", script, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// <b>Exactly three build scripts, one per platform.</b> The count is the point: a fourth is a
     /// second thing to remember to run, which is precisely how 1.0.0-beta.2 shipped incomplete.

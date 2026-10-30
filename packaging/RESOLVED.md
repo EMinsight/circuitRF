@@ -1534,3 +1534,70 @@ the publish tree, the script refuses at the new check with exit 1 and never reac
 Held by `PackagingScriptTests.MacBundleScripts_RefuseADottedDirectoryUnderContentsMacOS` (all three
 scripts: the scan exists, it exits non-zero, and it runs before `codesign`) and
 `ExampleWorkspacesTests.TheItemGroupDoesNotShipMachineLocalState`.
+
+## The Linux AppImage: a third kind in build-linux.sh (brief APPIMG, 2026-10-30)
+
+GitHub issue #29 asked for an AppImage and supplied a working proof-of-concept script; the idea is
+that script's. What ships is a third kind in `build-linux.sh` rather than a second script, so the
+no-argument form builds all six Linux files (`.deb`, `.tar.gz`, `.AppImage`, each for x64 and arm64)
+and the end-of-run count says 6. It adds a kind and replaces nothing: the tarball stays the self-updating
+install and the update payload, the `.deb` stays notify-only.
+
+**1. One publish, three layouts.** The AppImage is the same `${PUBLISH}` tree under
+`usr/lib/circuitrf/`, chmodded exactly as the tarball is, so nothing is published or built twice and
+the tree has already passed CliSmoke. `AppRun` is three lines and `exec`s the program with `"$@"`:
+the installed executable is the CLI (AUT-13). The desktop entry is `circuitrf.desktop` with only
+`Exec=` rewritten (`Exec=circuitRF %F`, because the image puts nothing on PATH), so the MIME list
+and categories cannot drift between kinds; the MIME XML and the 512 px icon go where the `.deb`
+puts them, plus the root `circuitrf.png` and `.DirIcon` the format requires.
+
+**2. Pinned tools, both architectures.** `packaging/linux/appimage.env` pins `appimagetool` 1.9.1
+(one per BUILD-machine architecture) and the type-2 static runtime 20251108 (one per TARGET), by
+release URL and SHA-256. Both projects publish fixed releases beside their moving `continuous`
+one, so there was nothing to ask about. The four hashes were read from the GitHub release API and
+confirmed by downloading each file and hashing it; both runtimes are `static-pie` ELFs, which is
+what makes the image run with no `libfuse2`. The downloads are cached under
+`~/.circuitRF-build/appimage/<sha256>/` (`CRF_APPIMAGE_CACHE` overrides), and the hash is checked
+on every use, not only after a download; a mismatch is a refusal, never a quiet re-fetch. The host's
+tool is run with `--runtime-file` set to the target's runtime and `ARCH` set to the target, which
+is what cross-packs one architecture on the other. `APPIMAGE_EXTRACT_AND_RUN=1` means packing needs
+no FUSE. The tools are fetched before the first publish, so a missing download costs seconds.
+The issue's `-Xbcj x86` filter does not appear: zstd has no BCJ filter, so one setting serves both
+architectures.
+
+**AppImage compression: zstd.** Measured once, on a linux-x64 publish tree (290 MB unpacked,
+without the geometry kernel or the gdstk worker, which this Mac could not build), with
+`mksquashfs -root-owned -noappend`:
+
+| `-comp` | image | pack | full unpack |
+|---|---|---|---|
+| zstd (default level) | 111.0 MB | 2.4 s | 0.24 s |
+| zstd, level 19 | 109.8 MB | 6.4 s | 0.17 s |
+| xz | 102.9 MB | 4.2 s | 0.43 s |
+| xz, `-Xbcj x86` | 102.4 MB | 8.0 s | 0.43 s |
+
+xz is 7% smaller and takes about 1.8 times as long to decompress. A launch reads the assemblies it
+loads through the runtime's on-demand decompression, so that ratio is a start-up cost on every
+launch, while the 8 MB is paid once per download. 7% is not "clearly smaller", so the setting is
+zstd (`APPIMAGE_COMPRESSION` in `appimage.env`). **Launch time was not measured.** It needs a
+Linux machine to run the image, and this shell has none, so it stays an owner check (`--version`,
+cold and warm, for both images).
+
+**3. The AppImage file itself is smoke-tested.** After packing, CliSmoke runs against the
+`.AppImage` with the same arguments the publish tree got. Checks 1-3 run the image through
+`AppRun` with `APPIMAGE_EXTRACT_AND_RUN=1`, which is what proves the argument pass-through. Checks 4
+and 5 find the workers relative to the executable and cannot see inside a packed image, so for an
+`.AppImage` CliSmoke unpacks it with the runtime's own `--appimage-extract` (again no FUSE) and
+looks in `squashfs-root/usr/lib/circuitrf/`. A failing image is deleted and the run exits 1. The
+other architecture is smoke-tested only through qemu binfmt; one this machine cannot execute is
+already counted as NOT SMOKE-TESTED by the publish-tree check, and that still fails the run unless
+`CRF_ALLOW_UNSMOKED=1`.
+
+**The signed manifest covers it with no change.** `tools/ReleaseSigner manifest` writes a
+`{name, url, size, sha256}` entry for every file in `dist/` except the manifest and signature
+themselves (`Directory.GetFiles(dir)`, no extension filter), so each AppImage gets a SHA-256 under
+the release key once `sign-release.sh` runs. Checked in the source; it was not assumed.
+
+Held by `PackagingScriptTests`: `TheAppImageNameTheLinuxScriptBuilds_IsWhatTheUpdaterMatches`,
+`TheLinuxScriptsDefaultKinds_IncludeTheAppImage_AndAFullRunIsSix`,
+`AppImageTools_ArePinnedByHash_AndNoMovingBuildIsNamed`, `TheAppImageDesktopEntry_IsDerivedFromTheDebs`.

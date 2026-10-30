@@ -41432,3 +41432,58 @@ writer writes through one.
 bytes to a capture; ENV-MEAS-1…3 added `Pprobe_W`, `Pprobe_fund_W` and `__ProbeBranches` to an HB run, so
 PowerAmplifier was recaptured. The assertion now prints the full replacement line, since xunit truncates both values
 of a string comparison.
+
+## An AppImage install: detected by where it runs, offered by a Download button (brief APPIMG, 2026-10-30)
+
+**4. Detection rests on the process, not the variables.** The AppImage runtime sets `APPDIR` (the
+mount) and `APPIMAGE` (the file), and every child process inherits both, so a tarball install
+started from a terminal an AppImage opened sees them too. `UpdateInstallSite.DetectFrom(baseDir,
+appDir, appImage)` answers `InstallShape.AppImage` only when the base directory lies inside `APPDIR`
+AND `APPIMAGE` is an absolute path to an existing regular file. `Root` is then the file's directory,
+probed for writability like every other shape, and `CanSelfUpdate` stays false. Anything else falls
+through to the one-argument form. The environment is read only inside `Detect()`. The selector takes
+the site's shape: an AppImage site asks for `UpdateAssetNames.ExpectedAppImage`
+(`{app}-{version}-linux-{arch}.AppImage`) and never for the tarball beside it, which is a different
+install. That name is platform-independent by construction, which is also what lets the service
+tests run on any host.
+
+**5. The update line.** An AppImage takes the notify-only path, so it checks and writes nothing in
+the background. Its line is `circuitRF <ver> is available` with a `Download` button
+(`IMessageSink.PostAction`), once per version in the background and again on every manual check.
+The read-only sentence is deliberately not used, because it would tell a user whose AppImage is in
+`~/Applications` that it is in the wrong place. R-AU-48 forbids a relaunch control, and this button
+closes and starts nothing. `AnnounceNotifyOnly`'s comment used to cite R-AU-48 for its own lack of a
+button, a rule R-AU-48 does not state, and it now gives its own reason. A blacklisted version gets no
+line, because the button would fetch the same bytes and refuse them again.
+
+The click: free space against `size + 1 GB reserve` in `Root`, then `UpdateDownloader` under its
+usual allow-list, size cap and stall timeout. **The downloader is handed `<asset>.partial` as the
+asset name**, because it renames its own `.partial` to the real name as soon as the byte count is
+right. Without that, an unverified file would hold the final name beside the running AppImage.
+Then comes the SHA-256 against the manifest's digest. A keyed build refuses before any transfer
+unless the manifest was signed and names a digest. Then `chmod 0755`, then the rename. A final file
+already present with the right hash is reported as done with no transfer. The row settles to
+`circuitRF <ver> downloaded to <path>` with Open Folder (`FileReveal.Reveal`). A failure is one
+sentence on the row and the partial is deleted. A hash failure is also blacklisted. **The progress
+is on a row of its own**, the background download's `BeginProgress` row, not on the line that
+carries the button: a row settled with `CompleteWithAction` keeps its button through later
+`Update`s, so reusing it would have shown a live Download button above its own progress bar. A
+second click while one runs does nothing. If `Root` cannot be written, the button opens the
+release's tag page through the new `DocLauncher.OpenLink` and the line says the file must be
+made executable; nothing is written.
+
+The service's `DownloadClient`, `OpenLink` and `RevealFile` are init-only seams, so the click is
+tested end to end with a canned-bytes `HttpMessageHandler` and no network.
+`UpdateServiceBehaviourTests`' four AppImage tests and the `RecordingSink`, which now records
+`PostAction` (still into `Posted` too, so no existing assertion changed), cover it.
+
+**6. Audit: a read-only install tree.** Everything under `usr/lib/circuitrf/` is read-only at run
+time. Every `AppContext.BaseDirectory` / `Environment.ProcessPath` use in `src` was read. They
+locate files (docs, examples, workers, the PCell Python package, the alias map, the notices,
+the crash report's own-directory test), stat the executable (`InstallationGuard`), or relaunch it.
+None writes there. The two candidates the brief named were already handled. Python bytecode for
+`pcell-python` goes to `UserStateDirectory/pcell-cache` through `PYTHONPYCACHEPREFIX`
+(`PCellWorkerTransport`). Examples are copied out by `WorkspaceCopy` before they are opened. There
+is no first-run extraction (the publish is not single-file). The one writer is the developer flag
+`--generate-symbols` with no output directory, which defaults to `<BaseDirectory>/symbols-out` and
+would fail with an exception. It is not a user path and was left alone.

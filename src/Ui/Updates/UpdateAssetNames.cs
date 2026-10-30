@@ -15,6 +15,7 @@ public enum UpdatePlatform { MacOS, Windows, Linux }
 ///   circuitRF-&lt;version&gt;-&lt;arch&gt;.dmg            arch in { arm64, x64 }
 ///   circuitRF-&lt;version&gt;-win-&lt;arch&gt;.zip        arch in { x64, arm64, x86 }
 ///   circuitRF-&lt;version&gt;-linux-&lt;arch&gt;.tar.gz   arch in { x64, arm64 }
+///   circuitRF-&lt;version&gt;-linux-&lt;arch&gt;.AppImage  arch in { x64, arm64 }   (an AppImage install only)
 /// </code>
 ///
 /// <para>and the same with <c>harmonicaRF-</c> and <c>wBond-</c>.</para>
@@ -43,6 +44,24 @@ public static class UpdateAssetNames
         UpdatePlatform.Linux   => $"{app}-{version}-linux-{archToken}.tar.gz",
         _ => throw new ArgumentOutOfRangeException(nameof(platform)),
     };
+
+    /// <summary>
+    /// The AppImage a Linux AppImage install is offered: <c>{app}-{version}-linux-{arch}.AppImage</c>,
+    /// built by <c>build-linux.sh</c> through the same <c>CRF_VERSION</c> as the tarball. It is a
+    /// separate method rather than a fourth <see cref="UpdatePlatform"/> because the platform is the
+    /// same; what differs is the install, and only an AppImage install ever asks for this name.
+    /// </summary>
+    public static string ExpectedAppImage(string app, string version, string archToken)
+        => $"{app}-{version}-linux-{archToken}.AppImage";
+
+    /// <summary>
+    /// The name a site of <paramref name="shape"/> accepts: the AppImage for an AppImage install, the
+    /// platform's payload for everything else.
+    /// </summary>
+    public static string ExpectedFor(InstallShape shape, string app, string version, UpdatePlatform platform, string archToken)
+        => shape == InstallShape.AppImage
+            ? ExpectedAppImage(app, version, archToken)
+            : Expected(app, version, platform, archToken);
 
     /// <summary>
     /// How <see cref="Architecture"/> is spelled in an artifact name.
@@ -98,7 +117,8 @@ public static class UpdateAssetNames
     /// an error: an arm64 Linux user simply sees nothing in a release that shipped only x64.
     /// </summary>
     public static ReleaseAsset? Select(
-        ReleaseInfo release, string app, UpdatePlatform platform, Architecture arch)
+        ReleaseInfo release, string app, UpdatePlatform platform, Architecture arch,
+        InstallShape shape = InstallShape.Flat)
     {
         string archToken;
         try { archToken = ArchToken(platform, arch); }
@@ -108,8 +128,8 @@ public static class UpdateAssetNames
         // the normalised form second, so a `1.0` tag still finds a `1.0.0`-named artifact. Matching
         // is by EXACT name either way, so at most one asset can answer and the mapping stays
         // one-to-one.
-        string primary  = Expected(app, release.VersionText, platform, archToken);
-        string fallback = Expected(app, release.Version.ToString(), platform, archToken);
+        string primary  = ExpectedFor(shape, app, release.VersionText, platform, archToken);
+        string fallback = ExpectedFor(shape, app, release.Version.ToString(), platform, archToken);
 
         foreach (ReleaseAsset a in release.Assets)
             if (string.Equals(a.Name, primary, StringComparison.Ordinal))

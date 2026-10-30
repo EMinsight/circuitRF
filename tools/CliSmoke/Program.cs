@@ -8,7 +8,10 @@
 //  <executable> is the application as it will be installed: Contents/MacOS/circuitRF inside the
 //  .app, publish/linux-*/circuitRF, or — on Windows — the per-user launcher stub in front of the
 //  publish tree, so the pipe route an MCP client takes is the route that is checked
-//  (brief-automation-13-installed-cli.md R-aut13-2, route 1).
+//  (brief-automation-13-installed-cli.md R-aut13-2, route 1). A Linux .AppImage FILE is checked as
+//  itself (brief APPIMG R-appimg-3): checks 1-3 run the image, through its AppRun, with
+//  APPIMAGE_EXTRACT_AND_RUN=1 so no FUSE is needed; checks 4-5 look for the workers in the image's
+//  own files, unpacked by its runtime's --appimage-extract.
 //
 //  Five checks, all required; exit 0 only when all five pass:
 //    1. `--version` prints exactly <expected-version> (the VERSION file) and exits 0.
@@ -69,6 +72,26 @@ if (!File.Exists(exe))
 
 Console.WriteLine($"Smoke-testing the command line in {exe}");
 
+// An AppImage runs from a FUSE mount, which a container or a CI runner may not have. Extract-and-run
+// is the runtime's own answer, and every process started below inherits it.
+bool isAppImage = exe.EndsWith(".AppImage", StringComparison.Ordinal);
+if (isAppImage) Environment.SetEnvironmentVariable("APPIMAGE_EXTRACT_AND_RUN", "1");
+
+// Where the workers are looked for: beside the executable, or for an AppImage beside the executable
+// INSIDE it - the runtime unpacks the image (no FUSE either), and the tree is usr/lib/circuitrf/.
+string? unpacked = null;
+string workerBase = exe;
+if (isAppImage && (expectedOcct is not null || expectedGdstk is not null))
+{
+    unpacked = Path.Combine(Path.GetTempPath(), "circuitrf-smoke-appimage-" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(unpacked);
+    var psi = Start(exe, ["--appimage-extract"]);
+    psi.WorkingDirectory = unpacked;
+    var x = RunPsiToEnd(psi, timeout);
+    workerBase = Path.Combine(unpacked, "squashfs-root", "usr", "lib", "circuitrf", "circuitRF");
+    if (x.ExitCode != 0) Console.WriteLine($"note  --appimage-extract exited {x.ExitCode}; the worker checks below will say what is missing");
+}
+
 // A binary this machine cannot execute at all (another architecture, no Rosetta, no emulation) is
 // a refusal about the MACHINE, not a verdict about the build. The packaging scripts decide up front
 // which architectures they can run and say loudly which they could not; this is the backstop.
@@ -115,7 +138,7 @@ int failures = 0;
 
 // ── 4. the geometry kernel ───────────────────────────────────────────────────
 if (expectedOcct is not null)
-    failures += Kernel(exe, expectedOcct, timeout);
+    failures += Kernel(workerBase, expectedOcct, timeout);
 else if (noKernelWhy is not null)
     Console.WriteLine($"ok    geometry kernel  -> not shipped here: {noKernelWhy}");
 else
@@ -123,11 +146,13 @@ else
 
 // ── 5. the gdstk worker ──────────────────────────────────────────────────────
 if (expectedGdstk is not null)
-    failures += Gdstk(exe, expectedGdstk, timeout);
+    failures += Gdstk(workerBase, expectedGdstk, timeout);
 else if (noGdstkWhy is not null)
     Console.WriteLine($"ok    gdstk worker  -> not shipped here: {noGdstkWhy}");
 else
     Console.WriteLine("skip  gdstk worker  -> not asked (no --gdstk or --no-gdstk)");
+
+if (unpacked is not null) try { Directory.Delete(unpacked, recursive: true); } catch { /* best effort */ }
 
 Console.WriteLine(failures == 0
     ? "PASS  the command line in this publish tree answers."
@@ -419,9 +444,11 @@ static ProcessStartInfo Start(string exe, string[] argv)
     return psi;
 }
 
-static Result RunToEnd(string exe, string[] argv, TimeSpan timeout)
+static Result RunToEnd(string exe, string[] argv, TimeSpan timeout) => RunPsiToEnd(Start(exe, argv), timeout);
+
+static Result RunPsiToEnd(ProcessStartInfo psi, TimeSpan timeout)
 {
-    using var p = Process.Start(Start(exe, argv))!;
+    using var p = Process.Start(psi)!;
     var stdout = p.StandardOutput.ReadToEndAsync();
     var stderr = p.StandardError.ReadToEndAsync();
     if (!p.WaitForExit((int)timeout.TotalMilliseconds))

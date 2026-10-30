@@ -63,7 +63,8 @@ public static class UpdateSelector
         UpdatePlatform platform,
         Architecture arch,
         CancellationToken ct,
-        ReleaseTrust? trust = null)
+        ReleaseTrust? trust = null,
+        InstallShape shape = InstallShape.Flat)
     {
         trust ??= ReleaseTrust.Compiled;
 
@@ -74,8 +75,9 @@ public static class UpdateSelector
         try { archToken = UpdateAssetNames.ArchToken(platform, arch); }
         catch (PlatformNotSupportedException) { return null; }
 
-        string wantedPrimary  = UpdateAssetNames.Expected(app, release.VersionText, platform, archToken);
-        string wantedFallback = UpdateAssetNames.Expected(app, release.Version.ToString(), platform, archToken);
+        // An AppImage install wants the AppImage, never the tarball: the tarball is a different install.
+        string wantedPrimary  = UpdateAssetNames.ExpectedFor(shape, app, release.VersionText, platform, archToken);
+        string wantedFallback = UpdateAssetNames.ExpectedFor(shape, app, release.Version.ToString(), platform, archToken);
 
         ReleaseAsset? manifestAsset = null;
         string? feedUrl = null;
@@ -117,7 +119,7 @@ public static class UpdateSelector
         // reads the absence of a signature as "nothing to check" has learned nothing from checking.
         if (trust.RequireSignedManifest && (!signed || manifestAsset is null)) return null;
 
-        ReleaseAsset? asset = manifestAsset ?? UpdateAssetNames.Select(release, app, platform, arch);
+        ReleaseAsset? asset = manifestAsset ?? UpdateAssetNames.Select(release, app, platform, arch, shape);
         if (asset is null) return null;
 
         return new UpdateCandidate(release, asset, manifestAsset is not null, feedUrl, signed);

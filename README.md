@@ -93,6 +93,8 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 |  |  |
 | Linux, Intel/AMD | [circuitRF-1.6.1-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-linux-x64.tar.gz) |
 | Linux, ARM | [circuitRF-1.6.1-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-linux-arm64.tar.gz) |
+| Linux, Intel/AMD, AppImage | [circuitRF-1.6.1-linux-x64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-linux-x64.AppImage) |
+| Linux, ARM, AppImage | [circuitRF-1.6.1-linux-arm64.AppImage](https://github.com/potatobeanradio/circuitRF/releases/download/1.6.1/circuitRF-1.6.1-linux-arm64.AppImage) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
@@ -102,6 +104,11 @@ and registers the menu entry and file types; `--uninstall` removes it and leaves
 tar xzf circuitRF-1.6.1-linux-x64.tar.gz
 ./circuitRF-1.6.1/install.sh
 ```
+
+**Linux AppImage**: download it, make it executable (`chmod +x circuitRF-1.6.1-linux-x64.AppImage`)
+and run it. Nothing is installed, so keep it wherever you like. It does not update itself: when a new
+version is out, its line in the Messages panel has a **Download** button that saves the new AppImage
+next to the one you are running. Use the tarball if you want updates installed automatically.
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
 files, are on the [releases page](https://github.com/potatobeanradio/circuitRF/releases). They need

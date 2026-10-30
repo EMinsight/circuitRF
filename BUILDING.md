@@ -532,7 +532,7 @@ cd src/Ui && CRF_RID=osx-x64 ./bundleForMacOS.sh       # → bin/Release/net10.0
 
 ---
 
-## Linux — `.deb` and `.tar.gz` (x64, arm64)
+## Linux — `.deb`, `.tar.gz` and `.AppImage` (x64, arm64)
 
 **One-time setup** — [fpm](https://fpm.readthedocs.io) (the `dotnet-deb` tool targets .NET 9 and
 does not work here):
@@ -545,17 +545,28 @@ sudo gem install fpm
 **Build:**
 
 ```bash
-./packaging/linux/build-linux.sh                # everything Linux ships: 4 files
+./packaging/linux/build-linux.sh                # everything Linux ships: 6 files
 ```
 
-That is both architectures as a `.deb` **and** as a `.tar.gz`. Narrow it only when you mean to —
-`fpm` is needed only for the `.deb`, so a tarball-only run works without it:
+That is both architectures as a `.deb`, a `.tar.gz` **and** an `.AppImage`. Narrow it only when you
+mean to. `fpm` is needed only for the `.deb`, so a run without it works if it builds no `.deb`:
 
 ```bash
-./packaging/linux/build-linux.sh x64            # both kinds, x64 only
-./packaging/linux/build-linux.sh both tarball   # both architectures, no .deb
+./packaging/linux/build-linux.sh x64             # all three kinds, x64 only
+./packaging/linux/build-linux.sh both tarball    # both architectures, tarballs only
+./packaging/linux/build-linux.sh both appimage   # both architectures, AppImages only
 ./packaging/linux/build-linux.sh arm64 deb
 ```
+
+**The AppImage** is the same publish tree packed into one executable file. Its tools are pinned in
+`packaging/linux/appimage.env`: `appimagetool` for the build machine and the type-2 static runtime
+for each target, each by a fixed release URL and its SHA-256. The script downloads them once into
+`~/.circuitRF-build/appimage/` (or `CRF_APPIMAGE_CACHE`), checks the hash every time it uses them,
+and refuses to pack on a mismatch. Adopting newer tools is an edit to that file only. **Building
+needs no FUSE**, because the tool runs with `APPIMAGE_EXTRACT_AND_RUN=1`, so a container or CI
+runner can pack. The image is cross-packed the same way the rest is (the host's tool, the target's
+runtime), and its command line is smoke-tested against the `.AppImage` file itself. It must be packed
+on Linux.
 
 The package installs to `/opt/circuitrf/`, puts `circuitrf` on `PATH`, and registers the icon, the
 application-menu entry and the `.crfw` / `.cws`, `.charm` and `.wBond` file types.
@@ -637,6 +648,7 @@ here.
 | `circuitRF-<ver>-<arch>.dmg` | `build-macos.sh` | `/Applications` | **yes**, for an admin user |
 | `circuitRF-<ver>-<arch>.deb` | `build-linux.sh` | `/opt/circuitrf` | notify only |
 | `circuitRF-<ver>-linux-<arch>.tar.gz` | `build-linux.sh` | `~/.local/share/circuitRF` | **yes** |
+| `circuitRF-<ver>-linux-<arch>.AppImage` | `build-linux.sh` | — (one file, run where it is) | no — offers a **Download** beside it |
 
 **Both Windows installers ask for the folder** on a Destination Folder page, between the licence
 and the feature tree. The defaults are the ones in the table. The chosen folder is written to
