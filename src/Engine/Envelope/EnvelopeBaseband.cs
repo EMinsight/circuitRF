@@ -15,7 +15,9 @@
 //
 //  An element is held only when its own baseband tangent is not exact, so
 //  R/L/C, the sources and a fitted block never are, and a lumped circuit's
-//  run is unchanged bit for bit.  A two-conductor line is never held in an
+//  run is unchanged bit for bit — and only when its DC stamp is closer to
+//  it across the band than the tangent is, so a nearly affine element (a
+//  wBond, whose skin effect bends it slightly) keeps its tangent.  A two-conductor line is never held in an
 //  envelope run either: it is stepped as its delay (EnvelopeLineDelay),
 //  exact across the baseband for a lossless line.  What is still held is
 //  a block whose rational fit was refused, and a coupled line, which is
@@ -146,7 +148,9 @@ public static class EnvelopeBaseband
                 double tangent;
                 try { (tangent, held) = EnvelopeTangentCheck.BasebandErrors(ec, bandRad); }
                 catch (Exception) { continue; }     // an element that cannot be stamped alone is the run's to refuse
-                if (tangent <= ExactBelow) continue;
+                // Held only when the hold is the closer of the two: a wBond's skin effect puts its tangent at 6e-6 to 8e-4,
+                // and its DC stamp (the wires' resistance, their inductance gone) at 0.3 % to 2 % (src/Engine/RESOLVED.md).
+                if (tangent <= ExactBelow || tangent <= held) continue;
             }
             hold.Add(i, ec, model, replacement);
             if (held > EnvelopeTangentCheck.WarnAbove) costly.Add((ec.InstancePath, held));

@@ -1111,7 +1111,8 @@ false, what a new placement writes) between `TempStart` at each array's input pi
 pin. Every DC, harmonic-balance, loadpull and loadpull-pursuit run — and any parametric sweep around one —
 reports **`WireTemp`** (°C, axis `wire array`, labels `<instance path>:<array>`) with **`WireTempState`** beside
 it (0 fixed, 1 solved, 2 no steady state, 3 the circuit did not converge). Both are absent from a run with no
-wBond, so every other DataSet is unchanged. S-parameters report neither.
+wBond, so every other DataSet is unchanged. S-parameters report neither. A circuit envelope run reports both too
+(below).
 
 **The stamp temperature in solved mode is max(`TempStart`, `TempEnd`)**, in every analysis, set on the design
 before the clamp notes so a clamp warning names it. One model per factory call serves every analysis, and one
@@ -1147,6 +1148,19 @@ exact. An idle array's wires still carry their neighbours' circulating current.
 **A sweep carries memory** (`ElaboratedNetlist.WireThermal`, one `WireThermalSession` per sweep, per load point in
 a loadpull): each array's last converged state warm-starts the next point, and a runaway warns once per instance
 and array per run, naming its drive and the last point that converged.
+
+**A circuit envelope run solves the record's mean heat** (`src/Engine/Envelope/EnvelopeWireTemperature.cs`). A wire's
+thermal time constant is milliseconds (~5 ms for 100 mil of gold, ends held) and an envelope moves in microseconds, so
+the steady state of the time-averaged dissipation is the answer, and the one solve above gives it when handed currents
+that heat as the record does on average. Heat is quadratic, so the average is of I², never of I: each array's DC is its
+baseband RMS, signed as its mean (the DC division is linear at a given temperature, so this is exact, and arrays share
+no DC); each product's correlation R_ab = ⟨I_a(t)·I_b(t)*⟩ over the instance's arrays is factored R = L·Lᴴ (pivoted
+Cholesky, stopping at its rank) and each column of L goes in as one phasor set at that product's frequency, so
+Σ_f ½|Σ_a S_ia·I_a|² sums to the time average with every cross-array term. Dropping the cross terms puts two coupled
+arrays in parallel 1.2 K low on a 12.5 K rise. The average runs over the steps the run's other averages use (after the
+cold-start settle), stitched across parallel segments; the two-carrier lattice reads its mixing products the same way.
+A wBond is excluded from the envelope's generic rational fit (its stamp is affine to 1e-7, and its branch rows are what
+is read). Gate: `WBondWireTemperatureTests.Envelope_SolvesTheRecordsMeanHeat_AsHbDoesACwToneOfTheSamePower`.
 
 **`WireTempState` is not `__`-prefixed.** `DataSet.StackSweepAxis` passes a `__` cube through a sweep unstacked —
 point 0's copy for every point — so a metadata spelling would have reported the first point's states beside a

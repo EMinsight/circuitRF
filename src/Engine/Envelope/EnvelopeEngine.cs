@@ -84,6 +84,11 @@ public sealed class EnvelopeRunResult
     public required Complex[][][] IProbeCurrent { get; init; }
     /// <summary>[step][iprobe][harmonic] the voltage at the probe's first node (an IProbe is 0 V, so at both).</summary>
     public required Complex[][][] IProbeVoltage { get; init; }
+    /// <summary>Every wBond that solves its wire temperature, by instance path; empty when none does.</summary>
+    public string[] WBondPaths { get; init; } = [];
+    /// <summary>[step][wBond][product · arrays + array] each array's branch current (A, peak phasors), product 0 real
+    /// (<see cref="EnvelopeWireTemperature"/>).</summary>
+    public Complex[][][] WBondCurrent { get; init; } = [];
     /// <summary>Per MOD source: instantaneous available-drive phasor (V peak) at the fundamental.</summary>
     public required Complex[][] Drive { get; init; }
     public required double[] DriveRe { get; init; }
@@ -314,6 +319,7 @@ public sealed class EnvelopeEngine
         var supplyRows = supplies.Select(c => BranchOf(c.Model)).ToArray();   // AddBranch returns the absolute MNA row
         var supplyV = supplies.Select(c => c.Parameters.TryGetValue("Vdc", out var v) && v.Kind == Core.Expressions.ValueKind.Real ? v.AsReal() : 0.0).ToArray();
         var (iprobes, iprobeRows, iprobeNodes) = IProbesOf(_nl);
+        var (wbonds, wbondRows) = EnvelopeWireTemperature.Rows(_nl);
 
         int total = nWarm + nSteps + 1;
         var tOut = new double[nSteps + 1];
@@ -321,6 +327,7 @@ public sealed class EnvelopeEngine
         var sOut = new double[nSteps + 1][];
         var iOut = new Complex[nSteps + 1][][];
         var ivOut = new Complex[nSteps + 1][][];
+        var wOut = new Complex[wbonds.Length > 0 ? nSteps + 1 : 0][][];
         var dOut = new Complex[sources.Length][];
         for (int s = 0; s < sources.Length; s++) dOut[s] = new Complex[nSteps + 1];
         void Record(int step)
@@ -328,6 +335,7 @@ public sealed class EnvelopeEngine
             int o = step - nWarm;
             if (o < 0) return;
             tOut[o] = o * h;
+            if (wbonds.Length > 0) wOut[o] = EnvelopeWireTemperature.Sample(wbondRows, K + 1, (k, row) => products[k].Xm1[row]);
             var pr = new Complex[probeNodes.Length][];
             for (int pi = 0; pi < probeNodes.Length; pi++)
             {
@@ -529,7 +537,7 @@ public sealed class EnvelopeEngine
         {
             Time = tOut, ProbeNames = probeNodes.Select(x => x.name).ToArray(), Probe = pOut,
             SupplyNames = supplies.Select(c => c.InstancePath).ToArray(), SupplyCurrent = sOut, SupplyVoltage = supplyV,
-            IProbeNames = iprobes, IProbeCurrent = iOut, IProbeVoltage = ivOut,
+            IProbeNames = iprobes, IProbeCurrent = iOut, IProbeVoltage = ivOut, WBondPaths = wbonds, WBondCurrent = wOut,
             Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
             F0Hz = f0, StepS = h, MaxHarm = K, SignalRateHz = rate, Sources = sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newton.Iterations / Math.Max(1, total - 1),

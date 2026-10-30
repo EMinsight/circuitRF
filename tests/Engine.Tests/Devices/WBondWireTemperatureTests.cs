@@ -402,4 +402,51 @@ public sealed class WBondWireTemperatureTests(ITestOutputHelper output) : IDispo
                     Assert.True(double.IsFinite(t[i * arrays + k]) && t[i * arrays + k] > 100, $"point {i}: {t[i * arrays + k]}");
         output.WriteLine($"loadpull WireTemp: {string.Join(", ", t.Select(v => v.ToString("F2", CultureInfo.InvariantCulture)))}");
     }
+
+    // ── envelope: the record's mean heat ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A linear circuit's wires heat as its average power does, so a modulated envelope must solve to the temperature
+    /// harmonic balance gives a CW tone delivering the power the envelope delivered over its record (a 2 µs window of a
+    /// modulated signal is not at its Pavg) — DC through the wires too, and two coupled arrays in parallel, whose currents
+    /// add as phasors in every wire (the cross terms of the record's correlation).</summary>
+    [Fact]
+    public void Envelope_SolvesTheRecordsMeanHeat_AsHbDoesACwToneOfTheSamePower()
+    {
+        string wb = $"wBond:WB1 a b a b 0 File=\"{Design("Gold", arrays: 2, perArray: 2)}\" FixedTemp=false TempStart=85 TempEnd=85 IncludeCapacitance=false";
+        string Circuit(string source, string analysis) => $"""
+            {source}
+            C:Cb  n1 a  C=1 uF
+            {wb}
+            IProbe:IP b o
+            R:RL  o 0  R=50
+            Vdc:VS s 0 Vdc=5
+            L:Lf1 s b  L=1 uH
+            L:Lf2 a r  L=1 uH
+            R:Rdc r 0  R=5
+            {analysis}
+            """;
+        var env = Envelope.EnvelopeLineInSeriesTests.Run(Circuit(
+            "MOD_Source:SRC1 n1 0 Fc=2 GHz Pavg=46 dBm Z=50 Ohm Carrier[1]=\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\" Record=0.0005 Shaping=-80",
+            "analysis ENV1 type=env Stop=2e-6 Accuracy=standard MaxHarm=3 Segments=1"), out _);
+        DataSet Hb(double pavl) => RunHb(Circuit(FormattableString.Invariant($"P1Tone:P1 n1 0 Num=1 Pavl={pavl:R} dBm Z=50 Ohm Freq=2 GHz"),
+                                                 "analysis HB1 type=hb Tone=2e9 MaxHarm=3")).Ds;
+        double Delivered(DataSet ds)
+        {
+            var i = ds["I"];
+            var i1 = i.ComplexValues[Array.IndexOf(i.Axes[0].Labels!, "IP") * 4 + 1];
+            return 10 * Math.Log10(0.5 * 50 * i1.Magnitude * i1.Magnitude * 1e3);
+        }
+        double envDbm = env["Pavg_dBm"].RealValues[0];
+        var hb = Hb(46 + envDbm - Delivered(Hb(46)));
+        double[] te = Wire(env), th = Wire(hb);
+        output.WriteLine($"delivered: envelope {envDbm:F4} dBm, HB {Delivered(hb):F4} dBm; WireTemp: envelope " +
+                         $"{string.Join(", ", te.Select(v => v.ToString("F4", CultureInfo.InvariantCulture)))} °C, HB " +
+                         $"{string.Join(", ", th.Select(v => v.ToString("F4", CultureInfo.InvariantCulture)))} °C");
+        Assert.Equal([1.0, 1.0], env[WireTemperatureCubes.StateCube].RealValues);
+        for (int k = 0; k < 2; k++)
+        {
+            Assert.True(th[k] > 95, $"HB array {k} rose only to {th[k]:F2} °C");
+            Assert.True(Math.Abs(te[k] - th[k]) < 0.01 * (th[k] - 85), $"array {k}: envelope {te[k]:F4} °C, HB {th[k]:F4} °C");
+        }
+    }
 }

@@ -194,7 +194,11 @@ blocks are handled as follows.
   values at DC and at any harmonic outside the file's frequency range. An SnP, Filter or Duplexer
   whose fit misses its error tolerance, or is not passive, warns. Any other part whose fit misses or
   is not passive is not fitted: it is approximated to first order around each harmonic (its value and
-  slope there) and held at its DC value across the baseband envelope, and a warning names it.
+  slope there) and, where its DC value is closer to it than that slope, held at its DC value across the
+  baseband envelope; a warning names it.
+- **Bond wires** ([wBond](wbond.html)) are a resistance and an inductance that change only slowly with
+  frequency (the skin effect), plus fixed capacitances. Their value and slope at each harmonic are within
+  about 10⁻⁷ of their response across the signal band, and within 0.1 % across the baseband envelope.
 - **Coupled lines** (CLIN and the coupled microstrip and broadside pairs) are approximated to first
   order around each harmonic (their value and slope there). In the baseband envelope each strip is
   held at what it is at DC, a short from end to end. A warning names any whose error across the band
@@ -262,6 +266,9 @@ Every IProbe gets every row, so the branch axis is the same at every sweep point
 no RF, such as a supply or bias probe, is blank in the output rows (`Gt_dB`, `DE_pct`, `NMSE_dB`,
 `ACLR`, `PAPR_dB`, `CCDF`, AM-AM and AM-PM): its fundamental-band power is below 10⁻⁶ of the available
 drive. Its `Pprobe_W` still reads its DC power.
+
+A design with a [wBond](wbond.html) also gets `WireTemp` and `WireTempState` (axis `wire array`): each array's
+hottest wire under the record's average heat ([wBond ▸ In a circuit envelope run](wbond.html#wt-envelope)).
 
 A [Parametric Sweep](#parametric-sweep) around an envelope analysis (sweeping the source's `Pavg`, say)
 gives ACPR against output power in one run. A sweep point that fails is NaN and named in the Messages

@@ -223,6 +223,8 @@ public sealed class EnvelopeEngineMt
         var probes = EnvelopeEngine.RecordedNodes(_nl, p.Probes, srcEcs);
         int P = probes.Length;
         var (iprobes, iprobeRows, iprobeNodes) = EnvelopeEngine.IProbesOf(_nl);
+        var (wbonds, wbondRows) = EnvelopeWireTemperature.Rows(_nl);
+        var wOut = new Complex[wbonds.Length > 0 ? nSteps + 1 : 0][][];
         var iOut = new Complex[nSteps + 1][][];
         var ivOut = new Complex[nSteps + 1][][];
         var tOut = new double[nSteps + 1];
@@ -234,6 +236,8 @@ public sealed class EnvelopeEngineMt
             int o = step - nWarm;
             if (o < 0) return;
             tOut[o] = o * h;
+            if (wbonds.Length > 0)
+                wOut[o] = EnvelopeWireTemperature.Sample(wbondRows, M, (m, row) => prods[m].Neg ? Complex.Conjugate(prods[m].Xm1[row]) : prods[m].Xm1[row]);
             var pr = new Complex[P][];
             for (int pi = 0; pi < P; pi++)
             {
@@ -439,6 +443,7 @@ public sealed class EnvelopeEngineMt
             Time = tOut, ProbeNames = probes.Select(x => x.name).ToArray(), Probe = pOut,
             SupplyNames = Array.Empty<string>(), SupplyCurrent = Enumerable.Range(0, nSteps + 1).Select(_ => Array.Empty<double>()).ToArray(),
             SupplyVoltage = Array.Empty<double>(), IProbeNames = iprobes, IProbeCurrent = iOut, IProbeVoltage = ivOut,
+            WBondPaths = wbonds, WBondCurrent = wOut,
             Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
             F0Hz = tones[0], StepS = h, MaxHarm = M - 1, SignalRateHz = rate, Sources = sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newton.Iterations / Math.Max(1, total - 1), JacobianBuilds = newton.JacobianBuilds,

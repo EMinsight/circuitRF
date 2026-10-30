@@ -3877,3 +3877,25 @@ no power was measured. D1-D4 taken as recommended; the cloud cap held (`src/Ui/R
 
 Gates: `EnvelopeProbesRetiredTests` (2-8), `EnvelopeExampleDisplaysTests` (9, in `tests/Ui.Tests`). The envelope tests
 that read the retired cubes place an IProbe in front of their load and read `Pavg_dBm`/`Gt_dB` there.
+
+## Envelope: wBond checked against the line/SnP treatment; baseband hold rule; WireTemp (2026-10-29)
+
+**A wBond needs no fit and no delay.** Its stamp is R(f) + jωL(f) per array plus fixed capacitances, a quasi-static
+lumped model. Measured by the envelope's own per-element measure (k = 1..5 at 2.14 GHz, ±30 MHz): 2.5e-8 to 2.2e-7 for
+1, 4 and 2×20 wires and a 400 mil wire, against a fit tolerance of 1e-3. A PA with the wBond at the drain output or as
+the drain feed's only inductance matched R+L+C at its 2.14 GHz values to ≤ 0.0008 dB Pavg and ≤ 0.002 dB ACPR1, 1 and
+4 segments alike. At DC it is its series resistance (no open-line defect).
+
+**The baseband hold took the worse approximation.** `EnvelopeBaseband` held every element whose baseband tangent error
+exceeded 1e-6 (`ExactBelow`) at its DC stamp, without comparing the two. A wBond's skin effect puts its tangent at
+6e-6 to 8.4e-4 and its DC stamp (inductance gone) at 0.25 % to 2.2 %, so it was held at an error 400× larger. It is now
+held only when the hold is the closer of the two. Lines and coupled lines are unaffected (they take the shorts path);
+an element whose baseband slope blows up, the reason the hold exists, has a tangent error far above its hold. The
+measured effect on the PA was under 0.002 dB either way. Envelope tests 83/83, swept-envelope 2/2.
+
+**WireTemp from an envelope run.** The method is in `docs/design/wbond.md` §5.6. Two things were found building it:
+- **A 2 µs window of a 20 MHz NR carrier delivered 0.21 dB below the source's Pavg** (39.785 vs 39.993 dBm), which put
+  the wire 0.11 K low on a 3 K rise against HB at the same available power. The gate compares against HB driven at the
+  power the envelope delivered; then the two agree to 0.011 K on a 12.5 K rise.
+- **Dropping the cross-array terms** (each array's own ⟨|I|²⟩ only) read 96.28 °C against HB's 97.50 °C for two coupled
+  arrays in parallel, so the gate catches it.

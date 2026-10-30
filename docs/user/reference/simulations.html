@@ -208,7 +208,11 @@ reports each fit's order and error, and, for an SnP, how far the fit is from the
 values at DC and at any harmonic outside the file's frequency range. An SnP, Filter or Duplexer
 whose fit misses its error tolerance, or is not passive, warns. Any other part whose fit misses or
 is not passive is not fitted: it is approximated to first order around each harmonic (its value and
-slope there) and held at its DC value across the baseband envelope, and a warning names it.</li>
+slope there) and, where its DC value is closer to it than that slope, held at its DC value across the
+baseband envelope; a warning names it.</li>
+<li><strong>Bond wires</strong> (<a href="wbond.html">wBond</a>) are a resistance and an inductance that change only slowly with
+frequency (the skin effect), plus fixed capacitances. Their value and slope at each harmonic are within
+about 10⁻⁷ of their response across the signal band, and within 0.1 % across the baseband envelope.</li>
 <li><strong>Coupled lines</strong> (CLIN and the coupled microstrip and broadside pairs) are approximated to first
 order around each harmonic (their value and slope there). In the baseband envelope each strip is
 held at what it is at DC, a short from end to end. A warning names any whose error across the band
@@ -382,6 +386,8 @@ density in dBm/Hz.</p>
 no RF, such as a supply or bias probe, is blank in the output rows (<code>Gt_dB</code>, <code>DE_pct</code>, <code>NMSE_dB</code>,
 <code>ACLR</code>, <code>PAPR_dB</code>, <code>CCDF</code>, AM-AM and AM-PM): its fundamental-band power is below 10⁻⁶ of the available
 drive. Its <code>Pprobe_W</code> still reads its DC power.</p>
+<p>A design with a <a href="wbond.html">wBond</a> also gets <code>WireTemp</code> and <code>WireTempState</code> (axis <code>wire array</code>): each array's
+hottest wire under the record's average heat (<a href="wbond.html#wt-envelope">wBond ▸ In a circuit envelope run</a>).</p>
 <p>A <a href="#parametric-sweep">Parametric Sweep</a> around an envelope analysis (sweeping the source's <code>Pavg</code>, say)
 gives ACPR against output power in one run. A sweep point that fails is NaN and named in the Messages
 pane; the other points are kept. A Data Display trace pins a net or a probe by its name, so it keeps

@@ -387,7 +387,7 @@ public static class EnvelopeRunner
         // stitch, measure the seam on the overlap tails
         h = results[0].StepS;
         var time = new List<double>(); var probe = new List<Complex[][]>(); var sup = new List<double[]>();
-        var ipI = new List<Complex[][]>(); var ipV = new List<Complex[][]>();
+        var ipI = new List<Complex[][]>(); var ipV = new List<Complex[][]>(); var wbI = new List<Complex[][]>();
         var drv = new List<Complex>[results[0].Drive.Length];
         for (int i = 0; i < drv.Length; i++) drv[i] = new List<Complex>();
         double seam = 0, seamExternal = 0;
@@ -407,6 +407,7 @@ public static class EnvelopeRunner
                 time.Add((bound[s] + i) * h);
                 probe.Add(r.Probe[i]); sup.Add(r.SupplyCurrent[i]);
                 ipI.Add(r.IProbeCurrent[i]); ipV.Add(r.IProbeVoltage[i]);
+                if (r.WBondCurrent.Length > 0) wbI.Add(r.WBondCurrent[i]);
                 for (int d = 0; d < drv.Length; d++) drv[d].Add(r.Drive[d][i]);
             }
             if (s > 0)
@@ -425,7 +426,8 @@ public static class EnvelopeRunner
         {
             Time = time.ToArray(), ProbeNames = R.ProbeNames, Probe = probe.ToArray(), SupplyNames = R.SupplyNames,
             SupplyCurrent = sup.ToArray(), SupplyVoltage = R.SupplyVoltage,
-            IProbeNames = R.IProbeNames, IProbeCurrent = ipI.ToArray(), IProbeVoltage = ipV.ToArray(), Drive = drv.Select(d => d.ToArray()).ToArray(),
+            IProbeNames = R.IProbeNames, IProbeCurrent = ipI.ToArray(), IProbeVoltage = ipV.ToArray(),
+            WBondPaths = R.WBondPaths, WBondCurrent = wbI.ToArray(), Drive = drv.Select(d => d.ToArray()).ToArray(),
             DriveRe = R.DriveRe, F0Hz = R.F0Hz, StepS = h, MaxHarm = R.MaxHarm, SignalRateHz = R.SignalRateHz, Sources = R.Sources,
             WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = results.Average(x => x.MeanNewton),
             JacobianBuilds = results.Sum(x => x.JacobianBuilds), WorstTangentError = results.Max(x => x.WorstTangentError),
@@ -444,6 +446,8 @@ public static class EnvelopeRunner
         double skip = firstWarm > 0 || EnvelopePulse.Of(merged) is not null
             ? 0 : Math.Min(5e-6, 0.1 * p.StopS);
         var ds = EnvelopeDataSet.Build(merged, plan, skip, note);
+        double[] productHz = merged.MixFreqHz ?? [.. Enumerable.Range(0, merged.MaxHarm + 1).Select(k => k * merged.F0Hz)];
+        EnvelopeWireTemperature.Add(ds, nets[0], merged, productHz, skip);
         ds.Add("__EnvSegments", DataCube.Scalar(segs));
         ds.Add("__EnvWarmup_s", DataCube.Scalar(warm));
         ds.Add("__EnvSeamError", DataCube.Scalar(seam));

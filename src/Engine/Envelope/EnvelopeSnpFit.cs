@@ -265,12 +265,13 @@ public static class EnvelopeSnpFit
     /// spiral's fit cost 21 s (src/Engine/RESOLVED.md, ENV-FIT). Sources, terminations and inductive branches are not measured (their stamps are
     /// constant or affine by construction, and stamping one alone re-numbers its branch). A coupled line is not fitted
     /// either: it keeps its value and slope at each harmonic, because a long one cannot be fitted and finding that out
-    /// walked every order (132 s for a 300 mm MCLIN, src/Engine/RESOLVED.md, ENV-FIT).
+    /// walked every order (132 s for a 300 mm MCLIN, src/Engine/RESOLVED.md, ENV-FIT). Nor is a wBond: its stamp reads 1e-8 to
+    /// 2e-7, and its own branch currents are what its wire temperature is solved from (EnvelopeWireTemperature).
     /// </summary>
     private static bool NotAffine(ElaboratedComponent ec, double[] ws, double bandHz)
     {
         if (ws.Length == 0 || ec.IsNonlinear || ec.Model is IDcShortedTerminals
-                || ec.Model is ModSourceModel or RationalSnpModel or DelayLineModel or IInductiveBranch
+                || ec.Model is ModSourceModel or RationalSnpModel or DelayLineModel or IInductiveBranch or WBondModel
                 or MutualInductanceModel or PortModel or TermModel or VdcModel or ToneSourceModelBase or TunerModel or P1ToneModel or PnToneModel)
             return false;
         try { return EnvelopeTangentCheck.ElementError(ec, ws, 2 * Math.PI * bandHz) > Tolerance; }

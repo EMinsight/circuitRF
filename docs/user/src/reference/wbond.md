@@ -19,7 +19,7 @@ keywords: bondwire, bond wire, wirebond, wire bond, ribbon, die attach, package,
 <li><a href="#physics">How the inductance is computed</a></li>
 <li><a href="#array-basis">The array-basis reduction, derived</a></li>
 <li><a href="#capacitance">Capacitance, Use Capacitance and ε<sub>r</sub></a></li>
-<li><a href="#wire-temperature">Wire temperature in DC and harmonic-balance runs</a></li>
+<li><a href="#wire-temperature">Wire temperature in DC, harmonic-balance and envelope runs</a></li>
 <li><a href="#limits">What the model does not include</a></li>
 <li><a href="#fidelity">Equations, the MoM kernel, or FEM and FDTD</a></li>
 <li><a href="#kernel">The 3D MoM kernel, and how it solves fast</a></li>
@@ -369,7 +369,7 @@ medium shortens by √ε<sub>r</sub>. At ε<sub>r</sub> = 4 a 1 mm wire is elect
 was in air — expect the lumped and distributed models to part company sooner than they do in air.</p>
 </div>
 
-## Wire temperature in DC and harmonic-balance runs {#wire-temperature}
+## Wire temperature in DC, harmonic-balance and envelope runs {#wire-temperature}
 
 How hot do a power amplifier's output wires get at each drive level? A wBond answers that itself, with no
 mesh and no 3D run, in one of two modes set by the checkbox on its `Temp` row:
@@ -385,8 +385,8 @@ as the independent settings they are.
 
 ### What a run reports {#wt-output}
 
-**Wire temperature is an output of every DC, harmonic-balance, loadpull and loadpull-pursuit run** of a design
-with a wBond — and of any parametric sweep around one. It is the cube **`WireTemp`**, in °C, one trace per array
+**Wire temperature is an output of every DC, harmonic-balance, loadpull, loadpull-pursuit and circuit envelope
+run** of a design with a wBond — and of any parametric sweep around one. It is the cube **`WireTemp`**, in °C, one trace per array
 (`WB1:Out` names instance `WB1`'s array `Out`); plot it against a swept `Pin` in the Data Display, or export it
 with the rest of the run. Only **each array's hottest wire is reported, at its hottest point** along its length —
 so with the ends at different temperatures, a gently heated wire reads its **hotter end** until the heat lifts its
@@ -453,6 +453,33 @@ what makes runaway possible.
 
 Deep in the skin regime R′_ac ∝ 1/√σ rather than 1/σ, so an RF current's heat rises with temperature about half
 as steeply as the same DC current's.
+
+### In a circuit envelope run {#wt-envelope}
+
+A [circuit envelope](simulations.html#envelope) run's currents change from one step to the next, but a wire cannot
+follow them: its thermal time constant is milliseconds (about 5 ms for a 100 mil gold wire), and a modulated
+envelope changes in microseconds. So `WireTemp` is the wire's **steady temperature under the record's average
+heat**, from the same solve as above. The average is taken of the **heat**, never of the current — a current that
+swings between 0 and 2 A averages 1 A but heats like more than 1 A:
+
+```
+  baseband      I_dc² is replaced by its record mean  ⟨i_bb(t)²⟩       (the RMS of the bias current)
+  each band f   ½|Î(f)|² is replaced by its record mean  ½⟨|Î(f, t)|²⟩
+```
+
+where Î(f, t) is the envelope of the current in the band at f — each harmonic, or each product of a two-carrier
+run. The arrays of one wBond carry their currents into each other's wires, and those currents add as phasors, so
+the mean is of the **phasor sum** in each wire, not of each array's current on its own. The average runs over the
+same steps as `Pavg_dBm` and the other averages of the run.
+
+Two things follow:
+
+- **The temperature follows the power the run delivered.** A short `Stop` sees only part of a modulated signal,
+  whose power over that stretch is not exactly the source's `Pavg`: 2 µs of a 20 MHz NR carrier can be a few
+  tenths of a dB off it. Read `Pavg_dBm` beside `WireTemp`, or lengthen `Stop`.
+- **A pulse train reads its average, not its peak.** A pulse much shorter than a few milliseconds heats the wire
+  by its average power, which is what `WireTemp` reports. A pulse that lasts milliseconds or longer lets the wire
+  heat up during each pulse. For that peak, run a harmonic-balance analysis at the pulse-top drive.
 
 ### How an array's current divides among its wires {#wt-sharing}
 
