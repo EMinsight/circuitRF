@@ -24639,3 +24639,47 @@ The fix: the region rebuilds the outline exactly as the crop does (`RebuildOutli
 the region is the board ∩ the region, drawn the way it was. A via outside the region stays where it always was, in the
 solve-region line's count; the off-board list names only metal that is really off the board. Gate:
 `ViaOnTheBoardEdgeTests.ASolveRegionReachingACroppedEdge_KeepsTheBoard_AndEveryViaInsideIt`.
+
+## Robust meshing pulled a plane off the board edge: Gmsh "overlapping facets" (brief-dfr31-6, 2026-10-29)
+
+**R-dfr31-6-1 — what the two surfaces were.** The run directory that came with the report was not the failing run. Its
+`model.geo` had six ports and meshed, and its own log ends in "Writing model.msh". The failing run's notes (four ports,
+36 of 4,172 points removed, 0.435725 µm, four edge-cut vias from `via/3`) are exactly what today's generator writes for
+the `.clay` and `.cem` that came with it. That regenerated script fails in local Gmsh 4.15.2 in 13 s with the same
+message and the SAME surface tags, 22561 and 22184. 22184 is Dielectric 5's side face on the board edge, between
+Dielectric 5 and the background air. 22561 is a side face of the plane `Inner 5/6`, which bounds Dielectric 5 alone.
+None of the three candidates the brief listed first: no via barrel and no near-tangent. It was the second in a
+different form, a face pulled off another object's plane rather than two pieces left apart.
+
+**The cause.** Crop to Rectangle had cut the plane at the board edge, where the artwork's own edge lay 0.109 µm inside
+the crop line. So the plane's side lay EXACTLY on the board edge for 492 µm, with a 0.109 µm jog at each end. With
+Robust meshing off the board meshes. With it on, `Em3dOutlineCleanup.Clean`, which sees one outline at a time, removed
+the on-edge corner at one end: the off-edge jog point lay 0.109 µm from its neighbours' line, under the 0.36 µm
+tolerance. The side became one edge from on the board edge to 0.109 µm inside it, 0.0127° off the board's side face,
+and Gmsh's boundary recovery found two facets on a shared edge at that angle. Reproduced synthetically on a 2 × 2 mm
+four-layer board with the same 0.109 µm jogs on an Inner 2 plane: it fails in 0.3 s, and it meshes with Robust meshing
+off.
+
+**R-dfr31-6-3 — the fix, in the robust pass.** The dielectric solids' lateral outlines (the board outline, a film's) are
+now `Em3dOutlineCleanup.Edges`, binned on a grid. Before a conductor ring is cleaned, `Snap` moves every point within
+the tolerance of one of them onto it: onto a segment end first, else onto the segment, then drops the repeats this makes.
+`Clean` then removes a point that lies on one only when both its neighbours lie on that same segment. The jogs collapse
+onto the edge, the plane is a rectangle on it, and both the synthetic board and the field script mesh (the field script
+through order 2, 152 s, `model.msh` written). A snap counts toward the note's largest move, so the guarantee still holds.
+The note adds ", and moved N that lay as close to the board's edge (or a dielectric film's) onto it". The order-2 pass
+on the field script still reports about 20 negative-Jacobian tets. The earlier six-port script, which Palace accepted,
+reported 12 of the same kind, so they predate this fix and are not it.
+
+**R-dfr31-6-4 — the refusal names the objects.** The script now writes `faces.txt` (`GmshGeoWriter.FacesFile`). There is
+one line per group: `f <attribute> <tags>` for a surface group and `v <attribute> <tags>` for the boundary of a volume
+group. Each line is built with `StrCat` in a `Macro`, so the file is opened once per group, not once per surface (12,000
+single appends took 0.46 s here, and a file open costs more on Windows). Gmsh writes it while it parses, so it is in the
+stage folder when the mesh fails. `PalaceRun.Mesh` reads it before the folder goes. `GmshGeoWriter.NameSurfaces` turns
+the error's surface tags into one sentence: "The overlap is between the face where 'Core' meets the surrounding air and
+'Inner 2/GND'." The names come in the order Gmsh gives the tags. The thermal writer does not write the table, so its
+failures stay as they were. Adding the table changed the four writer goldens (`testdata/em3d/palace-goldens/*/model.geo`),
+which were regenerated with `CRF_WRITE_PALACE_GOLDENS=1`; the diff is the table only. Every cached mesh is made again once.
+
+Gates: `BoardEdgeSliverTests` (the synthetic board meshes; the same sliver drawn by hand with Robust meshing off is
+refused naming both objects). `RobustMeshingTests`, `ViaOnTheBoardEdgeTests`, `PalaceBackendTests` and
+`PalaceStaticTests` still pass.

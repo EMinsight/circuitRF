@@ -205,9 +205,16 @@ public static class PalaceRun
                 if (run.StartFailure is { } why)
                     return new(false, false, false, $"Gmsh could not be started ({why}).");
                 if (run.ExitCode != 0)
+                {
+                    // brief-dfr31-6 R-dfr31-6-4 — the surfaces it names, as the objects they belong to; the face table is
+                    // in the stage folder, which goes when this returns.
+                    string faces = Path.Combine(stage, GmshGeoWriter.FacesFile);
+                    string? named = File.Exists(faces)
+                        ? GmshGeoWriter.NameSurfaces(GmshErrorLines(logPath), File.ReadAllText(faces), lowering.Groups) : null;
                     return new(false, false, false,
                         $"Gmsh failed (exit code {run.ExitCode}). Its own words: {GmshErrors(logPath, run.Tail)} " +
-                        $"The full log is {logPath}.");
+                        (named is null ? "" : named + " ") + $"The full log is {logPath}.");
+                }
                 foreach (string produced in new[] { GmshGeoWriter.MeshFile, GmshGeoWriter.EntitiesFile })
                     if (File.Exists(Path.Combine(stage, produced)))
                         File.Move(Path.Combine(stage, produced), Path.Combine(runDir, produced), overwrite: true);
@@ -1311,15 +1318,21 @@ public static class PalaceRun
     /// </summary>
     internal static string GmshErrors(string logPath, IReadOnlyList<string> tail)
     {
-        List<string> errors = [];
+        var errors = GmshErrorLines(logPath);
+        return errors.Count == 0 ? Quote(tail, "Error") : "“" + string.Join(" | ", errors) + "”";
+    }
+
+    /// <summary>The first distinct <c>Error</c> lines of a Gmsh log, or none when it cannot be read.</summary>
+    internal static IReadOnlyList<string> GmshErrorLines(string logPath)
+    {
         try
         {
             if (File.Exists(logPath))
-                errors = [.. File.ReadLines(logPath).Select(l => l.Trim())
-                              .Where(l => l.StartsWith("Error", StringComparison.Ordinal)).Distinct().Take(5)];
+                return [.. File.ReadLines(logPath).Select(l => l.Trim())
+                           .Where(l => l.StartsWith("Error", StringComparison.Ordinal)).Distinct().Take(5)];
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-        return errors.Count == 0 ? Quote(tail, "Error") : "“" + string.Join(" | ", errors) + "”";
+        return [];
     }
 
     internal static string Quote(IReadOnlyList<string> tail, string marker)

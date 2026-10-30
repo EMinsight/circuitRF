@@ -36,6 +36,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Engine.Em3d;
 
@@ -92,6 +93,8 @@ public static partial class GmshGeoWriter
     public const string GeoFile      = "model.geo";
     public const string MeshFile     = "model.msh";
     public const string EntitiesFile = "entities.txt";
+    /// <summary>brief-dfr31-6 — which group each surface tag belongs to or bounds, read when Gmsh fails.</summary>
+    public const string FacesFile    = "faces.txt";
     public const string GroupsFile   = "groups.json";
 
     /// <summary>The script's length unit, metres — Palace's <c>Model.L0</c>.</summary>
@@ -522,6 +525,33 @@ public static partial class GmshGeoWriter
         L($"Printf(\"unclassified_single_sided %g\", #rest[]) >> \"{EntitiesFile}\";");
         L();
 
+        // brief-dfr31-6 R-dfr31-6-4 — Gmsh names a failing surface by its tag; this table is how the refusal names the
+        // object instead. One line per group, so the file is opened once per group rather than once per surface.
+        L("// ---- the face table: whose each surface is, so a mesher error can name the object (brief-dfr31-6) ----");
+        L($"Printf(\"# circuitRF face table: f <attribute> <its surfaces> | v <attribute> <the surfaces of its volumes>\") > \"{FacesFile}\";");
+        L("Macro CrfFaces");
+        L("  crft = \"\";");
+        L("  For crfk In {0:#crfl[]-1}");
+        L("    crft = StrCat(crft, Sprintf(\" %g\", Fabs(crfl[crfk])));");
+        L("  EndFor");
+        L($"  Printf(StrCat(crfh, crft)) >> \"{FacesFile}\";");
+        L("Return");
+        void Faces(string kind, int attribute, string list)
+        {
+            L($"crfl[] = {(kind == "v" ? $"Boundary{{ Volume{{{list}}}; }}" : $"{{{list}}}")};");
+            L($"crfh = \"{kind} {attribute}\";");
+            L("Call CrfFaces;");
+        }
+        for (int i = 0; i < problem.Solids.Count; i++)
+            if (solidGroup[i].Dimension == 3) Faces("v", solidGroup[i].Attribute, $"s{i}[]");
+            else Faces("f", solidGroup[i].Attribute, $"c{i}[]");
+        Faces("v", background.Attribute, "bg[]");
+        for (int k = 0; k < sheetGroups.Count; k++) Faces("f", sheetGroups[k].Attribute, $"w{k}[]");
+        for (int k = 0; k < portGroups.Count; k++) Faces("f", portGroups[k].Attribute, $"q{portIndex[k]}[]");
+        for (int k = 0; k < 6; k++) Faces("f", faceGroups[k].Attribute, $"f{k}[]");
+        for (int k = 0; k < boundaryGroups.Count; k++) Faces("f", boundaryGroups[k].Attribute, $"b{k}[]");
+        L();
+
         // ── Mesh size (R-em3d7-2e): an initial mesh only ─────────────────────────────────────
         double fMax = SizingFrequencyHz(problem);
         // brief-em3d-22 — a static solve has no wavelength: its largest element is the same fraction of
@@ -840,6 +870,48 @@ public static partial class GmshGeoWriter
         return faults.Count == 0 ? null
             : "The mesh does not match the problem, so it is not solved (em-3d.md §6.4: a boundary is never " +
               "guessed onto a face). " + string.Join(" ", faults);
+    }
+
+    /// <summary>
+    /// brief-dfr31-6 R-dfr31-6-4 — one sentence naming the objects behind the surfaces Gmsh's <paramref name="errors"/>
+    /// name ("… on surface 22561 surface 22184"), from the script's <see cref="FacesFile"/>; null when they name none it
+    /// holds. A tag alone gives the user nothing to act on.
+    /// </summary>
+    public static string? NameSurfaces(IEnumerable<string> errors, string facesText, IReadOnlyList<Em3dGroup> groups)
+    {
+        var lines = errors.ToList();
+        var tags = lines.SelectMany(l => Regex.Matches(l, @"\bsurface (\d+)").Select(m => int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)))
+                        .Distinct().Take(4).ToList();
+        if (tags.Count == 0) return null;
+        var own = new Dictionary<int, List<int>>();
+        var bounds = new Dictionary<int, List<int>>();
+        foreach (string raw in facesText.Split('\n'))
+        {
+            var t = raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (t.Length < 2 || t[0] is not ("f" or "v") || !int.TryParse(t[1], CultureInfo.InvariantCulture, out int attribute)) continue;
+            var into = t[0] == "f" ? own : bounds;
+            foreach (string s in t.Skip(2))
+                if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
+                {
+                    if (!into.TryGetValue((int)d, out var held)) into[(int)d] = held = [];
+                    if (!held.Contains(attribute)) held.Add(attribute);
+                }
+        }
+        var byAttribute = groups.GroupBy(g => g.Attribute).ToDictionary(g => g.Key, g => g.First());
+        string Name(int attribute) => byAttribute.TryGetValue(attribute, out var g)
+            ? g.Kind == Em3dGroupKind.Background ? "the surrounding air" : $"'{g.Name}'" : $"group {attribute}";
+        string? Surface(int tag)
+        {
+            if (own.TryGetValue(tag, out var o)) return string.Join(" and ", o.Select(Name));
+            if (!bounds.TryGetValue(tag, out var b)) return null;
+            return b.Count >= 2 ? $"the face where {Name(b[0])} meets {Name(b[1])}" : $"a face of {Name(b[0])}";
+        }
+        var named = tags.Select(Surface).OfType<string>().ToList();
+        if (named.Count == 0) return null;
+        string list = named.Count == 1 ? named[0] : string.Join(", ", named.SkipLast(1)) + " and " + named[^1];
+        return lines.Any(l => l.Contains("overlapping facets", StringComparison.Ordinal)) && named.Count == 2
+            ? $"The overlap is between {named[0]} and {named[1]}."
+            : $"The surface{(named.Count == 1 ? " it names is" : "s it names are")} {list}.";
     }
 
     private static string Describe(Em3dGroup gr) => gr.Kind switch

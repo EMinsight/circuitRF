@@ -680,6 +680,7 @@ public static class Em3dLayoutSolids
                     : _outline.Count > 0 ? _outline : null;
                 if (lateral is { Count: 0 }) continue;
                 order++;
+                if (lateral is not null) _dielectricOutlines.AddRange(lateral);
                 if (lateral is null)
                     solids.Add(Origin(new Em3dSolid(b.Layer.Name, material, Em3dRole.Dielectric, FullExtent(z0, z1), order),
                                       Em3dObjectKind.Dielectric, b.Layer.Name));
@@ -732,7 +733,7 @@ public static class Em3dLayoutSolids
                                                  Extrude(poly, p.ZBottom, p.ZTop), order));
                 }
             }
-            if (_robust.Removed > 0)
+            if (_robust.Removed > 0 || _robust.Snapped > 0)
                 Notes.Add(RobustNote(_robust));
             int sheetCount = sheets.Count;
             if (sheetCount > 0)
@@ -1262,12 +1263,22 @@ public static class Em3dLayoutSolids
 
         private readonly Em3dOutlineCleanup.Stats _robust = new();
 
+        /// <summary>brief-dfr31-6 — the dielectric solids' lateral outlines (the board outline, a film's), which Robust meshing
+        /// keeps a conductor's outline on.</summary>
+        private readonly List<PlanarPolygon> _dielectricOutlines = [];
+        private Em3dOutlineCleanup.Edges? _dielectricEdges;
+
         /// <summary>brief-dfr28-3 — an artwork conductor's polygon as Robust meshing leaves it (itself when it is off).</summary>
         private PlanarPolygon Robust(PlanarPolygon poly, double thicknessM)
         {
             if (!options.RobustMeshing) return poly;
             double tol = Em3dOutlineCleanup.Tolerance(thicknessM);
-            IReadOnlyList<EmPoint> Clean(IReadOnlyList<EmPoint> ring) => Em3dOutlineCleanup.Clean(ring, q => (q.X, q.Y), tol, _robust);
+            var edges = _dielectricEdges ??= new Em3dOutlineCleanup.Edges(
+                _dielectricOutlines.SelectMany(d => new[] { d.Outer }.Concat(d.HoleRings))
+                                   .Select(r => (IReadOnlyList<(double X, double Y)>)[.. r.Select(q => (q.X, q.Y))]));
+            IReadOnlyList<EmPoint> Clean(IReadOnlyList<EmPoint> ring) => Em3dOutlineCleanup.Clean(
+                Em3dOutlineCleanup.Snap(ring, q => (q.X, q.Y), (x, y) => new EmPoint(x, y), tol, edges, _robust),
+                q => (q.X, q.Y), tol, _robust, edges);
             var outer = Clean(poly.Outer);
             var holes = poly.HoleRings.Select(Clean).ToList();
             return ReferenceEquals(outer, poly.Outer) && holes.Zip(poly.HoleRings).All(h => ReferenceEquals(h.First, h.Second))
@@ -1277,7 +1288,9 @@ public static class Em3dLayoutSolids
         /// <summary>The note a run gets when Robust meshing removed anything.</summary>
         internal static string RobustNote(Em3dOutlineCleanup.Stats s) =>
             $"Robust meshing removed {s.Removed:N0} of {s.Points:N0} outline points that lay within a fraction of a micrometre " +
-            $"of the line through their neighbours; no outline moved by more than {Fmt(s.MaxMoveM * 1e6)} µm.";
+            "of the line through their neighbours" +
+            (s.Snapped > 0 ? $", and moved {s.Snapped:N0} that lay as close to the board's edge (or a dielectric film's) onto it" : "") +
+            $"; no outline moved by more than {Fmt(s.MaxMoveM * 1e6)} µm.";
 
         private static Em3dExtrudedPolygon Extrude(PlanarPolygon p, double z0, double z1)
             => new(Ring(p.Outer), [.. p.HoleRings.Select(Ring)], z0, z1);

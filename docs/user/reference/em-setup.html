@@ -1197,7 +1197,10 @@ the line through its neighbours: at most 0.5 µm, or 1/50 of the layer's thickne
 from Gerber files often has such points — arcs broken into short segments that end in a stub of a micrometre or so,
 and tiny edges left where shapes were merged — and they can make the mesher build a flat element that stops the run.
 No outline moves by more than the tolerance, and the run's notes say how many points were removed and the largest
-move. Only conductor outlines change; via barrels, the board outline and slabs are meshed as drawn. It is on in every
+move. A conductor point that close to the board's edge is moved onto it, and a conductor's side that lies along the
+board's edge stays on it, so a plane cut at the edge never ends a fraction of a degree off the board's side, a sliver
+the mesher refuses as &quot;overlapping facets&quot;. Only conductor outlines change; via barrels, the board outline and slabs
+are meshed as drawn. It is on in every
 setup the application creates. A <code>.cem</code> without the field runs with it off, so its results stay as they were. Off,
 the artwork is meshed exactly as drawn.</p>
 <p>With Palace chosen the panel shows Palace's own settings. <strong>A blank box is the default shown in it</strong>, and

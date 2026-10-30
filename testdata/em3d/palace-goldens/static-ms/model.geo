@@ -235,6 +235,67 @@ Printf("all_surfaces %g", #allS[]) >> "entities.txt";
 Printf("single_sided %g", #single[]) >> "entities.txt";
 Printf("unclassified_single_sided %g", #rest[]) >> "entities.txt";
 
+// ---- the face table: whose each surface is, so a mesher error can name the object (brief-dfr31-6) ----
+Printf("# circuitRF face table: f <attribute> <its surfaces> | v <attribute> <the surfaces of its volumes>") > "faces.txt";
+Macro CrfFaces
+  crft = "";
+  For crfk In {0:#crfl[]-1}
+    crft = StrCat(crft, Sprintf(" %g", Fabs(crfl[crfk])));
+  EndFor
+  Printf(StrCat(crfh, crft)) >> "faces.txt";
+Return
+crfl[] = Boundary{ Volume{s0[]}; };
+crfh = "v 1";
+Call CrfFaces;
+crfl[] = Boundary{ Volume{s1[]}; };
+crfh = "v 2";
+Call CrfFaces;
+crfl[] = {c2[]};
+crfh = "f 3";
+Call CrfFaces;
+crfl[] = {c3[]};
+crfh = "f 4";
+Call CrfFaces;
+crfl[] = {c4[]};
+crfh = "f 5";
+Call CrfFaces;
+crfl[] = Boundary{ Volume{s5[]}; };
+crfh = "v 6";
+Call CrfFaces;
+crfl[] = {c6[]};
+crfh = "f 7";
+Call CrfFaces;
+crfl[] = Boundary{ Volume{s7[]}; };
+crfh = "v 8";
+Call CrfFaces;
+crfl[] = Boundary{ Volume{bg[]}; };
+crfh = "v 9";
+Call CrfFaces;
+crfl[] = {q0[]};
+crfh = "f 10";
+Call CrfFaces;
+crfl[] = {q1[]};
+crfh = "f 11";
+Call CrfFaces;
+crfl[] = {f0[]};
+crfh = "f 12";
+Call CrfFaces;
+crfl[] = {f1[]};
+crfh = "f 13";
+Call CrfFaces;
+crfl[] = {f2[]};
+crfh = "f 14";
+Call CrfFaces;
+crfl[] = {f3[]};
+crfh = "f 15";
+Call CrfFaces;
+crfl[] = {f4[]};
+crfh = "f 16";
+Call CrfFaces;
+crfl[] = {f5[]};
+crfh = "f 17";
+Call CrfFaces;
+
 // ---- the initial mesh: Palace's adaptive refinement converges the answer ------------------
 // Largest element: 0.1 of the air box's largest side (a static solve has no wavelength);
 // 0.5 of the smallest at conductors and sheets; at most 1/4 of each port
