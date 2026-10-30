@@ -192,9 +192,10 @@ public static class FieldPlotResolver
         FieldProblemKind.Driven => new C3dFieldSolution { GHz = s.Timestep, Port = s.Excitation > 0 ? s.Excitation : null, Cosim = s.Cosim },
         FieldProblemKind.Eigenmode => new C3dFieldSolution { Mode = s.Index + 1 },
         FieldProblemKind.Thermal => new C3dFieldSolution { Point = s.Index + 1 },
+        // brief-dfr31-3 — the terminal the run itself named first: the 3D view's display problem names none
         _ => new C3dFieldSolution
         {
-            Terminal = problem?.Terminals is { } t && s.Index >= 0 && s.Index < t.Count ? t[s.Index].Name : (s.Index + 1).ToString(CultureInfo.InvariantCulture),
+            Terminal = s.Terminal ?? (problem?.Terminals is { } t && s.Index >= 0 && s.Index < t.Count ? t[s.Index].Name : (s.Index + 1).ToString(CultureInfo.InvariantCulture)),
         },
     };
 
@@ -234,6 +235,34 @@ public static class FieldPlotResolver
         if (w.Point is { } k0)
             return $"The run has {keys.Count} sweep point{(keys.Count == 1 ? "" : "s")}; this plot shows point {k0}. Pick a saved point.";
         return null;
+    }
+
+    // ── before the run (brief-dfr31-3 R-dfr31-3-4) ──────────────────────────────────────────
+
+    /// <summary>The Solution picker's one row while <paramref name="setup"/> has no finished run: what will appear there, in the
+    /// setup's own terms — never a driven setup's frequencies for a static one.</summary>
+    public static string AwaitingRun(EmSetup setup) => setup.IsThermal ? "Sweep points of the thermal setup, once it has run" : setup.Problem3D switch
+    {
+        Em3dProblemType.Electrostatic => "Terminals of the electrostatic setup, once it has run",
+        Em3dProblemType.Magnetostatic => "Terminals of the magnetostatic setup, once it has run",
+        Em3dProblemType.Eigenmode => "Modes of the eigenmode setup, once it has run",
+        _ => "Frequencies of the driven setup, once it has run",
+    };
+
+    /// <summary>The quantities <paramref name="setup"/>'s run will offer, for the Quantity picker before it has run: the arrays
+    /// the FEM solver writes for its problem, read as <see cref="FieldQuantity.Offered"/> reads them, so each label is the one
+    /// the run's own will have. Empty where the arrays are not known ahead (another solver, a thermal run).</summary>
+    public static IReadOnlyList<FieldQuantity> ExpectedQuantities(EmSetup setup)
+    {
+        if (setup.IsThermal || FieldSolver(setup, Em3dSolverFit.Fem, null)?.Id != Em3dSolverId.Palace) return [];
+        static FieldArrayInfo A(string name, int components, bool complex = false) => new(name, components, complex, PerCell: false);
+        return setup.Problem3D switch
+        {
+            Em3dProblemType.Electrostatic => FieldQuantity.Offered([A("E", 3), A("V", 1), A("U_e", 1)], [A("Q_s", 1)]),
+            Em3dProblemType.Magnetostatic => FieldQuantity.Offered([A("B", 3), A("U_m", 1)], []),
+            _ => FieldQuantity.Offered([A("E", 3, true), A("B", 3, true), A("S", 3), A("U_e", 1), A("U_m", 1)],
+                                       [A("J_s", 3, true), A("Q_s", 1, true)]),
+        };
     }
 
     /// <summary>The plot's quantity among what the loaded step offers, or null and the sentence saying the step offers none.</summary>
@@ -330,7 +359,7 @@ public static class FieldPlotResolver
             FieldProblemKind.Eigenmode when modes?.FirstOrDefault(m => m.Index == s.Index + 1) is { } m =>
                 $"Mode {s.Index + 1}: {G(m.FrequencyHz / 1e9)} GHz, Q {m.Q.ToString("G3", CultureInfo.InvariantCulture)}",
             FieldProblemKind.Eigenmode => $"Mode {s.Index + 1}",
-            FieldProblemKind.Electrostatic => $"Terminal {TerminalName(s.Index, problem)} at 1 V, the others at 0 V",
+            FieldProblemKind.Electrostatic => $"Terminal {(s.Terminal is { } named ? $"'{named}'" : TerminalName(s.Index, problem))} at 1 V, the others at 0 V",
             FieldProblemKind.Thermal => $"Point {s.Index + 1}",
             _ => $"Terminal {TerminalName(s.Index, problem)} carrying 1 A",
         };

@@ -51,6 +51,10 @@ public sealed record FieldSolution(FieldProblemKind Kind, int Excitation, double
     /// <summary>brief-sar-9 — the fields analysis whose recombined field this is (FieldSar.cs); null for a port's own.</summary>
     public string? Cosim { get; init; }
 
+    /// <summary>brief-dfr31-3 — an electrostatic solution's terminal, by name, as the run itself recorded it
+    /// (<see cref="FieldRun.TerminalNames"/>); null when the run does not say.</summary>
+    public string? Terminal { get; init; }
+
     /// <summary>brief-sar-6 — what <see cref="Offers"/> holds, as the picker labels it: <c>SAR</c>, <c>B1</c>, or nothing.</summary>
     public string? OffersLabel => Offers is null ? null : Offers.Any(FieldNames.IsB1) ? "B1" : "SAR";
 }
@@ -82,7 +86,47 @@ public sealed partial class FieldRun
     /// <c>postpro/</c>), or null when Palace saved none there.
     /// </summary>
     public static FieldRun? OpenPalace(string runDir, double defaultToMetres = 1e-6)
-        => OpenParaview(runDir, "Palace", LengthUnit(runDir) ?? defaultToMetres, steps => FieldDrive.Palace(runDir, steps));
+        => OpenParaview(runDir, "Palace", LengthUnit(runDir) ?? defaultToMetres, steps => NameTerminals(runDir, FieldDrive.Palace(runDir, steps)));
+
+    /// <summary>
+    /// brief-dfr31-3 — the terminals an electrostatic run solved, by name, in its solutions' order: its configuration's
+    /// <c>Terminal</c> entries by Index, each named by the conductor group (groups.json) its attributes are. Null when either file
+    /// is missing or does not say. The 3D view's own problem is a display one and names no terminal, so without this a static
+    /// solution was keyed by its index and a plot naming its terminal (<c>TP</c>) never found it.
+    /// </summary>
+    public static IReadOnlyList<string>? TerminalNames(string runDir)
+    {
+        try
+        {
+            string config = Path.Combine(runDir, "config.json"), groups = Path.Combine(runDir, CircuitRF.Design.Em3d.GmshGeoWriter.GroupsFile);
+            if (!File.Exists(config) || !File.Exists(groups)) return null;
+            var byAttribute = new Dictionary<int, string>();
+            using (var g = JsonDocument.Parse(File.ReadAllText(groups)))
+                foreach (var e in g.RootElement.GetProperty("Groups").EnumerateArray())
+                    if (e.TryGetProperty("Terminal", out var t) && t.GetString() is { Length: > 0 } name && name != "(ground)")
+                        byAttribute[e.GetProperty("Attribute").GetInt32()] = name;
+            using var c = JsonDocument.Parse(File.ReadAllText(config));
+            if (!c.RootElement.TryGetProperty("Boundaries", out var b) || !b.TryGetProperty("Terminal", out var terminals)) return null;
+            var names = new List<(int Index, string Name)>();
+            foreach (var t in terminals.EnumerateArray())
+            {
+                string? name = t.GetProperty("Attributes").EnumerateArray().Select(a => byAttribute.GetValueOrDefault(a.GetInt32())).FirstOrDefault(n => n is not null);
+                if (name is null) return null;
+                names.Add((t.GetProperty("Index").GetInt32(), name));
+            }
+            return [.. names.OrderBy(n => n.Index).Select(n => n.Name)];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or KeyNotFoundException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static IReadOnlyList<FieldSolution> NameTerminals(string runDir, IReadOnlyList<FieldSolution> steps)
+    {
+        if (!steps.Any(s => s.Kind == FieldProblemKind.Electrostatic) || TerminalNames(runDir) is not { } names) return steps;
+        return [.. steps.Select(s => s.Kind == FieldProblemKind.Electrostatic && s.Index >= 0 && s.Index < names.Count ? s with { Terminal = names[s.Index] } : s)];
+    }
 
     /// <summary>
     /// brief-emi-7 — the fields an EMerge run saved in <paramref name="runDir"/>, or null when it saved none: the driver writes

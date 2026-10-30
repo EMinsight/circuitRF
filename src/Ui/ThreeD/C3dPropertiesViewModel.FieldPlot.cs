@@ -17,14 +17,16 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CircuitRF.Ui.ThreeD;
 
-/// <summary>One row of a plot's Solution picker: a saved step (by value), or the "Other frequency…" row.</summary>
-public sealed record C3dPlotSolutionChoice(string Label, C3dFieldSolution? Solution, bool IsOther = false)
+/// <summary>One row of a plot's Solution picker: a saved step (by value), the "Other frequency…" row, or — before the setup has
+/// run — the disabled row saying what will appear (brief-dfr31-3 R-dfr31-3-4).</summary>
+public sealed record C3dPlotSolutionChoice(string Label, C3dFieldSolution? Solution, bool IsOther = false, bool IsEnabled = true)
 {
     public override string ToString() => Label;
 }
 
-/// <summary>One row of a plot's Quantity picker: the array and how it is read.</summary>
-public sealed record C3dPlotQuantityChoice(string Label, string Quantity, string? Mode)
+/// <summary>One row of a plot's Quantity picker: the array and how it is read. Disabled before the setup has run: what its run
+/// will offer, shown and not yet chosen.</summary>
+public sealed record C3dPlotQuantityChoice(string Label, string Quantity, string? Mode, bool IsEnabled = true)
 {
     public override string ToString() => Label;
 }
@@ -35,6 +37,16 @@ public sealed partial class C3dPropertiesViewModel
     public const string ActiveSetupChoice = "Active";
 
     public const string OtherFrequencyLabel = "Other frequency… (needs a re-run)";
+
+    /// <summary>brief-dfr31-3 R-dfr31-3-3 — the offset's tooltip: the plane is a reading of the saved volume, not a setting of
+    /// the solve.</summary>
+    public const string PlotOffsetTip =
+        "Where the plane is along its axis, in the display unit (or with a unit of its own). The field is saved for the whole " +
+        "volume; move the plane at any time — before or after Simulate, without running again.";
+
+    public const string PlotOffsetSliderTip =
+        "Sweep the plane across the geometry: drawn as you drag, kept when you let go. The field is saved for the whole volume; " +
+        "move the plane at any time.";
 
     public static IReadOnlyList<C3dAxis> PlotAxes { get; } = [C3dAxis.X, C3dAxis.Y, C3dAxis.Z];
     public static IReadOnlyList<double> PlotPercentiles { get; } = [95, 99, 99.9, 100];
@@ -80,6 +92,8 @@ public sealed partial class C3dPropertiesViewModel
     [ObservableProperty] private double _plotOffsetMax = 1;
     [ObservableProperty] private double _plotOffsetStep = 1;
     [ObservableProperty] private bool _plotHasOffsetRange;
+    /// <summary>brief-dfr31-3 R-dfr31-3-1 — the plane stays drawn in the view while the plot is not selected.</summary>
+    [ObservableProperty] private bool _plotShowPlane;
     /// <summary>A drag's offset not yet written; written on release.</summary>
     private long? _plotOffsetDragged;
     [ObservableProperty] private bool _plotIsFaces;
@@ -143,8 +157,14 @@ public sealed partial class C3dPropertiesViewModel
         // never shows another step as if it were chosen.
         var found = editor.Discovered(request);
         var mine = found.Items.Where(i => request.Solver is null || string.Equals(i.Run.Solver, request.Solver, StringComparison.OrdinalIgnoreCase)).ToList();
-        List<C3dPlotSolutionChoice> solutions = [.. mine.Select(i => new C3dPlotSolutionChoice(i.Label, FieldPlotResolver.SolutionKey(i.Solution, editor.Viewer.Scene.Problem)))];
-        C3dPlotSolutionChoice? chosen = p.Solution is null ? solutions.FirstOrDefault() : solutions.FirstOrDefault(c => c.Solution!.SameAs(p.Solution));
+        // brief-dfr31-3 R-dfr31-3-4 — no finished run of the plot's setup: ONE disabled row saying what will appear, in that
+        // setup's own terms, and the quantities its run will offer, disabled. Never another setup kind's choices.
+        var awaiting = mine.Count == 0 && !found.Ran && request.SetupProblem is null && request.RunSetup is { } runSetup ? runSetup : null;
+        List<C3dPlotSolutionChoice> solutions = awaiting is not null
+            ? [new C3dPlotSolutionChoice(FieldPlotResolver.AwaitingRun(awaiting), null, IsEnabled: false)]
+            : [.. mine.Select(i => new C3dPlotSolutionChoice(i.Label, FieldPlotResolver.SolutionKey(i.Solution, editor.Viewer.Scene.Problem)))];
+        C3dPlotSolutionChoice? chosen = awaiting is not null ? solutions[0]
+            : p.Solution is null ? solutions.FirstOrDefault() : solutions.FirstOrDefault(c => c.Solution!.SameAs(p.Solution));
         if (chosen is null && p.Solution is { } missing)
         {
             chosen = new C3dPlotSolutionChoice($"{missing.Describe()} (not saved)", missing);
@@ -157,14 +177,16 @@ public sealed partial class C3dPropertiesViewModel
 
         // The Quantity picker: only what the step offers (the plot's own quantity kept, marked, when it does not).
         var item = FieldPlotResolver.PickSolution(p.Solution, request.Solver, mine, editor.Viewer.Scene.Problem, p.Quantity);
-        var offered = item is null ? [] : !p.Hidden && editor.Viewer.FieldLayers.FirstOrDefault(l => l.Name == p.Name) is { Quantities.Count: > 0 } layer
+        var offered = awaiting is not null ? FieldPlotResolver.ExpectedQuantities(awaiting)
+            : item is null ? [] : !p.Hidden && editor.Viewer.FieldLayers.FirstOrDefault(l => l.Name == p.Name) is { Quantities.Count: > 0 } layer
             ? [.. layer.Quantities] : editor.OfferedQuantities(item);
-        List<C3dPlotQuantityChoice> quantities = [.. offered.Select(q => new C3dPlotQuantityChoice(q.Label, q.Array.Name, q.Mode.ToString()))];
+        bool live = awaiting is null;
+        List<C3dPlotQuantityChoice> quantities = [.. offered.Select(q => new C3dPlotQuantityChoice(q.Label, q.Array.Name, q.Mode.ToString(), live))];
         var qc = quantities.FirstOrDefault(c => c.Quantity == p.Quantity && (p.Mode is null || string.Equals(c.Mode, p.Mode, StringComparison.OrdinalIgnoreCase)));
         if (qc is null)
         {
             qc = new C3dPlotQuantityChoice(FieldNames.Friendly(p.Quantity) + (p.Mode is { } md ? $" ({md})" : "") + (offered.Count > 0 ? " (not offered)" : ""),
-                                           p.Quantity, p.Mode);
+                                           p.Quantity, p.Mode, live);
             quantities.Add(qc);
         }
         KeepOrReplace(PlotQuantities, quantities);
@@ -175,6 +197,8 @@ public sealed partial class C3dPropertiesViewModel
         PlotIsClip = p.On == C3dFieldPlotOn.ClipPlane;
         PlotIsFaces = p.On == C3dFieldPlotOn.Faces;
         PlotAxis = p.Axis ?? C3dAxis.Z;
+        PlotShowPlane = p.ShowPlane;
+        OnPropertyChanged(nameof(PlotThroughArmed));
         PlotOffsetText = p.Offset is { } o ? FormatOffset(o) : "";
         LoadPlotOffsetRange(p);
         PlotFacesText = p.Faces.Count == 0
@@ -204,7 +228,7 @@ public sealed partial class C3dPropertiesViewModel
     }
 
     private static bool SameSolutionChoice(C3dPlotSolutionChoice a, C3dPlotSolutionChoice b)
-        => a.Label == b.Label && a.IsOther == b.IsOther && (a.Solution is null ? b.Solution is null : a.Solution.SameAs(b.Solution));
+        => a.Label == b.Label && a.IsOther == b.IsOther && a.IsEnabled == b.IsEnabled && (a.Solution is null ? b.Solution is null : a.Solution.SameAs(b.Solution));
 
     private string FormatOffset(long dbu) => LayoutUnits.Format(dbu, Editor.Document.DisplayUnit, Editor.Document.DbuPerMicron);
 
@@ -293,6 +317,7 @@ public sealed partial class C3dPropertiesViewModel
     {
         if (_loading || value is null) return;
         if (value.IsOther) { PlotOtherOpen = true; return; }
+        if (value.Solution is null) return;          // the disabled "once it has run" row
         PlotOtherOpen = false;
         CommitPlot($"Plot {_plotName} at {value.Solution!.Describe()}", p => p.Solution = value.Solution.Clone());
     }
@@ -312,7 +337,7 @@ public sealed partial class C3dPropertiesViewModel
 
     partial void OnPlotQuantityChanged(C3dPlotQuantityChoice? value)
     {
-        if (value is null) return;
+        if (value is null || !value.IsEnabled) return;
         CommitPlot($"Plot {_plotName}: {value.Label}", p => { p.Quantity = value.Quantity; p.Mode = value.Mode; });
     }
 
@@ -328,6 +353,25 @@ public sealed partial class C3dPropertiesViewModel
     }
 
     partial void OnPlotAxisChanged(C3dAxis value) => CommitPlot($"Cut {_plotName} across {value}", p => p.Axis = value);
+
+    partial void OnPlotShowPlaneChanged(bool value)
+        => CommitPlot($"{(value ? "Always show" : "Show only when selected")} {_plotName}'s plane", p => p.ShowPlane = value);
+
+    /// <summary>brief-dfr31-3 R-dfr31-3-2 — the "Through…" toggle: armed, the next click on an object in the view moves this plot's
+    /// plane through that object's centre on its axis.</summary>
+    public bool PlotThroughArmed
+    {
+        get => IsFieldPlot && Editor.PlotThroughArmed == _plotName;
+        set
+        {
+            if (value == PlotThroughArmed) return;
+            if (value) Editor.ArmPlotThrough(_plotName);
+            else Editor.CancelPlotThrough();
+        }
+    }
+
+    /// <summary>The editor armed or put away a "Through…" pick: the toggle follows.</summary>
+    internal void PlotThroughChanged() => OnPropertyChanged(nameof(PlotThroughArmed));
 
     /// <summary>The Offset box's Enter or lost focus: a length in the display unit (or with its own), one undo entry.</summary>
     public void CommitPlotOffset()

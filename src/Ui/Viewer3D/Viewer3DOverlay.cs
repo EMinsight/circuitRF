@@ -398,6 +398,9 @@ public sealed class Viewer3DOverlay : Control
     /// <summary>The scene shader's hover cyan (0.2, 0.9, 1.0), for a tool's target face.</summary>
     private static readonly IBrush TargetBrush = new SolidColorBrush(Color.FromRgb(51, 230, 255));
     private static readonly IBrush TargetFill = new SolidColorBrush(Color.FromArgb(90, 51, 230, 255));
+    /// <summary>brief-dfr31-3 — a field plot's plane: the selection's magenta, the fill faint enough to see the model through.</summary>
+    private static readonly IBrush PlaneBrush = new SolidColorBrush(Color.FromRgb(255, 90, 255));
+    private static readonly IBrush PlaneFill = new SolidColorBrush(Color.FromArgb(46, 255, 90, 255));
 
     /// <summary>brief-em3d-45 — the drawing's chrome: construction dashed, a selected polyline in the selection colour,
     /// the rubber band in amber over a halo, fixed points as dots, a crossing in red.</summary>
@@ -419,6 +422,24 @@ public sealed class Viewer3DOverlay : Control
                 if (oa && ob) ctx.DrawLine(pen, a, b);
             }
         }
+        // brief-dfr31-3 R-dfr31-3-1 — a field plot's cut plane, under the rest of the chrome: translucent in the selection's
+        // colour, outlined, and labelled with its axis and offset at its first corner on screen.
+        var planeLabels = new List<(Point At, string Text)>();
+        foreach (var (corners, label) in d.FieldPlanes)
+        {
+            var pts = corners.Select(Screen).ToList();
+            if (pts.Any(q => !q.Ok)) continue;
+            var g = new StreamGeometry();
+            using (var c = g.Open())
+            {
+                c.BeginFigure(pts[0].P, true);
+                for (int i = 1; i < pts.Count; i++) c.LineTo(pts[i].P);
+                c.EndFigure(true);
+            }
+            ctx.DrawGeometry(PlaneFill, new Pen(PlaneBrush, 1.5), g);
+            planeLabels.Add((pts.MinBy(q => q.P.Y + q.P.X * 1e-3).P, label));
+        }
+        DrawingLabels(ctx, planeLabels, w, h, dark);
         var construction = new Pen(dark ? new SolidColorBrush(Color.FromArgb(200, 200, 205, 215)) : new SolidColorBrush(Color.FromArgb(200, 70, 75, 85)), 1.2)
         {
             DashStyle = new DashStyle([4, 3], 0),

@@ -595,14 +595,23 @@ one more frequency never moves it to another. On Palace, a port with two termina
 of its face at a time, not one terminal, so its choices read <em>5 GHz, Left mode 2 driven</em>: the field of the
 face's second mode launched, which is not terminal 2 driven alone. An openEMS run drives each terminal, and
 its choices name the port. The list ends with <em>Other frequency… (needs a re-run)</em>,
-which adds a frequency to the setup's <em>Save fields at</em> and moves the plot to it.</li>
+which adds a frequency to the setup's <em>Save fields at</em> and moves the plot to it. Until the setup has run,
+the list holds one greyed row saying what will appear, such as <em>Terminals of the electrostatic setup,
+once it has run</em>.</li>
 <li><strong>Quantity</strong> — only those in the solver's files are offered: the electric field |E|, the surface
-current J_s on the conductors, and for a static solve the potential.</li>
+current J_s on the conductors, and for a static solve the potential. Until the setup has run, the
+quantities its run will offer are listed greyed.</li>
 <li><strong>On</strong> — a <strong>clip plane</strong> (the plot's own axis and position, so two plots can cut in two places),
 <strong>surfaces</strong> (the solid selected in the tree, or the conductors for J_s), or <strong>faces</strong> (below). Beside
-a clip plane's position is a slider across the model: the cut is drawn as you drag it and kept, as one
-undo step, when you let go. The plane is the plot's own. The toolbar's section plane neither moves
-with it nor hides it, so cut the geometry wherever helps you see.</li>
+a clip plane's position is a slider across the geometry: the cut is drawn as you drag it and kept, as one
+undo step, when you let go. The field is saved for the whole volume, so the plane can be moved at any
+time, before or after Simulate, without running again. While the plot is selected the plane is drawn
+in the 3D view as a translucent rectangle across the air box, labelled with its axis and position, so
+it can be placed before anything is solved; <em>Always show the plane</em> keeps it drawn when the plot is not
+selected. <strong>Through…</strong> puts the plane through an object: press it, then click the object (a pad, a
+via) in the 3D view, and the plane moves to the object's centre on the plot's axis. Esc cancels. The
+plane is the plot's own. The toolbar's section plane neither moves with it nor hides it, so cut the
+geometry wherever helps you see.</li>
 <li><strong>dB</strong> and a <strong>range</strong> percentile, which keep one singular edge from washing out the picture. A field
 strength in dB reads in <strong>dBµV/m</strong> (H and surface current in <strong>dBµA/m</strong>), the EMC convention; any other
 quantity reads in dB re 1 of its unit. A power or energy density (the Poynting vector, the energy

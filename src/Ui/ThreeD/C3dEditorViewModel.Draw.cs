@@ -566,6 +566,12 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
 
     public bool DrawClick(KeyModifiers modifiers, int clickCount)
     {
+        // brief-dfr31-3 R-dfr31-3-2 — a field plot's armed "Through…" takes the click before anything, and selects nothing.
+        if (_plotThrough is not null)
+        {
+            if (PlotThroughObject(Viewer.HoveredItem?.Object ?? 0) is { } why) StatusMessage = why;
+            return true;
+        }
         if (Command(modifiers))
         {
             // R-em3d45-1b — Ctrl/Cmd+Shift-click: the offset through the snapped point; Ctrl/Cmd-click a face (tool armed).
@@ -596,6 +602,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
 
     public bool DrawKey(Key key, KeyModifiers modifiers)
     {
+        if (_plotThrough is not null && key == Key.Escape) { CancelPlotThrough(); return true; }
         if (key == Key.A && modifiers == KeyModifiers.Shift) { DrawMenuRequested?.Invoke(); return true; }
         // brief-em3d-66 — the panel's Esc and Enter; entering and leaving a boolean. brief-em3d-67 — the Fillet panel's.
         if (_tool is not { InProgress: true } && FilletKey(key, modifiers)) return true;
@@ -681,7 +688,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     }
 
     /// <summary>3D round 1 — a tool or an operation is armed: the pane orbits on Ctrl/Cmd + drag only.</summary>
-    public bool DrawArmed => _tool is not null;
+    public bool DrawArmed => _tool is not null || _plotThrough is not null;
 
     /// <summary>A key that starts a typed value: a digit, a decimal point or a minus sign.</summary>
     private static char? TypedChar(Key key, KeyModifiers modifiers)
@@ -716,6 +723,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             else tool.Preview(CursorInput(), overlay.Rubber, overlay.Fixed);
         }
         FillFaceOverlay(overlay);
+        FillFieldPlaneOverlay(overlay);
         FillHierarchyOverlay(overlay);
         FillWireOverlay(overlay);
         if (_tool is C3dOperationTool { ShowsPivot: true } op) overlay.Pivots.Add(DrawGeometry.Metres(op.Pivot, dbu));

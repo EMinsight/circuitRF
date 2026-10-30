@@ -395,8 +395,15 @@
                           HorizontalAlignment="Stretch" IsVisible="{Binding PlotHasSolver}"
                           ToolTip.Tip="A setup that runs both solvers saves two sets of fields: which one this plot draws."/>
                 <TextBlock Text="Solution" FontSize="11" Opacity="0.7"/>
+                <!-- brief-dfr31-3 R-dfr31-3-4 — before the setup has run, one disabled row says what will appear here. -->
                 <ComboBox ItemsSource="{Binding PlotSolutions}" SelectedItem="{Binding PlotSolution}" HorizontalAlignment="Stretch"
-                          ToolTip.Tip="What the run saved: a frequency (driven), a mode (eigenmode), a terminal (static), a sweep point (thermal). The plot keeps the VALUE, so a run that saves more never moves it."/>
+                          ToolTip.Tip="What the run saved: a frequency (driven), a mode (eigenmode), a terminal (static), a sweep point (thermal). The plot keeps the VALUE, so a run that saves more never moves it.">
+                    <ComboBox.Styles>
+                        <Style Selector="ComboBoxItem" x:DataType="t3:C3dPlotSolutionChoice">
+                            <Setter Property="IsEnabled" Value="{Binding IsEnabled}"/>
+                        </Style>
+                    </ComboBox.Styles>
+                </ComboBox>
                 <StackPanel Spacing="2" IsVisible="{Binding PlotOtherOpen}">
                     <TextBlock Text="Other frequency, GHz — saved by the next run" FontSize="11" Opacity="0.7"/>
                     <TextBox Text="{Binding PlotOtherText}" PlaceholderText="e.g. 6" KeyDown="OnPlotOtherKey"
@@ -415,7 +422,13 @@
                 </StackPanel>
                 <TextBlock Text="Quantity" FontSize="11" Opacity="0.7"/>
                 <ComboBox ItemsSource="{Binding PlotQuantities}" SelectedItem="{Binding PlotQuantity}" HorizontalAlignment="Stretch"
-                          ToolTip.Tip="What is drawn — only what the solver's files hold is offered."/>
+                          ToolTip.Tip="What is drawn — only what the solver's files hold is offered. Before the setup has run, what its run will offer, greyed until it has.">
+                    <ComboBox.Styles>
+                        <Style Selector="ComboBoxItem" x:DataType="t3:C3dPlotQuantityChoice">
+                            <Setter Property="IsEnabled" Value="{Binding IsEnabled}"/>
+                        </Style>
+                    </ComboBox.Styles>
+                </ComboBox>
                 <TextBlock Text="On" FontSize="11" Opacity="0.7"/>
                 <ComboBox ItemsSource="{Binding PlotTargets}" SelectedItem="{Binding PlotTarget}" HorizontalAlignment="Stretch"
                           ToolTip.Tip="Where it is drawn: a cut on the plot's own plane; surfaces (the selected solid's faces, or the conductors for J_s; every exposed face for a temperature); or the faces it lists."/>
@@ -428,14 +441,22 @@
                               ToolTip.Tip="The axis the plane is square to: the plot owns its plane, so two plots cut in two places."/>
                     <TextBox Grid.Column="2" Width="64" Text="{Binding PlotOffsetText}" Classes="dim" VerticalAlignment="Center"
                              KeyDown="OnPlotOffsetKey" LostFocus="OnPlotOffsetLostFocus"
-                             ToolTip.Tip="Where the plane is along its axis, in the display unit (or with a unit of its own)."/>
+                             ToolTip.Tip="{x:Static t3:C3dPropertiesViewModel.PlotOffsetTip}"/>
                     <TextBlock Grid.Column="3" Text="{Binding LengthUnit}" FontSize="11" Opacity="0.7" VerticalAlignment="Center"/>
                     <Slider x:Name="PlotOffsetSlider" Grid.Column="4" MinWidth="60" VerticalAlignment="Center"
                             Minimum="{Binding PlotOffsetMin}" Maximum="{Binding PlotOffsetMax}" Value="{Binding PlotOffsetSlider}"
                             SmallChange="{Binding PlotOffsetStep}" LargeChange="{Binding PlotOffsetStep}"
                             IsVisible="{Binding PlotHasOffsetRange}"
-                            ToolTip.Tip="Sweep the plane across the model: drawn as you drag, kept when you let go."/>
+                            ToolTip.Tip="{x:Static t3:C3dPropertiesViewModel.PlotOffsetSliderTip}"/>
                 </Grid>
+                <!-- brief-dfr31-3 R-dfr31-3-1/2 — the plane is drawn in the view while this plot is selected; Through… puts it
+                     through an object with one click. -->
+                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding PlotIsClip}">
+                    <ToggleButton Content="Through…" IsChecked="{Binding PlotThroughArmed}"
+                                  ToolTip.Tip="Then click an object in the 3D view: the plane moves through its centre on this axis. Esc cancels."/>
+                    <CheckBox IsChecked="{Binding PlotShowPlane}" Content="Always show the plane" VerticalAlignment="Center"
+                              ToolTip.Tip="Draw the plane in the 3D view while this plot is not selected too. It is always drawn while the plot is selected."/>
+                </StackPanel>
                 <StackPanel Spacing="1" IsVisible="{Binding PlotIsFaces}">
                     <TextBlock Text="Faces" FontSize="11" Opacity="0.7"/>
                     <SelectableTextBlock Text="{Binding PlotFacesText}" TextWrapping="Wrap" FontSize="11"/>

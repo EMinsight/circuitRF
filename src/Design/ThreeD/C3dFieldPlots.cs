@@ -222,6 +222,11 @@ public sealed class C3dFieldPlot
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Mip { get; set; }
 
+    /// <summary>brief-dfr31-3 R-dfr31-3-1 — a <see cref="C3dFieldPlotOn.ClipPlane"/> plot's plane is drawn in the 3D view even
+    /// while the plot is not selected. Display only, like the rest of the plot.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ShowPlane { get; set; }
+
     /// <summary>The tree's tick, as <see cref="C3dObject.Hidden"/>. One plot is drawn at a time: showing one hides the others.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Hidden { get; set; }

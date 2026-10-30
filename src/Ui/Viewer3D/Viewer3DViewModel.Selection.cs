@@ -202,10 +202,14 @@ public sealed class Viewer3DDrawOverlay
     /// <summary>The face a tool will land on (the Wire tool's pad top), each as its rings — the outline, then any holes —
     /// filled in the hover's colour.</summary>
     public List<IReadOnlyList<IReadOnlyList<CircuitRF.Engine.Em3d.Point3>>> TargetFaces { get; } = [];
+    /// <summary>brief-dfr31-3 R-dfr31-3-1 — a clip-plane field plot's plane: its four corners across the air box, and the label
+    /// naming its axis and offset.</summary>
+    public List<(CircuitRF.Engine.Em3d.Point3[] Corners, string Label)> FieldPlanes { get; } = [];
 
     public void Clear()
     {
         TargetFaces.Clear();
+        FieldPlanes.Clear();
         Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear(); Pivots.Clear(); Missing.Clear(); Labels.Clear();
         HeatSources.Clear(); Probes.Clear(); ProbeMarks.Clear(); MeshRegions.Clear(); SymmetryPlanes.Clear(); LumpedElements.Clear();
     }

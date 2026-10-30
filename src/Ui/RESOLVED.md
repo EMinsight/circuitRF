@@ -41308,3 +41308,46 @@ view's code-behind, and the view model exposes only `PickMatches`.
 
 Seen with `tools/UiSnapshot --cem` on the synthetic board: the list, a body chosen and written, the ground's first
 row, and add/remove after a pick. Gate: `StaticBodyPickerTests`.
+
+## Field plots: the cut plane is drawn and picked; the Solution list says where its rows come from (brief-dfr31-3, 2026-10-29)
+
+**The plane is 2D chrome, not GPU geometry.** `IViewer3DEditHost.FillDrawOverlay` already hands the overlay world-space
+segments every frame, so the plane rides there (`Viewer3DDrawOverlay.FieldPlanes`): four corners across the active
+problem's air box (`Scene.Problem.Boundary`, the scene's bounds without one) and a label `Y = 0 mm`. It is drawn for the
+selected clip-plane plot, for a plot whose offset is being dragged, and for any plot with `C3dFieldPlot.ShowPlane`, whether
+or not a run exists. Because the picture path calls the same filler, Copy and Export Picture carry it too while the plot
+is selected, like the selection outline. The tree's selection change and every plot edit now `RequestFrame`: with no
+field drawn, nothing else redrew the overlay when the plane moved.
+
+**Through… is a one-shot arm on the editor (`_plotThrough`).** `DrawClick` takes the next click before anything else and
+selects nothing, so the plot stays selected and its panel stays up. The plane goes through the centre of the clicked
+object's bounds on the plot's axis, as one undo entry. An air-box face is refused and the pick stays armed. `DrawArmed`
+includes it, so a click that wobbles past the slop still picks rather than orbits. Esc and selecting another row put it
+away.
+
+**The slider's range is the geometry's**, not `Scene.BoundsMin/Max`, which include the air box. "Geometry" excludes only
+`Scene3DKind.Boundary` (the box's faces and edges): a user-drawn air region is `Scene3DKind.Air` too, and it is geometry
+someone may want to cut through.
+
+**A static run's solutions were keyed by index in the 3D view.** The editor's scene is built from
+`C3dProblemAssembly.ViewProblem`, which carries no terminals, so `SolutionKey` named an electrostatic step `'1'`. A plot
+pinned to `Terminal: "TP"` (both capacitance examples ship one) then said "The run saved terminals '1', '2'; this plot
+shows terminal 'pad'" after a successful run. `render --field` never had the problem: it uses the assembled problem.
+`FieldRun.OpenPalace` now names each electrostatic step from the run's own files (`config.json`'s `Terminal` entries by
+Index, each named by the conductor group `groups.json` gives its attribute), and `SolutionKey`/`SolutionLabel` prefer
+that name. A magnetostatic run's `SurfaceCurrent` attributes are port sheets that `groups.json` does not name, so it still
+reads its names from the problem.
+
+**Before a run, the Solution picker holds one disabled row** (`FieldPlotResolver.AwaitingRun`) in the setup's own terms.
+The Quantity picker lists `FieldPlotResolver.ExpectedQuantities`, disabled: the arrays Palace writes for that problem, read
+through `FieldQuantity.Offered` so each label is the one the run's will have. The electrostatic and driven/eigenmode sets
+are from real run output (the `plates` and `cavity` fixtures). The magnetostatic set (B, U_m) has no fixture behind it.
+Other solvers and thermal runs list only the plot's own quantity, as before. A driven setup keeps *Other frequency…*,
+which asks the setup to save one and is useful before the first run. A new plot of a magnetostatic setup starts on B
+rather than E. The rows' `IsEnabled` is bound through an item style with `x:DataType`: compiled bindings otherwise resolve
+it against the panel's view model and fail to build.
+
+`tools/UiSnapshot --c3d … --select <row>` selects a tree row and lays the overlay over the picture, which is how the
+plane was looked at: the Test Pad example unsolved (plane at Y = 0 across the air box) and a solved Capacitance
+Extraction copy (plane framing the drawn |E| slice, "Terminal 'pad' at 1 V"). It also gives the editor the workspace's
+`results/` root, which it never had, so a solved plot draws in a snapshot at all. Gate: `FieldPlotPlaneTests`.

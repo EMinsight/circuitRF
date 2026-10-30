@@ -1234,6 +1234,9 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RaiseMenuStateChanged();
         // brief-em3d-96 — a drawn plot selected is the focused one: the Inspector shows it, and it is drawn last.
         if (value is { Kind: FieldPlotKind }) Viewer.FocusPlot(value.Name);
+        // brief-dfr31-3 — a plot's plane is drawn while its row is selected, and its armed "Through…" lasts only as long.
+        if (_plotThrough is not null && !(value is { Kind: FieldPlotKind } row && row.Name == _plotThrough)) CancelPlotThrough();
+        Viewer.RequestFrame();
         if (!_settingTreeRows && !(value is null ? _selectedTreeItems.Count == 0 : _selectedTreeItems is [var only] && only == value))
         {
             _selectedTreeItems = value is null ? [] : [value];

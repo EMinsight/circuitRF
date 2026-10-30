@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using Avalonia;
+using Avalonia.Headless;
 using System.Globalization;
 using System.Numerics;
 using CircuitRF.Design.ThreeD;
@@ -9,7 +11,7 @@ using CircuitRF.Ui.Viewer3D;
 
 // UiSnapshot --c3d <file.c3d> -o <out.png> [--size WxH] [--realistic] [--fit] [--ortho|--perspective]
 //            [--yaw deg] [--pitch deg] [--distance mm] [--target x,y,z] [--only a+b] [--hide a+b] [--list]
-//            [--hover name] [--live]
+//            [--hover name] [--live] [--select row]
 //
 // Opens a .c3d in the 3D editor's own view model, on the platform's own GPU backend (Metal, D3D11 or Vulkan, as
 // Viewer3DBackends.Create picks for the application), and writes what Export Picture writes: Viewer3DViewModel's
@@ -19,11 +21,16 @@ using CircuitRF.Ui.Viewer3D;
 // The camera starts where the owner left it: the workspace's .cwsuser, as OpenC3dEditor restores it. --fit frames the
 // scene instead; --yaw/--pitch/--distance/--target then move it, in the camera's own terms (degrees, millimetres, the
 // scene-local frame --list prints). --only/--hide name objects by substring, '+' between several.
+//
+// --select names a tree row (a field plot, an object) to select first; the picture then carries the 2D overlay — the
+// selection's chrome, a selected clip-plane plot's plane (brief-dfr31-3) — laid over the GPU's pixels exactly as Copy and
+// Export Picture lay it (Viewer3DOverlay.PictureLayer). That overlay is drawn by Avalonia, so only this option starts the
+// headless platform.
 internal static class Snapshot3D
 {
     public static int Run(string[] args)
     {
-        string? path = null, output = null, only = null, hide = null, hover = null;
+        string? path = null, output = null, only = null, hide = null, hover = null, select = null;
         bool live = false;
         int w = 1200, h = 800;
         bool realistic = false, fit = false, list = false;
@@ -57,6 +64,7 @@ internal static class Snapshot3D
                 case "--list": list = true; break;
                 case "--hover" when i + 1 < args.Length: hover = args[++i]; break;
                 case "--live": live = true; break;
+                case "--select" when i + 1 < args.Length: select = args[++i]; break;
                 default: Console.Error.WriteLine($"unknown option {args[i]}"); return 2;
             }
         }
@@ -67,6 +75,10 @@ internal static class Snapshot3D
             return 2;
         }
 
+        if (select is not null)
+            AppBuilder.Configure<SnapshotApp>().UseSkia()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
+
         var posted = new ConcurrentQueue<Action>();
         void Pump(Func<bool> until, string what)
         {
@@ -75,7 +87,11 @@ internal static class Snapshot3D
         }
 
         string? cws = FindWorkspace(path);
-        var vm = new C3dEditorViewModel(path, C3dPersistence.LoadFromFile(path), Viewer3DBackends.Create, () => cws, posted.Enqueue);
+        var vm = new C3dEditorViewModel(path, C3dPersistence.LoadFromFile(path), Viewer3DBackends.Create, () => cws, posted.Enqueue)
+        {
+            // Where the workspace's runs are (WorkspaceViewModel.EmResultsRoot): a solved setup's field plots draw as they do there.
+            ResultsRootProvider = cws is null ? null : () => Path.Combine(Path.GetDirectoryName(cws)!, "results"),
+        };
         try
         {
             // OpenC3dEditor's own order: orthographic, then the stored camera and setup, which win.
@@ -127,8 +143,22 @@ internal static class Snapshot3D
                 Console.WriteLine($"Hovering {hovered.Name} ({hovered.Kind})");
             }
 
+            if (select is not null)
+            {
+                static IEnumerable<C3dTreeItem> Walk(C3dTreeItem t) => t.Children.SelectMany(Walk).Prepend(t);
+                var row = vm.Tree.SelectMany(g => g.Items).SelectMany(Walk).FirstOrDefault(t => t.Name == select);
+                if (row is null) { Console.Error.WriteLine($"no tree row named '{select}'"); return 2; }
+                vm.SelectedTreeItem = row;
+                // A drawn plot's field is read and built off the UI thread: wait until each layer has drawn or said why not.
+                Pump(() => vm.Viewer.FieldLayers.All(l => !l.Building && (l.Builds > 0 || l.Problem is not null)),
+                     "finished drawing the plots");
+                Console.WriteLine($"Selected {row.Name} ({row.Kind})");
+                if (vm.FieldPlot(row.Name) is { } plot && vm.FieldPlotProblem(plot) is { } why) Console.WriteLine($"  draws nothing: {why}");
+            }
+
             var shot = vm.Viewer.CapturePicture(w, h, 1, out string? error, supersample: 1, live: live);
             if (shot is null) { Console.Error.WriteLine($"no picture: {error}"); return 1; }
+            if (select is not null) shot = shot with { Layer = Viewer3DOverlay.PictureLayer(vm.Viewer, w, shot.Width, shot.Height) };
             File.WriteAllBytes(output!, shot.Png());
             var c = view.Camera;
             Console.WriteLine(string.Create(CultureInfo.InvariantCulture,

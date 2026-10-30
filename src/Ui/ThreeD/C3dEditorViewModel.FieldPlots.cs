@@ -93,6 +93,7 @@ public sealed partial class C3dEditorViewModel
             was.Index < Document.FieldPlots.Count && SelectedFieldPlot is null)
             SelectPlotRow(Document.FieldPlots[was.Index].Name);
         ApplyVisiblePlots();
+        Viewer.RequestFrame();      // brief-dfr31-3 — a plane's chrome moves with its plot, drawn field or none
         Properties.Reload();
         OnPropertyChanged(nameof(IsDirty));
         RaiseMenuStateChanged();
@@ -221,7 +222,8 @@ public sealed partial class C3dEditorViewModel
             Name = C3dFieldPlot.NextName(Document.FieldPlots),
             Setup = ActiveSetupDisplayName,
             Solver = setup is { Solver3D.IsCompare: true } ? setup.Solver3D.Reference : null,
-            Quantity = thermal ? C3dFieldPlot.TemperatureQuantity : "E",
+            // brief-dfr31-3 — a magnetostatic run saves no E: its plot starts on B
+            Quantity = thermal ? C3dFieldPlot.TemperatureQuantity : setup?.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Magnetostatic ? "B" : "E",
             Mode = thermal ? null : nameof(FieldMode.Peak),
             On = thermal ? C3dFieldPlotOn.Surfaces : C3dFieldPlotOn.ClipPlane,
         };
@@ -349,6 +351,7 @@ public sealed partial class C3dEditorViewModel
         _plotOffsetPreview = (name, offset);
         Viewer.SetFieldPlaneDragging(name, true);
         ApplyVisiblePlots();
+        Viewer.RequestFrame();      // the plane's chrome follows the drag, with or without a field to redraw
     }
 
     /// <summary>Ends a drag's preview. <paramref name="redraw"/> false when a commit of the same offset follows, so the plane
@@ -361,15 +364,116 @@ public sealed partial class C3dEditorViewModel
         Viewer.SetFieldPlaneDragging(preview.Name, false);
     }
 
-    /// <summary>The model's extent along <paramref name="axis"/> in DBU — the offset slider's range; null with no scene.</summary>
+    /// <summary>The geometry's extent along <paramref name="axis"/> in DBU — the offset slider's range; null with no scene.
+    /// brief-dfr31-3 R-dfr31-3-3 — every drawn object (a drawn air region too), never the air box's faces or edges: the box is
+    /// mostly empty margin, so a slider across it spent most of its travel where nothing is.</summary>
     public (long Lo, long Hi)? PlotAxisRange(C3dAxis axis)
     {
         var scene = Viewer.Scene;
         if (scene.Objects.Length == 0) return null;
+        var min = new System.Numerics.Vector3(float.MaxValue);
+        var max = new System.Numerics.Vector3(float.MinValue);
+        foreach (var o in scene.Objects)
+            if (o.Kind != Scene3DKind.Boundary) { min = System.Numerics.Vector3.Min(min, o.Min); max = System.Numerics.Vector3.Max(max, o.Max); }
+        if (min.X > max.X) (min, max) = (scene.BoundsMin, scene.BoundsMax);
         double perDbu = C3dLowering.Metres(1, Document.DbuPerMicron);
-        var (lo, hi) = (scene.ToWorld(scene.BoundsMin), scene.ToWorld(scene.BoundsMax));
+        var (lo, hi) = (scene.ToWorld(min), scene.ToWorld(max));
         (double a, double b) = axis switch { C3dAxis.X => (lo.X, hi.X), C3dAxis.Y => (lo.Y, hi.Y), _ => (lo.Z, hi.Z) };
         return ((long)Math.Round(a / perDbu), (long)Math.Round(b / perDbu));
+    }
+
+    // ── the plane in the view (brief-dfr31-3) ────────────────────────────────────────────────
+
+    /// <summary>R-dfr31-3-1 — the plots whose plane is drawn: the selected clip-plane plot, the one whose offset is being dragged,
+    /// and any whose <see cref="C3dFieldPlot.ShowPlane"/> keeps it on. Drawn whether or not a run exists: the point is to place
+    /// the plane before solving.</summary>
+    internal IEnumerable<(C3dFieldPlot Plot, long Offset)> PlotPlanesShown()
+    {
+        var selected = SelectedFieldPlot;
+        foreach (var p in Document.FieldPlots)
+        {
+            if (p.On != C3dFieldPlotOn.ClipPlane) continue;
+            long? dragged = PlotOffsetPreview(p.Name);
+            if (p != selected && dragged is null && !p.ShowPlane) continue;
+            yield return (p, dragged ?? p.Offset ?? 0);
+        }
+    }
+
+    /// <summary>The plane of <paramref name="p"/> at <paramref name="offset"/> (DBU) as four world corners spanning the air box —
+    /// the scene's bounds when there is no problem to have one — and its label, <c>Y = 120 µm</c>.</summary>
+    internal (CircuitRF.Engine.Em3d.Point3[] Corners, string Label) PlotPlane(C3dFieldPlot p, long offset)
+    {
+        var scene = Viewer.Scene;
+        var (lo, hi) = scene.Problem?.Boundary is { } box
+            ? ((box.Min.X, box.Min.Y, box.Min.Z), (box.Max.X, box.Max.Y, box.Max.Z))
+            : (scene.ToWorld(scene.BoundsMin), scene.ToWorld(scene.BoundsMax));
+        double at = C3dLowering.Metres(offset, Document.DbuPerMicron);
+        var axis = p.Axis ?? C3dAxis.Z;
+        CircuitRF.Engine.Em3d.Point3 P(double u, double v) => axis switch
+        {
+            C3dAxis.X => new(at, u, v),
+            C3dAxis.Y => new(u, at, v),
+            _ => new(u, v, at),
+        };
+        var ((u0, v0), (u1, v1)) = axis switch
+        {
+            C3dAxis.X => ((lo.Item2, lo.Item3), (hi.Item2, hi.Item3)),
+            C3dAxis.Y => ((lo.Item1, lo.Item3), (hi.Item1, hi.Item3)),
+            _ => ((lo.Item1, lo.Item2), (hi.Item1, hi.Item2)),
+        };
+        string label = $"{axis} = {LayoutUnits.Format(offset, Document.DisplayUnit, Document.DbuPerMicron)} {LayoutUnits.Suffix(Document.DisplayUnit)}";
+        return ([P(u0, v0), P(u1, v0), P(u1, v1), P(u0, v1)], label);
+    }
+
+    private void FillFieldPlaneOverlay(Viewer3DDrawOverlay overlay)
+    {
+        foreach (var (p, offset) in PlotPlanesShown()) overlay.FieldPlanes.Add(PlotPlane(p, offset));
+    }
+
+    /// <summary>R-dfr31-3-2 — the plot whose "Through…" is armed: the next click on an object in the view moves its plane through
+    /// that object's centre, and selects nothing.</summary>
+    private string? _plotThrough;
+
+    /// <summary>The plot whose "Through…" pick is armed, or null.</summary>
+    public string? PlotThroughArmed => _plotThrough;
+
+    /// <summary>Arms (or, for the plot already armed, disarms) the one-shot pick of plot <paramref name="name"/>'s plane.</summary>
+    public void ArmPlotThrough(string name)
+    {
+        if (_plotThrough == name) { CancelPlotThrough(); return; }
+        if (FieldPlot(name) is not { On: C3dFieldPlotOn.ClipPlane } p) return;
+        _plotThrough = name;
+        StatusMessage = $"Click an object: {name}'s plane moves through its centre on {p.Axis ?? C3dAxis.Z}. Esc cancels.";
+        OnPropertyChanged(nameof(PlotThroughArmed));
+        Properties?.PlotThroughChanged();
+    }
+
+    /// <summary>The pick is put away: Esc, another row selected, or the pick made.</summary>
+    public void CancelPlotThrough()
+    {
+        if (_plotThrough is null) return;
+        _plotThrough = null;
+        StatusMessage = "";
+        OnPropertyChanged(nameof(PlotThroughArmed));
+        Properties?.PlotThroughChanged();
+    }
+
+    /// <summary>R-dfr31-3-2 — the armed plot's plane moved through the centre of scene object <paramref name="id"/> on the plot's
+    /// axis: one undo entry, and the pick is put away. Null, or why not (nothing under the cursor, the air box).</summary>
+    public string? PlotThroughObject(uint id)
+    {
+        if (_plotThrough is not { } name || FieldPlot(name) is not { } p) { CancelPlotThrough(); return null; }
+        if (Viewer.Scene.Object(id) is not { } o || o.Kind == Scene3DKind.Boundary)
+            return $"Click an object to move {name}'s plane through it, or Esc.";
+        var axis = p.Axis ?? C3dAxis.Z;
+        var (cx, cy, cz) = Viewer.Scene.ToWorld((o.Min + o.Max) / 2);
+        double centre = axis switch { C3dAxis.X => cx, C3dAxis.Y => cy, _ => cz };
+        long dbu = (long)Math.Round(centre / C3dLowering.Metres(1, Document.DbuPerMicron));
+        CancelPlotThrough();
+        string at = LayoutUnits.Format(dbu, Document.DisplayUnit, Document.DbuPerMicron);
+        SetFieldPlot(name, $"Cut {name} through {o.Name}", x => { x.Axis = axis; x.Offset = dbu; });
+        StatusMessage = $"{name} cuts through {o.Name} at {axis} = {at} {LayoutUnits.Suffix(Document.DisplayUnit)}.";
+        return null;
     }
 
     // ── missing data (R-em3d83-5) ────────────────────────────────────────────────────────────
