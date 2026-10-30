@@ -27,6 +27,7 @@ using CircuitRF.Design.Layout;
 // UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] [--results <dir>]
 //            [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...
 // UiSnapshot --signal "<carrier>" [--signal "<carrier>"] -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]
+// UiSnapshot --snp <file.sNp> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]
 // UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]
 // UiSnapshot --optimizer <file.csch> -o <out.png> [--optimize] [--size WxH] [steps]
@@ -134,6 +135,7 @@ string? archive = null, manageLibraries = null, addVendorLibrary = null;
 var layerToggles = new List<(string Name, bool Hide)>();
 bool standalone = false;
 var signal = new List<string>();
+string? snp = null;
 int plotIndex = 1, previewTab = 0;
 bool sizeGiven = false;
 double width = 1000, height = 700;
@@ -147,6 +149,7 @@ for (int i = 0; i < args.Length; i++)
         case "--plot" when i + 1 < args.Length: plotIndex = int.Parse(args[++i]); break;
         case "--results" when i + 1 < args.Length: results = args[++i]; break;
         case "--signal" when i + 1 < args.Length: signal.Add(args[++i]); break;
+        case "--snp" when i + 1 < args.Length: snp = Path.GetFullPath(args[++i]); break;
         case "--tab" when i + 1 < args.Length: previewTab = int.Parse(args[++i]); break;
         case "--standalone": standalone = true; break;
         case "--iq" when i + 1 < args.Length: iq = Path.GetFullPath(args[++i]); break;
@@ -205,11 +208,12 @@ if (reviewPanel is not null && output is not null)
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
 bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null;
-if ((cdd is null && signal.Count == 0 && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
                           + "       UiSnapshot --signal \"<carrier>\" ... -o <out.png> [--tab n] [--fc <expr>] [--size WxH] [steps]\n"
+                          + "       UiSnapshot --snp <file.sNp> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --standalone [--iq <file>] -o <out.png> [--tab n] [--size WxH] [steps]\n"
                           + "       UiSnapshot --tuning <file.csch> -o <out.png> [--size WxH] [steps]\n"
                           + "       UiSnapshot --optimizer <file.csch> -o <out.png> [--optimize] [--size WxH] [steps]\n"
@@ -481,6 +485,18 @@ else if (standalone)
     designer.PreviewTab = previewTab;
     Console.WriteLine(designer.Status);
 }
+else if (snp is not null)
+{
+    // The S-Parameter Viewer through ShowForFile itself, so its pickers and its questions are wired as the
+    // application wires them; the file is read off the UI thread, and this waits for it.
+    var shown = CircuitRF.Ui.Views.SParameters.SParameterViewerWindow.ShowForFile(snp, owner: null);
+    host = shown;
+    if (sizeGiven) { host.Width = width; host.Height = height; }
+    var viewer = (CircuitRF.Ui.SParameters.SParameterViewerViewModel)shown.DataContext!;
+    var until = DateTime.UtcNow.AddSeconds(120);
+    while (viewer.IsLoading && DateTime.UtcNow < until) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
+    Console.WriteLine(viewer.Status);
+}
 else if (signal.Count > 0)
 {
     // The Designer as the inspector's Design signal... opens it: a MOD_Source in a schematic, SetTarget, the window.
@@ -602,7 +618,7 @@ foreach (var (kind, arg) in steps)
         }
         case "--type":
         {
-            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null ? host : throw new InvalidOperationException("--type: no dialog is open"));
+            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null || snp is not null ? host : throw new InvalidOperationException("--type: no dialog is open"));
             // Name=text types into the text box of that x:Name (an inline box: SizeInput, DistanceInput); else the dialog's
             // first text box.
             int eq = arg.IndexOf('=');
@@ -652,7 +668,7 @@ foreach (var (kind, arg) in steps)
         case "--button":
         {
             // A real press and release on the button's centre, in the dialog's own window.
-            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null ? host : throw new InvalidOperationException("--button: no dialog is open"));
+            var dialog = TopDialog() ?? (imageVm is not null || vendorMode || cem is not null || snp is not null ? host : throw new InvalidOperationException("--button: no dialog is open"));
             var buttons = dialog.GetVisualDescendants().OfType<Button>().Where(b => b.IsEffectivelyVisible).ToList();
             // A toolbar button's content is an icon beside a TextBlock, so its label is matched too.
             var button = buttons.FirstOrDefault(b => b.Content is string c && c == arg)

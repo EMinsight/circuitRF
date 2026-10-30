@@ -33,9 +33,11 @@ what `circuitrf snp -o x.cdd` writes, because both call `SParameterViewerPreset.
 - A Touchstone file in the Workspace, bookmarked or loose inside the folder: **Open in S-Parameter
   Viewer** on its menu, and a double-click. The double-click opens on the mouse-up, the rule a `.crail`
   already follows, because a window shown from inside the press comes up behind the workspace.
-- A placed **S1P / S2P / S3P / S4P / SnP**. All five are `SymbolKind.Snp`, so the panel's own **Show**
-  button covers them. It enables once the `File` parameter resolves — through `SnpPathPolicy` — to a
-  file that is there, and opens this viewer. There is no second button: the file row is already full.
+- A placed **S1P / S2P / S3P / S4P / SnP**. All five are `SymbolKind.Snp`, so the panel's file row
+  covers them: **Browse…**, then two square glyph buttons — **Show** (a folder, reveal in the file
+  manager) and **Preview** (an eye). Preview enables once
+  the `File` parameter resolves — through `SnpPathPolicy` — to a file that is there, and opens this
+  viewer. It is a button of its own: Show already had a job, and taking it over removed the reveal.
 - A Touchstone row of a Data Display's dataset list, the same **View**.
 
 ## The split
@@ -91,13 +93,34 @@ only.
 Strokes, grid lines and axis figures are held at one weight, so a plot that fills the pane is not
 drawn with a heavier pen than one sharing it. The window draws no title above a plot and lists the
 trace names beside it, up to the same six; the saved `.cdd` and `circuitrf snp` keep the preset's
-titles and in-plot legend. A Smith chart
+titles, the rectangular plots' in-plot legend and the round charts' name strips. A Smith chart
 in a Data Display is given a canvas taller than the disc, for the title and the rows under it. The
 window's row cannot grow, so the hosted chart drops both — a disc pushed down to make room for a
 title paints past the row, over the window and over the plots below.
 
 Up to four ports the viewer opens on every term. Above that — an `.s16p` has 256 — it opens on the
-reflections and each forward neighbour S(i+1, i), and the rest are a tick away.
+reflections and each forward neighbour S(i+1, i) of the first eight ports, and the rest are a tick
+away. A file can have hundreds of ports, and 2N − 1 curves of all of them is not a picture. **All**
+asks before it draws more than 64 terms (`AllWithoutAskingUpTo`, eight ports' worth): every term of a
+200-port file is 40,000 curves on each plot, and the window is held until they are drawn.
+
+**The term list virtualises.** Hundreds of ports are tens of thousands of terms, so the list is cut
+into lines of one matrix row each (`TermLines`) and hosted in a `ListBox`, the one control whose own
+template puts a `VirtualizingStackPanel` inside its own `ScrollViewer`. An `ItemsControl` given that
+panel and a scrolling template still realised every line: a 200-port file built 40,000 tick boxes and
+took most of a minute to open. Now it builds what is in view.
+
+## The saved display's page
+
+`SParameterViewerPreset.Compose` lays the `.cdd` out as the window lays out all four plots: Smith and
+polar across the top, magnitude and phase across the bottom. A round chart in a Data Display draws past
+its own rectangle — the title above it, the frequency rows below and the trace-name strips to the left
+of the disc — so the page is placed from those extents, measured by `PlotCanvasGeometry` (the
+functions the Data Display and `circuitrf render` place them by), not from the disc. The two charts
+share one frequency range, so each says it in one custom X label rather than a row per term. They name
+their terms in strips, one per term up to six; past six, one strip lists the first four and the count,
+because a strip per term runs off the page. The window turns both custom labels off again: its row
+cannot grow, and its names sit beside the plot.
 
 **A Y- or Z-parameter file is converted to S before it is plotted.** A network trace reads its
 source's matrices as S whatever the option line said, so handing it the file as read would draw

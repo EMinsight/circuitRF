@@ -103,6 +103,8 @@ public partial class SParameterViewerWindow : Window, ICrfMenuWindow
         var window = new SParameterViewerWindow { DataContext = vm };
         vm.PickFileAsync = window.PickTouchstoneAsync;
         vm.PickDisplayPathAsync = window.PickDisplayPathAsync;
+        vm.ConfirmAsync = (heading, text) =>
+            Dialogs.TextConfirmDialog.AskAsync(window, SParameterViewerViewModel.ToolName, heading, text, "Draw All");
         vm.OpenDataDisplay = cdd => WorkspaceLocator.For(owner)?.OpenDataDisplayDocument(cdd);
         return window;
     }

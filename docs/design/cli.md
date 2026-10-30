@@ -4448,7 +4448,7 @@ The kind is inferred through `DocumentKinds.Classify`, and any other kind is a r
 
 | Option | Meaning |
 |---|---|
-| `--params <list>` | The terms drawn: `S21`, `S(2,1)` from ten ports up, comma-separated, plus the words `all`, `reflections` and `default`. The default is the window's own opening selection — every term up to four ports, else the reflections and each forward neighbour. A term the file does not have is `touchstone.no-such-parameter`, naming the port count. |
+| `--params <list>` | The terms drawn: `S21`, `S(2,1)` from ten ports up, comma-separated, plus the words `all`, `reflections` and `default`. The default is the window's own opening selection — every term up to four ports, else the reflections and each forward neighbour of the first eight ports. A term the file does not have is `touchstone.no-such-parameter`, naming the port count. |
 | `-o out.{svg,pdf,png}` | The four plots. |
 | `-o out.cdd` | The plots as a Data Display — `SParameterViewerPreset.Build`, which is what the window's Save as Data Display writes, so the two are the same bytes. |
 | `--size`, `--scale`/`--dpi`, `--background`, `--dark` | `plot`'s picture options, spelling for spelling and refusal for refusal. |

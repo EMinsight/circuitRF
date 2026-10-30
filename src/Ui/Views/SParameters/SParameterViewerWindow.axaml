@@ -72,6 +72,30 @@
             <Setter Property="FontSize" Value="12"/>
         </Style>
         <!-- The diagonal reads at a glance: a reflection's name is the heavier one. -->
+        <!-- The term list is a ListBox only so that it virtualises; it reads as the plain grid of tick boxes. -->
+        <Style Selector="ListBox.terms">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+        </Style>
+        <Style Selector="ListBox.terms ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ListBox.terms ListBoxItem /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+        <Style Selector="ListBox.terms ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBox.terms ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
         <Style Selector="TextBlock.refl">
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
@@ -238,24 +262,34 @@
                                                 ToolTip.Tip="What the viewer opens on: every term up to four ports, else the reflections and each S(i+1,i)"/>
                                         <Button Classes="chip" Content="None" Command="{Binding SelectNoneCommand}"/>
                                     </WrapPanel>
-                                    <ItemsControl ItemsSource="{Binding Terms}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <UniformGrid Columns="{Binding $parent[Window].((vm:SParameterViewerViewModel)DataContext).TermColumns}"/>
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="vm:SParameterTermViewModel">
-                                                <CheckBox IsChecked="{Binding IsChecked}" ToolTip.Tip="{Binding Tooltip}" MinWidth="0" Padding="4,0,6,0">
-                                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                                        <Rectangle Width="10" Height="3" VerticalAlignment="Center"
-                                                                   Fill="{Binding Color, Converter={x:Static ddconv:SkColorToAvaloniaColorConverter.Instance}}"/>
-                                                        <TextBlock Text="{Binding Name}" Classes.refl="{Binding IsReflection}"/>
-                                                    </StackPanel>
-                                                </CheckBox>
+                                    <!-- One line per matrix row (or part of one), built only while in view: a file of
+                                         hundreds of ports has tens of thousands of terms. A ListBox, because only its
+                                         own template puts a VirtualizingStackPanel inside its own ScrollViewer; an
+                                         ItemsControl realised every line. Its selection is styled out. -->
+                                    <ListBox Name="TermList" Classes="terms" ItemsSource="{Binding TermLines}" MaxHeight="300">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:SParameterTermLine">
+                                                <ItemsControl ItemsSource="{Binding Cells}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <UniformGrid Rows="1" Columns="{Binding $parent[Window].((vm:SParameterViewerViewModel)DataContext).TermColumns}"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:SParameterTermViewModel">
+                                                            <CheckBox IsChecked="{Binding IsChecked}" ToolTip.Tip="{Binding Tooltip}" MinWidth="0" Padding="4,0,6,0">
+                                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                    <Rectangle Width="10" Height="3" VerticalAlignment="Center"
+                                                                               Fill="{Binding Color, Converter={x:Static ddconv:SkColorToAvaloniaColorConverter.Instance}}"/>
+                                                                    <TextBlock Text="{Binding Name}" Classes.refl="{Binding IsReflection}"/>
+                                                                </StackPanel>
+                                                            </CheckBox>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
                                             </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
                                 </StackPanel>
                             </Border>
                         </StackPanel>

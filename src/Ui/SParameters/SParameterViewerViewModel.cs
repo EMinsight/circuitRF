@@ -33,6 +33,9 @@ public sealed record SParameterFactRow(string Label, string Value)
 /// <summary>One trace name beside its plot: the colour it is drawn in, and the name the plot would have given it.</summary>
 public sealed record SParameterLegendEntry(string Label, SKColor Color);
 
+/// <summary>One line of the term list: up to <see cref="SParameterViewerViewModel.TermColumns"/> terms of one matrix row.</summary>
+public sealed record SParameterTermLine(IReadOnlyList<SParameterTermViewModel> Cells);
+
 /// <summary>One term of the matrix, ticked or not.</summary>
 public sealed partial class SParameterTermViewModel : ObservableObject
 {
@@ -139,6 +142,10 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
     /// <summary>Opens a written <c>.cdd</c> in a workspace window, when the viewer was opened from one.</summary>
     public Action<string>? OpenDataDisplay { get; set; }
 
+    /// <summary>Asks a yes-or-no question, given its heading and its sentence; true is yes. Set by the window.
+    /// Unset, nothing is asked and the answer is yes.</summary>
+    public Func<string, string, Task<bool>>? ConfirmAsync { get; set; }
+
     // ── state ─────────────────────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -199,8 +206,25 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
     public ObservableCollection<SParameterLegendEntry> MagnitudeLegend { get; } = [];
     public ObservableCollection<SParameterLegendEntry> PhaseLegend { get; } = [];
 
-    /// <summary>How many tick boxes a row of the term grid holds: one per port, up to six.</summary>
+    /// <summary>
+    /// The tick boxes as the list shows them: each row of the matrix cut into lines of <see cref="TermColumns"/>.
+    /// The list builds only the lines in view, so a file of hundreds of ports — tens of thousands of terms —
+    /// opens as quickly as a two-port. Replaced whole rather than filled a line at a time: twenty thousand
+    /// separate additions to a bound list are each a layout pass.
+    /// </summary>
+    [ObservableProperty] private IReadOnlyList<SParameterTermLine> _termLines = [];
+
+    /// <summary>How many tick boxes a line of the term list holds: one per port up to four, then as many of the
+    /// longer names as the pane has room for.</summary>
     [ObservableProperty] private int _termColumns = 2;
+
+    /// <summary>Tick boxes to a line for a file of <paramref name="ports"/>: the names lengthen at ten ports
+    /// (<c>S(10,1)</c>) and again at a hundred.</summary>
+    public static int TermColumnsFor(int ports)
+        => ports <= SParameterViewerPreset.AllTermsUpToPorts ? Math.Max(1, ports)
+         : ports < 10  ? 4
+         : ports < 100 ? 3
+         :               2;
 
     // ── loading ───────────────────────────────────────────────────────────────
 
@@ -226,6 +250,7 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
         Facts.Clear();
         Findings.Clear();
         Terms.Clear();
+        TermLines = [];
 
         if (source is null)
         {
@@ -248,7 +273,17 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
         var chosen = (keep ?? SParameterViewerPreset.DefaultSelection(f.Ports)).ToHashSet();
         foreach (var t in SParameterViewerPreset.AllTerms(f.Ports))
             Terms.Add(new SParameterTermViewModel(t, SParameterViewerPreset.Name(t, f.Ports), chosen.Contains(t), Redraw));
-        TermColumns = Math.Clamp(f.Ports, 1, 6);
+        TermColumns = TermColumnsFor(f.Ports);
+        var lines = new List<SParameterTermLine>();
+        for (int row = 0; row < f.Ports; row++)
+            for (int col = 0; col < f.Ports; col += TermColumns)
+            {
+                int n = Math.Min(TermColumns, f.Ports - col);
+                var cells = new SParameterTermViewModel[n];
+                for (int k = 0; k < n; k++) cells[k] = Terms[row * f.Ports + col + k];
+                lines.Add(new SParameterTermLine(cells));
+            }
+        TermLines = lines;
 
         OnPropertyChanged(nameof(HasFile));
         OnPropertyChanged(nameof(HasFindings));
@@ -260,7 +295,22 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
     /// <summary>The ticked terms, row-major.</summary>
     public IReadOnlyList<SParameterViewerPreset.Term> Selection() => [.. Terms.Where(t => t.IsChecked).Select(t => t.Term)];
 
-    [RelayCommand] private void SelectAll()         => Choose(_ => true);
+    /// <summary>All draws every term without asking up to this many — eight ports' worth. Past it All asks
+    /// first: a file of hundreds of ports has tens of thousands of terms, and drawing them all on every plot
+    /// holds the window for as long as that takes.</summary>
+    public const int AllWithoutAskingUpTo = 64;
+
+    [RelayCommand]
+    private async Task SelectAll()
+    {
+        if (Terms.Count > AllWithoutAskingUpTo && ConfirmAsync is not null && _source is not null
+            && !await ConfirmAsync($"Draw all {Terms.Count:N0} terms?",
+                                   $"This file has {_source.Facts.Ports} ports. Drawing every term puts {Terms.Count:N0} curves " +
+                                   "on each plot, and can take a long time."))
+            return;
+        Choose(_ => true);
+    }
+
     [RelayCommand] private void SelectReflections() => Choose(t => t.IsReflection);
     [RelayCommand] private void SelectNone()        => Choose(_ => false);
 
@@ -301,7 +351,7 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
         Status = selection.Count == 0
             ? "No terms ticked: tick one under Parameters to draw it."
             : $"{_source.Facts.FrequencyCount} points, {SParameterViewerPreset.Hz(_source.Facts.FirstFrequencyHz)} to {SParameterViewerPreset.Hz(_source.Facts.LastFrequencyHz)}"
-              + $" · {traces} term(s) drawn" + (Findings.Count > 0 ? $" · {Findings.Count} finding(s)" : " · no defects found");
+              + $" · {traces} of {Terms.Count} term(s) drawn" + (Findings.Count > 0 ? $" · {Findings.Count} finding(s)" : " · no defects found");
         PlotsUpdated?.Invoke(this, EventArgs.Empty);
     }
 
@@ -352,6 +402,10 @@ public sealed partial class SParameterViewerViewModel : ObservableObject
         plot.Legend = LegendPlacement.Off;
         if (plot.PlotType is PlotType.Smith or PlotType.Polar)
         {
+            // The page's one frequency row and its one strip of names are the saved display's; here the names
+            // sit beside the plot and the row has nowhere to go.
+            plot.CustomXLabelOn = false;
+            plot.CustomYLabelOn = false;
             foreach (var t in plot.Traces) t.ExcludeFromAxisLabels = true;
             return;
         }

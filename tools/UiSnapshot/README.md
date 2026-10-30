@@ -45,6 +45,14 @@ The window is the real `SignalDesignerWindow`, opened on its view model's `SetTa
 **Design signal…** opens it, after its preview has finished. Without `--size` it takes the window's own size
 (1199x800), and the carrier cards may then be below the fold. Use `--size 1199x1060` to see them.
 
+**The S-Parameter Viewer** opens on one Touchstone file, as a placed SnP's **Preview** opens it:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --snp <file.sNp> -o out.png [--size WxH] [steps]
+```
+
+The status line prints after the file is read and drawn.
+
 **The Tuning window** opens on a schematic's ticked Tune rows, the way the shell hosts it:
 
 ```

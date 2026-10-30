@@ -63,8 +63,9 @@ that window forward.</p>
 right-click menu, and double-clicking the file does it too — for a file you imported and for a
 loose <code>.sNp</code> sitting in the workspace folder.</p>
 <p>A placed <a href="components.html#snp">SnP</a> component — the library's <strong>S1P</strong>, <strong>S2P</strong>, <strong>S3P</strong>, <strong>S4P</strong>
-and <strong>SnP</strong> are all this one component — enables <strong>Preview</strong>, beside <strong>Browse…</strong>, once its
-file is chosen and is there. <strong>Preview</strong> opens the viewer on that file.</p>
+and <strong>SnP</strong> are all this one component — has three buttons on its <strong>File</strong> row. <strong>Browse…</strong>
+chooses the file, the folder button shows it in your file manager, and the eye button opens the viewer
+on it. The eye is available once the file is chosen and is there.</p>
 <p>A Data Display's dataset list offers the same <strong>View</strong> on any row whose file is a Touchstone file.</p>
 <h2 id="file">File information</h2>
 <p>The left pane reads the file back to you, which is most of the point of opening it. The path under
@@ -184,7 +185,7 @@ file is.</p>
 <tbody>
 <tr>
 <td><strong>All</strong></td>
-<td>Every term of the matrix.</td>
+<td>Every term of the matrix. Past 64 terms it asks first.</td>
 </tr>
 <tr>
 <td><strong>Reflections</strong></td>
@@ -201,9 +202,11 @@ file is.</p>
 </tbody>
 </table>
 <p>Up to four ports, <strong>Default</strong> is every term. Above that it is the reflections plus each forward
-neighbour, S21, S32, S43 and so on — an <code>.s16p</code> has 256 terms, and drawing all of them is a
-choice rather than a greeting. Past six terms the list beside a plot is left off, because it would
-take the width the curves need; each tick box carries its term's colour.</p>
+neighbour, S21, S32, S43 and so on, over the first eight ports — an <code>.s16p</code> has 256 terms and a
+file can have hundreds of ports, so drawing all of them is a choice rather than a greeting. Past six
+terms the list beside a plot is left off, because it would take the width the curves need; each tick
+box carries its term's colour.</p>
+<p>A file with many ports lists its terms one matrix row at a time, in a list that scrolls on its own.</p>
 <h2 id="findings">Findings</h2>
 <p>Three things about a file are defects, and each is stated as a sentence naming where:</p>
 <ul>
@@ -221,7 +224,10 @@ three and leaves the judgement to you.</p>
 <h2 id="saving">Saving it as a Data Display</h2>
 <p>The viewer keeps nothing of its own. <strong>Save as Data Display</strong> in the header writes
 the plots as they stand to a <code>.cdd</code> and opens it, so markers, axes and terms can be edited afterwards
-in the <a href="data-display.html">Data Display</a>. The file itself is referenced, not copied.</p>
+in the <a href="data-display.html">Data Display</a>. The file itself is referenced, not copied. The Smith and
+polar charts sit across the top and magnitude and phase across the bottom. Each round chart names its
+terms beside the chart, or the first few and how many there are when it has more than six, with one
+frequency row under it.</p>
 <p><strong>Reload</strong> reads the file again, which is what you want after a measurement or a run has rewritten it.
 The terms you had ticked stay ticked.</p>
 <h2 id="headless">Running it headless</h2>

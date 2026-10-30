@@ -37,6 +37,10 @@ public static class SParameterViewerPreset
     /// neighbours rather than every term — an <c>.s16p</c> has 256.</summary>
     public const int AllTermsUpToPorts = 4;
 
+    /// <summary>The ports the default selection reaches. A file can have hundreds, and the reflections and
+    /// neighbours of all of them would open as hundreds of curves no one can tell apart.</summary>
+    public const int DefaultPortsShown = 8;
+
     /// <summary>The phase axis' fixed span, degrees: the whole of what a wrapped phase can be.</summary>
     public const double PhaseLimitDeg = 180.0;
 
@@ -79,16 +83,17 @@ public static class SParameterViewerPreset
 
     /// <summary>
     /// What opens ticked: every term up to <see cref="AllTermsUpToPorts"/> ports; above that the
-    /// reflections and each forward neighbour S(i+1,i).
+    /// reflections and each forward neighbour S(i+1,i) of the first <see cref="DefaultPortsShown"/> ports.
     /// </summary>
     public static IReadOnlyList<Term> DefaultSelection(int ports)
     {
         if (ports <= AllTermsUpToPorts) return AllTerms(ports);
+        int shown = Math.Min(ports, DefaultPortsShown);
         var sel = new List<Term>();
-        for (int i = 0; i < ports; i++)
+        for (int i = 0; i < shown; i++)
         {
             sel.Add(new Term(i, i));
-            if (i + 1 < ports) sel.Add(new Term(i + 1, i));
+            if (i + 1 < shown) sel.Add(new Term(i + 1, i));
         }
         return Ordered(sel, ports);
     }
@@ -289,41 +294,54 @@ public static class SParameterViewerPreset
     }
 
     /// <summary>
-    /// The four plots over <paramref name="source"/>, every trace bound to its path. The Smith
-    /// chart and the polar chart are on the left; magnitude and phase stack beside them.
+    /// The four plots over <paramref name="source"/>, every trace bound to its path, laid out as the window lays
+    /// out all four: the Smith and polar charts across the top, magnitude and phase across the bottom.
     /// </summary>
+    /// <remarks>
+    /// <b>Each round chart is given the room it draws in, not just its disc.</b> A Data Display grows a Smith
+    /// or polar canvas upward for its title and downward for the frequency row, and draws the axis-label
+    /// strips to the left of the disc, outside the canvas. Those extents are measured here by the functions
+    /// the Data Display and <c>circuitrf render</c> place them by, so two plots cannot be written overlapping.
+    /// </remarks>
     public static IReadOnlyList<ComposedPlot> Compose(TouchstoneSource source, IReadOnlyList<Term> selection)
     {
         var unit  = DisplayUnit(source.Facts);
         string sourceRef = source.Path;
+        string freqLabel = FrequencyLabel(source, unit);
 
-        var smith = new PlotContainerConfig
-        {
-            PlotType = PlotType.Smith, FreqUnit = unit,
-            Left = Gap, Top = Gap + (RectHeight + Gap + RectHeight - SmithSize) / 2, Width = SmithSize, Height = SmithSize,
-            CustomTitle = "Reflection", CustomTitleOn = true,
-            Legend = LegendPlacement.Inside,
-            Traces = [.. selection.Where(t => t.IsReflection)
-                                  .Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Complex))],
-        };
+        var reflections   = selection.Where(t => t.IsReflection).ToList();
+        var transmissions = selection.Where(t => !t.IsReflection).ToList();
 
-        var polar = new PlotContainerConfig
-        {
-            PlotType = PlotType.Polar, FreqUnit = unit,
-            Left = Gap, Top = Gap + SmithSize + Gap, Width = SmithSize, Height = SmithSize,
-            CustomTitle = "Transmission", CustomTitleOn = true,
-            Legend = LegendPlacement.Inside,
-            Traces = [.. selection.Where(t => !t.IsReflection)
-                                  .Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Complex))],
-        };
+        var smith = Round(PlotType.Smith, "Reflection", unit, freqLabel, reflections,
+            [.. reflections.Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Complex))]);
+        var polar = Round(PlotType.Polar, "Transmission", unit, freqLabel, transmissions,
+            [.. transmissions.Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Complex))]);
 
-        var magnitude = Rect("Magnitude", "Magnitude (dB)", unit, Gap + SmithSize + Gap, Gap,
+        var magnitude = Rect("Magnitude", "Magnitude (dB)", unit,
             [.. selection.Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Db))],
             FrequencyAxis(source, unit, phase: false));
-
-        var phase = Rect("Phase", "Phase (deg)", unit, Gap + SmithSize + Gap, Gap + RectHeight + Gap,
+        var phase = Rect("Phase", "Phase (deg)", unit,
             [.. selection.Select(t => Network(t, ColorIndexOf(t, selection), sourceRef, DependentVarFormat.Phase))],
             FrequencyAxis(source, unit, phase: true));
+
+        // ── the page ──
+        var (smithAbove, smithBelow, smithStrips) = RoundExtents(smith, reflections.Count);
+        var (polarAbove, polarBelow, polarStrips) = RoundExtents(polar, transmissions.Count);
+        double above = Math.Max(smithAbove, polarAbove);
+        double below = Math.Max(smithBelow, polarBelow);
+
+        double topRow    = smithStrips + SmithSize + Gap + polarStrips + SmithSize;
+        double bottomRow = RectWidth + Gap + RectWidth;
+        double topIndent    = Gap + Math.Max(0, (bottomRow - topRow) / 2);
+        double bottomIndent = Gap + Math.Max(0, (topRow - bottomRow) / 2);
+
+        smith.Left = topIndent + smithStrips;
+        polar.Left = smith.Left + SmithSize + Gap + polarStrips;
+        smith.Top  = polar.Top = Gap + above;
+
+        magnitude.Left = bottomIndent;
+        phase.Left     = bottomIndent + RectWidth + Gap;
+        magnitude.Top  = phase.Top = smith.Top + SmithSize + below + Gap;
 
         return
         [
@@ -332,6 +350,65 @@ public static class SParameterViewerPreset
             new ComposedPlot(PlotKind.Magnitude, magnitude),
             new ComposedPlot(PlotKind.Phase, phase),
         ];
+    }
+
+    /// <summary>
+    /// A Smith or polar chart. It names its terms in the strips beside the disc, as a Data Display chart does,
+    /// one per term up to <see cref="LegendUpToTerms"/>; past that one strip lists the first few, since a strip
+    /// per term would run off the page. Every term shares one frequency range, so one row says it, not one per term.
+    /// </summary>
+    private static PlotContainerConfig Round(PlotType type, string title, FreqUnit unit, string freqLabel,
+                                             IReadOnlyList<Term> terms, List<TraceConfig> traces)
+    {
+        bool oneStrip = terms.Count > LegendUpToTerms;
+        return new PlotContainerConfig
+        {
+            PlotType = type, FreqUnit = unit,
+            Width = SmithSize, Height = SmithSize,
+            CustomTitle = title, CustomTitleOn = true,
+            CustomXLabel = freqLabel, CustomXLabelOn = true,
+            CustomYLabel = oneStrip ? TermList(terms) : "", CustomYLabelOn = oneStrip,
+            Legend = LegendPlacement.Off,
+            Traces = traces,
+        };
+    }
+
+    /// <summary>How far a round chart's title reaches above its canvas, its frequency row below it, and its
+    /// label strips to the left of it.</summary>
+    private static (double Above, double Below, double Left) RoundExtents(PlotContainerConfig pc, int terms)
+    {
+        var probe = new Plot(pc.PlotType, pc.FreqUnit)
+        {
+            CustomTitle = pc.CustomTitle, CustomTitleOn = pc.CustomTitleOn,
+            CustomXLabel = pc.CustomXLabel, CustomXLabelOn = pc.CustomXLabelOn,
+            Legend = pc.Legend,
+        };
+        double above = PlotCanvasGeometry.TopLabelExtraLogical(probe, pc.Width);
+        double below = PlotCanvasGeometry.BottomLabelExtraLogical(probe, pc.Width);
+        int strips = terms == 0 ? 0 : pc.CustomYLabelOn ? 1 : terms;
+        double sw = PlotCanvasGeometry.StripLogicalWidth(pc.Height);
+        double inset = PlotCanvasGeometry.ChartInset(probe, pc.Width, pc.Height + above + below);
+        double left = strips == 0 ? 0 : Math.Max(0, strips * sw + PlotCanvasGeometry.StripGap(sw) - inset);
+        return (above, below, left);
+    }
+
+    /// <summary>The first few names, then how many there are: <c>S(1,2), S(1,3), S(1,4), S(2,1) … 12 terms</c> —
+    /// spelled as the chart spells a trace, so the strip reads like the ones it stands in for.</summary>
+    private static string TermList(IReadOnlyList<Term> terms)
+    {
+        const int named = 4;
+        string head = string.Join(", ", terms.Take(named).Select(t => $"S({t.Row + 1},{t.Col + 1})"));
+        return terms.Count > named ? $"{head} … {terms.Count} terms" : head;
+    }
+
+    /// <summary>The row a Data Display chart writes under its disc for each trace, said once.</summary>
+    private static string FrequencyLabel(TouchstoneSource source, FreqUnit unit)
+    {
+        var f = source.AsRead.Frequencies;
+        if (f.Length == 0) return "freq";
+        double scale = unit.Scale();
+        return $"freq ({(f.Min() * scale).ToString("G4", CultureInfo.InvariantCulture)} to " +
+               $"{(f.Max() * scale).ToString("G4", CultureInfo.InvariantCulture)} {unit.Description()})";
     }
 
     /// <summary>The plots as a Data Display document: one tab, its source the file itself.</summary>
@@ -366,11 +443,11 @@ public static class SParameterViewerPreset
         };
     }
 
-    private static PlotContainerConfig Rect(string title, string yLabel, FreqUnit unit, double left, double top,
+    private static PlotContainerConfig Rect(string title, string yLabel, FreqUnit unit,
                                             List<TraceConfig> traces, AxesConfig axes) => new()
     {
         PlotType = PlotType.Rect, FreqUnit = unit,
-        Left = left, Top = top, Width = RectWidth, Height = RectHeight,
+        Width = RectWidth, Height = RectHeight,
         CustomTitle = title, CustomTitleOn = true,
         CustomYLabel = yLabel, CustomYLabelOn = true,
         Legend = traces.Count <= LegendUpToTerms ? LegendPlacement.Inside : LegendPlacement.Off,

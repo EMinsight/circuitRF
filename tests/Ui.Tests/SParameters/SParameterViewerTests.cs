@@ -147,6 +147,83 @@ public sealed class SParameterViewerTests : IDisposable
         Assert.All(six, t => Assert.True(t.Row == t.Col || t.Row == t.Col + 1));
     }
 
+    [Fact]
+    public void AFileOfHundredsOfPortsOpensOnTheFirstEightPortsOnly()
+    {
+        var sel = SParameterViewerPreset.DefaultSelection(200);
+        Assert.Equal(8 + 7, sel.Count);
+        Assert.All(sel, t => Assert.True(t.Row < SParameterViewerPreset.DefaultPortsShown));
+    }
+
+    /// <summary>The saved display's plots, each with the title above it, the frequency row under it and the name
+    /// strips beside it, as <c>circuitrf render</c> places them: no two of them share any ground.</summary>
+    [Theory]
+    [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(12)]
+    public void TheSavedDisplaysPlotsDoNotOverlap(int ports)
+    {
+        var source = Read(Write(ports, Uniform(1e9, 0.1e9, 11)));
+        var boxes = SParameterViewerPreset.Compose(source, SParameterViewerPreset.AllTerms(ports)).Select(p =>
+        {
+            var pc = p.Config;
+            var placed = PlotPlacement.Place(PlotConfigLoader.LoadPlot(pc, source), pc.Left, pc.Top, pc.Width, pc.Height,
+                                             pc.FreqUnit, hasMultipleSources: false, aliasFor: null);
+            double sw = placed.LabelStripViewWidth;
+            double inset = PlotCanvasGeometry.ChartInset(placed.Plot, placed.ViewWidth, placed.ViewHeight)
+                         - PlotCanvasGeometry.StripGap(sw);
+            double left = Math.Min(placed.ViewLeft, placed.ViewLeft + inset - placed.LeftLabelStrips.Count * sw);
+            return (p.Kind, L: left, T: placed.ViewTop, R: placed.ViewLeft + placed.ViewWidth, B: placed.ViewTop + placed.ViewHeight);
+        }).ToList();
+
+        foreach (var a in boxes)
+            foreach (var b in boxes.Where(b => b.Kind > a.Kind))
+                Assert.False(a.L < b.R && b.L < a.R && a.T < b.B && b.T < a.B, $"{a.Kind} overlaps {b.Kind}");
+    }
+
+    /// <summary>The tick boxes are listed a matrix row at a time, cut to the line's width, so the list can build
+    /// only the lines in view.</summary>
+    [Fact]
+    public void TheTermListIsLinesOfOneMatrixRowEach()
+    {
+        string path = Write(6, Uniform(1e9, 0.1e9, 3));
+        var vm = new SParameterViewerViewModel();
+        vm.Show(path, Read(path), null);
+
+        Assert.Equal(4, vm.TermColumns);
+        Assert.Equal(6 * 2, vm.TermLines.Count);
+        Assert.All(vm.TermLines, line => Assert.Single(line.Cells.Select(c => c.Term.Row).Distinct()));
+        Assert.Equal(vm.Terms, vm.TermLines.SelectMany(l => l.Cells));
+    }
+
+    /// <summary>All asks first past eight ports' worth of terms, and a no leaves the selection as it was.</summary>
+    [Fact]
+    public async System.Threading.Tasks.Task AllAsksFirstOnALargeFile_AndANoChangesNothing()
+    {
+        string big = Write(9, Uniform(1e9, 0.1e9, 3));
+        var vm = new SParameterViewerViewModel();
+        vm.Show(big, Read(big), null);
+        int asked = 0;
+        bool answer = false;
+        vm.ConfirmAsync = (_, _) => { asked++; return System.Threading.Tasks.Task.FromResult(answer); };
+        int before = vm.Selection().Count;
+
+        await vm.SelectAllCommand.ExecuteAsync(null);
+        Assert.Equal(1, asked);
+        Assert.Equal(before, vm.Selection().Count);
+
+        answer = true;
+        await vm.SelectAllCommand.ExecuteAsync(null);
+        Assert.Equal(81, vm.Selection().Count);
+
+        string small = Write(4, Uniform(1e9, 0.1e9, 3));
+        vm.Show(small, Read(small), null);
+        vm.SelectNoneCommand.Execute(null);
+        await vm.SelectAllCommand.ExecuteAsync(null);
+        Assert.Equal(2, asked);
+        Assert.Equal(16, vm.Selection().Count);
+    }
+
     [Theory]
     [InlineData("S11,S21", 2, "S11,S21")]
     [InlineData("s(2,1), S11", 2, "S11,S21")]
@@ -471,5 +548,33 @@ public sealed class SParameterViewerTests : IDisposable
         string outside = Path.Combine(_dir, "elsewhere.s2p");
         File.WriteAllText(outside, "x");
         Assert.False(Node(NodeKind.OtherFile, outside, "../elsewhere.s2p").IsTouchstoneFile);
+    }
+
+    // ── a placed SnP ─────────────────────────────────────────────────────────
+
+    /// <summary>The File row keeps both: Show reveals the file in the file manager, Preview opens it in the viewer.</summary>
+    [Fact]
+    public async System.Threading.Tasks.Task APlacedSnpsShowRevealsTheFile_AndPreviewOpensTheViewer()
+    {
+        string file = Write(2, Uniform(1e9, 0.1e9, 3));
+        var comp = new EditableComponent { InstanceName = "S1", Symbol = SymbolKind.Snp };
+        foreach (var dp in ComponentTypeRegistry.DefaultParameters(SymbolKind.Snp, 2))
+            comp.Parameters.Add(new EditableParameter { Name = dp.Name, Expression = dp.Expression });
+        comp.Parameters.First(p => p.Name == "File").Expression = file;
+        var model = new SchematicEditModel();
+        model.Components.Add(comp);
+        var editor = new CircuitRF.Ui.ViewModels.ParameterEditorViewModel();
+        editor.SetTargetDirect(new CircuitRF.Ui.ViewModels.SchematicViewModel(model), comp, showClose: false);
+
+        string? revealed = null, previewed = null;
+        editor.RevealFileAsync = p => { revealed = p; return System.Threading.Tasks.Task.CompletedTask; };
+        editor.OpenSnpViewerRequested += p => previewed = p;
+
+        await editor.ShowSnpFileCommand.ExecuteAsync(null);
+        Assert.Equal(Path.GetFullPath(file), revealed);
+        Assert.Null(previewed);
+
+        editor.PreviewSnpFileCommand.Execute(null);
+        Assert.Equal(Path.GetFullPath(file), previewed);
     }
 }

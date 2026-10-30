@@ -35,8 +35,9 @@ right-click menu, and double-clicking the file does it too &mdash; for a file yo
 loose `.sNp` sitting in the workspace folder.
 
 A placed [SnP](components.html#snp) component &mdash; the library's **S1P**, **S2P**, **S3P**, **S4P**
-and **SnP** are all this one component &mdash; enables **Preview**, beside **Browse&hellip;**, once its
-file is chosen and is there. **Preview** opens the viewer on that file.
+and **SnP** are all this one component &mdash; has three buttons on its **File** row. **Browse&hellip;**
+chooses the file, the folder button shows it in your file manager, and the eye button opens the viewer
+on it. The eye is available once the file is chosen and is there.
 
 A Data Display's dataset list offers the same **View** on any row whose file is a Touchstone file.
 
@@ -110,15 +111,18 @@ Every term is a tick box, and a reflection's name is the heavier one. The four b
 
 | | |
 |---|---|
-| **All** | Every term of the matrix. |
+| **All** | Every term of the matrix. Past 64 terms it asks first. |
 | **Reflections** | S11, S22, &hellip; only. |
 | **Default** | What the viewer opened on. |
 | **None** | Clears the plots. |
 
 Up to four ports, **Default** is every term. Above that it is the reflections plus each forward
-neighbour, S21, S32, S43 and so on &mdash; an `.s16p` has 256 terms, and drawing all of them is a
-choice rather than a greeting. Past six terms the list beside a plot is left off, because it would
-take the width the curves need; each tick box carries its term's colour.
+neighbour, S21, S32, S43 and so on, over the first eight ports &mdash; an `.s16p` has 256 terms and a
+file can have hundreds of ports, so drawing all of them is a choice rather than a greeting. Past six
+terms the list beside a plot is left off, because it would take the width the curves need; each tick
+box carries its term's colour.
+
+A file with many ports lists its terms one matrix row at a time, in a list that scrolls on its own.
 
 ## Findings {#findings}
 
@@ -141,7 +145,10 @@ three and leaves the judgement to you.
 
 The viewer keeps nothing of its own. **Save as Data Display** in the header writes
 the plots as they stand to a `.cdd` and opens it, so markers, axes and terms can be edited afterwards
-in the [Data Display](data-display.html). The file itself is referenced, not copied.
+in the [Data Display](data-display.html). The file itself is referenced, not copied. The Smith and
+polar charts sit across the top and magnitude and phase across the bottom. Each round chart names its
+terms beside the chart, or the first few and how many there are when it has more than six, with one
+frequency row under it.
 
 **Reload** reads the file again, which is what you want after a measurement or a run has rewritten it.
 The terms you had ticked stay ticked.
