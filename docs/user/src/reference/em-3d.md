@@ -211,8 +211,8 @@ the second is the one that counts, because the refinement its curvature asks for
 what would shrink it. Past 150 %, Simulate asks before going on.
 
 **While it runs**, the progress row names the solver's own stages, read from its own log: *Meshing
-(Gmsh)*; *Solving: refinement pass k of N* with the unknown count; *Sweep: sampling*, with the sweep's
-error converging on its tolerance; *Reading results*. The memory the solver is using is beside it. A 3D
+(Gmsh)*; *Solving: refinement pass k of N* with the unknown count; *Adaptive sweep*, with the model change
+— how much the frequency model still changes when a new frequency is solved — and the tolerance it is done below; *Reading results*. The memory the solver is using is beside it. A 3D
 run cannot stop early and keep a partial result, so the button reads **Cancel**.
 
 **When it finishes**, one line states what the run cost: the wall time, the solver's own peak memory,

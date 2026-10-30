@@ -64,6 +64,7 @@ sealed class Program
         // needs a report for. See Diagnostics/CrashReporter for why the session file, and not the
         // exception handlers, is the part that catches a simulation death.
         Diagnostics.CrashReporter.Install("circuitRF");
+        Messages.MessagesLog.Start();         // brief-dfr31-5 R-dfr31-5-4 — the Messages log, and its 14-day prune
 
         // BEFORE the single-instance guard below, and before the staged update is applied: a
         // successor started by the Relaunch action must not exist as a second instance while the

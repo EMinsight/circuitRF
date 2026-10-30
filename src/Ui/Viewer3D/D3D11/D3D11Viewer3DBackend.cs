@@ -679,7 +679,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     }
 
     public override void Present(CompositionDrawingSurface surface, int image, ulong frame)
-        => _ = surface.UpdateWithKeyedMutexAsync(_images[image].Imported, (uint)KeyCompositor, (uint)KeyRenderer);
+        => ObservePresent(surface.UpdateWithKeyedMutexAsync(_images[image].Imported, (uint)KeyCompositor, (uint)KeyRenderer));
 
     // ── the frame ───────────────────────────────────────────────────────────────────────────
 

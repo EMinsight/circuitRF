@@ -163,6 +163,7 @@ public sealed class Viewer3DPane : Control
         // LATEST attach may build a surface and start a render thread, or a second thread would share
         // _go, _plan and the images with the first, and no detach would ever join it.
         int gen = ++_attachGen;
+        _rebuiltAfterLoss = false;
         _topLevel = TopLevel.GetTopLevel(this);
         if (_topLevel is not null)
         {
@@ -170,6 +171,12 @@ public sealed class Viewer3DPane : Control
             _topLevel.PropertyChanged += OnTopLevelPropertyChanged;
         }
         UpdateShown();
+        await Host(gen);
+    }
+
+    /// <summary>Builds the surface and starts the render thread, for attach <paramref name="gen"/>.</summary>
+    private async Task Host(int gen)
+    {
         try
         {
             var visual = ElementComposition.GetElementVisual(this);
@@ -183,6 +190,9 @@ public sealed class Viewer3DPane : Control
             if (_vm is null) return;
             var backend = _vm.Session.EnsureBackend();
             if (backend.CheckInterop(_interop) is { } why) { SetFault($"{backend.Description}: {why}."); return; }
+            backend.PresentFaulted -= OnPresentFaulted;
+            backend.PresentFaulted += OnPresentFaulted;
+            backend.ClearPresentFault();
 
             _surface = _compositor.CreateDrawingSurface();
             _visual = _compositor.CreateSurfaceVisual();
@@ -204,7 +214,7 @@ public sealed class Viewer3DPane : Control
             SetFault(null);
             RequestFrame();
         }
-        catch (Exception ex) { SetFault(ex.Message); }
+        catch (Exception ex) { Faulted(ex); }
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -218,6 +228,12 @@ public sealed class Viewer3DPane : Control
             _topLevel = null;
         }
         UpdateShown();                                       // a closed document animates nothing
+        Teardown();
+    }
+
+    /// <summary>Stops the render thread and releases this compositor's surface and images.</summary>
+    private void Teardown()
+    {
         _catchUp?.Stop();
         _stop = true;
         _go.Set();
@@ -225,11 +241,46 @@ public sealed class Viewer3DPane : Control
         ElementComposition.SetElementChildVisual(this, null);
         // The images belong to THIS compositor; the device and the uploaded buffers stay with the
         // session, so a re-dock re-imports three images and uploads no geometry.
-        if (_vm?.Session.Backend is { } b) lock (_vm.Session.RenderLock) b.ReleaseImages();
+        if (_vm?.Session.Backend is { } b)
+        {
+            b.PresentFaulted -= OnPresentFaulted;
+            try { lock (_vm.Session.RenderLock) b.ReleaseImages(); }
+            catch (Exception) { /* a lost context may refuse the release; the images are dropped with the device */ }
+        }
         _surface?.Dispose(); _surface = null;
         _imgW = _imgH = 0;
         _busy = _done = false;
         _tickQueued = false;
+    }
+
+    // ── a lost GPU context (brief-dfr31-5 R-dfr31-5-3) ─────────────────────────────────────────
+    //
+    // A machine moved between docking setups lost the compositor's GPU context: every present then faulted
+    // ("OpenSharedResource failed", PlatformGraphicsContextLostException), unobserved, and the view stayed as it was
+    // until the app was restarted. Now the first failure rebuilds the surface, the images and the device ONCE; a
+    // failure after that is the pane's fault, said in its place and once in Messages. There is no software renderer
+    // to fall back to — every backend presents through the compositor's GPU interop — so the fault stands until the
+    // view is closed and reopened, which attaches afresh and is allowed one rebuild again.
+
+    private bool _rebuiltAfterLoss;
+
+    private void OnPresentFaulted(Exception ex) => Avalonia.Threading.Dispatcher.UIThread.Post(() => Faulted(ex));
+
+    private void Faulted(Exception ex)
+    {
+        if (_topLevel is null) return;                       // detached meanwhile: the next attach starts afresh
+        if (!_rebuiltAfterLoss)
+        {
+            _rebuiltAfterLoss = true;
+            Teardown();
+            _vm?.Session.ResetBackend();
+            _fault = null;
+            _ = Host(++_attachGen);
+            return;
+        }
+        string why = ex.GetBaseException().Message;
+        if (_fault != why) _vm?.PostMessage?.Invoke($"The 3D view cannot draw here: {why} Close and reopen the view to try again.", true);
+        SetFault(why);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -378,7 +429,7 @@ public sealed class Viewer3DPane : Control
             backend.Present(_surface!, _doneImage, _doneValue);
             SurfaceUpdateFlush.AfterUpdate(_compositor!);      // drawn by the render that applies it (brief-em3d-99)
         }
-        catch (Exception ex) { SetFault(ex.Message); }
+        catch (Exception ex) { _done = _busy = false; Faulted(ex); return; }
         _done = false;
         _busy = false;
         _vm!.OnPicked(backend.PickedId, backend.PickedFace, backend.PickedPoint, backend.PickedSomething, backend.PickPatch);
@@ -422,7 +473,7 @@ public sealed class Viewer3DPane : Control
             _go.Set();
             return true;
         }
-        catch (Exception ex) { SetFault(ex.Message); return false; }
+        catch (Exception ex) { Faulted(ex); return false; }
     }
 
     private void RenderLoop()
@@ -465,7 +516,8 @@ public sealed class Viewer3DPane : Control
             catch (Exception ex)
             {
                 _fault = ex.Message;
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => FaultChanged?.Invoke(ex.Message));
+                _busy = false;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => { _fault = null; Faulted(ex); });
                 return;
             }
             FrameFinished(QueueTick, default);   // present it; it plans nothing new by itself

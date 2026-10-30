@@ -754,10 +754,10 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         var im = _images[image];
         if (_timeline)
         {
-            surface.UpdateWithTimelineSemaphoresAsync(im.Imported!, _readySem!, frame, _releasedSem!, frame);
+            ObservePresent(surface.UpdateWithTimelineSemaphoresAsync(im.Imported!, _readySem!, frame, _releasedSem!, frame));
             im.ReleaseNeeded = frame;
         }
-        else im.Pending = surface.UpdateAsync(im.Imported!);
+        else im.Pending = ObservePresent(surface.UpdateAsync(im.Imported!));
     }
 
     // ── the frame ───────────────────────────────────────────────────────────────────────────

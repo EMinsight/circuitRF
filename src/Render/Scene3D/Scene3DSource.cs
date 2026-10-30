@@ -30,6 +30,13 @@ public sealed class Scene3DSource : IDisposable
     /// <summary>Raised on the builder's thread when a newer scene is ready. A subscriber marshals.</summary>
     public event Action<Scene3DModel>? SceneReady;
 
+    /// <summary>
+    /// Raised on the builder's thread when a build threw, before its empty scene is published — and when the NEWEST
+    /// generation was cancelled without a newer one asked for, which publishes nothing at all (brief-dfr31-5
+    /// R-dfr31-5-3). Without the second, whoever was waiting for that generation waited for good. A subscriber marshals.
+    /// </summary>
+    public event Action<long, Exception>? BuildFailed;
+
     /// <summary>The last finished, not-superseded scene.</summary>
     public Scene3DModel Current { get { lock (_gate) return _current; } }
 
@@ -66,8 +73,18 @@ public sealed class Scene3DSource : IDisposable
     {
         Scene3DModel scene;
         try { scene = _build(gen, state, ct); }
-        catch (OperationCanceledException) { Interlocked.Increment(ref _discarded); return; }
-        catch (Exception ex) { scene = Scene3DModel.Empty(gen, [ex.Message]); }
+        catch (OperationCanceledException ex)
+        {
+            Interlocked.Increment(ref _discarded);
+            // Superseded or disposed: a newer generation, or nothing, follows. Otherwise this was the newest.
+            if (gen == Requested) BuildFailed?.Invoke(gen, ex);
+            return;
+        }
+        catch (Exception ex)
+        {
+            BuildFailed?.Invoke(gen, ex);
+            scene = Scene3DModel.Empty(gen, [ex.Message]);
+        }
 
         lock (_gate)
         {

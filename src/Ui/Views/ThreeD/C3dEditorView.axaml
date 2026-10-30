@@ -753,6 +753,15 @@
                         <TextBlock Text="Building the 3D view…" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Border>
+                <!-- brief-dfr31-5 R-dfr31-5-3 — a first scene that has not arrived after 30 s says so and offers Retry. -->
+                <Border HorizontalAlignment="Center" VerticalAlignment="Center" Padding="14,8" CornerRadius="4"
+                        Background="{DynamicResource SystemControlBackgroundAltMediumHighBrush}"
+                        IsVisible="{Binding ViewModel.Viewer.IsFirstSceneStalled}">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="The 3D view did not finish building —" VerticalAlignment="Center"/>
+                        <Button Content="Retry" Padding="8,2" Command="{Binding ViewModel.Viewer.RetryFirstSceneCommand}"/>
+                    </StackPanel>
+                </Border>
                 <!-- brief-dfr26-1 R-dfr26-1-5 — a scene drawn although a solve would refuse it (a port that cannot be built)
                      says why over the viewport, rather than the refusal replacing the scene. -->
                 <Border IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="96,8" Padding="10,4"

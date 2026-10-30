@@ -284,6 +284,7 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
 
     private string ErrorText()
         => SweepError is { } e
-            ? $" · {Samples} samples, estimated error {PalaceStageTracker.Sci(e.Error)} → tolerance {PalaceStageTracker.Sci(e.Tolerance)}"
+            ? $" · {Samples} samples, {PalaceStageTracker.ModelChangeWords} {PalaceStageTracker.Sci(e.Error)} " +
+              $"(done below {PalaceStageTracker.Sci(e.Tolerance)})"
             : "";
 }

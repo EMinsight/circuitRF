@@ -150,6 +150,14 @@ public partial class LayoutEditorViewModel
     /// <summary>The panel's Show on canvas (R-imp3-3b).</summary>
     [ObservableProperty] private bool _showImpedanceOverlay = true;
 
+    /// <summary>
+    /// Whether the Impedance panel is open — docked, floating or tabbed behind another, but not closed —
+    /// set by the panel (brief-dfr31-5 R-dfr31-5-1). The overlay is drawn only while it is: closed, the
+    /// panel left the runs and markers on the artwork with nothing on screen to turn them off. The report
+    /// is kept, so reopening the panel draws it again and Export PDF still reads it.
+    /// </summary>
+    [ObservableProperty] private bool _isImpedancePanelOpen = true;
+
     private TraceRun? _impedanceSelectedTrace;
     private TraceIssue? _impedanceSelectedIssue;
 
@@ -161,6 +169,8 @@ public partial class LayoutEditorViewModel
     }
 
     partial void OnShowImpedanceOverlayChanged(bool value) => RebuildOverlay();
+
+    partial void OnIsImpedancePanelOpenChanged(bool value) => RebuildOverlay();
 
     /// <summary>Called from the model's own change notification.</summary>
     internal void MarkImpedanceStaleOnEdit()
@@ -360,11 +370,12 @@ public partial class LayoutEditorViewModel
     /// <summary>
     /// The results overlay (R-imp3-3a): each reviewed trace's centre line, cut by cut, and a marker at
     /// each finding — or null with no results or Show on canvas off. Stale results still draw, as a
-    /// stale LVS result does: the banner says so, and the rows are what the reviewer is fixing.
+    /// stale LVS result does: the banner says so, and the rows are what the reviewer is fixing. Null
+    /// too while the panel is closed (R-dfr31-5-1).
     /// </summary>
     private ImpedanceOverlay? BuildImpedanceOverlay()
     {
-        if (!ShowImpedanceOverlay || ImpedanceReport is not { } r) return null;
+        if (!ShowImpedanceOverlay || !IsImpedancePanelOpen || ImpedanceReport is not { } r) return null;
 
         var traces = new List<ImpedanceTraceMarker>();
         var findings = new List<ImpedanceFindingMarker>();

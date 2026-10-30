@@ -1107,6 +1107,15 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // re-stamps it where the artwork's own answer has changed (LayoutPortDirection.Reseat), which
         // is what keeps "drag a port onto the end of the metal and it becomes an edge port" true.
         placed.PortKind = LayoutPortDirection.KindOf(conductorAt, placed);
+
+        // A port label marks a point on a line, so a NEW one is no taller than twice the line it lands
+        // on (R-dfr31-5-2): at the technology's font height a 10-layer board's 1 mm labels covered a
+        // third of a 6 × 5 mm crop and hid the 0.3 mm lines under them. The line's width is the
+        // narrower of the port marker's own width and the metal's box — a port on a line's long side
+        // has the run's length for its marker width. A stored Height is never rewritten.
+        long line = Math.Min(conductor.Box.MaxX - conductor.Box.MinX, conductor.Box.MaxY - conductor.Box.MinY);
+        if (LayoutPortDirection.Resolve(conductorAt, placed) is { WidthDbu: > 0 } hint) line = Math.Min(line, hint.WidthDbu);
+        if (line > 0) placed.Height = Math.Max(1, Math.Min(placed.Height, 2 * line));
         return placed;
     }
 

@@ -41351,3 +41351,63 @@ it against the panel's view model and fail to build.
 plane was looked at: the Test Pad example unsolved (plane at Y = 0 across the air box) and a solved Capacitance
 Extraction copy (plane framing the drawn |E| slice, "Terminal 'pad' at 1 V"). It also gives the editor the workspace's
 `results/` root, which it never had, so a solved plot draws in a snapshot at all. Gate: `FieldPlotPlaneTests`.
+
+## Small fixes from the field test: overlay, port labels, a stuck 3D view, a log file (brief-dfr31-5, 2026-10-29)
+
+**R-dfr31-5-1 — the impedance overlay is drawn only while its panel is open.** Nothing tied the overlay to the panel,
+so closing it left the coloured runs and junction markers on the artwork with no visible control to clear them.
+`LayoutEditorViewModel.IsImpedancePanelOpen` now gates `BuildImpedanceOverlay`. The report is kept, so reopening the
+panel draws it again with no re-run and Export PDF still reads it. "Open" means anywhere in the window: docked, floating,
+auto-hidden, or tabbed behind another panel. That is a different test from `IsToolPanelShowing`, which requires the
+front tab. `RaiseToolPanelVisibilityChanged` sets `ImpedancePanelViewModel.IsOpen` from the dock tree each time a panel
+may have come or gone. The panel ORs in `IsShown` (its view attached), so a missed notification cannot hide the overlay
+under a panel that is plainly on screen. The editor's default is `true`: only a panel that lets go of the layout sets it
+false. Gate: `ImpedancePanelTests.ClosingThePanel_RemovesTheOverlay_AndReopeningRestoresItWithoutARerun`.
+
+**R-dfr31-5-2 — a new port label is no taller than twice its line.** Option (a) was taken. A port marks a point on a
+conductor, so its height should follow the conductor, not the technology's font height; one PCB-wide font default
+would have been wrong for every line narrower or wider than the one it was tuned for. The shipped `.ctech` defaults are
+unchanged. The cap is twice the narrower of two widths: the port marker's own (`LayoutPortDirection.Resolve`) and the
+conductor box's smaller side. A port snapped to a line's long side has the RUN's length as its marker width, so the
+marker width alone capped nothing there. The cap is applied in `TryBuildPortPlacement`, so the ghost and the click still
+agree. A stored `Height` is never rewritten. The Properties panel's height field already applies to every selected label
+(`ApplyToEach`), so no multi-selection edit was needed. Gate:
+`LayoutPortGhostTests.APortOnA300umLine_OnThe10LayerBoard_IsAtMost600umTall`.
+
+**R-dfr31-5-3 — the 3D view can no longer stay on "Building the 3D view…".** The scene build is CPU-only and never
+waits on the GPU, so the stuck bar was a building state that never ended. Three exits left it set:
+- `Scene3DSource` dropped a cancelled build silently, even when it was the newest generation and nothing newer was coming.
+- A throw inside `Viewer3DViewModel.Adopt` skipped the line that clears `IsRegenerating`.
+- Nothing ever gave up on a first scene.
+
+The fixes, in the same order:
+- `Scene3DSource.BuildFailed` fires for a build that threw and for a newest generation cancelled without a successor. The
+  viewer posts ONE Messages line per distinct failure and ends the building state.
+- `Adopt` clears it in a `finally`.
+- After `FirstSceneStallAfter` (30 s) with nothing drawn, the bar becomes "The 3D view did not finish building — Retry",
+  and Retry rebuilds from a fresh snapshot. There is no progress signal inside a build, so the 30 s count from the latest
+  request.
+
+The GPU side: every backend's `Present` discarded the compositor's update task (`_ = surface.Update…Async`). After a
+context loss each frame's task faulted unobserved, which is the burst of identical `COMException` /
+`PlatformGraphicsContextLostException` lines in the crash trail. `Viewer3DBackend.ObservePresent` now observes each task
+and raises `PresentFaulted` once per burst. The pane answers the first fault after an attach by rebuilding once: it tears
+down the surface and images, `Viewer3DSession.ResetBackend` drops the device so the next one is made on whatever adapter
+the compositor is on now, and it hosts again. A second fault is the pane's fault text plus one Messages line.
+
+**There is no software renderer to fall back to.** All three backends present through the compositor's GPU interop, so
+the brief's fallback step could not be done. The fault stands until the view is closed and reopened, which attaches
+afresh and is allowed one more rebuild. Writing a CPU rasteriser for the 3D view is a project of its own.
+
+**The empty first "Create 3D View from Layout" is probably the same fault, but this is not verified.** It fits a present
+that faulted after the device or adapter changed: the scene built, nothing reached the screen, and the second attempt
+attached afresh. The one-rebuild path covers that case. It could not be reproduced here (no Windows GPU, no docking
+change), so it stays an inference. Gate: `Viewer3DFirstSceneTests`.
+
+**R-dfr31-5-4 — the Messages log.** `Messages.MessagesLog` appends every posted line, with its date and time, to
+`<state dir>/logs/messages-YYYY-MM-DD.log`, the same directory `crash-reports` sits in. Each line opens and closes the
+file, so it is flushed as written. The file is opened shared because circuitRF, harmonicaRF and wBond all write there.
+A live progress row is written twice: when it starts and when it settles, never on each update. Each Program's `Main`
+calls `MessagesLog.Start()` right after `CrashReporter.Install`. It deletes files dated more than 14 days back, by the
+date in the file NAME. Like the crash reporter, nothing in it throws. Open Log Folder is on the Messages row menu only:
+a toolbar button would have moved every window figure that draws the Messages strip. Gate: `MessagesLogTests`.

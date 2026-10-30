@@ -190,6 +190,12 @@ public partial class MessagesView : UserControl
             CopyToClipboard(MessageTextSelection.FormatAll(tool.Messages));
     }
 
+    /// <summary>R-dfr31-5-4 — the folder the day's Messages log files are written to.</summary>
+    private void OnOpenLogFolderClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MessagesTool tool) tool.OpenLogFolderCommand.Execute(null);
+    }
+
     /// <summary>
     /// Walks from the clicked MenuItem back to the SelectableTextBlock the ContextMenu belongs to.
     /// A ContextMenu is hosted in its own popup visual tree, so an ordinary ancestor walk from the

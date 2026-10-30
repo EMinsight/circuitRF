@@ -114,20 +114,33 @@ public static class EmSolveRegionClip
 
         // Clip operands go through the editor's clip; anything else (a bitmap) is not geometry any
         // extractor reads and passes through untouched rather than being cropped.
+        //
+        // The board outline is REBUILT, as Crop to Rectangle rebuilds it, never clipped (brief-dfr31-5 R-dfr31-5-6).
+        // Crop draws the cropped board as a stroke along its new edge; a region drawn up to that edge cut the stroke
+        // into slivers of ink, each a closed shape, and the 3D build took the slivers for the board — so every via
+        // inside the region was listed as "wholly off the board" and left out. A region strictly inside the board
+        // removed the stroke altogether, leaving no board at all.
+        var outlineKeys = tech is null ? [] : Em3d.Em3dGenerator.BoardOutlineLayers(tech);
         var operands = new List<LayoutShape>(shapes.Count);
         var passThrough = new List<LayoutShape>();
+        var outline = new List<LayoutShape>();
         foreach (var s in shapes)
-            (LayoutBooleans.IsClipOperand(s) ? operands : passThrough).Add(s);
+        {
+            if (outlineKeys.Contains(s.Layer) && LayoutBooleans.IsClipperOperand(s)) outline.Add(s);
+            else (LayoutBooleans.IsClipOperand(s) ? operands : passThrough).Add(s);
+        }
 
         var clipped = LayoutBooleans.Clip(operands, stencil, tech);
+        var board = outline.Count > 0 ? LayoutCrop.RebuildOutline(outline, new Bbox(x0, y0, x1, y1), tech!) : [];
 
-        var kept = new List<LayoutShape>(clipped.Shapes.Count + passThrough.Count);
+        var kept = new List<LayoutShape>(clipped.Shapes.Count + passThrough.Count + board.Count);
         kept.AddRange(clipped.Shapes);
         kept.AddRange(passThrough);
+        kept.AddRange(board);
 
         string note =
             $"Solve region {region.Describe()}: {clipped.OperandsUntouched + passThrough.Count} " +
-            $"shape(s) kept whole, {clipped.OperandsChanged} cut at the region's edge, " +
+            $"shape(s) kept whole, {clipped.OperandsChanged + outline.Count} cut at the region's edge, " +
             $"{clipped.OperandsRemoved} outside it and left out of the EM problem. A via is kept or " +
             "left out whole, by where its centre is.";
 

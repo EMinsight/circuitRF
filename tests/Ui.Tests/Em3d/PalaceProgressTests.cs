@@ -65,8 +65,8 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
             Assert.Equal(415.4, s.PalaceSeconds!.Value, 0.1);
             Assert.Equal(["Solving: refinement pass 1 of 3", "Solving: refinement pass 2 of 3", "Solving: refinement pass 3 of 3"],
                          Passes(seen));
-            Assert.Contains(seen, p => p.Stage.Contains("error 9.36e-3", StringComparison.Ordinal));   // greedy 1, pass 1
-            Assert.Contains(seen, p => p.Stage.Contains("error 1.88e-6", StringComparison.Ordinal));   // greedy 4, pass 1
+            Assert.Contains(seen, p => p.Stage.Contains("model change 9.36e-3", StringComparison.Ordinal));   // greedy 1, pass 1
+            Assert.Contains(seen, p => p.Stage.Contains("model change 1.88e-6", StringComparison.Ordinal));   // greedy 4, pass 1
         }
         else
         {
@@ -112,6 +112,17 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
 
     // ── 3. The convergence fraction ─────────────────────────────────────────────────────────────
 
+    /// <summary>brief-dfr31-5 R-dfr31-5-5 — the sampling row says what the figure measures and which way is done, and the
+    /// bar's tooltip says the rest.</summary>
+    [Fact]
+    public void TheSamplingText_SaysModelChangeAndDoneBelowTheTolerance()
+    {
+        Assert.Equal("Adaptive sweep, port 1 of 6: model change 2.6e-5 (done below 1.0e-3)",
+                     PalaceStageTracker.SamplingText(PalaceStageTracker.PortOf(1, 6), 2.6e-5, 1e-3));
+        Assert.Equal(PalaceStageTracker.AdaptiveSweepTip,
+                     PalaceStageTracker.ProgressTipFor("Adaptive sweep, port 1 of 6: model change 2.6e-5 (done below 1.0e-3)"));
+    }
+
     [Fact]
     public void Gate3_TheSamplingBar_IsTheLogScaleConvergence_ClampedAtOne()
     {
@@ -129,7 +140,7 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
         Assert.All(bar, p => Assert.Equal(PalaceStageTracker.ConvergenceSteps, p.StageTotal));
         Assert.Equal([0L, 500, 500, 1000], bar.GroupBy(p => p.Stage).Select(g => g.Last().StageCompleted));
         // The label shows Palace's current error even when it rose; the bar keeps its best.
-        Assert.Contains(bar, p => p.Stage.Contains("error 3.0e-3", StringComparison.Ordinal) && p.StageCompleted == 500);
+        Assert.Contains(bar, p => p.Stage.Contains("model change 3.0e-3", StringComparison.Ordinal) && p.StageCompleted == 500);
 
         // circuitRF excites every port, and Palace samples and sweeps each excitation on its own (its
         // v0.18.1 source: "Adding excitation index k (i/n):" and "Sweeping excitation index k (i/n):",
@@ -150,10 +161,10 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
         }
         var (both, steps) = FeedLines(two, 0, 1e-4);
         Assert.True(both.Summary.LogRecognised);
-        Assert.Equal([0L, 1000], steps.Where(p => p.Stage.StartsWith("Sweep: sampling, excitation 2 of 2", StringComparison.Ordinal))
+        Assert.Equal([0L, 1000], steps.Where(p => p.Stage.StartsWith("Adaptive sweep, port 2 of 2", StringComparison.Ordinal))
                                       .GroupBy(p => p.Stage).Select(g => g.Last().StageCompleted));
-        Assert.Equal(3, steps.Last(p => p.Stage == PalaceStageTracker.EvaluatingLabel + ", excitation 1 of 2").StageCompleted);
-        Assert.Equal(3, steps.Last(p => p.Stage == PalaceStageTracker.EvaluatingLabel + ", excitation 2 of 2").StageCompleted);
+        Assert.Equal(3, steps.Last(p => p.Stage == PalaceStageTracker.EvaluatingLabel + ", port 1 of 2").StageCompleted);
+        Assert.Equal(3, steps.Last(p => p.Stage == PalaceStageTracker.EvaluatingLabel + ", port 2 of 2").StageCompleted);
     }
 
     // ── 4. Unknown wording ──────────────────────────────────────────────────────────────────────

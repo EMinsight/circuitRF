@@ -203,6 +203,26 @@ public class ImpedancePanelTests
         Assert.Null(vm.Overlay.Impedance);
     }
 
+    /// <summary>R-dfr31-5-1 — closing the panel takes the results off the canvas, and reopening it draws
+    /// the held report again with no re-run.</summary>
+    [Fact]
+    public void ClosingThePanel_RemovesTheOverlay_AndReopeningRestoresItWithoutARerun()
+    {
+        var vm = Board();
+        var panel = new ImpedancePanelViewModel { IsOpen = true };
+        panel.SetEditor(vm);
+        var report = OneOfEach();
+        vm.ImpedanceReport = report;
+        Assert.NotNull(vm.Overlay.Impedance);
+
+        panel.IsOpen = false;
+        Assert.Null(vm.Overlay.Impedance);
+        Assert.Same(report, vm.ImpedanceReport);
+
+        panel.IsOpen = true;
+        Assert.Equal(4, vm.Overlay.Impedance?.Traces.Count);
+    }
+
     private static string Svg(LayoutEditorViewModel vm, LayoutOverlay? overlay)
     {
         var vp = new LayoutViewport(Um(-8000), Um(-6000), 1e-4, 1600, 1200);

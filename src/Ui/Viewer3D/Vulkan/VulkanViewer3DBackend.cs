@@ -1462,7 +1462,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     {
         var im = _images[image];
         if (im.Imported is null) throw new Viewer3DPresentFault("The 3D view's image was never imported by the compositor.");
-        im.Pending = surface.UpdateWithSemaphoresAsync(im.Imported, im.ReadyImported!, im.ReleasedImported!);
+        im.Pending = ObservePresent(surface.UpdateWithSemaphoresAsync(im.Imported, im.ReadyImported!, im.ReleasedImported!));
         im.ReleaseOwed = true;
         im.ReadySignalled = false;
     }

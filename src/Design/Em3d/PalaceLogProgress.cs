@@ -13,7 +13,7 @@
 // stated the total. Refinement passes are numbered as Palace runs them (a setup allowing N passes
 // makes up to N + 1 solves; the log's "AMR iteration k" line comes AFTER solve k). The sampling phase
 // has no total, so it shows the greedy error converging on its tolerance on a log scale — labelled as
-// convergence, never as a percentage done. The online phase ("It k/N") has a total and shows it.
+// convergence, never as a percentage done, and worded as the model change it measures (R-dfr31-5-5). The online phase ("It k/N") has a total and shows it.
 //
 // UNKNOWN WORDING DEGRADES, IT NEVER LIES (R-em3d21-1d). A log with no mesh summary in its first
 // MeshSummaryWindow lines, a line that opens like a known one but does not parse, or a phase that ends
@@ -353,7 +353,7 @@ public sealed class PalaceStageTracker
     private long _stageDone;
     private string _phase = "";
     private bool _degraded;
-    private string _excitation = "";          // ", excitation i of n" when Palace names more than one
+    private string _excitation = "";          // ", port i of n" when Palace names more than one excitation
 
     /// <param name="maxRefinementPasses">The setup's <c>AdaptiveMaxIterations</c>: Palace makes up
     /// to that many plus one solves — the total the stage states, because it is the one Palace was
@@ -412,7 +412,7 @@ public sealed class PalaceStageTracker
                 break;
             case PalaceExcitation x:
                 // Each excitation samples, and sweeps, on its own: a new stage, from the start.
-                _excitation = x.Count > 1 ? $", excitation {x.Ordinal} of {x.Count}" : "";
+                _excitation = PortOf(x.Ordinal, x.Count);
                 _phase = x.Sampling ? "" : "sweeping";
                 break;
             case PalaceGreedyIteration g:
@@ -494,8 +494,32 @@ public sealed class PalaceStageTracker
     /// <summary>The online phase's stage name.</summary>
     public const string EvaluatingLabel = "Sweep: evaluating frequencies";
 
-    /// <summary>The sampling stage's name, before the error figures are appended.</summary>
-    public const string SamplingLabel = "Sweep: sampling";
+    /// <summary>The sampling stage's name, before the port and the figures are appended.</summary>
+    public const string SamplingLabel = "Adaptive sweep";
+
+    /// <summary>
+    /// brief-dfr31-5 R-dfr31-5-5 — what an adaptive sweep's figure means, for the progress bar's tooltip. Palace's greedy
+    /// "error" is how far the reduced model was from the solve at the frequency it just added; it falls as samples are
+    /// added, and the excitation's sampling stops once it is below <c>SweepAdaptiveTol</c>.
+    /// </summary>
+    public const string AdaptiveSweepTip =
+        "How much the frequency model still changes when a new frequency is solved; the sweep for this port is " +
+        "finished once it stays below the tolerance.";
+
+    /// <summary>The same, for a sweep that samples every port together (EMerge).</summary>
+    public const string AdaptiveSweepAllPortsTip =
+        "How much the frequency model still changes when a new frequency is solved; the sweep is finished once it " +
+        "stays below the tolerance.";
+
+    /// <summary>The words an adaptive sweep's figure is introduced with, by either solver.</summary>
+    public const string ModelChangeWords = "model change";
+
+    /// <summary>The progress bar's tooltip for a stage, or null when the stage has nothing to explain.</summary>
+    public static string? ProgressTipFor(string? stage) =>
+        stage is null ? null
+        : stage.StartsWith(SamplingLabel, StringComparison.Ordinal) ? AdaptiveSweepTip
+        : stage.Contains(ModelChangeWords, StringComparison.Ordinal) ? AdaptiveSweepAllPortsTip
+        : null;
 
     private string PassLabel()
     {
@@ -533,8 +557,19 @@ public sealed class PalaceStageTracker
         _control?.TickStage(step, SamplingText(error));
     }
 
-    private string SamplingText(double error)
-        => $"{SamplingLabel}{_excitation} · error {Sci(error)} → tolerance {Sci(_sweepTol)}";
+    private string SamplingText(double error) => SamplingText(_excitation, error, _sweepTol);
+
+    /// <summary>
+    /// R-dfr31-5-5 — <c>Adaptive sweep, port 1 of 6: model change 2.6e-5 (done below 1.0e-3)</c>. The figure falls as
+    /// samples are added and the port is done once it is below the tolerance — said that way round, because "error →
+    /// tolerance" read as either.
+    /// </summary>
+    public static string SamplingText(string port, double error, double tolerance)
+        => $"{SamplingLabel}{port}: {ModelChangeWords} {Sci(error)} (done below {Sci(tolerance)})";
+
+    /// <summary>", port i of n" for the i-th of n excitations — circuitRF excites every port, one at a time — and empty
+    /// for one.</summary>
+    public static string PortOf(int ordinal, int count) => count > 1 ? $", port {ordinal} of {count}" : "";
 
     internal static string Sci(double v)
         => double.IsFinite(v) ? v.ToString("0.0#e+0", CultureInfo.InvariantCulture) : v.ToString(CultureInfo.InvariantCulture);

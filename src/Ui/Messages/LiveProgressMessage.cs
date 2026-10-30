@@ -12,7 +12,8 @@ namespace CircuitRF.Ui.Messages;
 /// whichever test touches it first, which under a parallel run is some other class). Handing in the
 /// marshaller lets <see cref="MessagesTool"/> supply the dispatcher and a test supply "just run it".</para>
 /// </summary>
-internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> marshal) : IProgressMessage
+internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> marshal, Action<MessageEntry>? settled = null)
+    : IProgressMessage
 {
     /// <summary>The row being rewritten — the handle's own view of it, independent of whether the
     /// owning collection has been mutated yet.</summary>
@@ -58,6 +59,7 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
                 Entry.ProgressIndeterminate = false;
                 Entry.ProgressPercent       = null;
             }
+            settled?.Invoke(Entry);
         });
 
     /// <summary>
@@ -67,6 +69,9 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
     /// </summary>
     public void BindCancellation(RunCancellation? cancellation)
         => marshal(() => Entry.Cancellation = cancellation);
+
+    public void SetProgressTip(string? tip)
+        => marshal(() => Entry.ProgressTip = tip);
 
     public void Complete(MessageLevel level, string text)
         => marshal(() =>
@@ -78,6 +83,7 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
             Entry.ProgressText          = null;
             Entry.ProgressIndeterminate = false;
             Entry.ProgressPercent       = null;
+            settled?.Invoke(Entry);
         });
 
     /// <summary>
@@ -96,5 +102,6 @@ internal sealed class LiveProgressMessage(MessageEntry entry, Action<Action> mar
             Entry.ProgressIndeterminate = false;
             Entry.ProgressPercent       = null;
             Entry.SetAction(actionLabel, action);
+            settled?.Invoke(Entry);
         });
 }

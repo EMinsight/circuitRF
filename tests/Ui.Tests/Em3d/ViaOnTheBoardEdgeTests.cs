@@ -106,6 +106,48 @@ public sealed class ViaOnTheBoardEdgeTests : IDisposable
     }
 
     /// <summary>
+    /// brief-dfr31-5 R-dfr31-5-6 — Crop to Rectangle draws the cropped board as a stroke along its new edge, and a solve region
+    /// drawn up to that edge cut the stroke into slivers of ink that the 3D build took for the board: 63 of the 70 vias inside
+    /// the region were listed as "wholly off the board" and left out. The region rebuilds the outline as the crop does, so
+    /// every via whose centre is inside the region is built, and none is called off the board.
+    /// </summary>
+    [Fact]
+    public void ASolveRegionReachingACroppedEdge_KeepsTheBoard_AndEveryViaInsideIt()
+    {
+        var tech = ShippedTechnologies.Load("pcb-10layer_FR-4_1.7mm_1oz");
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).Select(l => l.DrawingLayers[0]).ToList();
+        var shapes = new List<LayoutShape>
+        {
+            new PathShape { Layer = new LayerKey(8, 0), Width = Mm(0.1), Xy = [0, 0, Mm(20), 0, Mm(20), Mm(16), 0, Mm(16), 0, 0] },
+        };
+        foreach (var inner in conductors.Skip(1).SkipLast(1))
+            shapes.Add(new RectShape { Layer = inner, X1 = 0, Y1 = 0, X2 = Mm(20), Y2 = Mm(16), Net = "GND" });
+        for (int i = 1; i < 20; i++)
+            for (int j = 1; j < 16; j++)
+                shapes.Add(new ViaShape { Layer = new LayerKey(7, 0), X = Mm(i), Y = Mm(j), DrillSize = Mm(0.3), PadSize = Mm(0.6), Net = "GND" });
+        var view = new LayoutView { DbuPerMicron = Dbu };
+        view.Shapes.AddRange(LayoutCrop.Crop(shapes, [], new Bbox(Mm(3), Mm(3), Mm(13), Mm(13)), tech).Shapes);
+        Assert.IsType<PathShape>(Assert.Single(view.Shapes, s => s.Layer == new LayerKey(8, 0)));
+
+        var face = new EmAirBoxFace(1000, null);
+        var setup = new EmSetup
+        {
+            Name = "region", LayoutRef = "region/layout/region.clay",
+            Frequency = new FrequencySpec("1", "3", 3, SweepKind.Linear, "GHz", "GHz"),
+            Solver3D = Em3dSolverId.Palace,
+            AirBox = new EmAirBox(face, face, face, face, face, face),
+            SolveRegion = EmSolveRegion.FromCorners(3000, 5000, 12000, 11000),
+        };
+        var g = Em3dGenerator.Generate(setup, new EmLayoutSource("/nowhere/region.clay", view, tech, Dbu), tech, portsOptional: true);
+
+        Assert.NotNull(g.Problem);
+        Assert.DoesNotContain(g.Notes, n => n.Contains("wholly off the board", StringComparison.Ordinal));
+        // Centres at x = 3…12, y = 5…11 mm: ten columns of seven.
+        Assert.Equal(70, g.Problem!.Solids.Select(s => s.Name.Split('/')).Where(p => p[0] == "via" && p.Length >= 2)
+                                         .Select(p => p[1]).Distinct().Count());
+    }
+
+    /// <summary>
     /// The 3D view of that via (owner report, 2026-10-28): its barrel's flat face lies in the board's side, and the inner
     /// planes and the slabs it passes through ran on under it, so their edges and the face were two surfaces in one place —
     /// unseen in one colour, broken up at every zoom once the via was hovered and tinted. The view cuts the barrel's outline

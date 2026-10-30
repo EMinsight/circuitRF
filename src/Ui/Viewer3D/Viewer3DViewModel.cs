@@ -148,6 +148,59 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         Session = new Viewer3DSession(backend);
         Source = new Scene3DSource(build);
         Source.SceneReady += s => _post(() => Adopt(s));
+        Source.BuildFailed += (gen, ex) => _post(() => BuildFailed(gen, ex));
+    }
+
+    /// <summary>Messages for the Messages panel — (text, is a warning). The shell posts them; a test reads them.</summary>
+    public Action<string, bool>? PostMessage { get; set; }
+
+    private string? _lastFailure;
+
+    /// <summary>
+    /// UI thread: a build threw, or the newest one ended with no scene (R-dfr31-5-3). One Messages line per failure — a
+    /// burst of the same one is said once — and the building state ends when it was the newest generation, whatever else
+    /// follows: a lost GPU context once left "Building the 3D view…" up until the app was restarted.
+    /// </summary>
+    private void BuildFailed(long gen, Exception ex)
+    {
+        if (_disposed) return;
+        string text = $"The 3D view could not build its scene: {ex.GetBaseException().Message}";
+        if (text != _lastFailure) PostMessage?.Invoke(text, true);
+        _lastFailure = text;
+        if (gen >= Source.Requested) IsRegenerating = false;
+    }
+
+    /// <summary>R-dfr31-5-3 — how long a first scene may build, with nothing drawn, before the bar offers Retry.</summary>
+    public static TimeSpan FirstSceneStallAfter { get; set; } = TimeSpan.FromSeconds(30);
+
+    private System.Threading.Timer? _stallTimer;
+
+    /// <summary>
+    /// R-dfr31-5-3 — the first scene has been building for <see cref="FirstSceneStallAfter"/> with nothing drawn: the bar
+    /// says the view did not finish and offers Retry, rather than building for ever.
+    /// </summary>
+    [ObservableProperty] private bool _isFirstSceneStalled;
+
+    partial void OnIsFirstSceneStalledChanged(bool value) => OnPropertyChanged(nameof(IsBuildingFirstScene));
+
+    /// <summary>The stalled bar's Retry: builds the first scene again from a fresh snapshot.</summary>
+    [RelayCommand]
+    private void RetryFirstScene()
+    {
+        IsFirstSceneStalled = false;
+        _lastFailure = null;
+        Regenerate();
+    }
+
+    private void ArmStallTimer()
+    {
+        _stallTimer?.Dispose();
+        _stallTimer = null;
+        if (_disposed || !IsRegenerating || Scene.Objects.Length > 0) return;
+        _stallTimer = new System.Threading.Timer(_ => _post(() =>
+        {
+            if (!_disposed && IsRegenerating && Scene.Objects.Length == 0) IsFirstSceneStalled = true;
+        }), null, FirstSceneStallAfter, Timeout.InfiniteTimeSpan);
     }
 
     /// <summary>Raised on the UI thread after a new scene has been adopted.</summary>
@@ -170,6 +223,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         long gen = Source.Request(inputs);
         if (inputs is Viewer3DInputs vi) _inputs[gen] = vi;
         IsRegenerating = true;
+        ArmStallTimer();
     }
 
     /// <summary>brief-em3d-108 — asks for a new scene from <paramref name="state"/> rather than a fresh snapshot: the 3D editor's
@@ -179,6 +233,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         Source.Request(state);
         IsRegenerating = true;
+        ArmStallTimer();
     }
 
     /// <summary>A .cem, .clay, .ctech or .wBond changed: regenerate after the burst settles.</summary>
@@ -289,6 +344,21 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     internal void Adopt(Scene3DModel scene)
     {
         if (_disposed || scene.Generation < Scene.Generation) return;
+        // R-dfr31-5-3 — the building state ends on every exit: a throw while adopting (a lost GPU context reached from a
+        // handler) left it set, and the bar up, for good.
+        try { AdoptCore(scene); }
+        catch (Exception ex) { BuildFailed(scene.Generation, ex); }
+        finally
+        {
+            IsRegenerating = scene.Generation < Source.Requested;
+            if (Scene.Objects.Length > 0 || !IsRegenerating) IsFirstSceneStalled = false;
+            if (!IsRegenerating) { _stallTimer?.Dispose(); _stallTimer = null; }
+            OnPropertyChanged(nameof(IsBuildingFirstScene));
+        }
+    }
+
+    private void AdoptCore(Scene3DModel scene)
+    {
         if (_inputs.TryGetValue(scene.Generation, out var inputs))
         {
             _lastSetup = inputs.Setup;
@@ -454,6 +524,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     partial void OnIsRegeneratingChanged(bool value)
     {
+        if (!value) { IsFirstSceneStalled = false; _stallTimer?.Dispose(); _stallTimer = null; }
         OnPropertyChanged(nameof(Status));
         OnPropertyChanged(nameof(IsBuildingFirstScene));
     }
@@ -463,7 +534,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// that says "Generating the 3D problem…" is hidden by default, so a board that takes seconds to build opened on an
     /// empty grid and read as a view that had failed; the viewport says it on the canvas instead.
     /// </summary>
-    public bool IsBuildingFirstScene => IsRegenerating && Scene.Objects.Length == 0;
+    public bool IsBuildingFirstScene => IsRegenerating && Scene.Objects.Length == 0 && !IsFirstSceneStalled;
     [ObservableProperty] private string _notes = "";
     /// <summary>brief-dfr26-1 R-dfr26-1-5 — why the drawn scene would not solve, shown over the viewport; empty otherwise.</summary>
     [ObservableProperty] private string _banner = "";
@@ -983,6 +1054,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         _disposed = true;
         _debounce?.Dispose();
+        _stallTimer?.Dispose();
         _overlayCts?.Cancel();
         _animation?.Dispose();
         foreach (var layer in _layers) layer.Dispose();

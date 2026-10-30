@@ -123,6 +123,25 @@ public class LayoutPortGhostTests
         Assert.True(placed.IsPort);
     }
 
+    /// <summary>R-dfr31-5-2 — on the shipped 10-layer board (a 1 mm label default) a port dropped on a
+    /// 300 µm line is at most twice the line tall.</summary>
+    [Fact]
+    public void APortOnA300umLine_OnThe10LayerBoard_IsAtMost600umTall()
+    {
+        var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load("pcb-10layer_FR-4_1.7mm_1oz");
+        var view = new LayoutView { DbuPerMicron = Dbu, DisplayUnit = LayoutUnit.Um, SnapDbu = 10 * Dbu };
+        view.Shapes.Add(new RectShape { Layer = TopCopper, X1 = 0, Y1 = 0, X2 = 10_000 * Dbu, Y2 = 300 * Dbu });
+        var vm = new LayoutEditorViewModel(view) { ActiveTool = LayoutEditorViewModel.Tool.Port };
+        vm.ApplyTechResolution(new TechResolution(tech, null, TechResolutionSource.WorkspaceDefault, []));
+        Assert.Equal(1_000 * Dbu, vm.CurrentLabelHeightDbu);
+
+        vm.OnPointerPressed(5_000 * Dbu, 150 * Dbu, KeyModifiers.None, 1, 0, 0, Tol);
+
+        var port = Assert.Single(vm.Model.Shapes.OfType<LabelShape>());
+        Assert.True(port.IsPort);
+        Assert.InRange(port.Height, 1, 600 * Dbu);
+    }
+
     [Fact]
     public void CommittingClearsTheGhost_SoNoStalePreviewSurvivesThePlacement()
     {

@@ -27,6 +27,7 @@ internal sealed class ProgramWBond
     public static void Main(string[] args)
     {
         Diagnostics.CrashReporter.Install("wBond");
+        Messages.MessagesLog.Start();         // brief-dfr31-5 R-dfr31-5-4 — the Messages log, and its 14-day prune
 
         // BEFORE Avalonia, and before anything opens a file: reclaim update debris, revert a
         // version that has failed to start twice, and apply a staged update. An applied update

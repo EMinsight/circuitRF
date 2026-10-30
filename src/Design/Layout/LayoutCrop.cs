@@ -130,7 +130,7 @@ public static class LayoutCrop
     /// profile is drawn on the edge — so the 3D reading of the new line (its inside, as for the old one) stands
     /// in the same relation to the copper as before.
     /// </summary>
-    private static List<LayoutShape> RebuildOutline(List<LayoutShape> outline, Bbox rect, Technology tech)
+    internal static List<LayoutShape> RebuildOutline(List<LayoutShape> outline, Bbox rect, Technology tech)
     {
         var layer = outline[0].Layer;
         var merged = LayoutBooleans.Union(outline, tech).Shapes;

@@ -224,6 +224,30 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
         _overlayVersions[i] = o.Version;
     }
 
+    /// <summary>
+    /// brief-dfr31-5 R-dfr31-5-3 — drops the backend after its GPU context was lost, so the next
+    /// <see cref="EnsureBackend"/> makes a new device on whatever adapter the compositor is on now, and the next frame
+    /// uploads everything again. The caller holds no frame in flight.
+    /// </summary>
+    public void ResetBackend()
+    {
+        lock (RenderLock)
+        {
+            try { Backend?.Dispose(); }
+            catch (Exception) { /* a device already lost may refuse its own release; it is dropped either way */ }
+            Backend = null;
+            _uploadedGeneration = -1;
+            _uploadedScene = null;
+            Array.Fill(_overlayVersions, -1);
+            _fieldVersion = -1;
+            _fieldNormalsVersion = -1;
+            _shadeScene = null;
+            _environment = null;
+            _appearances = null;
+            _shadowKey = 0;
+        }
+    }
+
     public void Dispose()
     {
         lock (RenderLock)

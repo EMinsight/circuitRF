@@ -24610,3 +24610,32 @@ a display location.
 - **An existing `<setup>_sim` is never overwritten.** If its SnP reads this run's file, it is `Current` and nothing is
   written. If the SnP reads the same stem under another port count, only its `File`/`NumPorts` are re-pointed, and the
   sentence says when the TermG count no longer matches. Anything else is left alone, and the run says so.
+
+## Adaptive-sweep progress wording; a solve region no longer cuts the board outline into slivers (brief-dfr31-5, 2026-10-29)
+
+**R-dfr31-5-5 — the sampling row says what its figure is.** Palace's greedy "error" is how far the reduced frequency
+model was from the solve at the frequency just added. It falls as samples are added, and an excitation's sampling ends
+once it is below `SweepAdaptiveTol`, which is the tolerance `PalaceStageTracker` is given. The old "error 2.6e-5 →
+tolerance 1.0e-3" did not say which way counted as done. The row now reads `Adaptive sweep, port 1 of 6: model change
+2.6e-5 (done below 1.0e-3)` (`PalaceStageTracker.SamplingText`, `PortOf`). circuitRF excites every port one at a time,
+so Palace's "excitation i of n" is a port, and the evaluating row says "port i of n" too. EMerge's adaptive stage uses
+the same words (`model change … (done below …)`); its log's "estimated error … (tol …)" converges the same way.
+`PalaceStageTracker.ProgressTipFor` gives the bar its tooltip through a new optional `IProgressMessage.SetProgressTip`.
+That is the per-port sentence for Palace and an all-ports one for EMerge, which samples every port together. The F0
+progress goldens (`testdata/em3d/progress/*.txt`) were regenerated with `CRF_WRITE_PROGRESS_GOLDENS=1`, and the diff is
+the wording only. Gate: `PalaceProgressTests.TheSamplingText_SaysModelChangeAndDoneBelowTheTolerance`.
+
+**R-dfr31-5-6 — investigated first: the defect was in neither the crop nor the wording.** It was the solve region's clip
+of the board outline. Reproduced on a synthetic 10-layer board: a 20 × 16 mm stroked outline, a via every millimetre,
+Crop to Rectangle to 3…13 mm, then a solve region of (3, 5)–(12, 11) mm, run to the generator. The crop is correct. It
+drops vias by their anchor and redraws the outline as a stroke along the new edge (`LayoutCrop.RebuildOutline`).
+`EmSolveRegionClip.Apply` then clipped that stroke like any other shape. A region drawn up to the cropped edge kept
+slivers of ink, each a CLOSED shape, and `Em3dLayoutSolids` took the slivers for the board. 63 of the 70 vias inside the
+region were then listed as "wholly off the board" and left out, and only 7 were built (the field run listed 56). A region strictly inside the crop
+removed the stroke altogether, which left no board outline at all. A filled (polygon) outline clipped correctly, which
+is why only cropped or imported boards showed it.
+
+The fix: the region rebuilds the outline exactly as the crop does (`RebuildOutline`, now `internal`). The board inside
+the region is the board ∩ the region, drawn the way it was. A via outside the region stays where it always was, in the
+solve-region line's count; the off-board list names only metal that is really off the board. Gate:
+`ViaOnTheBoardEdgeTests.ASolveRegionReachingACroppedEdge_KeepsTheBoard_AndEveryViaInsideIt`.

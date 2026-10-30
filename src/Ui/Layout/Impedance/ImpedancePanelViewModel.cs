@@ -54,11 +54,13 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
         {
             oldValue.PropertyChanged -= OnEditorPropertyChanged;
             oldValue.ShowImpedanceScope = false;
+            oldValue.IsImpedancePanelOpen = false;
         }
         if (newValue is not null)
         {
             newValue.PropertyChanged += OnEditorPropertyChanged;
             newValue.ShowImpedanceScope = IsShown;
+            newValue.IsImpedancePanelOpen = IsShown || IsOpen;
         }
         _surveyCts?.Cancel();
 
@@ -84,8 +86,31 @@ public sealed partial class ImpedancePanelViewModel : ObservableObject
             if (_isShown == value) return;
             _isShown = value;
             // The scope is drawn on the canvas only while the panel is on screen (R-imp4-1d).
-            if (Editor is { } vm) vm.ShowImpedanceScope = value;
+            if (Editor is { } vm)
+            {
+                vm.ShowImpedanceScope = value;
+                vm.IsImpedancePanelOpen = value || _isOpen;
+            }
             if (value && _surveyPending) RequestSurvey();
+        }
+    }
+
+    private bool _isOpen;
+
+    /// <summary>
+    /// Whether the panel is anywhere in the window — docked, floating or tabbed behind another, but not
+    /// closed. Set by the workspace from the dock tree whenever a panel may have come or gone. The
+    /// results overlay is drawn only while it is (or while <see cref="IsShown"/>, which a missed
+    /// notification cannot contradict): R-dfr31-5-1.
+    /// </summary>
+    public bool IsOpen
+    {
+        get => _isOpen;
+        set
+        {
+            if (_isOpen == value) return;
+            _isOpen = value;
+            if (Editor is { } vm) vm.IsImpedancePanelOpen = value || _isShown;
         }
     }
 

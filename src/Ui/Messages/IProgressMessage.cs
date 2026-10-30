@@ -79,6 +79,10 @@ public interface IProgressMessage
     /// sharing the handle means. See <see cref="RunCancellation"/>.</para>
     /// </summary>
     void BindCancellation(RunCancellation? cancellation) { }
+
+    /// <summary>brief-dfr31-5 R-dfr31-5-5 — what the bar measures, as its tooltip; null for none. A row with no bar
+    /// ignores it.</summary>
+    void SetProgressTip(string? tip) { }
 }
 
 /// <summary>

@@ -27,9 +27,18 @@ public partial class MessagesTool : Tool, IMessageSink
     public void Post(MessageLevel level, string text, string? filePath = null)
     {
         var entry = new MessageEntry(level, text, filePath, System.DateTime.Now);
+        Log(entry);
 
         // Always post on the UI thread — callers may be on background threads in 6e.
         OnUi(() => Insert(entry));
+    }
+
+    /// <summary>brief-dfr31-5 R-dfr31-5-4 — every line also goes to the day's log file, as it is posted; a live row
+    /// once when it starts and once when it settles, never per update.</summary>
+    private static void Log(MessageEntry entry)
+    {
+        string text = entry.ProgressText is { Length: > 0 } p ? $"{entry.Text} {p}" : entry.Text;
+        MessagesLog.Current?.Append(entry.Level, text, entry.FilePath, entry.Timestamp);
     }
 
     /// <summary>
@@ -48,6 +57,7 @@ public partial class MessagesTool : Tool, IMessageSink
                            System.Func<System.Threading.Tasks.Task> action, string? filePath = null)
     {
         var entry = new MessageEntry(level, text, filePath, System.DateTime.Now, actionLabel, action);
+        Log(entry);
         OnUi(() => Insert(entry));
     }
 
@@ -56,6 +66,7 @@ public partial class MessagesTool : Tool, IMessageSink
                           string? filePath = null)
     {
         var entry = new MessageEntry(level, text, filePath, System.DateTime.Now) { Items = items };
+        Log(entry);
         OnUi(() => Insert(entry));
     }
 
@@ -76,8 +87,9 @@ public partial class MessagesTool : Tool, IMessageSink
             IsLiveProgress        = true,
         };
 
+        Log(entry);
         OnUi(() => Messages.Add(entry));
-        return new LiveProgressMessage(entry, OnUi);
+        return new LiveProgressMessage(entry, OnUi, Log);
     }
 
     private static void OnUi(System.Action action)
@@ -104,4 +116,13 @@ public partial class MessagesTool : Tool, IMessageSink
 
     [RelayCommand]
     private static void RevealFile(string? filePath) => FileReveal.Reveal(filePath);
+
+    /// <summary>R-dfr31-5-4 — the row menu's Open Log Folder: the folder the day's log files are in.</summary>
+    [RelayCommand]
+    private static void OpenLogFolder()
+    {
+        if (MessagesLog.Current is not { } log) return;
+        try { System.IO.Directory.CreateDirectory(log.Dir); } catch (System.Exception) { return; }
+        FileReveal.Reveal(log.Dir);
+    }
 }

@@ -177,6 +177,7 @@ public partial class WorkspaceViewModel
             vm.EditMaterialRequested = EditMaterial;    // brief-em3d-94
             // brief-em3d-101 — an image's notes and warnings go to Messages; Replace Image… and Resolve Path… open the picker.
             vm.PostMessage = (text, warning) => { if (warning) Messages.Warning(text, vm.FilePath); else Messages.Info(text, vm.FilePath); };
+            vm.Viewer.PostMessage = vm.PostMessage;    // brief-dfr31-5 R-dfr31-5-3 — a build that failed says so once
             vm.PickImageFile = async title =>
                 (await CircuitRF.Ui.Views.ThreeD.ImageFilePicker.PickAsync(HostWindowOf(doc) ?? ResolveOwner(null), title, multiple: false)).FirstOrDefault();
             // brief-em3d-68 R-em3d68-5d — a reload's new parts are offered in the import table, unchecked.

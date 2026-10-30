@@ -589,9 +589,10 @@ every grid merge, each warning — not when the run ends. A run that is cancelle
 cancel line but the line saying it stopped. `circuitrf em` prints them to the terminal the same way.
 
 **While it runs**, the progress row names Palace's own stages, from its own log: *Meshing (Gmsh)*;
-*Solving: refinement pass k of N* with the unknown count; *Sweep: sampling* with Palace's error and the
-tolerance it converges on (the bar is that convergence on a log scale, not a share of the work — the
-number of samples is not known in advance); *Sweep: evaluating frequencies* with a count; *Reading
+*Solving: refinement pass k of N* with the unknown count; *Adaptive sweep, port i of n: model change e (done
+below t)* — how much the frequency model still changes when a new frequency is solved, falling as samples are
+added until it is below the tolerance (the bar is that convergence on a log scale, not a share of the work —
+the number of samples is not known in advance); *Sweep: evaluating frequencies* with a count; *Reading
 results*. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which.
 Beside the stage is the memory Palace's processes are using, shown once a second; where part of it has been swapped
 out or compressed, the larger figure that counts it is shown beside it. If Palace prints

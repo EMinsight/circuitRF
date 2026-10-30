@@ -123,6 +123,33 @@ public abstract class Viewer3DBackend : IDisposable
     /// <summary>UI thread: hands the finished image to the compositor.</summary>
     public abstract void Present(CompositionDrawingSurface surface, int image, ulong frame);
 
+    private Exception? _presentFault;
+
+    /// <summary>
+    /// brief-dfr31-5 R-dfr31-5-3 — the compositor failed to take an image (a lost GPU context: "OpenSharedResource failed",
+    /// <c>PlatformGraphicsContextLostException</c>). Raised once, on the thread the compositor completes on, until
+    /// <see cref="ClearPresentFault"/>; every later failure of the same burst is observed and dropped, so a crash trail holds
+    /// one line where it held forty unobserved task exceptions.
+    /// </summary>
+    public event Action<Exception>? PresentFaulted;
+
+    /// <summary>Observes a compositor update's task — a fault reaches <see cref="PresentFaulted"/> — and returns it.</summary>
+    protected Task ObservePresent(Task task)
+    {
+        task.ContinueWith(static (t, o) => ((Viewer3DBackend)o!).OnPresentFaulted(t.Exception!.GetBaseException()), this,
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+        return task;
+    }
+
+    private void OnPresentFaulted(Exception e)
+    {
+        if (Interlocked.CompareExchange(ref _presentFault, e, null) is null) PresentFaulted?.Invoke(e);
+    }
+
+    /// <summary>The surface was rebuilt: the next failure is a new event.</summary>
+    public void ClearPresentFault() => Interlocked.Exchange(ref _presentFault, null);
+
     // ── picking ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The object the last completed ID pass found under the cursor (0 for none) and the

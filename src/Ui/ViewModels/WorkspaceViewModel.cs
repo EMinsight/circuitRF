@@ -9499,6 +9499,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                              indeterminate: true);
 
         string what = string.IsNullOrEmpty(p.Stage) ? "starting" : p.Stage;
+        stageLive.SetProgressTip(CircuitRF.Design.Em3d.PalaceStageTracker.ProgressTipFor(p.Stage));   // R-dfr31-5-5
         // brief-em3d-21 R-em3d21-2c — a live figure beside the stage (a 3D solver's memory in use).
         if (!string.IsNullOrEmpty(p.StageDetail)) what += " · " + p.StageDetail;
         if (stopping) what += " (stopping)";

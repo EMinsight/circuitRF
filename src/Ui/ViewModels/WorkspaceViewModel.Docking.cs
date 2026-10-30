@@ -155,8 +155,16 @@ public partial class WorkspaceViewModel
         OnPropertyChanged(nameof(IsMessagesPanelShowing));
         OnPropertyChanged(nameof(IsHistoryPanelShowing));
 
+        // The impedance results are drawn on the canvas only while their panel is open (R-dfr31-5-1).
+        if (_factory.ImpedanceTool is { } impedance) impedance.Panel.IsOpen = IsToolPanelOpen(impedance);
+
         ToolPanelVisibilityChanged?.Invoke();
     }
+
+    /// <summary>Whether <paramref name="tool"/> is anywhere in the window — docked, floating, auto-hidden
+    /// or tabbed behind another. Unlike <see cref="IsToolPanelShowing"/>, it need not be in front.</summary>
+    private bool IsToolPanelOpen(ITool tool) =>
+        _factory.IsToolAutoHidden(tool) || _factory.TryFindTool(tool, out _, out _);
 
     // ---- The workspace toolbar's three panel toggles ------------------------
     //

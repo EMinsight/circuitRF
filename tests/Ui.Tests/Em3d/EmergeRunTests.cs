@@ -68,7 +68,7 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
         foreach (string n in names) output.WriteLine(n);
         Assert.Contains(EmergeStageTracker.MeshingLabel, names);
         Assert.Contains(names, n => n.StartsWith(EmergeStageTracker.SolvingLabel + ": 9.66 GHz", StringComparison.Ordinal) &&
-                                    n.Contains("estimated error 1.35e+0 → tolerance 1.0e-3", StringComparison.Ordinal));
+                                    n.Contains("model change 1.35e+0 (done below 1.0e-3)", StringComparison.Ordinal));
 
         // A sweep stopped at its limit reads as not converged, with its error.
         Assert.Equal(new EmergeSweepDone(100, false, 2.1e-3),

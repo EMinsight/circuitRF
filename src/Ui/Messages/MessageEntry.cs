@@ -83,6 +83,15 @@ public sealed partial class MessageEntry : ObservableObject
 
     public bool HasProgressText => !string.IsNullOrEmpty(_progressText);
 
+    private string? _progressTip;
+
+    /// <summary>brief-dfr31-5 R-dfr31-5-5 — what the bar measures, as its tooltip, where that is not obvious; else null.</summary>
+    public string? ProgressTip
+    {
+        get => _progressTip;
+        internal set => SetProperty(ref _progressTip, value);
+    }
+
     public string?  FilePath  { get; }
     /// <summary>When the row last said something. A live progress row moves it on each rewrite and when it settles, so a
     /// three-hour run's row does not keep reading its start time beside "solve finished" (designer round 28).</summary>

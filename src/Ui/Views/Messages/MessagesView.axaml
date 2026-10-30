@@ -123,6 +123,9 @@
                                     <Separator IsVisible="{Binding HasProgress}"/>
                                     <MenuItem Header="Copy" Click="OnCopyMessageClick"/>
                                     <MenuItem Header="Copy All Messages" Click="OnCopyAllMessagesClick"/>
+                                    <Separator/>
+                                    <MenuItem Header="Open Log Folder" Click="OnOpenLogFolderClick"
+                                              ToolTip.Tip="The folder holding each day's Messages, one file per day, kept for 14 days"/>
                                 </ContextMenu>
                             </SelectableTextBlock.ContextMenu>
                             <Run Text="{Binding TimeText}"
@@ -165,7 +168,8 @@
                                              Minimum="0" Maximum="100"
                                              Value="{Binding ProgressValue}"
                                              IsIndeterminate="{Binding ProgressIndeterminate}"
-                                             IsVisible="{Binding HasProgress}"/>
+                                             IsVisible="{Binding HasProgress}"
+                                             ToolTip.Tip="{Binding ProgressTip}"/>
                             </InlineUIContainer>
 
                             <!-- The counter, RIGHT-ALIGNED in a fixed-width box: the numerator grows
