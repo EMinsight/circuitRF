@@ -4097,3 +4097,48 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
 - **A `format` line that writes a parameter among the terminals** (`@pinlist @body @model`) is read into
   `KitSymbolFile.ExtraTerminals` → `PdkPart.ExtraTerminals`. It is the only such shape in the three kits
   (30 symbols). Anything else between `@pinlist` and the model reference yields nothing. Gate: `…K21`.
+
+## Diode and bipolar cards on circuitRF's own physics: the level gate, the dialect's defaults (brief-gdf-1b, 2026-10-30)
+
+- **A diode or bipolar card was bound without looking at its `LEVEL`.** A level-9 bipolar card (a
+  different transistor whose `IS`, `NF` and `RE` share Gummel-Poon's spellings) would have parsed,
+  converged and been wrong. `SpiceModelCardTranslation` now refuses any stated level but 1 for `D`,
+  `NPN` and `PNP`, by card, type and level, on every import path; an honoured `LEVEL=1` is no longer
+  listed as dropped. Gate: `KitCardTranslationTests.AStatedLevelCircuitRfDoesNotImplement_…`.
+- **An unstated bipolar parameter took circuitRF's component default, not the dialect's.** The BJT's
+  factory defaults describe one particular transistor (Vaf 71 V, Br 3.3, Ise 1.6 fA, Cje 83 fF, Xti
+  6.5 …), so a card stating only `IS`/`BF`/`RB` silently gained an Early effect, base leakage and
+  junction capacitance it never stated. The translation now writes the dialect's defaults for every
+  unstated parameter (zero is "not modelled" for each knee, Early voltage and `VTF` in `BjtModel`,
+  which is the dialect's infinity) and says so in a note. The diode's defaults already agree with the
+  dialect's and are untouched. `ModelCardImportTests.OldSpiceMultipliers_…` re-pinned: `Ise` may now
+  appear, at the default, never sourced from `C2`.
+- **`TREF` is read as `Tnom`** on diode and bipolar cards — the same quantity, the extraction
+  temperature. Unread, a card stating `TREF=25` ran as though extracted at 26.85 °C.
+- **`DcAffectingUnmapped`** lists what a binding leaves behind that would move a DC operating point
+  (sidewall/density saturation currents, knees, tunnelling, `C2`/`C4`, substrate current,
+  quasi-saturation, temperature coefficients); a literal zero — and `NKF` at 0.5 — is inert and not
+  listed. Gate: `KitCardTranslationTests.DcAffectingUnmapped_…`.
+- **A section reading another section of its OWN file was refused as a cycle.** The reader's
+  open-file guard keyed on the file alone, so `.lib typical` holding `.lib 'self.spice' dio` — one
+  kit's whole corner file is written this way — read nothing behind it. Keyed on file AND section now;
+  re-entering the same section is still a cycle. Gate: `KitCardTranslationTests.ASectionIncluding…`.
+- **A resistor line stating its own `r=` on a card holding only `TC1`/`TC2` was left unbound** for want
+  of a sheet resistance. The line's value is the resistance and the card adds its coefficients. Gate:
+  `KitCardTranslationTests.AResistorStatingItsOwnValue_…`. `SpicePassiveModelBinding` is public now:
+  extraction runs it on the one-element cell a primitive kit symbol becomes.
+- **A record symbol's netlist line is read for what it calls**: `KitSymbolFile.Element` (`spiceprefix`,
+  else the template name's first letter), `CalledName` (the format's model token with `@model`
+  substituted, a literal prefix kept) and `ElementArguments`, carried on `PdkPart`. A `D`/`Q`/`R`/`C`/`M`
+  symbol is pointed at the one file declaring its card (test, regression and LVS folders excluded; the
+  canonical library breaks a tie; still ambiguous → unpaired) and never handed a subcircuit by name
+  likeness.
+- **D1 decided (owner left it to judgement): an `X` symbol pairs with the subcircuit its line calls**
+  (`PdkImporter.StatedSubcircuitFor`) — exact name, terminal count = pins + extra terminals, ties broken
+  by the canonical library then by `NominalCornerFiles` (the files each corner file's FIRST section
+  reaches, walked as inclusion lines rather than parsed — one kit imports ~9 s either way). Ambiguous or
+  absent → unpaired, never a likeness guess. **Checking folders are excluded from every pairing**, the
+  likeness matcher's included. Why it is not the 2026-08-08 revert, and the per-kit numbers, are in
+  `docs/design/pdk-import.md` §9; the comment on `src/Core/CLAUDE.md`'s "Automatic exact-name binding"
+  line predates this. Gates: `StatedSubcircuitPairingTests` (the stated name over a test-folder copy;
+  a per-corner definition resolved to the nominal corner's).

@@ -980,8 +980,9 @@ public static class NetExtractor
         ///
         /// <para>Decided from CONTENT, never the extension: both formats use <c>.lib</c>/<c>.sp</c>
         /// freely, and handing one to the other's reader produces cells that are silently wrong
-        /// rather than a failure. A <c>.subckt</c> at the start of a line is the one marker only this
-        /// dialect has.</para>
+        /// rather than a failure. A <c>.subckt</c> or <c>.model</c> at the start of a line is a marker
+        /// only this dialect has — the second because a kit's file of nothing but cards is what a
+        /// primitive element's part points at (brief-gdf-1b §4).</para>
         /// </summary>
         private static bool LooksLikeSpice(string path)
         {
@@ -989,8 +990,12 @@ public static class NetExtractor
             {
                 if (new FileInfo(path).Length > 32L * 1024 * 1024) return false;
                 foreach (var line in File.ReadLines(path))
-                    if (line.TrimStart().StartsWith(".subckt", StringComparison.OrdinalIgnoreCase))
+                {
+                    var head = line.TrimStart();
+                    if (head.StartsWith(".subckt", StringComparison.OrdinalIgnoreCase) ||
+                        head.StartsWith(".model",  StringComparison.OrdinalIgnoreCase))
                         return true;
+                }
                 return false;
             }
             catch { return false; }
@@ -1157,20 +1162,171 @@ public static class NetExtractor
                 var card = modelCards.FirstOrDefault(
                     c => c.Name.Equals(inst.Reference, StringComparison.OrdinalIgnoreCase));
 
-                var overrides = card is null
-                    ? BindByTypeName(inst, providerRef)
-                    : RouteToCompiledModel(inst, card, provider, modelLibrary, osdiModels, conflicts);
+                var routed = card is null
+                    ? AsExtDevice(inst, BindByTypeName(inst, providerRef))
+                    : RouteCardDevice(inst, card, provider, modelLibrary, osdiModels, conflicts);
 
-                if (overrides is null) continue;   // reported; left as written so the failure names it
-
-                cell.Instances[i] = new Instance(
-                    inst.InstanceName, ExtDeviceReference, inst.NetBindings, overrides)
-                {
-                    RefNetBinding = inst.RefNetBinding,
-                };
+                if (routed is null) continue;   // reported; left as written so the failure names it
+                cell.Instances[i] = routed;
             }
         }
     }
+
+    private static Instance? AsExtDevice(Instance inst, List<ParameterAssignment>? overrides)
+        => overrides is null ? null
+         : new Instance(inst.InstanceName, ExtDeviceReference, inst.NetBindings, overrides)
+           {
+               RefNetBinding = inst.RefNetBinding,
+           };
+
+    /// <summary>
+    /// A device naming a <c>.model</c> card, in the order brief-gdf-1b §3 (D4) sets: a COMPILED model
+    /// implementing the card's type first, because the kit or the user compiled it and that is the
+    /// kit's own statement of the model; then circuitRF's own physics, when the card translates onto
+    /// a built-in; then a refusal carrying the translation's own sentence.
+    ///
+    /// <para><b>Why the built-in is second and not absent.</b> A diode, bipolar or sheet-resistor card
+    /// is a device the kit's own simulator builds in; the kit ships no source for it, so sending the
+    /// user to compile one sends them looking for a file that does not exist. The compile advice is
+    /// given only for a type circuitRF has no built-in for, which in this dialect can only name a
+    /// compiled module.</para>
+    /// </summary>
+    private static Instance? RouteCardDevice(
+        Instance inst, SpiceModelCard card, string provider, string? modelLibrary,
+        IReadOnlyList<OsdiModel> osdiModels, List<string> conflicts)
+    {
+        if (OsdiModelDiscovery.ImplementorOf(osdiModels, card.ModelType) is not null)
+            return AsExtDevice(inst, RouteToCompiledModel(inst, card, provider, modelLibrary, osdiModels, conflicts));
+
+        if (!SpiceModelCardTranslation.IsSupportedType(card.ModelType))
+        {
+            conflicts.Add(
+                $"'{inst.InstanceName}' is a '{card.ModelType}' model (from the card " +
+                $"'{card.Name}'), and no compiled model implementing it was found for kit " +
+                $"'{provider}'. These are built from the kit's own Verilog-A sources with a " +
+                $"Verilog-A compiler; compile them, then add the folder holding the resulting " +
+                $"'.osdi' files in File ▸ Manage Libraries.");
+            return null;
+        }
+
+        var translation = SpiceModelCardTranslation.Translate(card);
+        string? refusal = translation.Binding is null
+            ? translation.Refusal
+            : BuiltInRefusal(inst, translation);
+        if (refusal is not null)
+        {
+            // Once, however many placed parts reach this kit cell: the cell is shared, so the same
+            // instance is met again for every part built from the same library.
+            string said = $"'{inst.InstanceName}' names the card '{card.Name}': {refusal} No compiled " +
+                          $"model implementing '{card.ModelType}' was found for kit '{provider}' either.";
+            if (!conflicts.Contains(said)) conflicts.Add(said);
+            return null;
+        }
+
+        return BuiltInFromCard(inst, translation, conflicts);
+    }
+
+    /// <summary>
+    /// Why a card that DOES translate still cannot stand in for this instance, or null. Each is a
+    /// way the built-in would simulate a different circuit from the one the kit wrote.
+    /// </summary>
+    private static string? BuiltInRefusal(Instance inst, ModelCardTranslation translation)
+    {
+        var binding = translation.Binding!;
+
+        if (ModelCardCellBuilder.SymbolFor(binding.EngineReference) is not { } kind)
+            return $"circuitRF implements it as '{binding.EngineReference}', which has no fixed terminal list to bind.";
+
+        int terminals = SymbolPortDefs.For(kind).Length;
+        if (inst.NetBindings.Count != terminals)
+            return $"the instance binds {inst.NetBindings.Count} net(s), and circuitRF's " +
+                   $"'{binding.EngineReference}' has {terminals} terminal(s). Nothing is dropped or tied " +
+                   "elsewhere to make the counts agree — that would be a different circuit.";
+
+        var (rd, rs) = SpiceModelCardTranslation.MesfetLeadResistance(translation.Card);
+        if (binding.EngineReference.Contains("FET_", StringComparison.Ordinal) && (rd is not null || rs is not null))
+            return "it states a lead resistance, which circuitRF's MESFET has no parameter for.";
+
+        var dc = SpiceModelCardTranslation.DcAffectingUnmapped(translation);
+        if (dc.Count > 0)
+            return $"it states {string.Join(", ", dc)}, which circuitRF's built-in " +
+                   $"'{binding.EngineReference}' does not carry and which change the DC operating point, " +
+                   "so it is refused rather than approximated.";
+
+        foreach (var o in inst.Overrides)
+            if (InstanceWordFor(binding, o.Name) is null && !IsDroppedGeometry(binding, o.Name))
+                return $"the instance states '{o.Name}', which circuitRF's '{binding.EngineReference}' " +
+                       "has nowhere to put.";
+
+        return null;
+    }
+
+    /// <summary>
+    /// The instance built as circuitRF's own component: the card's parameters, then the instance's
+    /// own words over them — the card is the model, the line is this device's geometry.
+    ///
+    /// <para><b>What the card states and the built-in does not carry is reported ONCE PER CARD</b>,
+    /// not per instance: it is a property of the card, and a kit cell placing it ten times would
+    /// otherwise say the same thing ten times.</para>
+    /// </summary>
+    private static Instance BuiltInFromCard(Instance inst, ModelCardTranslation translation, List<string> conflicts)
+    {
+        var binding   = translation.Binding!;
+        var overrides = new List<ParameterAssignment>(binding.Parameters.Count + inst.Overrides.Count);
+
+        // No unit: a card arrives from the reader already in base SI.
+        foreach (var p in binding.Parameters) overrides.Add(new ParameterAssignment(p.Name, p.Expression));
+
+        var dropped = new List<string>();
+        foreach (var o in inst.Overrides)
+        {
+            if (InstanceWordFor(binding, o.Name) is not { } name) { dropped.Add(o.Name); continue; }
+            overrides.RemoveAll(x => x.Name == name);
+            overrides.Add(new ParameterAssignment(name, o.Expression, o.Unit));
+        }
+
+        var said = new List<string>();
+        if (binding.Unmapped.Count > 0)
+            said.Add("not carried: " + string.Join(", ", binding.Unmapped) + ".");
+        said.AddRange(binding.Notes);
+
+        string report = $"The card '{translation.Card.Name}' runs on circuitRF's built-in " +
+                        $"'{binding.EngineReference}'" + (said.Count > 0 ? "; " + string.Join(" ", said) : ".");
+        if (!conflicts.Contains(report)) conflicts.Add(report);
+
+        // Keyed on the card and the word, never the instance, for the same reason as the line above.
+        foreach (string word in dropped.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            string note = $"Instances of the card '{translation.Card.Name}' state '{word}' (a junction perimeter), " +
+                          "which circuitRF's diode has no sidewall term for; dropped.";
+            if (!conflicts.Contains(note)) conflicts.Add(note);
+        }
+
+        return new Instance(inst.InstanceName, binding.EngineReference, inst.NetBindings, overrides)
+        {
+            RefNetBinding = inst.RefNetBinding,
+        };
+    }
+
+    /// <summary>
+    /// The built-in's spelling of a word on the instance line, or null. The dialect is
+    /// case-insensitive and circuitRF's parameters compare ordinally, so <c>area</c> must become
+    /// <c>Area</c>; the multiplier stays lower-case <c>m</c>, which is a different key from a
+    /// diode's grading coefficient <c>M</c>.
+    /// </summary>
+    private static string? InstanceWordFor(ModelCardBinding binding, string word)
+    {
+        if (word.Equals("m", StringComparison.Ordinal))               return "m";
+        if (word.Equals("temp",  StringComparison.OrdinalIgnoreCase)) return "Temp";
+        if (word.Equals("dtemp", StringComparison.OrdinalIgnoreCase)) return "Dtemp";
+        if (word.Equals("area",  StringComparison.OrdinalIgnoreCase) &&
+            binding.EngineReference is "Diode" or "BJT_NPN" or "BJT_PNP")    return "Area";
+        return null;
+    }
+
+    /// <summary>A junction perimeter: a diode's sidewall geometry, inert once no sidewall parameter is stated.</summary>
+    private static bool IsDroppedGeometry(ModelCardBinding binding, string word)
+        => binding.EngineReference == "Diode" && word.Equals("pj", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The original rule: the instance's reference IS the device type, and the kit's own provider
@@ -1217,16 +1373,7 @@ public static class NetExtractor
         IReadOnlyList<OsdiModel> osdiModels, List<string> conflicts)
     {
         var implementor = OsdiModelDiscovery.ImplementorOf(osdiModels, card.ModelType);
-        if (implementor is null)
-        {
-            conflicts.Add(
-                $"'{inst.InstanceName}' is a '{card.ModelType}' model (from the card " +
-                $"'{card.Name}'), and no compiled model implementing it was found for kit " +
-                $"'{provider}'. These are built from the kit's own Verilog-A sources with a " +
-                $"Verilog-A compiler; compile them, then add the folder holding the resulting " +
-                $"'.osdi' files in File ▸ Manage Libraries.");
-            return null;
-        }
+        if (implementor is null) return null;   // RouteCardDevice asked first; never reached
 
         var declared = implementor.Parameters;
 
@@ -1474,13 +1621,25 @@ public static class NetExtractor
             return null;
         }
 
-        string wanted = SubstituteParameters(ccell.ExternalNetlistCell!, comp, ccell);
-        var definition = read.Library.Find(wanted);
-        if (definition is null)
+        Cell? definition;
+        if (ccell.ExternalElement is { Length: > 0 } element)
         {
-            conflicts.Add($"Instance '{comp.InstanceName}': '{wanted}' is not defined in the kit's " +
-                          $"netlist, so this part cannot be built.");
-            return null;
+            definition = ElementDefinition(comp, ccell, element, read,
+                                           GetEffectivePortDefs(model, comp, cellRefResolutions).Count(),
+                                           WorkspaceOf(model), conflicts);
+            if (definition is null) return null;
+            if (lib.Find(definition.Name) is null) lib.Cells.Add(definition);
+        }
+        else
+        {
+            string wanted = SubstituteParameters(ccell.ExternalNetlistCell!, comp, ccell);
+            definition = read.Library.Find(wanted);
+            if (definition is null)
+            {
+                conflicts.Add($"Instance '{comp.InstanceName}': '{wanted}' is not defined in the kit's " +
+                              $"netlist, so this part cannot be built.");
+                return null;
+            }
         }
 
         // A kit netlist names its own compiled device types natively — `KITLIB_DEVICE_v1:FET1 …` —
@@ -1516,7 +1675,7 @@ public static class NetExtractor
             definition.Ports.Count != pinDefs.Count + extras.Count)
         {
             conflicts.Add($"Instance '{comp.InstanceName}': the symbol exposes {pinDefs.Count} " +
-                          $"pin(s) but '{wanted}' defines {definition.Ports.Count}; skipped.");
+                          $"pin(s) but '{definition.Name}' defines {definition.Ports.Count}; skipped.");
             return null;
         }
 
@@ -1584,6 +1743,78 @@ public static class NetExtractor
         overrides.RemoveAll(o => !declared.Contains(o.Name));
 
         return new Instance(comp.InstanceName, definition.Name, nets, overrides);
+    }
+
+    /// <summary>
+    /// The one-element cell a kit symbol's PRIMITIVE netlist line describes (brief-gdf-1b §4): the
+    /// element its template names, on the card its format calls, with the format's own words — so a
+    /// diode drawn as <c>@name @pinlist @model area='@w * @l'</c> becomes exactly that line, inside a
+    /// cell whose parameters are the symbol's template. The line is READ by the SPICE reader rather
+    /// than assembled here, because the words are in that dialect (quoted expressions, its suffixes,
+    /// its multiplier) and the reader is the one place that already knows it.
+    ///
+    /// <para>Then it takes the same road every card-backed device inside a kit cell takes: a resistor
+    /// or capacitor card through the passive binding, anything else through
+    /// <see cref="BindNativeDeviceTypes"/> — so a primitive and the same element inside a subcircuit
+    /// can never be built two different ways.</para>
+    /// </summary>
+    private static Cell? ElementDefinition(
+        EditableComponent comp, CcellFile ccell, string element, NetlistImports.Netlist read,
+        int pins, string? workspaceRoot, List<string> conflicts)
+    {
+        string cardName = ccell.ExternalNetlistCell!;
+
+        if (element == "M")
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': the kit writes this part as a MOS element on the " +
+                          $"card '{cardName}'. MOS compact models are outside what circuitRF implements, and the " +
+                          "kit ships no source to compile one from, so it cannot be simulated.");
+            return null;
+        }
+
+        var card = read.ModelCards.FirstOrDefault(c => c.Name.Equals(cardName, StringComparison.OrdinalIgnoreCase));
+        if (card is null)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': the kit writes this part as a '{element}' element on " +
+                          $"the card '{cardName}', which its model file does not define as read. A card inside " +
+                          "a corner section is read only when that section is the corner selected.");
+            return null;
+        }
+
+        var ports = Enumerable.Range(1, pins).Select(k => $"p{k}").ToList();
+
+        var textual = ccell.ExternalFixedParameters?.Keys.ToHashSet(StringComparer.Ordinal) ?? [];
+        var header  = ccell.Parameters
+            .Where(p => !textual.Contains(p.Name) && !string.IsNullOrWhiteSpace(p.DefaultExpression))
+            .Select(p => $"{p.Name}={Quoted(p.DefaultExpression.Trim())}");
+
+        string words = System.Text.RegularExpressions.Regex.Replace(
+            ccell.ExternalElementArguments ?? "", @"@(\w+)", "$1");
+
+        string name = "kitelem_" + new string([.. (ccell.ExternalType ?? cardName)
+                          .Select(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_' ? ch : '_')]);
+        string text = $".subckt {name} {string.Join(" ", ports)} {string.Join(" ", header)}\n" +
+                      $"{element}1 {string.Join(" ", ports)} {card.Name} {words}\n" +
+                      $".ends {name}\n";
+
+        var built = SpiceNetlistReader.Read(text, fileLabel: name);
+        var cell  = built.Library.Find(name);
+        if (cell is null || cell.Instances.Count != 1 || built.IncompleteCells.Count > 0)
+        {
+            conflicts.Add($"Instance '{comp.InstanceName}': the kit's netlist line for this part could not be " +
+                          $"read ({string.Join("; ", built.Notes.Select(n => n.Message))}).");
+            return null;
+        }
+
+        SpicePassiveModelBinding.Bind(built.Library, read.ModelCards,
+                                      note => conflicts.Add($"Instance '{comp.InstanceName}': {note}"),
+                                      _ => { });
+        if (!string.IsNullOrWhiteSpace(ccell.ExternalProvider))
+            BindNativeDeviceTypes(built.Library, ccell.ExternalProvider!, comp, read.ModelCards,
+                                  PdkKitRegistry.OsdiModelsOf(workspaceRoot, ccell.ExternalProvider), conflicts);
+        return cell;
+
+        static string Quoted(string v) => v.Any(char.IsWhiteSpace) ? $"'{v}'" : v;
     }
 
     /// <summary>Replaces every <c>{Name}</c> with that parameter's value on this instance, falling

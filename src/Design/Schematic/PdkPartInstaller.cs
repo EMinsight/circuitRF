@@ -1010,6 +1010,11 @@ public static class PdkPartInstaller
             ccell.Parameters              = BuildDeclaredParameters(part, variants, fileParameters);
             ccell.ExternalFixedParameters = BuildFixedParameters(part);
             ccell.ExternalExtraTerminals  = part.ExtraTerminals is { Count: > 0 } extra ? [.. extra] : null;
+            if (part.Element is "D" or "Q" or "R" or "C" or "M" && netlistPart is not null)
+            {
+                ccell.ExternalElement          = part.Element;
+                ccell.ExternalElementArguments = part.ElementArguments;
+            }
 
             return new PdkKitPart(part.Id, symbol, ccell, iconPath);
         }

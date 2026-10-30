@@ -346,7 +346,12 @@ public static class PdkImporter
             foreach (var sub in SubcircuitsIn(report.RootPath, report.KitRoot, net.RelativePath))
                 subcircuits.Add(sub);
 
-        subcircuits = PreferTheKitsMainLibrary(subcircuits, report);
+        // A kit's test, regression and LVS folders hold netlists it checks ITSELF against — copies and
+        // fragments that merely share names with its devices. They never define a part, by any
+        // pairing (brief-gdf-1b: measured, every one of one kit's name-likeness pairings landed in a
+        // regression netlist, the failure that had name pairing reverted once before).
+        subcircuits = PreferTheKitsMainLibrary(
+            [.. subcircuits.Where(s => !IsCheckingFolder(s.SourceRelativePath))], report);
 
         // ── The parts a CATALOG declares ─────────────────────────────────────
         //
@@ -409,6 +414,7 @@ public static class PdkImporter
         // Tried before the cell-database shape because the evidence is stronger: circuitRF actually
         // READ the terminals out of these files, rather than inferring a part from the shape of a
         // directory path.
+        Dictionary<string, List<string>>? cardFiles = null;
         foreach (var a in report.Assets.Where(IsRecordSymbolFile))
         {
             var symbol = ReadSymbolFile(report.RootPath, report.KitRoot, a.RelativePath);
@@ -417,7 +423,22 @@ public static class PdkImporter
             string id = Path.GetFileNameWithoutExtension(a.FileName);
             if (id.Length == 0 || !seen.Add(id)) continue;
 
-            var sub = BestSubcircuitFor(id, subcircuits);
+            // A symbol whose own netlist line is a PRIMITIVE element on a card states what it calls,
+            // so it is never handed a subcircuit by name likeness: it is pointed at the file holding
+            // that card (brief-gdf-1b §4), and extraction builds the element from it.
+            bool primitive = symbol.Element is "D" or "Q" or "R" or "C" or "M" && symbol.CalledName is not null;
+            bool stated    = symbol.Element == "X" && symbol.CalledName is not null;
+            var sub = primitive ? null
+                    : stated    ? StatedSubcircuitFor(symbol.CalledName!,
+                                                      symbol.Pins.Count + (symbol.ExtraTerminals?.Count ?? 0),
+                                                      subcircuits, report)
+                    : BestSubcircuitFor(id, subcircuits);
+            string? cardFile = null;
+            if (primitive)
+            {
+                cardFiles ??= CardFiles(report);
+                cardFile = CardFileFor(symbol.CalledName!, cardFiles, report);
+            }
 
             report.Parts.Add(new PdkPart(
                 Id: id, DisplayName: id,
@@ -437,13 +458,16 @@ public static class PdkImporter
                 Parameters: symbol.Parameters.Count > 0 ? symbol.Parameters : sub?.Parameters,
                 PinCount:   symbol.Pins.Count,
                 Pins:       symbol.Pins,
-                DefinitionRelativePath: sub?.SourceRelativePath,
-                DefinitionCell:         sub?.Name,
+                DefinitionRelativePath: primitive ? cardFile : sub?.SourceRelativePath,
+                DefinitionCell:         primitive ? (cardFile is null ? null : symbol.CalledName) : sub?.Name,
                 // The kit's own drawing. Non-null even when empty — see PdkPart.Body for why the
                 // distinction between "drew nothing" and "has no drawing" is load-bearing: the two
                 // sources place their pins under different axis conventions.
                 Body:       symbol.Body,
-                ExtraTerminals: symbol.ExtraTerminals is { Count: > 0 } extra ? extra : null));
+                ExtraTerminals: symbol.ExtraTerminals is { Count: > 0 } extra ? extra : null,
+                Element:          symbol.Element,
+                CalledName:       symbol.CalledName,
+                ElementArguments: symbol.ElementArguments));
         }
 
         if (report.Parts.Count > 0) return;
@@ -557,6 +581,61 @@ public static class PdkImporter
             .ThenByDescending(x => perFile[x.SourceRelativePath])];
     }
 
+    private static readonly Regex RxModelCard =
+        new(@"^[ \t]*\.model[ \t]+(\S+)[ \t]+\S", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Every <c>.model</c> card name the kit's netlists declare, and the files declaring it — outside
+    /// test, regression and LVS folders, which hold copies a kit checks itself against rather than the
+    /// models it ships.
+    /// </summary>
+    private static Dictionary<string, List<string>> CardFiles(PdkImportReport report)
+    {
+        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var net in report.Assets.Where(a => a.Kind == PdkAssetKind.Netlist))
+        {
+            if (IsCheckingFolder(net.RelativePath)) continue;
+            string? full = ResolveAssetPath(report.RootPath, report.KitRoot, net.RelativePath);
+            if (full is null) continue;
+
+            string text;
+            try
+            {
+                if (new FileInfo(full).Length > PeekLimitBytes * 8) continue;
+                text = File.ReadAllText(full);
+            }
+            catch { continue; }
+
+            foreach (Match m in RxModelCard.Matches(text))
+            {
+                if (!result.TryGetValue(m.Groups[1].Value, out var files)) result[m.Groups[1].Value] = files = [];
+                if (!files.Contains(net.RelativePath, StringComparer.OrdinalIgnoreCase)) files.Add(net.RelativePath);
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// The one file a card is declared in — the kit's canonical library when several declare it,
+    /// and nothing when that still leaves more than one, because picking between two definitions of
+    /// one name is the guess the kit did not make.
+    /// </summary>
+    private static string? CardFileFor(string card, Dictionary<string, List<string>> cardFiles, PdkImportReport report)
+    {
+        if (!cardFiles.TryGetValue(card, out var files) || files.Count == 0) return null;
+        if (files.Count == 1) return files[0];
+
+        var canonical = CanonicalLibraries(report);
+        var preferred = files.Where(f => canonical.Contains(FileNameOf(f))).ToList();
+        return preferred.Count == 1 ? preferred[0] : null;
+    }
+
+    private static bool IsCheckingFolder(string relativePath)
+        => relativePath.Split('/', '\\').SkipLast(1).Any(s =>
+               s.StartsWith("test", StringComparison.OrdinalIgnoreCase)
+            || s.Contains("regression", StringComparison.OrdinalIgnoreCase)
+            || s.Equals("lvs", StringComparison.OrdinalIgnoreCase));
+
     /// <summary>
     /// The model libraries the kit's own corner files name as their NOMINAL pairing.
     ///
@@ -612,6 +691,121 @@ public static class PdkImporter
     {
         int slash = path.LastIndexOfAny(['/', '\\']);
         return slash < 0 ? path : path[(slash + 1)..];
+    }
+
+    /// <summary>
+    /// The subcircuit a record symbol's own netlist line CALLS (<c>X… @pinlist name</c>), or null.
+    /// Decision D1 of brief-gdf-1b, taken 2026-10-30.
+    ///
+    /// <para><b>Why this is not the exact-name binding that was reverted (2026-08-08).</b> That rule
+    /// paired a part with whatever subcircuit happened to share the PART's name, which circuitRF had
+    /// inferred, and it attached most of a palette to regression netlists; its values also sat behind
+    /// a corner nobody could select yet. Here the SYMBOL states the name its line calls — the kit
+    /// saying what the part is — checking folders are excluded before anything is compared, and
+    /// corner selection exists. Measured on three open kits before building it: the name-likeness
+    /// matcher this replaces for such symbols paired 23 parts with a DIFFERENT device than the symbol
+    /// names — a p-channel part with an n-channel definition, a 20 V device with its isolated variant,
+    /// one kit's every pairing with a regression netlist.</para>
+    ///
+    /// <para><b>Strict, and never a fallback to a guess.</b> The name must match (the dialect is
+    /// case-insensitive) and the terminal count must equal the symbol's pins plus its stated extra
+    /// terminals. Several matching definitions are resolved only by the kit's own canonical library;
+    /// still more than one, or none, leaves the part unpaired — a symbol that STATES what it calls and
+    /// is handed something else would build a circuit the kit never described.</para>
+    /// </summary>
+    private static SubcircuitDef? StatedSubcircuitFor(
+        string called, int terminals, List<SubcircuitDef> subcircuits, PdkImportReport report)
+    {
+        var matches = subcircuits
+            .Where(s => s.Name.Equals(called, StringComparison.OrdinalIgnoreCase) && s.PinCount == terminals)
+            .ToList();
+        if (matches.Count <= 1) return matches.FirstOrDefault();
+
+        var canonical = CanonicalLibraries(report);
+        var preferred = matches.Where(s => canonical.Contains(FileNameOf(s.SourceRelativePath))).ToList();
+        if (preferred.Count == 1) return preferred[0];
+
+        // A kit that states one definition per corner (a `__tt`, `__ss`, `__ff` … file each) is resolved
+        // by what its NOMINAL corner reads — the first section of each corner file, the alternative the
+        // kit lists first. Selecting another corner at run time puts that corner's definition in place
+        // (KitCornerVariants), so pairing to the nominal one is what makes every corner reachable.
+        var reached = NominalCornerFiles(report);
+        var nominal = matches
+            .Where(s => ResolveAssetPath(report.RootPath, report.KitRoot, s.SourceRelativePath) is { } full
+                        && reached.Contains(Path.GetFullPath(full)))
+            .ToList();
+        return nominal.Count == 1 ? nominal[0] : null;
+    }
+
+    /// <summary>
+    /// Every file the first section of each of the kit's corner files reaches, absolute. Built only
+    /// when a stated name is otherwise ambiguous, and by following INCLUSION LINES as text: which
+    /// files a section reaches is all this needs, and parsing the model libraries behind it to learn
+    /// that cost one kit five seconds of import.
+    /// </summary>
+    private static HashSet<string> NominalCornerFiles(PdkImportReport report)
+    {
+        if (report.NominalCornerFilesCache is { } cached) return cached;
+
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var candidates = new List<(string AbsolutePath, string AxisId)>();
+        foreach (var net in report.Assets.Where(a => a.Kind == PdkAssetKind.Netlist))
+            if (!IsCheckingFolder(net.RelativePath) &&
+                ResolveAssetPath(report.RootPath, report.KitRoot, net.RelativePath) is { } full)
+                candidates.Add((full, net.RelativePath));
+
+        try
+        {
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var axis in PdkCorners.Discover(candidates))
+                if (axis.Options.Count > 0)
+                    Reach(candidates.First(c => c.AxisId == axis.AxisId).AbsolutePath, axis.Options[0],
+                          files, visited, depth: 0);
+        }
+        catch { /* a kit whose corners will not read pairs nothing by this rule */ }
+
+        report.NominalCornerFilesCache = files;
+        return files;
+    }
+
+    /// <summary>The files <paramref name="file"/> (one section of it, when named) includes, recursively.</summary>
+    private static void Reach(string file, string? section, HashSet<string> files, HashSet<string> visited, int depth)
+    {
+        if (depth > 16 || !visited.Add(file + "\n" + section)) return;
+
+        string[] lines;
+        try
+        {
+            if (!File.Exists(file) || new FileInfo(file).Length > PeekLimitBytes * 16) return;
+            lines = File.ReadAllLines(file);
+        }
+        catch { return; }
+
+        string dir = Path.GetDirectoryName(file) ?? "";
+        bool inScope = section is null;
+        foreach (var raw in lines)
+        {
+            string ln = raw.Trim();
+            if (ln.Length == 0 || ln[0] != '.') continue;
+            var w = ln.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            string head = w[0].ToLowerInvariant();
+
+            if (section is not null)
+            {
+                // One word after `.lib` OPENS a section; `.endl` closes it.
+                if (head == ".lib" && w.Length == 2) { inScope = w[1].Trim('"', '\'').Equals(section, StringComparison.OrdinalIgnoreCase); continue; }
+                if (head == ".endl") { inScope = false; continue; }
+            }
+            if (!inScope || w.Length < 2) continue;
+
+            string? target = head is ".include" or ".inc" || (head == ".lib" && w.Length >= 3)
+                ? Path.GetFullPath(Path.Combine(dir, w[1].Trim('"', '\'')))
+                : null;
+            if (target is null) continue;
+
+            files.Add(target);
+            Reach(target, head == ".lib" ? w[2].Trim('"', '\'') : null, files, visited, depth + 1);
+        }
     }
 
     /// <summary>

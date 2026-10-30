@@ -1,0 +1,29 @@
+; DC operating point of every synthetic card (brief-gdf-1b R-gdf1b-5), written with the parameters
+; circuitRF's card translation produces for cards.lib: base SI, the bipolar cards' unstated
+; parameters at the dialect's defaults. Each zero-volt source is an ammeter.
+Vdc:VCC vcc 0 Vdc=3.3
+Vdc:VIN in  0 Vdc=0.9
+Vdc:VB2 b2x 0 Vdc=2.0
+
+R:R1    vcc da  R=10000
+Vdc:VAD1 da da1 Vdc=0
+Diode:D1 da1 0  Is=2.5e-18 N=1.02 Rs=180 Cj0=1.1e-15 M=0.35 Vj=0.7 Bv=12 Ibv=1e-9 Tnom=26.85 Area=4
+Vdc:VAD2 da da2 Vdc=0
+Diode:D2 da2 0  Is=4e-19 N=1.05 Cj0=2e-16 M=0.2 Vj=0.75 Tnom=26.85 Area=8
+
+R:RB     in  b1x R=47000
+Vdc:VAB1 b1x b1  Vdc=0
+R:RC     vcc c1x R=4700
+Vdc:VAC1 c1x c1  Vdc=0
+BJT_NPN:Q1 c1 b1 0 Is=2e-17 Bf=95 Nf=1 Vaf=45 Ikf=3e-3 Ise=1e-16 Ne=1.6 Br=2 Nr=1 Var=6 Rb=120 Re=8 Rc=60 Cje=6e-15 Cjc=4e-15 Tnom=26.85 Ikr=0 Isc=0 Nc=2 Irb=0 Rbm=0 Vje=0.75 Mje=0.33 Vjc=0.75 Mjc=0.33 Xcjc=1 Fc=0.5 Tf=0 Xtf=0 Vtf=0 Itf=0 Tr=0 Xti=3 Xtb=0 Area=2
+
+R:RE2    vcc e2x R=2200
+Vdc:VAE2 e2x e2  Vdc=0
+Vdc:VAB2 b2x b2  Vdc=0
+BJT_PNP:Q2 0 b2 e2 Is=5e-17 Bf=40 Vaf=30 Rb=200 Re=20 Rc=80 Tnom=26.85 Nf=1 Ikf=0 Ise=0 Ne=1.5 Br=1 Nr=1 Var=0 Ikr=0 Isc=0 Nc=2 Irb=0 Rbm=0 Cje=0 Vje=0.75 Mje=0.33 Cjc=0 Vjc=0.75 Mjc=0.33 Xcjc=1 Fc=0.5 Tf=0 Xtf=0 Vtf=0 Itf=0 Tr=0 Xti=3 Xtb=0
+
+Vdc:VAR3 vcc r3x Vdc=0
+R:R3     r3x r3  R=120*10e-6/2e-6 Tnom=26.85
+R:R4     r3  0   R=1000
+
+analysis DC1 type=dc

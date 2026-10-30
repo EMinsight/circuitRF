@@ -302,6 +302,22 @@ public sealed class CcellFile
     public List<string>? ExternalExtraTerminals { get; set; }
 
     /// <summary>
+    /// The PRIMITIVE element a kit symbol writes this part as — <c>D</c>, <c>Q</c>, <c>R</c>, <c>C</c>
+    /// or <c>M</c> — on the model card <see cref="ExternalNetlistCell"/> names in
+    /// <see cref="ExternalNetlistPath"/>. Null for a subcircuit part and every other cell
+    /// (brief-gdf-1b §4).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExternalElement { get; set; }
+
+    /// <summary>
+    /// The element line's own words after the card name, as the kit's symbol writes them —
+    /// <c>@name</c> placeholders standing for this part's parameters. Null when there are none.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExternalElementArguments { get; set; }
+
+    /// <summary>
     /// The <c>Match</c> design this cell was flattened from — base64 of its JSON, exactly the blob a
     /// <c>Match</c> component carries (match.md §11.1). Present only on a cell that <b>Flatten to
     /// Cell</b> wrote; omitted from every other <c>.ccell</c>, which therefore stays byte-identical.

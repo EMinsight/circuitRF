@@ -23,7 +23,7 @@ namespace CircuitRF.Core.Netlist.Spice;
 /// card with an area coefficient and no geometry to apply it to — is REPORTED and left unbound,
 /// because the alternative is a capacitance of zero that simulates perfectly.</para>
 /// </summary>
-internal static class SpicePassiveModelBinding
+public static class SpicePassiveModelBinding
 {
     /// <summary>
     /// Rewrites every instance that names a passive model card. <paramref name="note"/> receives a
@@ -221,7 +221,14 @@ internal static class SpicePassiveModelBinding
         string? w = Inst("w") ?? Card("DEFW");
         string? l = Inst("l");
 
-        if (rsh is null || w is null || l is null)
+        // The element line's OWN resistance is the value, and the card then contributes only what
+        // the line does not state — its temperature coefficients. That is what the dialect means by
+        // `R1 a b card r=…`, and a kit writes exactly this for a fixed contact resistance whose card
+        // holds TC1/TC2 and nothing else. Refusing it for want of a sheet resistance refused the
+        // one resistor on the line that had a value.
+        string? stated = Inst("r");
+
+        if (stated is null && (rsh is null || w is null || l is null))
         {
             note($"'{inst.InstanceName}' in '{cellName}' names resistor model '{card.Name}', which " +
                  "gives no sheet resistance or no geometry to apply it to. Left unbound rather than " +
@@ -234,7 +241,7 @@ internal static class SpicePassiveModelBinding
         {
             // No whitespace, as every rewritten value: the .cnl instance line splits on it, so a spaced
             // value read back as a value plus a unit nobody wrote (brief-gdf-1).
-            new("R", $"({rsh})*({Shrink(l, narrow)})/({Shrink(w, narrow)})"),
+            new("R", stated ?? $"({rsh})*({Shrink(l, narrow)})/({Shrink(w, narrow)})"),
         };
 
         void Add(string name, string? expr)

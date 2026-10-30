@@ -1,0 +1,15 @@
+* Synthetic model cards in the shapes open process kits use (brief-gdf-1b R-gdf1b-5).
+* No kit's numbers. Every card states TNOM equal to the bench temperature, so no
+* temperature law enters the comparison.
+
+* A junction split the way kits split it: one card per unit AREA, one per unit PERIMETER,
+* each instanced with its geometry as the area multiplier.
+.model dsyn_area  d level=1 is=2.5e-18 n=1.02 rs=180 cj=1.1e-15 m=0.35 vj=0.7 bv=12 ibv=1e-9 tnom=26.85
+.model dsyn_perim d         is=4e-19   n=1.05 cj=2e-16   m=0.2  vj=0.75 tnom=26.85
+
+.model qsyn_n npn level=1 is=2e-17 bf=95 nf=1.0 vaf=45 ikf=3e-3 ise=1e-16 ne=1.6 br=2 nr=1 var=6
++ rb=120 re=8 rc=60 cje=6e-15 cjc=4e-15 tnom=26.85
+.model qsyn_p pnp is=5e-17 bf=40 vaf=30 rb=200 re=20 rc=80 tnom=26.85
+
+* A sheet-resistance card: the value comes from the instance's width and length.
+.model rsyn r rsh=120 tnom=26.85

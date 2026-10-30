@@ -307,7 +307,9 @@ public static class ModelCardCellBuilder
     ///
     /// <para>Rows the card does not state are left off entirely rather than written at their
     /// defaults: an absent row IS the default, and writing them out would make a later change to a
-    /// default silently not reach cells imported before it.</para>
+    /// default silently not reach cells imported before it. The bipolar card is the exception, and
+    /// the translation decides it, not this method: circuitRF's transistor defaults describe a
+    /// particular part, so the dialect's own defaults arrive here as stated parameters.</para>
     /// </summary>
     private static void ApplyParameters(
         EditableComponent device, SymbolKind kind, IReadOnlyList<ModelCardParameter> parameters)

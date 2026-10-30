@@ -318,6 +318,25 @@ optimisation.
 
 **Vendor parameter data in `.csch` is accepted** (§3.3). Not in scope.
 
+**A record symbol is paired with the definition its own netlist line calls** (brief-gdf-1b D1, 2026-10-30).
+A symbol's `format`/`template` state the element (`X`, or a primitive `D`/`Q`/`R`/`C`/`M`) and the name it
+calls. An `X` symbol is paired with the subcircuit of that name only when exactly one definition matches
+the name (case-insensitively) and the terminal count (pins plus stated extra terminals); several are
+resolved by the kit's canonical library, then by the files its nominal corner sections reach; anything
+still ambiguous, or nothing found, leaves the part unpaired — never handed a name-alike. A primitive
+symbol is pointed at the one file declaring its card. Test, regression and LVS folders never define a part,
+by any pairing. The name-likeness matcher remains for sources that state nothing (catalogs, cell trees,
+symbols with no call).
+
+This is not the exact-name binding reverted on 2026-08-08: that paired a part with whatever shared the
+name circuitRF inferred for it, before any corner could be selected. Here the kit states the name, and
+corners are selectable. Measured on three open kits before building it: the likeness matcher had paired
+23 such parts with a different device than the symbol names (a p-channel part with an n-channel
+definition; every pairing of one kit landed in a regression netlist). Afterwards: one kit 25 → 39 parts
+paired, all on the stated name; one 59 → 74 with those 13 corrected; the third 18 → 0, all 18 having been
+regression netlists — its real definitions sit inside corner sections that one corner axis offers as
+alternatives, which is the corner model's open question, not the pairing's.
+
 ---
 
 ## 10. Open questions

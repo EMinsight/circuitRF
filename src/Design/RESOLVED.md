@@ -24772,3 +24772,28 @@ up the difference EXACTLY, wiring each to the net its value names — the instan
 default (`sub!`) — in the schematic the part sits in. A net label of that name ties it; nothing makes it
 global or grounds it, because the kit does not say to. Any other mismatch is still refused by count.
 Gate: `KitPartSubcircuitBindingTests.ABodyTerminalIsWiredToTheNetItsParameterNames`.
+
+## A kit device on a plain model card: compiled, then built-in, then refused (brief-gdf-1b, 2026-10-30)
+
+- **`NetExtractor.BindNativeDeviceTypes` sent every card-backed device to `RouteToCompiledModel` and
+  nowhere else**, so a diode, bipolar or resistor card the kit's own simulator builds in was refused
+  with advice to compile Verilog-A the kit does not ship. `RouteCardDevice` now takes, in order: a
+  compiled implementor of the card's type; `SpiceModelCardTranslation` onto the built-in; a refusal
+  carrying the translation's own sentence. The compile advice stays only for a type circuitRF has no
+  built-in for, which in this dialect can only name a compiled module.
+- **The built-in is refused, not approximated, when** the instance binds a different number of nets
+  than the built-in has terminals (one kit's bipolars are four-terminal), a MESFET card states lead
+  resistance, the card states a DC-affecting parameter the built-in does not carry, or the instance
+  states a word with no home. Instance geometry is respelled (`area`→`Area`, `dtemp`→`Dtemp`; `m` stays
+  the multiplier); a diode's `pj` is dropped with a note once no sidewall current is stated.
+- **What the card leaves behind is reported once per CARD**, not per instance, and an identical
+  refusal once per extraction: a kit cell is shared by every part built from its library and was met
+  again for each.
+- **A primitive-element kit part** (`ExternalElement` on the `.ccell`) is built as a one-element cell
+  whose line is READ by the SPICE reader from the symbol's own format words, then routed exactly as the
+  same element inside a subcircuit would be. `M` is refused with a sentence. A card the model file
+  defines only inside a corner section is reported as not defined as read.
+- **`LooksLikeSpice` required a `.subckt`**, so a file holding nothing but `.model` cards went to the
+  record-format reader and yielded no cards. A leading `.model` now counts as well.
+- Gate: `tests/Ui.Tests/KitCardDeviceRoutingTests.cs` (built-in route, compiled precedence, once per
+  card, the selected corner moving a DC operating point by n·Vt·ln 10⁴, the primitive element).

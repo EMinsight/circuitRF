@@ -20,12 +20,30 @@ namespace CircuitRF.Core.Pdk;
 /// Template attributes the symbol's netlist line places AMONG ITS TERMINALS, after the drawn pins —
 /// a body connection written as <c>body=sub!</c> is a net, not a value. Empty for nearly every symbol.
 /// </param>
+/// <param name="Element">
+/// The netlist line's element letter, upper-case: the template's <c>spiceprefix</c> when it sets one,
+/// else the first letter of its <c>name</c>. <c>X</c> is a subcircuit call; <c>D</c>, <c>Q</c>,
+/// <c>R</c>, <c>C</c> and <c>M</c> are primitive elements on a model card. Null when the template
+/// names no instance.
+/// </param>
+/// <param name="CalledName">
+/// What the netlist line calls — the format's model token with <c>@model</c> substituted from the
+/// template, any literal prefix kept. Null when the format states no such token or it does not
+/// resolve to a plain name.
+/// </param>
+/// <param name="ElementArguments">
+/// The format's text after that token — the instance's own <c>key=value</c> words, still holding their
+/// <c>@name</c> placeholders. Null when there is none.
+/// </param>
 public sealed record KitSymbolFile(
     IReadOnlyList<KitSymbolPin>      Pins,
     IReadOnlyList<PdkPartParameter>  Parameters,
     string                           TypeWord,
     IReadOnlyList<KitSymbolShape>    Body,
-    IReadOnlyList<string>?           ExtraTerminals = null);
+    IReadOnlyList<string>?           ExtraTerminals = null,
+    string?                          Element = null,
+    string?                          CalledName = null,
+    string?                          ElementArguments = null);
 
 /// <summary>
 /// Reads a schematic symbol from a plain-text RECORD format: one symbol per file, each line a
@@ -151,6 +169,7 @@ public static class KitSymbolFileReader
         var body       = new List<KitSymbolShape>();
         string typeWord = "";
         IReadOnlyList<string> extraTerminals = [];
+        string? element = null, called = null, arguments = null;
         bool sawRecord  = false;
         bool everyPinOrdered = true;
 
@@ -166,6 +185,13 @@ public static class KitSymbolFileReader
                     ReadTemplate(tpl.Value, parameters);
                 if (attrs.TryGetValue(FormatAttribute, out var fmt))
                     extraTerminals = ExtraTerminalsIn(fmt.Value);
+                if (tpl.Value is { Length: > 0 } templateText)
+                {
+                    var tplAttrs = ParseAttributes(templateText);
+                    element = ElementOf(tplAttrs);
+                    if (fmt.Value is { Length: > 0 } formatText)
+                        (called, arguments) = CallIn(formatText, tplAttrs);
+                }
                 continue;
             }
 
@@ -217,7 +243,9 @@ public static class KitSymbolFileReader
         // No records at all means this is not the format. No PINS, though, is a real symbol that
         // happens to declare none — a title block, a decoration — and is reported as such rather
         // than as a parse failure, so the caller can tell the two apart.
-        return sawRecord ? new KitSymbolFile(ordered, parameters, typeWord, body, extraTerminals) : null;
+        return sawRecord
+            ? new KitSymbolFile(ordered, parameters, typeWord, body, extraTerminals, element, called, arguments)
+            : null;
     }
 
     /// <summary>
@@ -531,6 +559,57 @@ public static class KitSymbolFileReader
             extras.Add(t[1..]);
         }
         return extras;
+    }
+
+    /// <summary>
+    /// The element letter the netlist line is written with: the template's <c>spiceprefix</c>, else
+    /// the first letter of its instance <c>name</c> — which is how the format itself decides it.
+    /// </summary>
+    private static string? ElementOf(Dictionary<string, Attribute> template)
+    {
+        if (template.TryGetValue("spiceprefix", out var prefix) && prefix.Value.Length > 0)
+            return prefix.Value[..1].ToUpperInvariant();
+        if (template.TryGetValue("name", out var name) && name.Value.Length > 0 && char.IsAsciiLetter(name.Value[0]))
+            return name.Value[..1].ToUpperInvariant();
+        return null;
+    }
+
+    /// <summary>
+    /// The name the format's netlist line calls, and the text after it. The called token is the last
+    /// positional word after <c>@pinlist</c> — the same reading <see cref="ExtraTerminalsIn"/> makes
+    /// of the words before it. <c>@model</c> inside it is replaced by the template's <c>model</c>, so
+    /// a literal prefix (<c>&lt;prefix&gt;@model</c>) is kept; any other placeholder left in it means the
+    /// name is not knowable from the symbol alone, and nothing is returned.
+    /// </summary>
+    private static (string? Called, string? Arguments) CallIn(string format, Dictionary<string, Attribute> template)
+    {
+        var words = new List<(string Text, int End)>();
+        int i = 0;
+        while (i < format.Length)
+        {
+            while (i < format.Length && char.IsWhiteSpace(format[i])) i++;
+            int start = i;
+            while (i < format.Length && !char.IsWhiteSpace(format[i])) i++;
+            if (i > start) words.Add((format[start..i], i));
+        }
+
+        int at = words.FindIndex(w => w.Text.Equals(PinListToken, StringComparison.Ordinal));
+        if (at < 0) return (null, null);
+
+        var positional = words.Skip(at + 1).TakeWhile(w => !w.Text.Contains('=')).ToList();
+        if (positional.Count == 0) return (null, null);
+
+        var (token, end) = positional[^1];
+        if (token.Contains("@model", StringComparison.Ordinal))
+        {
+            if (!template.TryGetValue("model", out var model) || model.Value.Length == 0) return (null, null);
+            token = token.Replace("@model", model.Value, StringComparison.Ordinal);
+        }
+        if (token.Length == 0 || !token.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-'))
+            return (null, null);
+
+        string rest = format[end..].Trim();
+        return (token, rest.Length > 0 ? rest : null);
     }
 
     /// <summary>

@@ -304,7 +304,9 @@ public class ModelCardImportTests : IDisposable
     {
         var t = One(".model QMOD NPN (IS=1e-16 C2=1e3 C4=5)");
 
-        Assert.DoesNotContain(t.Binding!.Parameters, p => p.Name is "Ise" or "Isc");
+        // Ise/Isc may appear at the dialect's own default (zero); never sourced from C2 or C4.
+        Assert.DoesNotContain(t.Binding!.Parameters,
+            p => p.Name is "Ise" or "Isc" && p.Source is not "(dialect default)");
         Assert.Contains("C2", t.Binding.Unmapped, StringComparer.OrdinalIgnoreCase);
         Assert.Contains("C4", t.Binding.Unmapped, StringComparer.OrdinalIgnoreCase);
     }

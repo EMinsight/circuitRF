@@ -65,7 +65,7 @@ public static class SpiceNetlistReader
         // The root file is registered as open BEFORE it is read, so a file that includes its way
         // back to the top is caught by the same rule as any other cycle. Registering only what
         // inclusion opens would leave the root as the one file that can be entered twice.
-        session.MarkOpen(full);
+        session.MarkOpen(full, Blank(section));
         session.Run(lines, full, Path.GetDirectoryName(full), Blank(section), depth: 0);
         return session.Finish(lines.Length);
     }
@@ -139,7 +139,16 @@ public static class SpiceNetlistReader
         private Cell?  Current   => _cells.Count > 0 ? _cells[^1] : null;
         private string CurrentName => _cells.Count > 0 ? _cells[^1].Name : "";
 
-        public void MarkOpen(string path) => _open.Add(path);
+        public void MarkOpen(string path, string? section) => _open.Add(OpenKey(path, section));
+
+        /// <summary>
+        /// What is open: a file AND the section read from it. A corner file's section commonly reads
+        /// another section of the SAME file (<c>.lib typical</c> holding <c>.lib 'self.spice' dio</c>),
+        /// which is not a cycle — keyed on the file alone it was refused as one, and every card behind
+        /// it went unread. Reading the same section of the same file again still is.
+        /// </summary>
+        private static string OpenKey(string path, string? section)
+            => section is null ? path : path + "\n" + section;
 
         public SpiceNetlistResult Finish(int lastLine)
         {
@@ -593,7 +602,8 @@ public static class SpiceNetlistReader
             // Identity, not name: the same file reached by two different relative paths is one file,
             // and a cycle through it would otherwise recurse until the depth limit rather than being
             // reported as what it is.
-            if (!_open.Add(path))
+            string openKey = OpenKey(path, section);
+            if (!_open.Add(openKey))
             {
                 Note(file, number, $"'{named}' includes itself, directly or through another file; not read again.");
                 return;
@@ -616,7 +626,7 @@ public static class SpiceNetlistReader
                 Note(file, number, $"'{named}' could not be read ({ex.Message}); skipped.");
                 MarkIncomplete();
             }
-            finally { _open.Remove(path); }
+            finally { _open.Remove(openKey); }
         }
 
         // ── conditionals ──────────────────────────────────────────────────────

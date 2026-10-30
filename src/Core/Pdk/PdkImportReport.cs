@@ -62,7 +62,19 @@ public sealed record PdkPart(
     /// connection, <c>body=sub!</c>, is a net named by the parameter's value. Null for nearly every
     /// part. See <see cref="KitSymbolFile.ExtraTerminals"/>.
     /// </summary>
-    IReadOnlyList<string>?            ExtraTerminals = null);
+    IReadOnlyList<string>?            ExtraTerminals = null,
+
+    /// <summary>
+    /// The element letter the kit's symbol writes this part's netlist line with — <c>X</c> for a
+    /// subcircuit call, <c>D</c>/<c>Q</c>/<c>R</c>/<c>C</c>/<c>M</c> for a primitive element on a model
+    /// card — and the name that line calls. Both from the symbol's own <c>template</c> and <c>format</c>
+    /// (<see cref="KitSymbolFile.Element"/>); null where the source states none.
+    /// </summary>
+    string?                           Element = null,
+    string?                           CalledName = null,
+
+    /// <summary>The instance's own words on that line, placeholders kept (<see cref="KitSymbolFile.ElementArguments"/>).</summary>
+    string?                           ElementArguments = null);
 
 /// <summary>
 /// One parameter a part declares, and the kit's own default for it.
@@ -120,6 +132,12 @@ public sealed class PdkImportReport
     /// is clutter in front of every user who will never need one.</para>
     /// </summary>
     public List<PdkCornerAxis> CornerAxes { get; } = [];
+
+    /// <summary>
+    /// The files the kit's nominal corner sections read, once the importer has needed them to
+    /// resolve a stated subcircuit name defined once per corner. Import-time working state only.
+    /// </summary>
+    internal HashSet<string>? NominalCornerFilesCache { get; set; }
 
     public IEnumerable<PdkAsset> Supported    => Assets.Where(a => a.Support == PdkAssetSupport.Supported);
     public IEnumerable<PdkAsset> KnownGaps    => Assets.Where(a => a.Support == PdkAssetSupport.RecognizedNotSupported);

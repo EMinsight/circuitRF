@@ -167,3 +167,99 @@ Run only the classes you touch.
   built-in, or refused, with the sentence).
 - What D1 and D3 were decided as.
 - Whether the §5 reference exists. If it does not, say the routing is unvalidated.
+
+---
+
+## Completion note (2026-10-30)
+
+Built: §2, §3, §4 (both halves — D1 was left to judgement and is built, see Decisions), and §5's
+benches. **The §5 reference does not exist, so the built-in routing is unvalidated.** Measured against the
+upstream clones outside the repository, typical corner.
+
+### §1 — the cards the kits' parts reach
+
+| Card | Kit A: 130 nm SiGe BiCMOS | Kit C: 130 nm CMOS | Kit D: 180 nm CMOS |
+|---|---|---|---|
+| diode | 10 unstated level + 14 level 1; all map. Left behind: IK (13), TLEV/TLEVC (12), TCV (7), JSW/CJSW (5), IKF, TRS/TRS2, MJSW, PHP, CJP, NS, CTA, AF/KF | 12 level 3 | 13 level 3 |
+| npn | 3 **level 9** | level 1, maps | 6 level 1, map |
+| pnp | 1 unstated + 1 level 1, map. Left behind: AF/KF; CJS/MJS/VJS; TRC1/2, TRE1/2, TRM1/2 | 1 level 1, maps. Left behind: CJS/MJS/VJS, ISS, NKF, NS, TNF1/2, TIKF1, PTF, AF/KF, TREF (now read) | 4 level 1, map. Left behind: CJS/MJS/VJS, NKF, TBF1/2, TIKF1, TVJC/TVJE, CTC/CTE, TLEVC, PTF, AF/KF, TREF (now read) |
+| resistor | none — its resistors are a compiled model | 26: 14 state only RSH (bound per instance by the passive binding when `w`/`l` are given); 12 state no resistance at all — TC-only cards whose ELEMENT states `r=`, which the passive binding refused (fixed below) | 19: 12 RSH-only, 7 TC-only |
+| capacitor | 1, no capacitance | 43, no capacitance (geometry cards, bound per instance) | 13, as C |
+
+Level-3 diodes would map RS, N, CJ, PB, MJ, IBV, AREA, XTI, EG and leave JS, JSW, CJSW, MJSW, PHP, IK, IKR,
+TCV, TRS, TLEVC, CTA, CTP, TPB, TPHP, TREF and the level-3 geometry words (LM, LP, WM, WP, XM, XP, XOI, XOM,
+XW). Kit D's resistor subcircuits, and kit C's high-value resistor body, compute their value from a node
+voltage (`v(a,b)`) — a non-goal, so neither resistor family reaches DC whatever the card does.
+
+**Kit D's typical corner read no cards at all.** Its corner file's sections read other sections of the
+same file (`.lib 'self' dio`), which the reader refused as an inclusion cycle. Fixed (keyed on file and
+section). Its device families are still declared as ALTERNATIVES on one axis (`typical` vs
+`diode_typical` vs `bjt_typical`), where the kit means several to be included together, so a diode card
+is unreachable while the MOS corner is selected. Not fixed here: it is the corner model's shape, not
+this brief's.
+
+### What changed
+
+- **Level gate (D2)**: a `D`/`NPN`/`PNP` card stating any level but 1 is refused by card, type and level,
+  on every import path.
+- **Routing (D4)**: compiled implementor → built-in → refusal with the translation's own sentence. The
+  compile advice remains only for a type with no built-in. Refused rather than approximated: a net
+  count that differs from the built-in's terminals; a DC-affecting parameter left behind (nonzero
+  literal or any expression); an instance word with no home. Left-behind parameters reported once per
+  card.
+- **Two silent wrong answers found on the way, both fixed**: an unstated bipolar parameter took circuitRF's
+  component default (Vaf 71 V, Br 3.3, Ise 1.6 fA, Cje 83 fF …) instead of the dialect's — it now
+  takes the dialect's, on every path; and `TREF` (the extraction temperature) was unread.
+- **Primitive-element symbols** (`D`/`Q`/`R`/`C`/`M`) read their element and called name, point at the
+  one file declaring the card, and extract as a one-element cell routed like the same element inside a
+  subcircuit. `M` is refused with a sentence. A cards-only model file is now recognised as the SPICE
+  dialect at extraction.
+- **A resistor element stating its own `r=`** on a TC-only card binds (kit C's contact resistors).
+
+### Brief 1's families, re-run
+
+| Family | Kit A | Kit C | Kit D |
+|---|---|---|---|
+| MOSFET | unchanged: DC solves (compiled) | unchanged: cannot simulate | unchanged |
+| HBT / BJT | HBT refused: LEVEL=9 (D2). Its Schottky family's level-1 PNP now runs on the built-in, but that cell's three diode cards are refused (IK, TLEV, TCV) | refused: the instances bind 4 nets, the built-in has 3 terminals | not placed in brief 1's set |
+| Resistor | unchanged (compiled) | contact resistors now bind; the body is voltage-dependent (non-goal) | voltage-dependent (non-goal) |
+| MIM capacitor | unchanged: DC solves | unchanged: DC solves | not paired |
+| Diode | refused, built-in: IK/IKF, TLEV, TCV, JSW stated nonzero | refused: LEVEL=3 (D3) | the 9 primitive diode parts now point at their card file (0 before); refused: card only inside a corner section not selected, and LEVEL=3 (D3) |
+| MOM capacitor (A) | compile advice kept: not a built-in type | — | — |
+
+**No family newly reaches DC.** What changed is that every card-backed device now says the true
+reason it does not: no family is told to compile Verilog-A the kit does not ship.
+
+### Decisions
+
+- **D1: built** (the owner left it to judgement). Measured first: the likeness matcher had paired 23
+  stated-name parts with a DIFFERENT device than the symbol names — kit C 13 (an LVT device with an RF
+  variant, a 20 V device with its isolated variant), kit D 10 (a p-channel part with an n-channel
+  definition), and every one of kit D's 18 pairings landed in a regression netlist. The rule: exact name,
+  terminal count = pins + extra terminals, ties by the canonical library then by the files the nominal
+  corner sections reach; ambiguous or absent → unpaired, never a likeness guess; test, regression and
+  LVS folders excluded from every pairing. Result: kit A 25 → 39 paired (all 39 stated-name symbols);
+  kit C 59 → 74, the 13 corrected, one dropped (a 3-pin symbol against a 4-port definition, which
+  extraction refused anyway); kit D 18 → 0 — its real definitions sit inside corner sections offered
+  as alternatives on one axis, the corner-model limit recorded above. Import time unchanged (kit C ~9 s
+  on this machine with and without the nominal-corner walk). Recorded in `docs/design/pdk-import.md` §9.
+- **D2: as the default.**
+- **D3: refused.** The measurement says the AREA half of a level-3 card has the same meaning in
+  circuitRF's diode (JS × AREA → Is, CJ × AREA → Cj0, PB → Vj, MJ → M, RS ÷ AREA → Rs, N, BV, IBV), but the
+  PERIMETER half (JSW, CJSW, MJSW, PHP × PJ) has no home, and 12 of 12 kit C and 9 of 13 kit D cards state
+  JSW. **Proposal, not built**: a level-3 card as two built-in diodes in parallel — the area junction, and
+  a sidewall junction with Is = JSW, Cj0 = CJSW, M = MJSW, Vj = PHP, Area = PJ — provided the geometry
+  words (LM … XW) are measured inert in the kits' cards and the sidewall shares the card's N.
+- **D4: as the default.**
+
+### §5
+
+Synthetic cards and a one-operating-point bench in both dialects are in `testdata/kit-card-dc/`
+(`cards.lib`, `bench.sp`, `bench.cnl`, README). **The reference has not been generated; it needs the owner
+and an independent simulator. Until it exists, the built-in routing is unvalidated.**
+
+Gates: `tests/Core.Tests/Netlist/KitCardTranslationTests.cs` (5), `tests/Core.Tests/Pdk/StatedSubcircuitPairingTests.cs`
+(2: test 6, and the nominal-corner tie), `tests/Ui.Tests/KitCardDeviceRoutingTests.cs` (5: tests 2, 3, 4, 5, 7).
+Test 8 waits on the reference. Ran only the touched classes:
+Core SPICE/PDK classes 354/354; Ui card import, subcircuit import, compiled routing, kit, corner, CLI
+import classes 404/405 with one skip (and `ModelCardImportTests.OldSpiceMultipliers_…` re-pinned).

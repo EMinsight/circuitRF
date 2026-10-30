@@ -112,7 +112,10 @@ public static class SpiceModelCardTranslation
         ("Xti",  ["XTI"]),
         ("Eg",   ["EG"]),
         ("Temp", ["TEMP"]),
-        ("Tnom", ["TNOM"]),
+        // TREF is the same quantity under another dialect's spelling — the temperature the card's
+        // parameters were extracted at — so reading it is not a guess. Left unread, a card stating
+        // TREF=25 runs as though it were extracted at circuitRF's nominal, which moves Is.
+        ("Tnom", ["TNOM", "TREF"]),
     ];
 
     private static readonly (string Target, string[] Sources)[] BjtMap =
@@ -153,7 +156,55 @@ public static class SpiceModelCardTranslation
         ("Xtb",  ["XTB"]),
         ("Eg",   ["EG"]),
         ("Temp", ["TEMP"]),
-        ("Tnom", ["TNOM"]),
+        ("Tnom", ["TNOM", "TREF"]),
+    ];
+
+    /// <summary>
+    /// What this dialect means by a bipolar card parameter the card does NOT state, wherever that
+    /// differs from circuitRF's own component default.
+    ///
+    /// <para><b>circuitRF's BJT defaults describe a particular transistor</b> — a placed part has to
+    /// be a working device before anyone edits it — so an absent row is NOT "the card's default"
+    /// the way it is for the diode. A card stating only IS, BF and RB means an ideal Early-less,
+    /// knee-less, capacitance-free device to every simulator of this dialect; left to circuitRF's
+    /// defaults it acquired VAF=71 V, BR=3.3, a femtoamp of base leakage and 83 fF of junction
+    /// capacitance, and simulated without a word. Zero is "not modelled" for every knee, Early
+    /// voltage and VTF in <c>BjtModel</c>, which is exactly this dialect's infinity.</para>
+    /// </summary>
+    private static readonly (string Target, string Value)[] BjtDialectDefaults =
+    [
+        ("Is",   "1e-16"),
+        ("Bf",   "100"),
+        ("Vaf",  "0"),
+        ("Ikf",  "0"),
+        ("Ise",  "0"),
+        ("Ne",   "1.5"),
+        ("Br",   "1"),
+        ("Nr",   "1"),
+        ("Var",  "0"),
+        ("Ikr",  "0"),
+        ("Isc",  "0"),
+        ("Nc",   "2"),
+        ("Rb",   "0"),
+        ("Irb",  "0"),
+        ("Rbm",  "0"),
+        ("Re",   "0"),
+        ("Rc",   "0"),
+        ("Cje",  "0"),
+        ("Vje",  "0.75"),
+        ("Mje",  "0.33"),
+        ("Cjc",  "0"),
+        ("Vjc",  "0.75"),
+        ("Mjc",  "0.33"),
+        ("Xcjc", "1"),
+        ("Fc",   "0.5"),
+        ("Tf",   "0"),
+        ("Xtf",  "0"),
+        ("Vtf",  "0"),
+        ("Itf",  "0"),
+        ("Tr",   "0"),
+        ("Xti",  "3"),
+        ("Xtb",  "0"),
     ];
 
     /// <summary>
@@ -396,9 +447,9 @@ public static class SpiceModelCardTranslation
 
         return type switch
         {
-            "D"                 => Bind(card, "Diode",   DiodeMap),
-            "NPN"               => Bind(card, "BJT_NPN", BjtMap),
-            "PNP"               => Bind(card, "BJT_PNP", BjtMap),
+            "D"                 => Junction(card, "Diode",   DiodeMap, "junction diode"),
+            "NPN"               => Junction(card, "BJT_NPN", BjtMap,   "bipolar transistor (Gummel-Poon)"),
+            "PNP"               => Junction(card, "BJT_PNP", BjtMap,   "bipolar transistor (Gummel-Poon)"),
             "NMF"               => Mesfet(card, pChannel: false),
             "PMF"               => Mesfet(card, pChannel: true),
             "VDMOS"             => Vdmos(card),
@@ -434,6 +485,71 @@ public static class SpiceModelCardTranslation
         ArgumentNullException.ThrowIfNull(card);
         return (Find(card, ["RD"]).Value, Find(card, ["RS"]).Value);
     }
+
+    /// <summary>
+    /// The card parameters a binding does NOT carry that would change a DC operating point, by the
+    /// card's own spelling — empty when everything left behind is charge, noise or a no-op.
+    ///
+    /// <para><b>A parameter stated at the value that means "not modelled" changes nothing</b>, and
+    /// kits state those routinely (<c>IK=0</c>, <c>TRS=0</c>), so a literal zero — and NKF at its
+    /// own 0.5 — is not listed. Anything else is: an expression whose value cannot be known here is
+    /// listed rather than assumed inert.</para>
+    ///
+    /// <para>Temperature coefficients are on the list because the card states its own TNOM and a run
+    /// is rarely at it, so they move the operating point of every run that is not.</para>
+    /// </summary>
+    public static IReadOnlyList<string> DcAffectingUnmapped(ModelCardTranslation translation)
+    {
+        ArgumentNullException.ThrowIfNull(translation);
+        if (translation.Binding is not { } binding) return [];
+
+        HashSet<string>? relevant = binding.EngineReference switch
+        {
+            "Diode"                => DiodeDcParameters,
+            "BJT_NPN" or "BJT_PNP" => BjtDcParameters,
+            _                      => null,
+        };
+        if (relevant is null) return [];
+
+        var listed = new List<string>();
+        foreach (string name in binding.Unmapped)
+        {
+            if (!relevant.Contains(name)) continue;
+            if (!translation.Card.Parameters.TryGetValue(name, out var value)) continue;
+            double inert = name.Equals("NKF", StringComparison.OrdinalIgnoreCase) ? 0.5 : 0.0;
+            if (double.TryParse(value, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out double v) && v == inert)
+                continue;
+            listed.Add(name);
+        }
+        return listed;
+    }
+
+    /// <summary>
+    /// Diode parameters circuitRF's diode has no home for that move a DC answer: sidewall and
+    /// density saturation currents, the high-injection knees, tunnelling, and the temperature
+    /// coefficients of RS, BV and the temperature law selector.
+    /// </summary>
+    private static readonly HashSet<string> DiodeDcParameters = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "JS", "JSW", "ISW", "IK", "IKF", "IKR", "JTUN", "JTUNSW",
+        "TRS", "TRS1", "TRS2", "TCV", "TBV1", "TBV2", "TLEV",
+    };
+
+    /// <summary>
+    /// Bipolar parameters beyond level-1 Gummel-Poon that move a DC answer: the substrate junction's
+    /// current, old SPICE's leakage multipliers C2/C4, the high-injection roll-off exponent,
+    /// quasi-saturation, and every first- and second-order temperature coefficient of a DC quantity.
+    /// </summary>
+    private static readonly HashSet<string> BjtDcParameters = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ISS", "NKF", "RCO", "VO", "GAMMA", "QCO", "TLEV", "C2", "C4",
+        "TBF1", "TBF2", "TBR1", "TBR2", "TNF1", "TNF2", "TNR1", "TNR2",
+        "TNE1", "TNE2", "TNC1", "TNC2", "TIKF1", "TIKF2", "TIKR1", "TIKR2",
+        "TISE1", "TISE2", "TISC1", "TISC2", "TIS1", "TIS2", "TIRB1", "TIRB2",
+        "TRB1", "TRB2", "TRBM1", "TRBM2", "TRE1", "TRE2", "TRC1", "TRC2", "TRM1", "TRM2",
+        "TVAF1", "TVAF2", "TVAR1", "TVAR2",
+    };
 
     // ─────────────────────────────────────────────────────────────────────────
     //  Per-family binding
@@ -815,12 +931,59 @@ public static class SpiceModelCardTranslation
             card, new ModelCardBinding(reference, parameters, unmapped, []), null);
     }
 
-    private static ModelCardTranslation Bind(
-        SpiceModelCard card, string reference, (string, string[])[] map)
+    /// <summary>
+    /// A diode or bipolar card — <b>gated on its stated LEVEL before anything is mapped</b>.
+    ///
+    /// <para>circuitRF has one law for each, the level-1 one. A card written for another level uses
+    /// the same parameter NAMES for a different model (a level-9 bipolar card is a different
+    /// transistor whose IS, NF and RE happen to share spellings with Gummel-Poon's), so mapping it
+    /// produces a device that parses, converges and is wrong. Nothing is read as "the nearest
+    /// level": an unstated level is level 1, which is what the dialect means by it, and any other
+    /// stated level is refused by name. This is unlike the MOS card, whose classical levels share
+    /// one parameter vocabulary.</para>
+    ///
+    /// <para>An accepted LEVEL=1 is not reported as unmapped — it was honoured. A bipolar card's
+    /// unstated parameters are written at this dialect's own defaults (<see cref="BjtDialectDefaults"/>).</para>
+    /// </summary>
+    private static ModelCardTranslation Junction(
+        SpiceModelCard card, string reference, (string, string[])[] map, string law)
     {
+        var (levelSource, levelText) = Find(card, ["LEVEL"]);
+        if (levelText is not null)
+        {
+            bool one = double.TryParse(levelText, System.Globalization.NumberStyles.Float,
+                                       System.Globalization.CultureInfo.InvariantCulture, out double level)
+                    && level == 1.0;
+            if (!one)
+                return new ModelCardTranslation(card, null,
+                    $"'{card.Name}' is a {card.ModelType.Trim().ToUpperInvariant()} card that states "
+                    + $"LEVEL={levelText}. circuitRF implements the level-1 {law} and no other level; a "
+                    + "card written for another level uses the same parameter names for a different model, "
+                    + "so it is refused rather than read as level 1. A compiled model of that level, added "
+                    + "in File ▸ Manage Libraries, is used instead when one is found.");
+        }
+
         var (parameters, unmapped) = Collect(card, map);
+        if (levelSource is not null) unmapped.RemoveAll(u => u.Equals(levelSource, StringComparison.OrdinalIgnoreCase));
+
+        var notes = new List<string>();
+        if (reference.StartsWith("BJT_", StringComparison.Ordinal))
+        {
+            var filled = new List<string>();
+            foreach (var (target, value) in BjtDialectDefaults)
+            {
+                if (parameters.Any(p => p.Name == target)) continue;
+                parameters.Add(new ModelCardParameter(target, value, "(dialect default)"));
+                filled.Add($"{target}={value}");
+            }
+            if (filled.Count > 0)
+                notes.Add("Parameters the card does not state are written at this dialect's defaults ("
+                    + string.Join(", ", filled) + "). circuitRF's own transistor defaults describe a "
+                    + "particular part, and are not what an unstated card parameter means.");
+        }
+
         return new ModelCardTranslation(
-            card, new ModelCardBinding(reference, parameters, unmapped, []), null);
+            card, new ModelCardBinding(reference, parameters, unmapped, notes), null);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
