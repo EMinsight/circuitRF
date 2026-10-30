@@ -12,6 +12,8 @@ from gdsfactory.pdk import Pdk
 from gdsfactory.technology import LayerMap
 from gdsfactory.typings import Layer
 
+from .process import LAYER_STACK
+
 
 class SynthLayers(LayerMap):
     MET1: Layer = (10, 0)
@@ -147,4 +149,5 @@ PDK = Pdk(
     },
     layers=LAYER,
     cross_sections={"strip": partial(gf.cross_section.cross_section, width=1.0, layer=(10, 0))},
+    layer_stack=LAYER_STACK,
 )

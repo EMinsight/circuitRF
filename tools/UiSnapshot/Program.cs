@@ -985,7 +985,13 @@ bool OpenGdsfactory(string step)
             var parameters = report.Parameters.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value);
             var composed = CircuitRF.Ui.Schematic.KitPaletteMerge.Compose(parts, kits, report.Models, parameters);
             var pairings = CircuitRF.Ui.Schematic.KitPaletteMerge.ExplainModelPairings(composed, report.Models, parameters);
-            var dialog = CircuitRF.Ui.Views.Dialogs.GdsfactoryImportReportDialog.Build(tree, report, null, pairings, allowed: true);
+            // The technology offer, read as the application reads it (brief-gdf-3 R-gdf3-3a).
+            var stack = CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.ReadTechnology(python, tree, out _, out var techProblem);
+            if (techProblem is not null) Console.WriteLine($"technology: {techProblem}");
+            var offer = stack is { Stack.Count: > 0 }
+                ? new CircuitRF.Ui.Views.Dialogs.GdsfactoryImportReportDialog.TechnologyOffer(stack.Stack.Count, stack.Materials.Count, tree.Module + ".ctech")
+                : null;
+            var dialog = CircuitRF.Ui.Views.Dialogs.GdsfactoryImportReportDialog.Build(tree, report, null, pairings, allowed: true, offer);
             // report: as it first opens, every section collapsed; report-open: every section but the
             // long list of offered cells expanded, so the rest is on screen.
             if (step == "report-open")
@@ -996,6 +1002,25 @@ bool OpenGdsfactory(string step)
                 Pump();
                 dialog.GetVisualDescendants().OfType<ScrollViewer>().First().ScrollToEnd();
             }
+            break;
+        }
+        case "tech-overwrite":
+        {
+            // "Also build the kit's technology" over a .ctech of the same name (brief-gdf-3 R-gdf3-3a): the
+            // merge question File ▸ Import ▸ Technology asks, against an existing file someone has edited
+            // (a recoloured layer and a renamed slab), so the conflicts it lists are real ones.
+            if (tree is null) { Console.Error.WriteLine("--gdsfactory tech-overwrite needs --kit <source tree>"); return false; }
+            var stack = CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.ReadTechnology(python, tree, out var table, out var problem);
+            if (stack is null) { Console.Error.WriteLine($"no technology: {problem}"); return false; }
+            var built = CircuitRF.Design.Layout.TechImport.GdsfactoryStackConverter.Convert(stack, table, tree.Module);
+            Console.WriteLine(built.Summary);
+            var existing = TechPersistence.Deserialize(TechPersistence.Serialize(built.Technology));
+            if (existing.Layers.Count > 0) existing.Layers[0].Color = new CircuitRF.Design.Theming.Rgba(200, 40, 40);
+            if (existing.Stackup.Layers.FirstOrDefault(l => l.Kind == StackupKind.Conductor) is { } c) c.SigmaSm = 5.8e7;
+            var sections = CircuitRF.Ui.Layout.TechnologyMerge.SectionsPresentIn(built.Technology);
+            var conflicts = CircuitRF.Ui.Layout.TechnologyMerge.FindConflicts(existing, built.Technology, sections);
+            _ = new CircuitRF.Ui.Views.Dialogs.TechnologyMergeDialog(tree.Module + ".ctech", sections, isReimport: true, conflicts)
+                .ShowDialog<CircuitRF.Ui.Views.Dialogs.TechnologyMergeResult?>(host);
             break;
         }
         case "cell":
@@ -1054,7 +1079,7 @@ bool OpenGdsfactory(string step)
             break;
         }
         default:
-            Console.Error.WriteLine($"--gdsfactory: unknown step '{step}' (prompt, pick, interpreter, trust, report, report-open, cell)");
+            Console.Error.WriteLine($"--gdsfactory: unknown step '{step}' (prompt, pick, interpreter, trust, report, report-open, tech-overwrite, cell)");
             return false;
     }
     Pump();

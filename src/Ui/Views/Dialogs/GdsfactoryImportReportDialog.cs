@@ -17,12 +17,22 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// <c>placement</c>; and every model pairing with the kit's parts — made, or refused with the
 /// parameters that did not cover. Every section is shown even when empty, so the reader sees that a
 /// count of nothing was checked rather than left out.
+///
+/// <para>When the kit states a layer stack, the footer offers <b>"Also build the kit's technology"</b>,
+/// checked (brief-gdf-3 R-gdf3-3a). The dialog closes with that choice; what it builds and where it
+/// writes is the caller's.</para>
 /// </summary>
 public static class GdsfactoryImportReportDialog
 {
+    /// <summary>What the kit's technology would be built from, for the offer's line.</summary>
+    /// <param name="Levels">Stack levels the kit states.</param>
+    /// <param name="Cards">Material cards it states.</param>
+    /// <param name="FileName">The <c>.ctech</c> it would be written to, in the workspace's <c>tech</c> folder.</param>
+    public sealed record TechnologyOffer(int Levels, int Cards, string FileName);
+
     public static Window Build(
         GdsfactoryKit kit, GdsfactoryImportReport? report, string? problem,
-        IReadOnlyList<KitPaletteMerge.ModelPairing> pairings, bool allowed)
+        IReadOnlyList<KitPaletteMerge.ModelPairing> pairings, bool allowed, TechnologyOffer? technology = null)
     {
         var dialog = new Window
         {
@@ -81,24 +91,46 @@ public static class GdsfactoryImportReportDialog
                 note: "A refused pair keeps a layout-only tile; the part keeps its symbol."));
         }
 
-        var close = new Button { Content = "Close", Width = 100, IsCancel = true, IsDefault = true, HorizontalAlignment = HorizontalAlignment.Right, HorizontalContentAlignment = HorizontalAlignment.Center };
-        close.Click += (_, _) => dialog.Close();
+        // The offer sits in the footer, outside the scrolled report, so it is on screen however long the
+        // report is. Closing — by the button or Escape — carries the box's state either way.
+        CheckBox? build = null;
+        var footer = new DockPanel { [DockPanel.DockProperty] = Avalonia.Controls.Dock.Bottom, Margin = new Thickness(0, 12, 0, 0) };
+        var close = new Button { Content = technology is null ? "Close" : "OK", Width = 100, IsCancel = true, IsDefault = true, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom };
+        DockPanel.SetDock(close, Avalonia.Controls.Dock.Right);
+        footer.Children.Add(close);
+        if (technology is not null)
+        {
+            build = new CheckBox { Content = "Also build the kit's technology", IsChecked = true, FontSize = 12 };
+            footer.Children.Add(new StackPanel
+            {
+                Spacing = 2, Margin = new Thickness(0, 0, 12, 0),
+                Children =
+                {
+                    build,
+                    Faint($"{technology.Levels} stack level(s), {technology.Cards} material card(s) → tech/{technology.FileName}. " +
+                          "It becomes the workspace's default only if the workspace has none."),
+                },
+            });
+        }
+        close.Click += (_, _) => dialog.Close(build?.IsChecked == true);
 
         dialog.Content = new DockPanel
         {
             Margin = new Thickness(20, 16),
             Children =
             {
-                new StackPanel { [DockPanel.DockProperty] = Avalonia.Controls.Dock.Bottom, Margin = new Thickness(0, 12, 0, 0), Children = { close } },
+                footer,
                 new ScrollViewer { MaxHeight = 520, Content = body },
             },
         };
         return dialog;
     }
 
-    public static Task ShowAsync(Window owner, GdsfactoryKit kit, GdsfactoryImportReport? report, string? problem,
-                                 IReadOnlyList<KitPaletteMerge.ModelPairing> pairings, bool allowed)
-        => Build(kit, report, problem, pairings, allowed).ShowDialog(owner);
+    /// <summary>Shows the report; true when the reader left "Also build the kit's technology" checked.</summary>
+    public static Task<bool> ShowAsync(Window owner, GdsfactoryKit kit, GdsfactoryImportReport? report, string? problem,
+                                       IReadOnlyList<KitPaletteMerge.ModelPairing> pairings, bool allowed,
+                                       TechnologyOffer? technology = null)
+        => Build(kit, report, problem, pairings, allowed, technology).ShowDialog<bool>(owner);
 
     private static Control Section(string header, IEnumerable<string> lines, string? note = null)
     {

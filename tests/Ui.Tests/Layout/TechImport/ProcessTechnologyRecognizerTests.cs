@@ -7,7 +7,7 @@
 
 using System.Runtime.CompilerServices;
 using CircuitRF.Core.Pdk;
-using CircuitRF.Ui.Layout.TechImport;
+using CircuitRF.Design.Layout.TechImport;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Layout.TechImport;

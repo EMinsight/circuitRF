@@ -4518,8 +4518,8 @@ simply absent from the netlist.
 ### 34.1 A gdsfactory kit (brief-gdf-2)
 
 ```
-circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code]
-circuitrf import pdk <folder holding a gdsfactory source tree> --python <interp> --into <workspace> [--allow-code]
+circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code] [--technology]
+circuitrf import pdk <folder holding a gdsfactory source tree> --python <interp> --into <workspace> [--allow-code] [--technology]
 circuitrf explain --pdk <kit> [<workspace>] [--python <interp>]
 ```
 
@@ -4540,6 +4540,17 @@ road. `docs/design/pcell-gdsfactory-bridge.md` is the full account.
   saying so.
 - **Refusals** are discovery's sentences: not a Python, older than 3.12 or the kit's own
   `Requires-Python`, gdsfactory missing (a `--no-deps` install), no such module.
+- **`--technology`** (brief-gdf-3 R-gdf3-3b) also builds the kit's technology from its layer stack and
+  material cards — `GdsfactoryKitImport.ReadTechnology`, `GdsfactoryStackConverter` through the one
+  `ProcessTechnologyBuilder`, `KitTechnologyInstall`, every step the application's own "Also build the
+  kit's technology" takes — and writes `tech/<module>.ctech`. The first stdout line after the tally is the
+  report's counted line (`Technology built: N conductors, M vias, K filled values (see notes)`); every
+  note follows on stderr at its own level, a WARNING for each value circuitRF had to choose with nothing
+  to go on. **It is never written over an existing file** (nothing headless can ask; the refusal names the
+  file and exits 1), it becomes the workspace's default only when the workspace has none, and it needs
+  consent like everything else that runs the kit — asked for without consent it exits 1 having written
+  nothing. Without the flag nothing is written. On a kit folder that holds no gdsfactory source tree it
+  is a refusal: that folder's process files are File ▸ Import ▸ Technology's.
 - **`explain --pdk`** reads the declaration and the installed version from files and reports which
   interpreter resolves and whether it came from `--python` or the user's preference
   (`explain.pdk.interpreter` / `explain.pdk.no-interpreter` / `explain.pdk.note`).

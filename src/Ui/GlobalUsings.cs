@@ -27,6 +27,10 @@ global using CircuitRF.Design.Layout.PCells;
 global using CircuitRF.Design.Layout.Footprints;
 // The stroke font every layout label is drawn in (brief-silkscreen-stroke-font.md).
 global using CircuitRF.Design.Layout.Text;
+// The technology importers — the stack/layer-table/rule-deck readers and the ONE ProcessTechnologyBuilder —
+// which crossed in brief-gdf-3 R-gdf3-2a so `circuitrf import pdk --technology` builds a kit's `.ctech`
+// with no display, through the same builder File ▸ Import ▸ Technology uses.
+global using CircuitRF.Design.Layout.TechImport;
 global using CircuitRF.Design.Results;
 global using CircuitRF.Design.Theming;
 global using CircuitRF.Design.Workspace;

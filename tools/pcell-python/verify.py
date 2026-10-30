@@ -421,17 +421,21 @@ import gdsfactory_bridge
 result = gdsfactory_bridge.register_pdk("anykit")
 print(repr(result.problems))
 print(repr(gdsfactory_bridge.GDSFACTORY_MISSING.format(python=sys.executable)))
+from gdsfactory_bridge import technology
+print(repr(technology.read("anykit")["problems"]))
 """
 _child = subprocess.run([sys.executable, "-c", _no_gdsfactory], capture_output=True, text=True,
                         cwd=str(Path(__file__).resolve().parent), timeout=60)
 _lines = _child.stdout.strip().splitlines()
 check(_child.returncode == 0 and "Traceback" not in _child.stderr,
       "gdsfactory_bridge imports without gdsfactory, and asking it for a kit raises nothing")
-check(len(_lines) == 2 and _lines[0] == f"[{_lines[1]}]",
+check(len(_lines) == 3 and _lines[0] == f"[{_lines[1]}]",
       "register_pdk answers with exactly the missing-gdsfactory sentence")
-check(len(_lines) == 2 and "gdsfactory is not installed in the Python environment at" in _lines[1]
+check(len(_lines) == 3 and "gdsfactory is not installed in the Python environment at" in _lines[1]
       and "--no-deps" in _lines[1],
       "and that sentence names the environment and the --no-deps cause")
+check(len(_lines) == 3 and _lines[2] == _lines[0],
+      "gdsfactory_bridge.technology answers with the same sentence as a problem (brief-gdf-3)")
 
 print()
 if _failures:

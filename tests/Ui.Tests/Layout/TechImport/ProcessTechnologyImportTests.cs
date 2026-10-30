@@ -3,7 +3,7 @@
 // invented on purpose.
 
 using CircuitRF.Ui.Layout;
-using CircuitRF.Ui.Layout.TechImport;
+using CircuitRF.Design.Layout.TechImport;
 using CircuitRF.Ui.Theming;
 using Xunit;
 

@@ -4,7 +4,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using CircuitRF.Ui.Layout.TechImport;
+using CircuitRF.Design.Layout.TechImport;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Views.Dialogs;

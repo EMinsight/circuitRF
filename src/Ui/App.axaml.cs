@@ -74,7 +74,7 @@ public partial class App : Application
         // Teach the kit importer to recognise a process's own technology files, so importing a kit
         // that carries them SAYS SO rather than listing them as unrecognised. The readers behind them
         // are UI-project code, which is why this is registered here rather than shipped as a built-in.
-        Layout.TechImport.ProcessTechnologyRecognizers.RegisterOnce();
+        ProcessTechnologyRecognizers.RegisterOnce();
 
         // The built-in .ccolor provider is NOT registered here any more (R-rnd1-5):
         // ThemeResolver reads the shipped Default.ccolor out of CircuitRF.Render's own

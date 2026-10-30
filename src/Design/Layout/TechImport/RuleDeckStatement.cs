@@ -20,7 +20,7 @@
 
 using System.Text;
 
-namespace CircuitRF.Ui.Layout.TechImport;
+namespace CircuitRF.Design.Layout.TechImport;
 
 /// <summary>One `.name(arg, arg)` link in a statement chain.</summary>
 /// <param name="Name">The operation, lower-case as the deck writes it.</param>

@@ -103,6 +103,10 @@ public partial class TechnologyMergeDialog : Window
         KeepMineRadio.IsCheckedChanged  += (_, _) => UpdateConflictPanel();
         ReplaceRadio.IsCheckedChanged   += (_, _) => UpdateConflictPanel();
         ReplaceAllRadio.IsCheckedChanged += (_, _) => UpdateConflictPanel();
+        // The default above was chosen before these handlers existed, so it never reached the panel: the
+        // per-item choice opened selected with its list hidden, asking the reader to untick items it did
+        // not show.
+        UpdateConflictPanel();
 
         OkButton.Content = isReimport ? "Apply" : "Import";
     }

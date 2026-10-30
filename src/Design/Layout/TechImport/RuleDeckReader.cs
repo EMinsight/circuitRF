@@ -20,8 +20,9 @@
 
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using CircuitRF.Design.Layout.Drc;
 
-namespace CircuitRF.Ui.Layout.TechImport;
+namespace CircuitRF.Design.Layout.TechImport;
 
 /// <summary>One rule the deck states in a form circuitRF can check.</summary>
 /// <param name="Name">The deck's own name for the rule, so a violation traces back to the process's

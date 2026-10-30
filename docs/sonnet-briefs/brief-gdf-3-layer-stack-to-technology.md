@@ -135,3 +135,61 @@ Run only the classes you touch.
   own line model.
 - **Kits C and D:** the technology builds, with the WARNING count recorded. No EM gate. Their stacks
   carry no material properties, and a number we invented could not be checked against anything.
+
+---
+
+## Completion note (2026-10-30)
+
+**Built.** `tools/pcell-python/gdsfactory_bridge/technology.py` (reads only; cards found by what they expose);
+`src/Ui/Layout/TechImport/*` moved to `src/Design/Layout/TechImport/` (namespace listed once in
+`src/Ui/GlobalUsings.cs`); `GdsfactoryStackConverter` → the one `ProcessTechnologyBuilder.Build`;
+`KitTechnologyInstall` (folder, file name, never-overwrite, default-only-if-none) shared by the GUI and
+`circuitrf import pdk … --technology`; Import PDK's report offers "Also build the kit's technology", checked
+when the kit has a stack, and asks with File ▸ Import ▸ Technology's own merge question before touching an
+existing file (one shared `WriteImportedTechnologyAsync`). Rules and measurements:
+`docs/design/pcell-gdsfactory-bridge.md` §6a; findings: `src/Design/RESOLVED.md`.
+
+**Where this differs from the brief, and why.**
+- **Device layers are not stack slabs** (R-gdf3-2b step 3 said "map onto the builder's device-layer path").
+  That path makes them conductor slabs; in a z-stated kit they overlap each other and the substrate, so
+  carrying them would lift every metal by their summed thickness. They stay drawing layers, never an EM
+  conductor; a contact landing on one is reported as reaching the front end.
+- **Vias and conductors are decided top-down together**, not via-first level by level: in an alternating
+  stack every metal also passes the via test. See RESOLVED.md.
+- **`-I` is not passed** to the interpreter: it drops the `PYTHONPATH` the bridge and a source-tree kit are
+  found through. The process is `report`'s, exactly (same interpreter, path, consent).
+- **The substrate's εr is never taken from the background card.** "The substrate works the same way" is read
+  as "reported the same way": a silicon substrate filled with the inter-metal oxide's εr would be exactly
+  the plausible number nobody chose. Its own card, else εr 1 with a WARNING.
+- **The kit's cards are also the technology's materials**, and each slab names the card its numbers came
+  from (added after the builder, changing no number). With a card for the bulk silicon in the Materials
+  tab, a substrate WARNING is answered with one pick. Test 4 holds byte identity for the builder's output
+  and for the final file with the material table removed.
+
+**Tests** (only the classes touched were run).
+- Tier A `tests/Ui.Tests/Layout/TechImport/GdsfactoryStackConverterTests.cs`: 5 (tests 1–4) — pass.
+- Test 5: the existing technology-import, rule-deck and stipple tests, namespaces changed only — 98 pass.
+- Tier B `tests/Ui.Tests/Gdsfactory/GdsfactoryTechnologyTests.cs` (`CRF_GDSFACTORY_PYTHON`): 2 — pass. Kit E:
+  **3 conductors, 2 vias, 4 filled values; 23 notes, 4 warnings.**
+- The synthetic kit gained `synthkit/process.py`; GDF-2's gated synthkit tests (5) and adapter tests (7) still
+  pass. `tools/pcell-python/verify.py` covers `technology` without gdsfactory — passes. Firewall 79/79.
+
+**Measured on kits A–D** (scratch environments, nothing committed): A 8 conductors / 7 vias / 13 filled /
+2 warnings (no substrate level: default thickness and εr); B 2 / 1 / 3 / 3; C 6 / 5 / 9 / 8; D 6 / 5 / 8 / 8.
+C and D state no material properties, so every gap and substrate εr is a WARNING, as expected.
+
+**Pictures** (`tools/UiSnapshot`, looked at):
+- `--gdsfactory report` on the synthetic kit — the footer's checked "Also build the kit's technology", its
+  counts and target file, OK on the right; nothing clipped, nothing shifts.
+- `--gdsfactory tech-overwrite` (new step) — the merge question. **It showed a defect, fixed:** the default
+  per-item choice opened with its list of colliding items hidden (also on File ▸ Import ▸ Technology); see
+  `src/Ui/RESOLVED.md`. Re-rendered: the list shows.
+- `--ctech` on the built synthetic `.ctech`: Layers (the kit's layer map, generated colours), Stackup
+  (203.2 µm, via met1 → met2, each conductor bound to its drawing layer, each slab's Material picker naming its
+  card, the fill naming the oxide card), Materials (the four cards) — and the Materials tab was **empty**
+  before the cards were carried, which is why they now are.
+- `--ctech` on kit E's built `.ctech`: Stackup with the three σ = 0 problems the report warned about.
+
+**Not done here (tier C, owner-run):** kit A's measured inductor (±10 %) and kit B's CPW against the
+closed form (±3 %). Both need the substrate the kit does not state numerically for kit A (a WARNING, one
+card-pick away) and for kit B (no card at all — set εr by hand).

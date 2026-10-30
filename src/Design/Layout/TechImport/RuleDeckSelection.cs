@@ -38,7 +38,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace CircuitRF.Ui.Layout.TechImport;
+namespace CircuitRF.Design.Layout.TechImport;
 
 /// <summary>Which deck files form one deck, and which belong to another.</summary>
 /// <param name="MainSet">

@@ -13,7 +13,7 @@
 
 using CircuitRF.Ui.Layout;
 using CircuitRF.Design.Layout.Interchange;
-using CircuitRF.Ui.Layout.TechImport;
+using CircuitRF.Design.Layout.TechImport;
 using CircuitRF.Ui.Schematic;
 using Xunit;
 

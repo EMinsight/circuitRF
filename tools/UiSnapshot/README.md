@@ -113,6 +113,18 @@ dotnet run --project tools/UiSnapshot --no-build -- --ctech <file.ctech> -o out.
 
 Default size 1100x1400.
 
+**The gdsfactory import's views** (brief-gdf-2, brief-gdf-3), each opened as File ▸ Import PDK opens it, with
+`--python` the interpreter that has gdsfactory and `--kit` a kit source tree (the synthetic one is
+`tests/Ui.Tests/Gdsfactory/Fixtures/synthkit`): `prompt`, `pick`, `interpreter`, `trust`, `report` (with the
+"Also build the kit's technology" footer when the kit states a stack), `report-open`, `tech-overwrite` (the merge
+question asked when the kit's `.ctech` already exists, against a copy with one layer recoloured and one
+conductivity changed, so its list of colliding items is real) and `cell` (with `--clay`). To look at the built
+technology itself, build it with `circuitrf import pdk … --technology` and open the `.ctech` with `--ctech`:
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --gdsfactory <step> --python <interp> --kit <tree> -o out.png
+```
+
 **The 3D editor** draws a `.c3d` on the platform's own GPU backend (Metal, D3D11 or Vulkan — what the application
 picks), through the editor's view model and Export Picture's own `CapturePicture`. No window is opened, so this mode
 starts no Avalonia platform at all:

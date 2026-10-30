@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CircuitRF.Ui.Layout.TechImport;
+using CircuitRF.Design.Layout.TechImport;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests;

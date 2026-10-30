@@ -129,6 +129,58 @@ model pairing `KitPaletteMerge` made, and every one it refused with the paramete
 so the kit's cell of that name is unreachable; the report says so under its own reason. gdsfactory's
 generic kit has two: `spiral` and `via`.
 
+## 6a. The kit's technology (brief-gdf-3)
+
+`python -m gdsfactory_bridge.technology <module>` READS a kit's process and decides nothing: its layer
+map, the path of a layer-properties file its own layer views wrote (read with `LayerPropertiesReader`,
+then deleted), each stack level's layer (or layer expression), z, thickness, material, sidewall angle and
+info, and every material card the kit's own package exposes. **Cards are found by type, never by module
+name**: any module-level object, or one inside a dict, list or tuple there, whose `rf` regime states a
+conductivity or a permittivity. It runs the kit, so it runs only after consent, through the same
+interpreter, path and `PYTHONPATH` as `report` (`GdsfactoryKitImport.RunBridge`). The brief's `-I` is not
+used: it would drop the `PYTHONPATH` the bridge and a source-tree kit are found through.
+
+`GdsfactoryStackConverter` (`src/Design/Layout/TechImport`) turns that into a `ProcessStackDescription` in
+a stack file's embedded-conductor convention and hands it to **`ProcessTechnologyBuilder.Build`** — there
+is no second builder. What a kit states that a stack file cannot (a conductivity on a card, a loss
+tangent, an explicit drawn layer) was added to `ProcessStackEntry`, and a stack file never sets any of it.
+The decisions, each stated in the import report:
+
+- **Substrate**: the lowest level lying wholly below z = 0 and at least 10 µm thick. None stated → its top
+  is taken at z = 0 (gdsfactory's wafer surface) and its thickness is the builder's
+  `DefaultSubstrateThicknessUm` (200 µm), a WARNING.
+- **Device layer**: a level that reaches below the substrate's top, or is made of what the substrate is
+  made of (the substrate level's material, or — with none — what the levels below z = 0 are made of).
+  **Device layers are never in the stack**: they overlap each other and the substrate, and a stack is an
+  ordered pile of slabs, so carrying them would lift every metal by their summed thickness. A via landing
+  on one is a contact to the front end and is reported, not carried.
+- **Vias and conductors are decided together, top down.** In an alternating stack every metal also runs
+  from one via's top to the next via's bottom, so geometry alone cannot tell them apart; nothing lies on
+  the topmost level of a chain, so it cannot be a via. A level a via lands on is a conductor; a level
+  whose top meets a conductor's bottom, with something conductor-capable beneath, is a via. A level with
+  a card stating σ ≥ 1e5 S/m is a conductor; one with no conductivity stated becomes one only when a via
+  lands on it — and a via whose OWN card states its conductivity may only land under a confirmed
+  conductor (a card-less passivation on the top metal would otherwise turn the parity over). Two levels on
+  one mask are never each other's via (a capacitor's dielectric and its plate).
+- **Dielectric**: a card states εr and σ below the conductor threshold. Anything else is **not used**, and
+  the z it occupies is filled.
+- **Gap filling**: every stretch between the substrate's top and the highest level that no conductor and
+  no stated dielectric covers is a slab, εr from the card the kit's stated dielectrics hold most of by
+  thickness (a NOTE), else εr 1 (a WARNING: "εr unknown between z = … and … µm; set before running EM").
+  Never matched on a material's name.
+- **Materials**: the kit's cards become the technology's materials and each slab that took its numbers
+  from one names it — after the builder, changing no number (the loader resolves a named material to the
+  values already there). A card the stack did not use is then one pick away in the Stackup tab.
+
+Measured against kits A–E (scratch environments, nothing committed): A 8 conductors / 7 vias / 13 filled /
+2 warnings; B 2 / 1 / 3 / 3; C 6 / 5 / 9 / 8; D 6 / 5 / 8 / 8; E 3 / 2 / 4 / 4.
+
+File ▸ Import PDK's report offers **"Also build the kit's technology"**, checked when the kit states a
+stack. It writes `tech/<module>.ctech`, asks before touching an existing file with the merge question
+File ▸ Import ▸ Technology asks (the two share `WriteImportedTechnologyAsync`), and becomes the default
+only when the workspace has none (`KitTechnologyInstall`). `circuitrf import pdk … --technology` is the
+headless form (`docs/design/cli.md` §34.1).
+
 ## 7. Tests
 
 - Tier A (default gate): `tests/Ui.Tests/Gdsfactory/GdsfactoryAdapterTests.cs` — discovery from synthetic
@@ -140,4 +192,10 @@ generic kit has two: `spiral` and `via`.
   `Fixtures/compare_gds.py`, through gdsfactory's own layout-engine dependency. Normalised: a difference that vanishes when shrunk by one DBU is
   rounding, not a shape (gdsfactory's own flattening and its own GDS of a ring differ by exactly such
   slivers).
-- `tools/pcell-python/verify.py` checks the bridge imports, and answers, with gdsfactory hidden.
+- `tools/pcell-python/verify.py` checks the bridge imports, and answers, with gdsfactory hidden — `report`
+  and `technology` both.
+- The technology (brief-gdf-3): Tier A `tests/Ui.Tests/Layout/TechImport/GdsfactoryStackConverterTests.cs`
+  (classification, gap filling with and without a card, the via-span rule, and the same stack as a stack
+  file and as JSON building byte-identical `.ctech` files); Tier B
+  `tests/Ui.Tests/Gdsfactory/GdsfactoryTechnologyTests.cs` (the synthetic kit's `process.py` through the
+  real reader, and the generic kit with zero refusals).

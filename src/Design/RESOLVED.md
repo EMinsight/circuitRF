@@ -24821,3 +24821,44 @@ Gate: `KitPartSubcircuitBindingTests.ABodyTerminalIsWiredToTheNetItsParameterNam
   its defaults is one such polygon, so it is the one cell of that kit the gated comparison cannot check
   (`GdsfactoryKitTests.TheGenericKit_…` fails on it, by name). Splitting a boundary into valid pieces is
   GDSII-writer work and was left for the owner to decide.
+
+## A gdsfactory kit's stack becomes a `.ctech` through the one builder (brief-gdf-3, 2026-10-30)
+
+The technology importers (`Layout/TechImport/`) moved here from `src/Ui` so `circuitrf import pdk
+--technology` can build a kit's technology headlessly; they were framework-free already, and the move left
+one vestigial `using CircuitRF.Ui.Theming` behind in two files (`Rgba` had long since moved to
+`CircuitRF.Design.Theming`). `GdsfactoryStackConverter` writes a stack description and calls
+`ProcessTechnologyBuilder.Build`; what a kit states that a stack file cannot — a conductivity on a card, a
+loss tangent, an explicit drawn layer — was added to `ProcessStackEntry`, and a stack file sets none of it,
+so every stack-file import builds exactly what it built before. `docs/design/pcell-gdsfactory-bridge.md` §6a
+has the rules; what was learned getting them right on the five measured kits:
+
+- **Geometry alone cannot tell a metal from a via.** The first cut tested "runs from the top of one
+  conductor to the bottom of another" level by level, with a second pass excluding vias as ends. In an
+  alternating stack EVERY level passes that test (a metal runs from the via below to the via above), so the
+  second pass excluded everything and every via came out a conductor. What breaks the symmetry is the top
+  of each chain — nothing lies on the topmost level, so it cannot be a via — so the walk is top-down, and a
+  via's lower end is fixed when the via is decided.
+- **The kit's own numbers must outrank a guess at the top of a chain.** The open 130 nm BiCMOS kit's
+  passivation states a material with no card and lies on the top metal; taken as "conductor-capable", it
+  turned the whole stack's parity over (every metal a via, every via a conductor). A level whose card
+  states its conductivity is now a via only under a CONFIRMED conductor.
+- **The thinnest candidate is the via's end.** gdsfactory's generic kit has a wafer-wide 3 µm cladding level
+  ending at exactly the surface the second metal ends at; picked by kit order, it became a conductor slab
+  and the via landed on it. A via joins the level whose body is right there.
+- **A capacitor's dielectric with no card looks exactly like a via** between the metal under it and the
+  plate on it. What separates them is the mask: a kit draws the film and the plate on ONE layer, and a via
+  has a cut mask of its own.
+- **Device layers cannot be stack slabs.** The builder's device-layer path (the stack format's
+  `LAYER_TYPE`) makes them conductor slabs, which in a z-stated kit lie on top of each other and the
+  substrate: carried, they lift every metal by their summed thickness (several µm on the BiCMOS kit). They
+  stay drawing layers, and a contact landing on one is reported as reaching the front end. Without a
+  substrate level, "made of what the substrate is made of" is read from what the levels below z = 0 are
+  made of — comparing two of the kit's own strings, not matching a name circuitRF knows.
+- **Generated names keep to the stack-file grammar** (`[A-Za-z_][A-Za-z0-9_]*`). `fill-1` could not be
+  written in a stack file — the reader skipped the statement silently — so the byte-identity claim could not
+  even be expressed. Fills are `fill_1`, duplicates `_2`.
+- **Discovery peeks at the first 4 KB of a source tree's `__init__.py` for `Pdk(`.** Giving the synthetic kit
+  a stack in `__init__.py` pushed it past that and the kit stopped being found; its process lives in
+  `synthkit/process.py` for that reason. A real kit whose `__init__.py` constructs its `Pdk` further down
+  would not be found as a source tree either — not changed here; reported.

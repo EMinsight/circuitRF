@@ -8,9 +8,9 @@
 
 using System.Globalization;
 using System.Xml.Linq;
-using CircuitRF.Ui.Theming;
+using CircuitRF.Design.Theming;
 
-namespace CircuitRF.Ui.Layout.TechImport;
+namespace CircuitRF.Design.Layout.TechImport;
 
 /// <summary>
 /// One row of a process layer table, exactly as the file states it.

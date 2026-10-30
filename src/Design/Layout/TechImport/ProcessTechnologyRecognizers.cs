@@ -11,7 +11,7 @@
 
 using CircuitRF.Core.Pdk;
 
-namespace CircuitRF.Ui.Layout.TechImport;
+namespace CircuitRF.Design.Layout.TechImport;
 
 /// <summary>Registers the process-technology recognisers with the kit importer. Idempotent.</summary>
 public static class ProcessTechnologyRecognizers

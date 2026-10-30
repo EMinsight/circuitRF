@@ -1,5 +1,6 @@
 using CircuitRF.Core.Pdk;
 using CircuitRF.Design.Layout.PCells.Wire;
+using CircuitRF.Design.Layout.TechImport;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Diagnostics;
@@ -24,7 +25,7 @@ internal static class ImportPdk
 {
     public const string UsageText =
         "       circuitrf import pdk <kit-folder> --into <workspace> [--name N] [--allow-code]\n" +
-        "       circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code]";
+        "       circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code] [--technology]";
 
     /// <summary>
     /// How the generators find an interpreter. A seam for the consent test: it counts the interpreters
@@ -36,7 +37,7 @@ internal static class ImportPdk
     public static int Run(string[] args)
     {
         string? source = null, into = null, name = null, module = null;
-        bool allowCode = false;
+        bool allowCode = false, technology = false;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -44,6 +45,7 @@ internal static class ImportPdk
                 case "--into" when i + 1 < args.Length: into = args[++i]; break;
                 case "--name" when i + 1 < args.Length: name = args[++i]; break;
                 case "--allow-code": allowCode = true; break;
+                case "--technology": technology = true; break;
                 case "--module" when i + 1 < args.Length: module = args[++i]; break;
                 default:
                     if (args[i].StartsWith('-')) { JsonRun.Report(CliDiagnostics.ImportUnknownOption(args[i])); return Usage(); }
@@ -57,7 +59,7 @@ internal static class ImportPdk
         if (module is not null)
         {
             if (source is not null) { JsonRun.Report(CliDiagnostics.ImportMultipleSources()); return Usage(); }
-            return RunGdsfactory(module, null, into, allowCode);
+            return RunGdsfactory(module, null, into, allowCode, technology);
         }
 
         if (source is null) { JsonRun.Report(CliDiagnostics.ImportSourceRequired()); return Usage(); }
@@ -71,7 +73,14 @@ internal static class ImportPdk
 
         // A folder holding a gdsfactory kit's SOURCE TREE takes the same road as --module (R-gdf2-1b).
         if (GdsfactoryKitDiscovery.FindSourceTree(source) is { } tree)
-            return RunGdsfactory(tree.Module, tree, into, allowCode);
+            return RunGdsfactory(tree.Module, tree, into, allowCode, technology);
+
+        // A kit folder's process files are a different source with a different reader (File ▸ Import ▸
+        // Technology); --technology builds a gdsfactory kit's, which states its process as data.
+        if (technology)
+            return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
+                $"--technology builds a gdsfactory kit's technology (--module, or a folder holding a gdsfactory " +
+                $"kit's source tree), and '{source}' holds none."));
 
         string full = Path.GetFullPath(into);
         if (File.Exists(full)) full = Path.GetDirectoryName(full)!;
@@ -177,7 +186,7 @@ internal static class ImportPdk
     /// so the report says what the palette will offer. Every step is <see cref="GdsfactoryKitImport"/>'s,
     /// the function the application's File ▸ Import PDK calls.
     /// </summary>
-    private static int RunGdsfactory(string module, GdsfactoryKit? tree, string? into, bool allowCode)
+    private static int RunGdsfactory(string module, GdsfactoryKit? tree, string? into, bool allowCode, bool technology)
     {
         JsonRun.InputPath = tree?.InstalledDirectory ?? module;
         if (into is null) { JsonRun.Report(CliDiagnostics.ImportPdkIntoRequired()); return Usage(); }
@@ -219,29 +228,65 @@ internal static class ImportPdk
         if (decision != PCellTrustDecision.Allowed)
         {
             JsonRun.Report(CliDiagnostics.ImportPdkGeneratorsNotStarted(
-                $"{kit.Display} was not run, so what it offers is not reported: " +
+                $"{kit.Display} was not run, so what it offers is not reported" +
+                (technology ? " and its technology was not built" : "") + ": " +
                 (decision == PCellTrustDecision.Denied
                     ? "this machine has recorded that its code may not run. "
                     : "nobody has allowed its code to run on this machine, and a headless import cannot ask. ") +
                 "--allow-code runs it for this one import."));
-            return 0;
+            // Asked for a technology and none was written: that is not success.
+            return technology ? 1 : 0;
         }
 
         if (GdsfactoryKitImport.ReadReport(interpreter, kit, out string? reportProblem) is not { } report)
-        {
             Say(DiagnosticSeverity.Warning, $"{kit.Display} could not be described: {reportProblem}");
-            return 0;
+        else
+        {
+            Console.WriteLine(report.Tally());
+            if (report.Problem is { } fatal) Say(DiagnosticSeverity.Warning, fatal);
+            foreach (var (reason, cells) in report.NotOffered.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                foreach (var cell in cells)
+                    Say(DiagnosticSeverity.Info, $"not offered ({reason}): {string.Join(": ", cell)}");
+            foreach (var (cell, names) in report.ParametersNotOffered.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                Say(DiagnosticSeverity.Info, $"{cell}: {names.Count} parameter(s) not offered: {string.Join(", ", names)}");
+            foreach (var (cell, n) in report.PlacementPorts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                Say(DiagnosticSeverity.Info, $"{cell}: {n} placement port(s) not made pins");
         }
 
-        Console.WriteLine(report.Tally());
-        if (report.Problem is { } fatal) { Say(DiagnosticSeverity.Warning, fatal); return 0; }
-        foreach (var (reason, cells) in report.NotOffered.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            foreach (var cell in cells)
-                Say(DiagnosticSeverity.Info, $"not offered ({reason}): {string.Join(": ", cell)}");
-        foreach (var (cell, names) in report.ParametersNotOffered.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            Say(DiagnosticSeverity.Info, $"{cell}: {names.Count} parameter(s) not offered: {string.Join(", ", names)}");
-        foreach (var (cell, n) in report.PlacementPorts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-            Say(DiagnosticSeverity.Info, $"{cell}: {n} placement port(s) not made pins");
+        return technology ? BuildTechnology(interpreter, kit, wsRoot) : 0;
+    }
+
+    /// <summary>
+    /// <c>--technology</c> (brief-gdf-3 R-gdf3-3b): the kit's stack and material cards, read by
+    /// <see cref="GdsfactoryKitImport.ReadTechnology"/>, converted by <see cref="GdsfactoryStackConverter"/>
+    /// through the one technology builder, and written by <see cref="KitTechnologyInstall"/> — every step the
+    /// application's own Import PDK takes. Never over an existing file, since nothing here can ask; the
+    /// workspace's default only when it has none.
+    /// </summary>
+    private static int BuildTechnology(string interpreter, GdsfactoryKit kit, string wsRoot)
+    {
+        if (GdsfactoryKitImport.ReadTechnology(interpreter, kit, out var layerTable, out string? problem) is not { } doc)
+            return JsonRun.Fail(CliDiagnostics.ImportPdkRefused($"{kit.Display}: its technology could not be read: {problem}"));
+        if (doc.Stack.Count == 0)
+        {
+            foreach (string p in doc.Problems) Say(DiagnosticSeverity.Warning, p);
+            return JsonRun.Fail(CliDiagnostics.ImportPdkRefused($"{kit.Display} states no layer stack, so no technology was built."));
+        }
+
+        var result = GdsfactoryStackConverter.Convert(doc, layerTable, kit.Module);
+        string path = KitTechnologyInstall.PathFor(wsRoot, kit.Module);
+        if (!KitTechnologyInstall.TryWriteNew(path, result.Technology, out string? refusal))
+            return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(refusal!));
+
+        Console.WriteLine(result.Summary);
+        foreach (var n in result.Notes)
+            Say(n.Severity == TechnologyNoteSeverity.Warning ? DiagnosticSeverity.Warning : DiagnosticSeverity.Info, n.Text);
+        JsonRun.AddOutput("technology", path);
+
+        string cwsPath = Path.Combine(wsRoot, WorkspacePersistence.FileName);
+        Say(DiagnosticSeverity.Info, KitTechnologyInstall.MakeDefaultIfNone(cwsPath, path)
+            ? $"'{Path.GetFileName(path)}' is now the workspace's default technology; it had none."
+            : $"'{Path.GetFileName(path)}' was added beside the workspace's default technology, which is unchanged.");
         return 0;
     }
 
@@ -261,7 +306,7 @@ internal static class ImportPdk
     private static int Usage()
     {
         Console.Error.WriteLine("Usage: circuitrf import pdk <kit-folder> --into <workspace> [--name N] [--allow-code]");
-        Console.Error.WriteLine("       circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code]");
+        Console.Error.WriteLine("       circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code] [--technology]");
         return 1;
     }
 }

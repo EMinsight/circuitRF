@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using CircuitRF.Design.Layout.TechImport;
 
 namespace CircuitRF.Design.Layout.PCells.Wire;
 
@@ -178,6 +179,48 @@ public static class GdsfactoryKitImport
     /// </summary>
     public static GdsfactoryImportReport? ReadReport(string interpreter, GdsfactoryKit kit, out string? problem)
     {
+        if (RunBridge(interpreter, kit, "gdsfactory_bridge.report", out problem) is not { } run) return null;
+        if (GdsfactoryImportReport.Parse(run.Line) is { } report) return report.WithBuiltInsShadowing();
+        problem = $"describing '{kit.Module}' gave no report" + (run.StderrTail.Length > 0 ? $": {run.StderrTail}" : ".");
+        return null;
+    }
+
+    /// <summary>
+    /// Runs <c>python -m gdsfactory_bridge.technology</c> for <paramref name="kit"/> (brief-gdf-3 R-gdf3-1a):
+    /// its layers, layer views, stack and material cards. <b>It runs the kit's code</b>, through the same
+    /// interpreter, path and consent as <see cref="ReadReport"/>. The layer-properties file the kit wrote is
+    /// read into <paramref name="layerTable"/> here and its temporary directory removed, so nothing the kit
+    /// wrote outlives the call.
+    /// </summary>
+    public static GdsfactoryStackDocument? ReadTechnology(
+        string interpreter, GdsfactoryKit kit, out ProcessLayerTable? layerTable, out string? problem)
+    {
+        layerTable = null;
+        if (RunBridge(interpreter, kit, "gdsfactory_bridge.technology", out problem) is not { } run) return null;
+        if (GdsfactoryStackDocument.Parse(run.Line) is not { } doc)
+        {
+            problem = $"reading '{kit.Module}''s technology gave no answer" + (run.StderrTail.Length > 0 ? $": {run.StderrTail}" : ".");
+            return null;
+        }
+
+        layerTable = doc.LayerTable();
+        if (doc.LayerViews is { Length: > 0 } views)
+        {
+            try { Directory.Delete(Path.GetDirectoryName(views)!, recursive: true); }
+            catch { /* a temporary file left behind is not worth failing an import over */ }
+            doc.LayerViews = null;
+        }
+        return doc;
+    }
+
+    private readonly record struct BridgeRun(string Line, string StderrTail);
+
+    /// <summary>
+    /// One <c>python -m &lt;bridgeModule&gt; &lt;module&gt;</c>, with circuitRF's own package and the kit's
+    /// root on the path: the last stdout line that starts a JSON object, and the last stderr line.
+    /// </summary>
+    private static BridgeRun? RunBridge(string interpreter, GdsfactoryKit kit, string bridgeModule, out string? problem)
+    {
         problem = null;
         var parsed = PythonInterpreter.ParseRecord(interpreter);
         if (parsed is null) { problem = $"'{interpreter}' is not an interpreter."; return null; }
@@ -197,7 +240,7 @@ public static class GdsfactoryKitImport
         };
         foreach (string a in parsed.Value.Arguments) info.ArgumentList.Add(a);
         info.ArgumentList.Add("-m");
-        info.ArgumentList.Add("gdsfactory_bridge.report");
+        info.ArgumentList.Add(bridgeModule);
         info.ArgumentList.Add(kit.Module);
         info.Environment["PYTHONPYCACHEPREFIX"] = UserStateDirectory.SubDir("pcell-cache");
         var path = new List<string> { own };
@@ -221,11 +264,8 @@ public static class GdsfactoryKitImport
 
             string line = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                                 .LastOrDefault(l => l.StartsWith('{')) ?? "";
-            if (GdsfactoryImportReport.Parse(line) is { } report) return report.WithBuiltInsShadowing();
-
             string tail = stderr.Result.Trim().Split('\n').LastOrDefault()?.Trim() ?? "";
-            problem = $"describing '{kit.Module}' gave no report" + (tail.Length > 0 ? $": {tail}" : ".");
-            return null;
+            return new BridgeRun(line, tail);
         }
         catch (Exception ex)
         {

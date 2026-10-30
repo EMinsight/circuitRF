@@ -5,7 +5,7 @@
 // direction (depth, file count, file size) so pointing it at a large tree — or at the wrong tree
 // entirely — costs a known amount of work rather than an open-ended walk.
 
-namespace CircuitRF.Ui.Layout.TechImport;
+namespace CircuitRF.Design.Layout.TechImport;
 
 /// <summary>One process file found while scanning, with enough context to choose between several.</summary>
 /// <param name="Path">Absolute path.</param>

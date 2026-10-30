@@ -43,7 +43,6 @@ using CircuitRF.Ui.Markdown;
 using CircuitRF.Ui.Layout.Em;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Ui.Layout.PCells;
-using CircuitRF.Ui.Layout.TechImport;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Ui.Renderers;
@@ -6307,6 +6306,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         CircuitRF.Design.Layout.PCells.Wire.GdsfactoryImportReport? report = null;
         string? reportProblem = null;
+        GdsfactoryStackDocument? stack = null;
+        ProcessLayerTable? layerTable = null;
         if (allowed)
         {
             var live = Messages.BeginProgress($"Import PDK — describing {kit.Display}…");
@@ -6314,13 +6315,71 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             report = await Task.Run(() => CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.ReadReport(interpreter, kit, out reportProblem));
             live.Complete(report is { Problem: null } ? MessageLevel.Info : MessageLevel.Warning,
                           $"Import PDK — {kit.Display}: {report?.Tally() ?? reportProblem}");
+
+            // The kit's process, read under the same consent — reading it runs the kit too (brief-gdf-3
+            // R-gdf3-1a). Read now so the report can offer to build it; built only if the offer is kept.
+            string? techProblem = null;
+            (stack, layerTable) = await Task.Run(() =>
+            {
+                var doc = CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.ReadTechnology(interpreter, kit, out var table, out techProblem);
+                return (doc, table);
+            });
+            if (techProblem is not null)
+                Messages.Warning($"Import PDK — {kit.Display}: its technology could not be read: {techProblem}");
         }
 
         // The resolver re-reads the workspace's declarations and the palette is rebuilt from them.
         if (ReloadPCellGeneratorsCommand.CanExecute(null)) ReloadPCellGeneratorsCommand.Execute(null);
 
         var pairings = report is null ? [] : GdsfactoryPairings(report, CircuitRF.Design.Layout.PCells.Wire.KitPCellLibrary.FolderNameFor(kit.Module));
-        await GdsfactoryImportReportDialog.ShowAsync(window, kit, report, reportProblem, pairings, allowed);
+
+        // Offered, checked, only when the kit states a stack (R-gdf3-3a).
+        var offer = stack is { Stack.Count: > 0 }
+            ? new GdsfactoryImportReportDialog.TechnologyOffer(stack.Stack.Count, stack.Materials.Count,
+                Path.GetFileName(KitTechnologyInstall.PathFor(wsRoot, kit.Module)))
+            : null;
+        bool build = await GdsfactoryImportReportDialog.ShowAsync(window, kit, report, reportProblem, pairings, allowed, offer);
+        if (build && offer is not null) await BuildKitTechnologyAsync(window, kit.Module, stack!, layerTable, wsRoot);
+    }
+
+    /// <summary>
+    /// "Also build the kit's technology" (brief-gdf-3 R-gdf3-3a): converted by
+    /// <see cref="GdsfactoryStackConverter"/> through the one technology builder, written beside the
+    /// workspace's other technologies by <see cref="WriteImportedTechnologyAsync"/> — which asks before
+    /// touching an existing file, as File ▸ Import ▸ Technology does — and made the default only when the
+    /// workspace has none (<see cref="KitTechnologyInstall"/>, which <c>circuitrf import pdk --technology</c>
+    /// also calls). The report leads with the counted first line, then every note at its own level.
+    /// </summary>
+    private async Task BuildKitTechnologyAsync(
+        Window window, string module, GdsfactoryStackDocument stack, ProcessLayerTable? layerTable, string wsRoot)
+    {
+        GdsfactoryTechnologyResult result;
+        try   { result = await Task.Run(() => GdsfactoryStackConverter.Convert(stack, layerTable, module)); }
+        catch (Exception ex)
+        {
+            Messages.Error($"Import PDK — the kit's technology could not be built: {ex.Message}");
+            return;
+        }
+
+        string techPath = KitTechnologyInstall.PathFor(wsRoot, module);
+        if (await WriteImportedTechnologyAsync(window, techPath, result.Technology, "Import PDK") is null) return;
+
+        if (CurrentWorkspacePath is { } cws && KitTechnologyInstall.MakeDefaultIfNone(cws, techPath))
+        {
+            _techCache.Invalidate(techPath);
+            RefreshAllOpenLayoutTech();
+            Messages.Info($"Import PDK — \"{Path.GetFileName(techPath)}\" is now this workspace's default technology; it had none.");
+        }
+
+        _factory.ProjectTreeTool?.Refresh();
+        OpenOrActivateTech(techPath);
+
+        Messages.Success($"Import PDK — {result.Summary}", techPath);
+        foreach (var n in result.Notes)
+        {
+            if (n.Severity == TechnologyNoteSeverity.Warning) Messages.Warning($"Import PDK — {n.Text}", techPath);
+            else Messages.Info($"Import PDK — {n.Text}");
+        }
     }
 
     /// <summary>
@@ -7605,43 +7664,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             Directory.CreateDirectory(techDir);
             var techPath = Path.Combine(techDir, $"{choice.Name}.ctech");
 
-            // Re-importing over an existing technology used to overwrite the file outright — every
-            // hand-authored rule, edited colour and chosen ground reference gone, with no prompt and
-            // no record. Ask, and offer the answer that does not lose work.
-            if (File.Exists(techPath))
-            {
-                var existing = TryLoadTechnologyForMerge(techPath);
-                if (existing is null) return;
-
-                var conflicts = TechnologyMerge.FindConflicts(
-                    existing, tech, TechnologyMerge.SectionsPresentIn(tech));
-
-                var merge = await new TechnologyMergeDialog(
-                    Path.GetFileName(techPath), TechnologyMerge.SectionsPresentIn(tech),
-                    isReimport: true, conflicts).ShowDialog<TechnologyMergeResult?>(window);
-                if (merge is null) return;
-
-                if (merge.ReplaceWholeFile)
-                {
-                    TechPersistence.SaveToFile(techPath, tech);
-                    Messages.Warning($"Replaced \"{choice.Name}\" entirely — any edits made to it are gone.");
-                }
-                else
-                {
-                    var report = TechnologyMerge.Merge(
-                        existing, tech, merge.Sections, merge.Mode, merge.ReplaceKeys);
-                    TechPersistence.SaveToFile(techPath, existing);
-                    tech = existing;
-                    Messages.Success($"Merged into \"{choice.Name}\" — {report.Summary()}", techPath);
-                    foreach (var w in report.Warnings) Messages.Warning($"Import Technology — {w}");
-                }
-
-                _techCache.Invalidate(techPath);
-            }
-            else
-            {
-                TechPersistence.SaveToFile(techPath, tech);
-            }
+            if (await WriteImportedTechnologyAsync(window, techPath, tech, "Import Technology") is not { } written) return;
+            tech = written;
 
             if (choice.SetAsDefault)
             {
@@ -7682,6 +7706,57 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             Messages.Error($"Import Technology failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Writes an imported technology to <paramref name="techPath"/>, ASKING when a file is already there —
+    /// the one implementation behind File ▸ Import ▸ Technology and Import PDK's "Also build the kit's
+    /// technology" (brief-gdf-3 R-gdf3-3a), so the two can never come to disagree about what an
+    /// existing technology is owed. Returns what is now on disk (the existing file with the import merged
+    /// in, when that was the answer), or null when the user cancelled and nothing was written.
+    /// </summary>
+    private async Task<Technology?> WriteImportedTechnologyAsync(
+        Window window, string techPath, Technology tech, string messagePrefix)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(techPath)!);
+
+        // Re-importing over an existing technology used to overwrite the file outright — every
+        // hand-authored rule, edited colour and chosen ground reference gone, with no prompt and
+        // no record. Ask, and offer the answer that does not lose work.
+        if (!File.Exists(techPath))
+        {
+            TechPersistence.SaveToFile(techPath, tech);
+            return tech;
+        }
+
+        var existing = TryLoadTechnologyForMerge(techPath);
+        if (existing is null) return null;
+
+        var conflicts = TechnologyMerge.FindConflicts(
+            existing, tech, TechnologyMerge.SectionsPresentIn(tech));
+
+        var merge = await new TechnologyMergeDialog(
+            Path.GetFileName(techPath), TechnologyMerge.SectionsPresentIn(tech),
+            isReimport: true, conflicts).ShowDialog<TechnologyMergeResult?>(window);
+        if (merge is null) return null;
+
+        if (merge.ReplaceWholeFile)
+        {
+            TechPersistence.SaveToFile(techPath, tech);
+            Messages.Warning($"Replaced \"{Path.GetFileNameWithoutExtension(techPath)}\" entirely — any edits made to it are gone.");
+        }
+        else
+        {
+            var report = TechnologyMerge.Merge(
+                existing, tech, merge.Sections, merge.Mode, merge.ReplaceKeys);
+            TechPersistence.SaveToFile(techPath, existing);
+            tech = existing;
+            Messages.Success($"Merged into \"{Path.GetFileNameWithoutExtension(techPath)}\" — {report.Summary()}", techPath);
+            foreach (var w in report.Warnings) Messages.Warning($"{messagePrefix} — {w}");
+        }
+
+        _techCache.Invalidate(techPath);
+        return tech;
     }
 
     private static string NextFreeTechName(string techDir)

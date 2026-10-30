@@ -13,7 +13,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace CircuitRF.Ui.Layout.TechImport;
+namespace CircuitRF.Design.Layout.TechImport;
 
 /// <summary>What one statement in an interconnect technology file describes.</summary>
 public enum ProcessStackEntryKind
@@ -51,6 +51,19 @@ public enum ProcessStackEntryKind
 /// <param name="SpanTo">Via only — the conductor at the other end, by name.</param>
 /// <param name="CrossSectionUm2">Via only — one connector's cross-sectional area, µm².</param>
 /// <param name="ResistanceOhms">Via only — one connector's resistance, ohms.</param>
+/// <param name="ConductivitySm">
+/// Conductor/Via only — a conductivity the source states DIRECTLY, S/m, or 0 when it states none and
+/// the builder derives one from <paramref name="SheetResistanceOhmPerSquare"/> or
+/// <paramref name="ResistanceOhms"/>. A stack file never sets it; a gdsfactory kit's material card does
+/// (brief-gdf-3 R-gdf3-2b), and both go through the one builder.
+/// </param>
+/// <param name="LossTangent">Dielectric only — tanδ, 0 when unstated. A stack file states none.</param>
+/// <param name="DrawnOn">
+/// The drawing layers this entry is bound to, stated by the source, or null for "bind by name against the
+/// layer table" — what every stack file means. A gdsfactory level names its (layer, datatype) outright,
+/// and its level names are not its layer table's names, so name matching would bind nothing. An EMPTY
+/// list binds nothing at all.
+/// </param>
 public sealed record ProcessStackEntry(
     ProcessStackEntryKind Kind,
     string                Name,
@@ -63,7 +76,10 @@ public sealed record ProcessStackEntry(
     string?               SpanFrom                    = null,
     string?               SpanTo                      = null,
     double                CrossSectionUm2             = 0,
-    double                ResistanceOhms              = 0);
+    double                ResistanceOhms              = 0,
+    double                ConductivitySm              = 0,
+    double                LossTangent                 = 0,
+    IReadOnlyList<LayerKey>? DrawnOn                  = null);
 
 /// <summary>
 /// A whole interconnect technology file, read. <see cref="Entries"/> is in FILE ORDER, which is the

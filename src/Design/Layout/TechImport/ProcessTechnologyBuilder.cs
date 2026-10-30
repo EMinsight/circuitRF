@@ -8,11 +8,10 @@
 // Nothing here names a process, a supplier or a tool. Every name in the result comes out of the files
 // it was handed.
 
-using CircuitRF.Ui.Theming;
 
 using System.Globalization;
 
-namespace CircuitRF.Ui.Layout.TechImport;
+namespace CircuitRF.Design.Layout.TechImport;
 
 /// <summary>What a technology import produced, and everything it had to decide on the way.</summary>
 public sealed record TechnologyImportResult(
@@ -29,6 +28,15 @@ public static class ProcessTechnologyBuilder
     /// would scale a whole process by a factor of a thousand while every number still looked plausible.
     /// </summary>
     public const double DbuPerMicron = 1000.0;
+
+    /// <summary>
+    /// The substrate thickness a source that states none is given, µm — always with a warning naming it
+    /// (brief-gdf-3 R-gdf3-2c). A wafer is thinned to a few hundred micrometres before it is packaged, and
+    /// this is the round figure an on-chip EM stack is most often drawn with. It is a default to be
+    /// replaced, never a measurement: a stack file states its substrate, so only a gdsfactory kit with no
+    /// substrate level reaches it.
+    /// </summary>
+    public const double DefaultSubstrateThicknessUm = 200.0;
 
     /// <summary>Thicknesses at or below this (in µm) are treated as nothing at all.</summary>
     private const double NegligibleUm = 1e-9;
@@ -51,7 +59,7 @@ public static class ProcessTechnologyBuilder
         var slabs   = BuildSlabs(stack, notes);
         var zByName = ComputeConductorSpans(slabs);
 
-        AttachDrawingLayers(slabs, byName, notes);
+        AttachDrawingLayers(slabs, stack, byName, notes);
 
         var vias = BuildVias(stack, zByName, byName, notes);
 
@@ -356,7 +364,7 @@ public static class ProcessTechnologyBuilder
     private static List<StackupLayer> BuildSlabs(ProcessStackDescription stack, List<string> notes)
     {
         var output  = new List<StackupLayer>();
-        var pending = new List<(string Name, double ThicknessUm, double Epsr)>();
+        var pending = new List<(string Name, double ThicknessUm, double Epsr, double TanD)>();
 
         void FlushPending()
         {
@@ -368,7 +376,7 @@ public static class ProcessTechnologyBuilder
                         Name         = d.Name,
                         ThicknessDbu = ToDbu(d.ThicknessUm),
                         Epsr         = d.Epsr,
-                        TanD         = 0,
+                        TanD         = d.TanD,
                         Mur          = 1,
                     });
             pending.Clear();
@@ -379,7 +387,7 @@ public static class ProcessTechnologyBuilder
             switch (e.Kind)
             {
                 case ProcessStackEntryKind.Dielectric:
-                    pending.Add((e.Name, e.ThicknessUm, e.RelativePermittivity));
+                    pending.Add((e.Name, e.ThicknessUm, e.RelativePermittivity, e.LossTangent));
                     break;
 
                 case ProcessStackEntryKind.Conductor:
@@ -400,10 +408,14 @@ public static class ProcessTechnologyBuilder
 
                     FlushPending();
 
-                    double sigma = Conductivity(e.SheetResistanceOhmPerSquare, e.ThicknessUm);
+                    // A conductivity stated outright wins; otherwise it is derived from the sheet
+                    // resistance, which is all a stack file can say.
+                    double sigma = e.ConductivitySm > 0
+                        ? e.ConductivitySm
+                        : Conductivity(e.SheetResistanceOhmPerSquare, e.ThicknessUm);
                     if (sigma <= 0)
-                        notes.Add($"Conductor \"{e.Name}\" states no sheet resistance, so its " +
-                                  "conductivity could not be derived. Set it in the Technology Editor " +
+                        notes.Add($"Conductor \"{e.Name}\" states no sheet resistance or conductivity, so " +
+                                  "its conductivity could not be derived. Set it in the Technology Editor " +
                                   "before running anything that depends on loss.");
 
                     output.Add(new StackupLayer
@@ -449,14 +461,28 @@ public static class ProcessTechnologyBuilder
 
     private static void AttachDrawingLayers(
         List<StackupLayer>                       slabs,
+        ProcessStackDescription                  stack,
         Dictionary<string, ProcessLayerEntry>    byName,
         List<string>                             notes)
     {
         var unmapped = new List<string>();
 
+        // A binding the source states outright, by entry name. A slab can be split from one entry (a
+        // dielectric run is never split here, but the name is still the only join), so the lookup is by
+        // name and the first statement wins, exactly as a by-name match against the layer table does.
+        var stated = new Dictionary<string, IReadOnlyList<LayerKey>>(StringComparer.Ordinal);
+        foreach (var e in stack.Entries)
+            if (e.Kind != ProcessStackEntryKind.Via && e.DrawnOn is { } keys)
+                stated.TryAdd(e.Name, keys);
+
         foreach (var s in slabs)
         {
-            if (byName.TryGetValue(s.Name, out var row))
+            if (stated.TryGetValue(s.Name, out var keys))
+            {
+                s.DrawingLayers = [.. keys];
+                if (keys.Count == 0 && s.Kind == StackupKind.Conductor) unmapped.Add(s.Name);
+            }
+            else if (byName.TryGetValue(s.Name, out var row))
                 s.DrawingLayers = [new LayerKey(row.Layer, row.Datatype)];
             else if (s.Kind == StackupKind.Conductor)
                 unmapped.Add(s.Name);
@@ -505,7 +531,9 @@ public static class ProcessTechnologyBuilder
                 Kind          = StackupKind.Via,
                 Name          = e.Name,
                 ThicknessDbu  = 0,                    // a via has no thickness of its own (R-via-3)
-                SigmaSm       = ViaConductivity(e.ResistanceOhms, e.CrossSectionUm2, reachUm),
+                SigmaSm       = e.ConductivitySm > 0
+                    ? e.ConductivitySm
+                    : ViaConductivity(e.ResistanceOhms, e.CrossSectionUm2, reachUm),
                 Epsr          = 1,
                 Mur           = 1,
                 // A process via is a filled plug, not a plated barrel — there is no hole in it, so
@@ -515,7 +543,12 @@ public static class ProcessTechnologyBuilder
                 SpanToLayer   = e.SpanTo,
             };
 
-            if (byName.TryGetValue(e.Name, out var row))
+            if (e.DrawnOn is { } keys)
+            {
+                via.DrawingLayers = [.. keys];
+                if (keys.Count == 0) undrawn.Add(e.Name);
+            }
+            else if (byName.TryGetValue(e.Name, out var row))
                 via.DrawingLayers = [new LayerKey(row.Layer, row.Datatype)];
             else
                 undrawn.Add(e.Name);

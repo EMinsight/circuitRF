@@ -41496,3 +41496,13 @@ is what an edit commits, so the display invited storing a zero. A unitless value
 above 1e9 is now shown in round-trip form (`3.3303E-11`), which the row's own parser reads back exactly;
 every other row reads as it did. Found by rendering the parameter dialog for a placed gdsfactory cell
 (`tools/UiSnapshot --gdsfactory cell`).
+
+## The technology merge question opened with its list of colliding items hidden (brief-gdf-3, 2026-10-30)
+
+`TechnologyMergeDialog` picks "Take the imported version — untick any you want to keep" by default whenever
+anything collides, but it set that radio BEFORE attaching the handlers that show the list, and the list's
+panel starts hidden in XAML. So the dialog opened asking the reader to untick items it did not show; the
+list appeared only after clicking another choice and back. Found rendering Import PDK's overwrite question
+headlessly — the same dialog File ▸ Import ▸ Technology asks, and both now share
+`WorkspaceViewModel.WriteImportedTechnologyAsync`. The constructor now applies the panel's visibility once
+after the handlers are attached.
