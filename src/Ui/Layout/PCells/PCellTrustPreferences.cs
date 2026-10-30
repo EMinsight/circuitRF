@@ -31,3 +31,19 @@ public static class PCellTrustPreferences
 
     public static int RememberedCount() => AppPreferencesIo.Load().PCellTrust?.Count ?? 0;
 }
+
+/// <summary>The per-user gdsfactory interpreter choice (brief-gdf-2 R-gdf2-2b): module name → the
+/// interpreter that runs it on this machine. The read half for headless callers is
+/// <see cref="GdsfactoryInterpreterPreferences"/> in <c>src/Design</c>; this is the half that writes.</summary>
+public static class GdsfactoryInterpreterChoices
+{
+    public static string? For(string module)
+        => AppPreferencesIo.Load().GdsfactoryInterpreters?.GetValueOrDefault(module);
+
+    public static void Record(string module, string interpreter)
+        => AppPreferencesIo.Update(p =>
+        {
+            p.GdsfactoryInterpreters ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            p.GdsfactoryInterpreters[module] = interpreter;
+        });
+}

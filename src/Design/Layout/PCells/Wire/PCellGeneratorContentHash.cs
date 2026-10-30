@@ -123,7 +123,10 @@ public static class PCellGeneratorContentHash
         // Declared sources, defaulting to the entry script's own directory — the ordinary kit layout,
         // and the answer that needs no configuration.
         var roots = manifest.Sources.Count > 0
-            ? manifest.Sources.Select(s => Path.GetFullPath(Path.Combine(manifestDirectory, s))).ToList()
+            // Through ResolveRef, so a `${kit}`-anchored source is hashed where the kit IS. Combining it
+            // with the manifest folder instead named a directory that never exists, and the kit's own
+            // scripts silently dropped out of the key.
+            ? manifest.Sources.Select(s => manifest.ResolveRef(manifestDirectory, s)).ToList()
             : [Path.GetDirectoryName(manifest.ResolveEntry(manifestDirectory)) ?? manifestDirectory];
 
         foreach (string root in roots)
@@ -155,7 +158,7 @@ public static class PCellGeneratorContentHash
         // geometry depends on it.
         foreach (string declared in manifest.DataFiles)
         {
-            string path = Path.GetFullPath(Path.Combine(manifestDirectory, declared));
+            string path = manifest.ResolveRef(manifestDirectory, declared);
             if (File.Exists(path)) { files.Add(path); continue; }
             if (!Directory.Exists(path)) continue;
 

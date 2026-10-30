@@ -23,7 +23,8 @@ namespace CircuitRF.Cli;
 internal static class ImportPdk
 {
     public const string UsageText =
-        "       circuitrf import pdk <kit-folder> --into <workspace> [--name N] [--allow-code]";
+        "       circuitrf import pdk <kit-folder> --into <workspace> [--name N] [--allow-code]\n" +
+        "       circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code]";
 
     /// <summary>
     /// How the generators find an interpreter. A seam for the consent test: it counts the interpreters
@@ -34,7 +35,7 @@ internal static class ImportPdk
 
     public static int Run(string[] args)
     {
-        string? source = null, into = null, name = null;
+        string? source = null, into = null, name = null, module = null;
         bool allowCode = false;
         for (int i = 0; i < args.Length; i++)
         {
@@ -43,12 +44,20 @@ internal static class ImportPdk
                 case "--into" when i + 1 < args.Length: into = args[++i]; break;
                 case "--name" when i + 1 < args.Length: name = args[++i]; break;
                 case "--allow-code": allowCode = true; break;
+                case "--module" when i + 1 < args.Length: module = args[++i]; break;
                 default:
                     if (args[i].StartsWith('-')) { JsonRun.Report(CliDiagnostics.ImportUnknownOption(args[i])); return Usage(); }
                     if (source is not null) { JsonRun.Report(CliDiagnostics.ImportMultipleSources()); return Usage(); }
                     source = args[i];
                     break;
             }
+        }
+
+        // A gdsfactory kit is a Python package, named by module (brief-gdf-2 R-gdf2-5c).
+        if (module is not null)
+        {
+            if (source is not null) { JsonRun.Report(CliDiagnostics.ImportMultipleSources()); return Usage(); }
+            return RunGdsfactory(module, null, into, allowCode);
         }
 
         if (source is null) { JsonRun.Report(CliDiagnostics.ImportSourceRequired()); return Usage(); }
@@ -59,6 +68,10 @@ internal static class ImportPdk
                     $"'{source}' is a file. import pdk takes the kit's folder; unpack an archive first."))
                 : JsonRun.Fail(CliDiagnostics.ImportSourceNotFound(source));
         if (into is null) { JsonRun.Report(CliDiagnostics.ImportPdkIntoRequired()); return Usage(); }
+
+        // A folder holding a gdsfactory kit's SOURCE TREE takes the same road as --module (R-gdf2-1b).
+        if (GdsfactoryKitDiscovery.FindSourceTree(source) is { } tree)
+            return RunGdsfactory(tree.Module, tree, into, allowCode);
 
         string full = Path.GetFullPath(into);
         if (File.Exists(full)) full = Path.GetDirectoryName(full)!;
@@ -158,6 +171,80 @@ internal static class ImportPdk
         Say(DiagnosticSeverity.Info, $"The kit's layout generators offer {started} cell(s).");
     }
 
+    /// <summary>
+    /// The gdsfactory import: the interpreter (<c>--python</c>, else this user's recorded choice), the
+    /// kit found by files alone, the declaration written, and — only with consent — the kit described,
+    /// so the report says what the palette will offer. Every step is <see cref="GdsfactoryKitImport"/>'s,
+    /// the function the application's File ▸ Import PDK calls.
+    /// </summary>
+    private static int RunGdsfactory(string module, GdsfactoryKit? tree, string? into, bool allowCode)
+    {
+        JsonRun.InputPath = tree?.InstalledDirectory ?? module;
+        if (into is null) { JsonRun.Report(CliDiagnostics.ImportPdkIntoRequired()); return Usage(); }
+
+        string full = Path.GetFullPath(into);
+        if (File.Exists(full)) full = Path.GetDirectoryName(full)!;
+        if ((Directory.Exists(full) ? WorkspaceRootFinder.WorkspaceDirOf(full) : null) is not { } wsRoot)
+            return JsonRun.Fail(CliDiagnostics.ImportPdkNotAWorkspace(into));
+
+        if (GeneratedCells.InterpreterFor(module) is not { } interpreter)
+            return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
+                $"No Python environment is chosen for the gdsfactory kit '{module}' on this machine. " +
+                $"{GeneratedCells.PythonFlag} <interpreter> names the one that has it installed."));
+
+        GdsfactoryKit? kit;
+        string? refusal;
+        if (tree is null) kit = GdsfactoryKitImport.ResolveModule(interpreter, module, out refusal);
+        else
+        {
+            var env = GdsfactoryKitImport.CheckEnvironment(interpreter, tree.Display, out _, out refusal);
+            kit = env is not null && GdsfactoryKitImport.Fits(tree, env, interpreter, out refusal) ? tree : null;
+        }
+        if (kit is null) return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(refusal ?? $"'{module}' could not be found."));
+
+        string? folder = GdsfactoryKitImport.Declare(wsRoot, kit, out string? problem, out bool created);
+        if (folder is null)
+            return JsonRun.Fail(CliDiagnostics.ImportPdkRefused($"{kit.Display}: its declaration could not be written: {problem}"));
+
+        Console.WriteLine($"{kit.Module}\t{kit.InstalledDirectory}");
+        Say(DiagnosticSeverity.Info, created
+            ? $"{kit.Display} is declared in '{folder}'."
+            : $"{kit.Display} was already declared in '{folder}'; it was left as it is.");
+        JsonRun.AddOutput("pcells", folder);
+
+        // Consent keys on the kit's installed directory with links resolved (R-gdf2-2a); --allow-code
+        // grants it for this one process and is never recorded.
+        string trustKey = PCellTrustStore.ResolvedDirectory(kit.InstalledDirectory);
+        var decision = allowCode ? PCellTrustDecision.Allowed : GeneratedCells.Trust()(trustKey);
+        if (decision != PCellTrustDecision.Allowed)
+        {
+            JsonRun.Report(CliDiagnostics.ImportPdkGeneratorsNotStarted(
+                $"{kit.Display} was not run, so what it offers is not reported: " +
+                (decision == PCellTrustDecision.Denied
+                    ? "this machine has recorded that its code may not run. "
+                    : "nobody has allowed its code to run on this machine, and a headless import cannot ask. ") +
+                "--allow-code runs it for this one import."));
+            return 0;
+        }
+
+        if (GdsfactoryKitImport.ReadReport(interpreter, kit, out string? reportProblem) is not { } report)
+        {
+            Say(DiagnosticSeverity.Warning, $"{kit.Display} could not be described: {reportProblem}");
+            return 0;
+        }
+
+        Console.WriteLine(report.Tally());
+        if (report.Problem is { } fatal) { Say(DiagnosticSeverity.Warning, fatal); return 0; }
+        foreach (var (reason, cells) in report.NotOffered.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            foreach (var cell in cells)
+                Say(DiagnosticSeverity.Info, $"not offered ({reason}): {string.Join(": ", cell)}");
+        foreach (var (cell, names) in report.ParametersNotOffered.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            Say(DiagnosticSeverity.Info, $"{cell}: {names.Count} parameter(s) not offered: {string.Join(", ", names)}");
+        foreach (var (cell, n) in report.PlacementPorts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            Say(DiagnosticSeverity.Info, $"{cell}: {n} placement port(s) not made pins");
+        return 0;
+    }
+
     private static void Say(DiagnosticSeverity severity, string text)
     {
         var d = CliDiagnostics.ImportPdkFinding(severity, text);
@@ -174,6 +261,7 @@ internal static class ImportPdk
     private static int Usage()
     {
         Console.Error.WriteLine("Usage: circuitrf import pdk <kit-folder> --into <workspace> [--name N] [--allow-code]");
+        Console.Error.WriteLine("       circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code]");
         return 1;
     }
 }

@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Input.Raw;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using Avalonia.LogicalTree;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Threading;
 using CircuitRF.Ui;
@@ -132,6 +133,7 @@ string? imageScalePoints = null;
 int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 string? archive = null, manageLibraries = null, addVendorLibrary = null;
+string? gdsfactory = null, gdsfactoryPython = null, gdsfactoryKit = null, gdsfactoryCell = null;
 var layerToggles = new List<(string Name, bool Hide)>();
 bool standalone = false;
 var signal = new List<string>();
@@ -188,6 +190,12 @@ for (int i = 0; i < args.Length; i++)
         case "--archive" when i + 1 < args.Length: archive = Path.GetFullPath(args[++i]); break;
         case "--manage-libraries" when i + 1 < args.Length: manageLibraries = Path.GetFullPath(args[++i]); break;
         case "--add-vendor-library" when i + 1 < args.Length: addVendorLibrary = Path.GetFullPath(args[++i]); break;
+        // brief-gdf-2: the gdsfactory views — trust | pick | interpreter | report | prompt — with the
+        // interpreter that has gdsfactory and (for trust/interpreter/report) a kit source tree.
+        case "--gdsfactory" when i + 1 < args.Length: gdsfactory = args[++i]; break;
+        case "--python" when i + 1 < args.Length: gdsfactoryPython = args[++i]; break;
+        case "--kit" when i + 1 < args.Length: gdsfactoryKit = Path.GetFullPath(args[++i]); break;
+        case "--cell" when i + 1 < args.Length: gdsfactoryCell = args[++i]; break;
         case "--size" when i + 1 < args.Length:
             var wh = args[++i].Split('x');
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
@@ -207,7 +215,7 @@ if (reviewPanel is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
-bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null;
+bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null;
 if ((cdd is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
@@ -248,6 +256,7 @@ if (vendorMode)
     Pump();
     if (manageLibraries is not null) OpenManageLibraries(manageLibraries);
     if (addVendorLibrary is not null) OpenAddVendorLibrary(addVendorLibrary);
+    if (gdsfactory is not null && !OpenGdsfactory(gdsfactory)) return 2;
 }
 else if (clay is not null)
 {
@@ -923,6 +932,133 @@ void OpenManageLibraries(string ws)
         VendorRefs: cws.VendorLibraries ?? []);
     _ = CircuitRF.Ui.Views.Dialogs.ManagePdksDialog.ShowAsync(host, ctx);
     Pump();
+}
+
+// The gdsfactory import's views, each opened as the application opens it (brief-gdf-2 §6).
+bool OpenGdsfactory(string step)
+{
+    var python = gdsfactoryPython ?? "python3";
+    var tree = gdsfactoryKit is null ? null : CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitDiscovery.FindSourceTree(gdsfactoryKit);
+    switch (step)
+    {
+        case "prompt":
+            _ = CircuitRF.Ui.Views.Dialogs.PdkImportPromptDialog.PickAsync(host);
+            break;
+        case "pick":
+            _ = CircuitRF.Ui.Views.Dialogs.GdsfactoryKitDialog.PickKitAsync(host, [python]);
+            break;
+        case "interpreter":
+            _ = CircuitRF.Ui.Views.Dialogs.GdsfactoryKitDialog.PickInterpreterAsync(host, tree?.Module ?? "synthkit", [python]);
+            break;
+        case "trust":
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "ws", $"{tree?.Module ?? "synthkit"}-pcells");
+            var kit = new CircuitRF.Design.Layout.PCells.Wire.PCellKit(dir, Path.Combine(dir, "kit_entry.py"))
+            {
+                Module = tree?.Module ?? "synthkit", ModuleVersion = "0.4.1",
+                Location = tree?.InstalledDirectory ?? "/opt/envs/rf/lib/python3.12/site-packages/synthkit",
+                Interpreter = python,
+            };
+            kit = kit with { TrustKey = kit.Location! };
+            _ = CircuitRF.Ui.Views.Dialogs.PCellTrustDialog.ShowAsync(host, [kit]);
+            break;
+        }
+        case "report" or "report-open":
+        {
+            if (tree is null) { Console.Error.WriteLine("--gdsfactory report needs --kit <source tree>"); return false; }
+            var report = CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.ReadReport(python, tree, out var problem);
+            if (report is null) { Console.Error.WriteLine($"no report: {problem}"); return false; }
+            Console.WriteLine(report.Tally());
+            // Two of the kit's parts declaring the two models the synthetic kit's cells declare: one the
+            // cell covers, one asking for a parameter the cell does not take — so both pairing rows show.
+            IReadOnlyList<CircuitRF.Design.Schematic.PaletteItem> parts =
+            [
+                new(SymbolKind.Generic, 2, "synth_res_part", ComponentCategory.Other, [], false,
+                    Pdk: new CircuitRF.Design.Schematic.PdkPartRef("upstream", "synth_res_part", ModelName: "synth_res", ParameterNames: ["size", "count"])),
+                // Two parts on one model, each asking for something the cell does not take: refused.
+                new(SymbolKind.Generic, 2, "synth_cap_part", ComponentCategory.Other, [], false,
+                    Pdk: new CircuitRF.Design.Schematic.PdkPartRef("upstream", "synth_cap_part", ModelName: "synth_cap", ParameterNames: ["w", "l"])),
+                new(SymbolKind.Generic, 2, "synth_cap_rf_part", ComponentCategory.Other, [], false,
+                    Pdk: new CircuitRF.Design.Schematic.PdkPartRef("upstream", "synth_cap_rf_part", ModelName: "synth_cap", ParameterNames: ["length", "w"])),
+            ];
+            var kits = report.Offered.ToDictionary(c => c, _ => "synthkit-pcells");
+            var parameters = report.Parameters.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value);
+            var composed = CircuitRF.Ui.Schematic.KitPaletteMerge.Compose(parts, kits, report.Models, parameters);
+            var pairings = CircuitRF.Ui.Schematic.KitPaletteMerge.ExplainModelPairings(composed, report.Models, parameters);
+            var dialog = CircuitRF.Ui.Views.Dialogs.GdsfactoryImportReportDialog.Build(tree, report, null, pairings, allowed: true);
+            // report: as it first opens, every section collapsed; report-open: every section but the
+            // long list of offered cells expanded, so the rest is on screen.
+            if (step == "report-open")
+                foreach (var expander in dialog.GetLogicalDescendants().OfType<Expander>().Skip(1)) expander.IsExpanded = true;
+            _ = dialog.ShowDialog(host);
+            if (step == "report-open")
+            {
+                Pump();
+                dialog.GetVisualDescendants().OfType<ScrollViewer>().First().ScrollToEnd();
+            }
+            break;
+        }
+        case "cell":
+        {
+            // A real gdsfactory cell, generated through the worker, placed in --clay's layout: the
+            // palette tile beside the layout, and the cell's parameter dialog with each row's tooltip.
+            if (clay is null) { Console.Error.WriteLine("--gdsfactory cell needs --clay <layout in a workspace that declares the kit>"); return false; }
+            string ws = CircuitRF.Design.Workspace.WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(clay)!)
+                        ?? throw new InvalidOperationException($"'{clay}' is not in a workspace");
+            var resolver = new CircuitRF.Design.Layout.PCells.Wire.PCellWorkerResolver(ws,
+                report: m => Console.WriteLine($"[pcell] {m}"),
+                trust: _ => CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Allowed,
+                moduleInterpreter: _ => python);
+            CircuitRF.Design.Layout.PCells.PCellRegistry.AddResolver(resolver);
+            string cellId = gdsfactoryCell ?? "kinds";
+
+            var model = LayoutPersistence.LoadFromFile(clay);
+            var vm = new LayoutEditorViewModel(model, clay, new ConsoleSink());
+            var (resolution, _) = TechnologyResolver.ResolveForDocument(model.TechRef, clay, null, new TechnologyCache());
+            vm.Technology = resolution.Tech;
+            if (!vm.PlacePCell(cellId, resolver.DeclaredDefaults(cellId) ?? new Dictionary<string, CircuitRF.Design.Layout.PCells.PCellValue>(), 0, 0))
+            { Console.Error.WriteLine($"'{cellId}' could not be placed"); return false; }
+
+            var models = new Dictionary<string, string>();
+            foreach (var gid in resolver.KnownGeneratorIds)
+                if (resolver.DeclaredDefaults(gid)?.FirstOrDefault(kv => kv.Key == "model") is { Key: not null } m)
+                    models[gid] = m.Value.ToString().Split(':').Last();
+            var tool = new PaletteTool();
+            tool.SetPdkParts(CircuitRF.Ui.Schematic.KitPaletteMerge.Compose([], resolver.KitNameByGeneratorId, models));
+            tool.SearchQuery = cellId;
+
+            var doc = new LayoutDocument(Path.GetFileName(clay), vm, clay);
+            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("300,*") };
+            grid.Children.Add(new CircuitRF.Ui.Views.Palette.PaletteToolView { DataContext = tool });
+            var editor = new LayoutEditorView { DataContext = doc };
+            Grid.SetColumn(editor, 1);
+            grid.Children.Add(editor);
+            host.Content = grid;
+            host.Width = 1100; host.Height = 640;
+            Pump();
+            host.GetVisualDescendants().OfType<LayoutCanvas>().FirstOrDefault()?.ZoomToFit();
+
+            var props = new LayoutShapePropertiesViewModel();
+            props.SetContext(vm);
+            props.PinToInstance(0);
+            foreach (var row in props.PCellParamRows?.ToList() ?? [])
+                Console.WriteLine($"row {row.Label}: {row.ValueText}  tip: {row.Tip ?? "(none)"}");
+            var dialog = new CircuitRF.Ui.Views.Dialogs.LayoutPCellParameterDialog { DataContext = props };
+            dialog.Show(host);
+            Pump();
+            // The tooltip of the first real-valued row, open, so the capture shows it.
+            if (dialog.GetVisualDescendants().OfType<TextBlock>()
+                      .FirstOrDefault(t => t.DataContext is PCellParamRowViewModel r && r.Tip is { } tip
+                                           && tip.Contains("kit units") && ToolTip.GetTip(t) is not null) is { } label)
+                ToolTip.SetIsOpen(label, true);
+            break;
+        }
+        default:
+            Console.Error.WriteLine($"--gdsfactory: unknown step '{step}' (prompt, pick, interpreter, trust, report, report-open, cell)");
+            return false;
+    }
+    Pump();
+    return true;
 }
 
 void OpenAddVendorLibrary(string folder)

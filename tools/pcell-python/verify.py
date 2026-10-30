@@ -405,6 +405,34 @@ finally:
     if proc.poll() is None:
         proc.kill()
 
+print("\ngdsfactory_bridge without gdsfactory installed")
+# Self-contained: gdsfactory is HIDDEN in the child even on a machine that has it, so this checks the
+# missing case wherever it runs. The bridge must import, and register_pdk must answer with the one
+# sentence circuitRF's discovery also uses — never a traceback.
+_no_gdsfactory = r"""
+import importlib.abc, sys
+class _Hide(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name == "gdsfactory" or name.startswith("gdsfactory."):
+            raise ImportError(f"No module named '{name}'")
+        return None
+sys.meta_path.insert(0, _Hide())
+import gdsfactory_bridge
+result = gdsfactory_bridge.register_pdk("anykit")
+print(repr(result.problems))
+print(repr(gdsfactory_bridge.GDSFACTORY_MISSING.format(python=sys.executable)))
+"""
+_child = subprocess.run([sys.executable, "-c", _no_gdsfactory], capture_output=True, text=True,
+                        cwd=str(Path(__file__).resolve().parent), timeout=60)
+_lines = _child.stdout.strip().splitlines()
+check(_child.returncode == 0 and "Traceback" not in _child.stderr,
+      "gdsfactory_bridge imports without gdsfactory, and asking it for a kit raises nothing")
+check(len(_lines) == 2 and _lines[0] == f"[{_lines[1]}]",
+      "register_pdk answers with exactly the missing-gdsfactory sentence")
+check(len(_lines) == 2 and "gdsfactory is not installed in the Python environment at" in _lines[1]
+      and "--no-deps" in _lines[1],
+      "and that sentence names the environment and the --no-deps cause")
+
 print()
 if _failures:
     print(f"{len(_failures)} FAILED:")

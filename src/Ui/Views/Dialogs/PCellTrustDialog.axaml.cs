@@ -33,6 +33,10 @@ public partial class PCellTrustDialog : Window
         dlg.KitList.ItemsSource = kits;
         if (kits.Count > 1)
             dlg.HeadingText.Text = $"Allow these {kits.Count} kits to draw their own artwork?";
+        // A gdsfactory kit is an installed Python package rather than scripts the kit ships, so the
+        // sentence says plainly what allowing it means (brief-gdf-2 R-gdf2-2a).
+        if (kits.All(k => k.IsGdsfactory))
+            dlg.BodyText.Text = "Running this kit runs its Python code with your user account.";
 
         // $parent[Window] resolves to null on macOS for menu- and key-binding-sourced calls, and this
         // one is raised from a workspace open rather than from a control at all — find the shell.

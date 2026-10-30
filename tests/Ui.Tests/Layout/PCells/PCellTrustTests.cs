@@ -356,7 +356,7 @@ public sealed class PCellTrustTests : IDisposable
     {
         string vm = ReadRepoFile("src/Ui/ViewModels/WorkspaceViewModel.cs");
         int dismissed = vm.IndexOf("if (allowed is null) return;", StringComparison.Ordinal);
-        int records   = vm.IndexOf("trust.Record(kit.Directory", StringComparison.Ordinal);
+        int records   = vm.IndexOf("trust.Record(kit.TrustKey", StringComparison.Ordinal);
 
         Assert.True(dismissed > 0, "The consent handler no longer has a dismissed-without-answering branch.");
         Assert.True(records > dismissed, "Consent is recorded before the dismissed case is filtered out.");

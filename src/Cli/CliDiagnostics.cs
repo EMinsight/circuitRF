@@ -1740,6 +1740,19 @@ internal static class CliDiagnostics
         verb + ".setup.not-3d", DiagnosticSeverity.Error,
         "--setup chooses one of a 3D view's (.c3d's) embedded setups; '{path}' is not a 3D view.", ("path", path));
 
+    /// <summary>The interpreter a gdsfactory kit resolves to, and where that came from (brief-gdf-2 R-gdf2-5c).</summary>
+    public static Diagnostic ExplainPdkInterpreter(string module, string interpreter, string source) => Diagnostic.Create(
+        "explain.pdk.interpreter", DiagnosticSeverity.Info,
+        "'{module}' runs in '{interpreter}' ({source}).", ("module", module), ("interpreter", interpreter), ("source", source));
+
+    /// <summary>No interpreter resolves for a gdsfactory kit — the sentence a run would refuse with.</summary>
+    public static Diagnostic ExplainPdkNoInterpreter(string sentence) => Diagnostic.Create(
+        "explain.pdk.no-interpreter", DiagnosticSeverity.Error, "{sentence}", ("sentence", sentence));
+
+    /// <summary>A fact about a gdsfactory kit's declaration or environment.</summary>
+    public static Diagnostic ExplainPdkNote(string text) => Diagnostic.Create(
+        "explain.pdk.note", DiagnosticSeverity.Info, "{text}", ("text", text));
+
     public static Diagnostic ExplainUnknownOption(string option) => Diagnostic.Create(
         "explain.args.unknown-option", DiagnosticSeverity.Error,
         "explain: unknown option '{option}'.", ("option", option));

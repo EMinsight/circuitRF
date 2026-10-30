@@ -743,9 +743,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             var trust = CircuitRF.Ui.Layout.PCells.PCellTrustStores.UserLocal();
             _pcellTrust = trust;
 
+            // A gdsfactory kit runs in the environment THIS user chose for its module, recorded
+            // per user and never in the workspace (brief-gdf-2 R-gdf2-2b).
             var resolver = new CircuitRF.Design.Layout.PCells.Wire.PCellWorkerResolver(
                 workspaceRootDir!, findInterpreter: null, report: m => Messages.Warning(m),
-                trust: trust.Decide);
+                trust: trust.Decide,
+                moduleInterpreter: CircuitRF.Ui.Layout.PCells.GdsfactoryInterpreterChoices.For,
+                note: m => Messages.Info(m));
 
             // Replayed, not re-derived — see CwsFile.PythonInterpreter's own note. Read straight off
             // disk rather than from a cached CwsFile, because this runs on the workspace-path change
@@ -759,9 +763,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // Asked from the MANIFEST SCAN, which reads JSON and starts nothing — so the question is
             // put up front, in a calm moment, without costing the laziness B3 deliberately built.
             var pending = resolver.Kits
-                .Where(k => trust.Decide(k.Directory) == CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Unknown)
+                .Where(k => trust.Decide(k.TrustKey) == CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Unknown)
                 .ToList();
             if (pending.Count > 0) RequestPCellConsent(pending);
+
+            // A gdsfactory kit with no environment chosen on this machine is asked about once, in the
+            // same calm moment. A refused kit is not: it would not run whatever was chosen.
+            var unchosen = resolver.Kits
+                .Where(k => k.IsGdsfactory && k.Interpreter is null
+                            && trust.Decide(k.TrustKey) != CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Denied)
+                .ToList();
+            if (unchosen.Count > 0) RequestGdsfactoryInterpreters(unchosen);
 
             // Asked when a part is resolved against a map the background reading has not filled yet.
             // See KitLayoutGenerators.SetRefresher for why a lookup is allowed to trigger a reading.
@@ -810,7 +822,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             if (allowed is null) return; // dismissed without answering — ask again next time
 
-            foreach (var kit in pending) trust.Record(kit.Directory, allowed.Value);
+            foreach (var kit in pending) trust.Record(kit.TrustKey, allowed.Value);
 
             if (!allowed.Value)
             {
@@ -842,6 +854,46 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     private static string Plural(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";
+
+    /// <summary>
+    /// Asks, once per gdsfactory kit with no environment chosen on this machine, which interpreter runs
+    /// it, records the answer per user, and restarts the generators so the cells can appear (brief-gdf-2
+    /// R-gdf2-2b). Deferred off the open for <see cref="RequestPCellConsent"/>'s reason. Dismissed
+    /// records nothing and the question stands for the next open.
+    /// </summary>
+    private void RequestGdsfactoryInterpreters(IReadOnlyList<CircuitRF.Design.Layout.PCells.Wire.PCellKit> kits)
+    {
+        string? askedFor = CurrentWorkspacePath;
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (!string.Equals(CurrentWorkspacePath, askedFor, StringComparison.Ordinal)) return;
+            if (_pcellResolver is not { } resolver || ResolveOwner(null) is not { } owner) return;
+
+            var candidates = await Task.Run(() => Views.Dialogs.GdsfactoryKitDialog.FindCandidates());
+            bool any = false;
+            foreach (var kit in kits)
+            {
+                string? chosen;
+                try { chosen = await Views.Dialogs.GdsfactoryKitDialog.PickInterpreterAsync(owner, kit.Module!, candidates); }
+                catch (Exception ex)
+                {
+                    Messages.Warning($"A Python environment for '{kit.Module}' could not be asked for: {ex.Message}");
+                    return;
+                }
+                if (chosen is null) continue;
+                CircuitRF.Ui.Layout.PCells.GdsfactoryInterpreterChoices.Record(kit.Module!, chosen);
+                Messages.Info($"'{kit.Module}' runs in '{chosen}' on this machine.");
+                any = true;
+            }
+
+            if (!any || !string.Equals(CurrentWorkspacePath, askedFor, StringComparison.Ordinal)) return;
+            resolver.StopProviders();
+            CircuitRF.Design.Layout.PCells.PCellRegistry.InvalidateResolved();
+            RefreshAllOpenLayoutTech();
+            RefreshPCellPaletteItems();
+        }, DispatcherPriority.Background);
+    }
 
     /// <summary>
     /// <see cref="ReloadPCellGeneratorsCommand"/>'s gate: there is a resolver, so there is something
@@ -884,7 +936,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // A kit added since the workspace opened has never been asked about, and Unknown does not run.
         var pending = resolver.Kits
-            .Where(k => trust.Decide(k.Directory) == CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Unknown)
+            .Where(k => trust.Decide(k.TrustKey) == CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Unknown)
             .ToList();
         if (pending.Count > 0) RequestPCellConsent(pending);
 
@@ -6091,6 +6143,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var choice = await PdkImportPromptDialog.PickAsync(window);
         if (choice is null) return;
 
+        if (choice == PdkImportPromptDialog.Choice.PythonPackage)
+        {
+            await ImportGdsfactoryKitAsync(window, tree: null);
+            return;
+        }
+
         string? path = null;
         if (choice == PdkImportPromptDialog.Choice.Folder)
         {
@@ -6115,6 +6173,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         if (string.IsNullOrEmpty(path)) return;
+
+        // A folder holding a gdsfactory kit's SOURCE TREE is that kit, not a kit tree to read for
+        // symbols and models (brief-gdf-2 R-gdf2-1b). Recognised structurally, by reading files.
+        if (choice == PdkImportPromptDialog.Choice.Folder
+            && CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitDiscovery.FindSourceTree(path) is { } tree)
+        {
+            await ImportGdsfactoryKitAsync(window, tree);
+            return;
+        }
 
         // An archive is UNPACKED, then imported as the folder it became. Reading it in place produced
         // a kit with no artwork, no models, no settings and a recorded location that was the .zip —
@@ -6173,6 +6240,108 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         await PdkImportReportDialog.ShowAsync(window, report);
         await OfferTechnologyFromKitAsync(window, report, techScan);
+    }
+
+    /// <summary>
+    /// File ▸ Import PDK for a gdsfactory kit (brief-gdf-2 R-gdf2-5a): the interpreter, the kit, consent,
+    /// then the import — <see cref="CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport"/>'s, the
+    /// function <c>circuitrf import pdk --module</c> also calls. <paramref name="tree"/> is a source tree
+    /// already found in a chosen folder; null asks for an installed kit.
+    /// </summary>
+    private async Task ImportGdsfactoryKitAsync(Window window, CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKit? tree)
+    {
+        if (CurrentWorkspacePath is not { } cws)
+        {
+            Messages.Error("Open or create a workspace before importing a gdsfactory kit — the kit is declared in it.");
+            return;
+        }
+        string wsRoot = Path.GetDirectoryName(cws)!;
+
+        var candidates = await Task.Run(() => GdsfactoryKitDialog.FindCandidates(
+            (IEnumerable<string>?)AppPreferencesIo.Load().GdsfactoryInterpreters?.Values ?? []));
+
+        CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKit kit;
+        string interpreter;
+        if (tree is null)
+        {
+            if (await GdsfactoryKitDialog.PickKitAsync(window, candidates) is not { } picked) return;
+            (kit, interpreter) = (picked.Kit, picked.Interpreter);
+        }
+        else
+        {
+            if (await GdsfactoryKitDialog.PickInterpreterAsync(window, tree.Module, candidates) is not { } chosen) return;
+            var env = CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.CheckEnvironment(chosen, tree.Display, out _, out string? refusal);
+            if (env is null || !CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.Fits(tree, env, chosen, out refusal))
+            {
+                Messages.Error($"Import PDK — {refusal}");
+                return;
+            }
+            (kit, interpreter) = (tree, chosen);
+        }
+
+        // Consent, keyed on the kit's installed directory with links resolved (R-gdf2-2a). Asked only
+        // when nobody has decided; a recorded answer stands either way.
+        var trust = _pcellTrust ?? CircuitRF.Ui.Layout.PCells.PCellTrustStores.UserLocal();
+        string trustKey = CircuitRF.Design.Layout.PCells.Wire.PCellTrustStore.ResolvedDirectory(kit.InstalledDirectory);
+        string folderPath = Path.Combine(wsRoot, CircuitRF.Design.Layout.PCells.Wire.KitPCellLibrary.FolderNameFor(kit.Module));
+        if (trust.Decide(trustKey) == CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Unknown)
+        {
+            var prompt = new CircuitRF.Design.Layout.PCells.Wire.PCellKit(folderPath,
+                Path.Combine(folderPath, CircuitRF.Design.Layout.PCells.Wire.KitPCellLibrary.EntryScriptName))
+            {
+                TrustKey = trustKey, Module = kit.Module, Location = kit.InstalledDirectory, Interpreter = interpreter,
+                ModuleVersion = string.IsNullOrEmpty(kit.Version) ? null : kit.Version,
+            };
+            if (await PCellTrustDialog.ShowAsync(window, [prompt]) is { } answer) trust.Record(trustKey, answer);
+        }
+        bool allowed = trust.Decide(trustKey) == CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Allowed;
+
+        // The interpreter is this USER's choice for this module, recorded where the trust decisions are.
+        CircuitRF.Ui.Layout.PCells.GdsfactoryInterpreterChoices.Record(kit.Module, interpreter);
+
+        if (CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.Declare(wsRoot, kit, out string? problem, out _) is null)
+        {
+            Messages.Error($"Import PDK — {kit.Display} could not be declared in this workspace: {problem}");
+            return;
+        }
+
+        CircuitRF.Design.Layout.PCells.Wire.GdsfactoryImportReport? report = null;
+        string? reportProblem = null;
+        if (allowed)
+        {
+            var live = Messages.BeginProgress($"Import PDK — describing {kit.Display}…");
+            live.Update($"Import PDK — {kit.Display}: building every cell once at its defaults…", indeterminate: true);
+            report = await Task.Run(() => CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.ReadReport(interpreter, kit, out reportProblem));
+            live.Complete(report is { Problem: null } ? MessageLevel.Info : MessageLevel.Warning,
+                          $"Import PDK — {kit.Display}: {report?.Tally() ?? reportProblem}");
+        }
+
+        // The resolver re-reads the workspace's declarations and the palette is rebuilt from them.
+        if (ReloadPCellGeneratorsCommand.CanExecute(null)) ReloadPCellGeneratorsCommand.Execute(null);
+
+        var pairings = report is null ? [] : GdsfactoryPairings(report, CircuitRF.Design.Layout.PCells.Wire.KitPCellLibrary.FolderNameFor(kit.Module));
+        await GdsfactoryImportReportDialog.ShowAsync(window, kit, report, reportProblem, pairings, allowed);
+    }
+
+    /// <summary>
+    /// What the palette's existing rules make of a gdsfactory kit's declared models against the parts
+    /// already loaded (overview D7) — composed exactly as <see cref="PublishKitPaletteItems"/> composes,
+    /// then explained. Report only.
+    /// </summary>
+    private IReadOnlyList<KitPaletteMerge.ModelPairing> GdsfactoryPairings(
+        CircuitRF.Design.Layout.PCells.Wire.GdsfactoryImportReport report, string kitName)
+    {
+        var kits = new Dictionary<string, string>(_pcellGeneratorKits, StringComparer.OrdinalIgnoreCase);
+        foreach (string cell in report.Offered) kits.TryAdd(cell, kitName);
+        var models = new Dictionary<string, string>(_pcellGeneratorModels, StringComparer.OrdinalIgnoreCase);
+        foreach (var (cell, model) in report.Models) models.TryAdd(cell, model);
+        var parameters = new Dictionary<string, IReadOnlyList<string>>(_pcellGeneratorParameters, StringComparer.OrdinalIgnoreCase);
+        foreach (var (cell, names) in report.Parameters) parameters.TryAdd(cell, names);
+
+        var composed = KitPaletteMerge.Compose(_pdkPaletteItems, kits, models, parameters);
+        var ours = models.Where(kv => report.Offered.Contains(kv.Key, StringComparer.OrdinalIgnoreCase))
+                         .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        return KitPaletteMerge.ExplainModelPairings(composed, ours, parameters);
     }
 
     /// <summary>

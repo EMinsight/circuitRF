@@ -207,7 +207,7 @@ public sealed class GeneratedCellsRun : IDisposable
         foreach (var kit in _kitsNotAllowed.ToList())
         {
             if (kit.Recorded != PCellTrustDecision.Unknown || !_asked.Add(kit.Directory)) continue;
-            if (!resolver.Kits.Any(k => string.Equals(PCellTrustStore.Normalize(k.Directory), kit.Directory, StringComparison.OrdinalIgnoreCase)))
+            if (!resolver.Kits.Any(k => string.Equals(PCellTrustStore.Normalize(k.TrustKey), kit.Directory, StringComparison.OrdinalIgnoreCase)))
                 continue;
 
             if (ask(kit.Directory) != true) continue;
@@ -278,7 +278,8 @@ public sealed class GeneratedCellsRun : IDisposable
         var given = _options.Trust ?? (_ => PCellTrustDecision.Unknown);
         PCellTrustDecision trust(string dir)
             => _allowedByAsking.Contains(PCellTrustStore.Normalize(dir)) ? PCellTrustDecision.Allowed : given(dir);
-        var resolver = new PCellWorkerResolver(workspaceRoot, findInterpreter: null, report: Note, trust: trust)
+        var resolver = new PCellWorkerResolver(workspaceRoot, findInterpreter: null, report: Note, trust: trust,
+                                               moduleInterpreter: _options.ModuleInterpreter)
         {
             // Replayed, never written back: the application records the interpreter it settles on,
             // and a headless run must not edit the .cws.
@@ -287,9 +288,10 @@ public sealed class GeneratedCellsRun : IDisposable
         _kitResolvers[workspaceRoot] = resolver;
         PCellRegistry.AddResolver(resolver);
 
+        // Keyed as the resolver keys it: a gdsfactory kit's consent belongs to its installed directory.
         foreach (var kit in resolver.Kits)
-            if (trust(kit.Directory) is var decision && decision != PCellTrustDecision.Allowed)
-                _kitsNotAllowed.Add(new KitNotAllowed(PCellTrustStore.Normalize(kit.Directory), decision));
+            if (trust(kit.TrustKey) is var decision && decision != PCellTrustDecision.Allowed)
+                _kitsNotAllowed.Add(new KitNotAllowed(PCellTrustStore.Normalize(kit.TrustKey), decision));
     }
 
     private void Note(string message)
@@ -363,6 +365,10 @@ public sealed record GeneratedCellRunOptions
     /// Null never asks — the command line, where <c>--trust-kit</c> says it up front instead.
     /// </summary>
     public Func<string, bool?>? AskTrust { get; init; }
+
+    /// <summary>Which interpreter runs a gdsfactory kit, by module name. Null reads the choices this
+    /// installation recorded; a headless caller puts its <c>--python</c> first (brief-gdf-2 R-gdf2-2b).</summary>
+    public Func<string, string?>? ModuleInterpreter { get; init; }
 
     /// <summary>A snapshot's resolved <c>.ctech</c> path to a technology. Null uses a memoized
     /// <see cref="TechPersistence.LoadFromFile(string)"/>, the application's own loader.</summary>

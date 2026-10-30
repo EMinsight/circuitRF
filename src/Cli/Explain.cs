@@ -66,6 +66,9 @@ internal static class Explain
 
     public static int Run(string[] args)
     {
+        // A question about a gdsfactory kit's interpreter, not about a document (brief-gdf-2 R-gdf2-5c).
+        if (Array.IndexOf(args, "--pdk") >= 0) return ExplainPdk.Run(args);
+
         string? path = null, expr = null, reference = null, analysisName = null, setupName = null, objectName = null;
         bool wantAnalyses = false, wantCells = false, wantLayers = false, wantExtents = false, all = false;
         bool wantFootprints = false, wantLook = false, wantTunables = false, wantMaterials = false;
@@ -381,6 +384,7 @@ internal static class Explain
         Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--view <name>]");
         Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>] [--look] [--device cpu|gpu] [--memory-limit <GB>]");
         Console.Error.WriteLine("                            [--tunables]");
+        Console.Error.WriteLine("       circuitrf explain --pdk <kit> [<workspace>] [--python <interp>]");
         return 1;
     }
 

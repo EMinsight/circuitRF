@@ -23,6 +23,22 @@ internal static class GeneratedCells
 {
     public const string TrustFlag = "--trust-kit";
 
+    /// <summary>Names the interpreter a gdsfactory kit runs in for THIS invocation (brief-gdf-2
+    /// R-gdf2-2b). Taken with <see cref="TrustFlag"/>, so every verb that rebuilds generated cells
+    /// honours it, and <c>import pdk --module</c> and <c>explain --pdk</c> read it.</summary>
+    public const string PythonFlag = "--python";
+
+    /// <summary>What <see cref="PythonFlag"/> named, or null. Reset by every <see cref="TakeTrustFlags"/>.</summary>
+    internal static string? PythonOverride { get; private set; }
+
+    /// <summary>
+    /// The interpreter for a gdsfactory kit's module: <c>--python</c> first, then the choice this user
+    /// recorded at the keyboard — read, never written. Null when neither says, and the run refuses with
+    /// <see cref="GdsfactoryInterpreterPreferences.NoInterpreterSentence"/>.
+    /// </summary>
+    internal static string? InterpreterFor(string module)
+        => PythonOverride ?? GdsfactoryInterpreterPreferences.Recorded(module);
+
     /// <summary>The kit directories <c>--trust-kit</c> allowed for THIS invocation. Reset by every
     /// <see cref="TakeTrustFlags"/>, so one call never inherits another call's grant.</summary>
     private static List<string> _trusted = [];
@@ -58,12 +74,22 @@ internal static class GeneratedCells
     public static string[] TakeTrustFlags(string[] args)
     {
         _trusted = [];
+        PythonOverride = null;
         var rest = new List<string>(args.Length);
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == TrustFlag && i + 1 < args.Length)
             {
-                _trusted.Add(PCellTrustStore.Normalize(args[++i]));
+                // Both spellings: a gdsfactory kit's consent is keyed on its directory with links
+                // resolved, and the caller may well name it through the link.
+                string dir = args[++i];
+                _trusted.Add(PCellTrustStore.Normalize(dir));
+                _trusted.Add(PCellTrustStore.ResolvedDirectory(dir));
+                continue;
+            }
+            if (args[i] == PythonFlag && i + 1 < args.Length)
+            {
+                PythonOverride = args[++i];
                 continue;
             }
             rest.Add(args[i]);
@@ -147,6 +173,7 @@ internal static class GeneratedCells
         Target    = mayWrite ? GeneratedCellTarget.Disk : GeneratedCellTarget.Memory,
         Trust     = Trust(),
         AskTrust  = Ask(),
+        ModuleInterpreter = InterpreterFor,
     };
 
     private static int? Report(GeneratedCellsRun run)

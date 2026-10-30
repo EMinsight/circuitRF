@@ -93,6 +93,11 @@ here computes a capacitance or a resistance on a kit's behalf. To state one your
 one found automatically, use `crf.reports_computed(generator_id, compute)` from the kit's own entry
 script.
 
+A **gdsfactory kit** is driven through `gdsfactory_bridge.register_pdk("<module>")` the same way: one
+generator per `pdk.cells` entry, floats passed through as `real` in the kit's own units, every port a
+pin except `placement`. Importing `gdsfactory_bridge` never imports gdsfactory. See
+`docs/design/pcell-gdsfactory-bridge.md`.
+
 **`stdout` is the wire and must carry nothing else.** A stray `print()` lands in the middle of a
 frame and desynchronises the stream, which surfaces as circuitRF reporting a malformed reply nowhere
 near the print. Write to `sys.stderr`; circuitRF surfaces that.

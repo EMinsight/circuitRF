@@ -24797,3 +24797,27 @@ Gate: `KitPartSubcircuitBindingTests.ABodyTerminalIsWiredToTheNetItsParameterNam
   record-format reader and yielded no cards. A leading `.model` now counts as well.
 - Gate: `tests/Ui.Tests/KitCardDeviceRoutingTests.cs` (built-in route, compiled precedence, once per
   card, the selected corner moving a DC operating point by n·Vt·ln 10⁴, the primitive element).
+
+## gdsfactory kits on the PCell road: three findings (brief-gdf-2, 2026-10-30)
+
+- **A `${kit}`-anchored `Sources` entry never reached the content hash.** `PCellGeneratorContentHash`
+  combined every declared source with the manifest's own folder, so `${kit}/cells` named a directory that
+  does not exist and was skipped without a word: the key covered the manifest alone, and an edited kit
+  resolved to cells the previous version wrote. This was already true of every `cni` declaration
+  `KitPCellLibrary.EnsureDeclared` writes (its sources are `${kit}/…`). Both `Sources` and `DataFiles` now
+  resolve through `PCellGeneratorManifest.ResolveRef`. Gate:
+  `GdsfactoryAdapterTests.TheContentKey_FollowsTheKitsOwnSources_ThroughTheKitAnchor`.
+- **A link's target can itself run through a link.** `PCellTrustStore.ResolvedDirectory` first resolved
+  each component's link once; macOS's temporary directory is reached through `/var` → `/private/var`, so
+  a kit reached through a link resolved to the `/var` spelling and its target to `/private/var` — one
+  directory, two consent keys. It now restarts the walk from each target (bounded). Only gdsfactory
+  kits key on it; `cni` kits keep their folder key so no recorded answer changes.
+- **A cell named like a built-in generator is unreachable.** Built-ins resolve first, case-insensitively;
+  gdsfactory's generic kit offers `spiral` and `via`, and placing either drew circuitRF's own. The import
+  report now lists such cells as not offered (`GdsfactoryImportReport.ShadowedReason`) rather than
+  offering a tile that places something else.
+- **Open: `GdsiiExport` cannot write a polygon larger than one GDSII `XY` record** (8,191 points). It
+  throws "exceeds the 16-bit length field" for the whole file. gdsfactory's generic `spiral_inductor` at
+  its defaults is one such polygon, so it is the one cell of that kit the gated comparison cannot check
+  (`GdsfactoryKitTests.TheGenericKit_…` fails on it, by name). Splitting a boundary into valid pieces is
+  GDSII-writer work and was left for the owner to decide.

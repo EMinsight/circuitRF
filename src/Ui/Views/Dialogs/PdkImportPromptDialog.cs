@@ -14,7 +14,7 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// </summary>
 public static class PdkImportPromptDialog
 {
-    public enum Choice { Folder, Archive }
+    public enum Choice { Folder, Archive, PythonPackage }
 
     public static async Task<Choice?> PickAsync(Window owner)
     {
@@ -31,10 +31,13 @@ public static class PdkImportPromptDialog
 
         var folderBtn  = new Button { Content = "Kit _folder…",  HorizontalAlignment = HorizontalAlignment.Stretch };
         var archiveBtn = new Button { Content = "Kit _archive (.zip)…", HorizontalAlignment = HorizontalAlignment.Stretch };
+        // A gdsfactory kit is an installed Python package, not a folder a user points at (brief-gdf-2 R-gdf2-5a).
+        var pythonBtn  = new Button { Content = "A _Python package (gdsfactory)…", HorizontalAlignment = HorizontalAlignment.Stretch };
         var cancelBtn  = new Button { Content = "Cancel", HorizontalAlignment = HorizontalAlignment.Right, IsCancel = true };
 
         folderBtn.Click  += (_, _) => { result = Choice.Folder;  dialog.Close(); };
         archiveBtn.Click += (_, _) => { result = Choice.Archive; dialog.Close(); };
+        pythonBtn.Click  += (_, _) => { result = Choice.PythonPackage; dialog.Close(); };
         cancelBtn.Click  += (_, _) => { result = null;           dialog.Close(); };
 
         dialog.Content = new StackPanel
@@ -60,6 +63,7 @@ public static class PdkImportPromptDialog
                 },
                 folderBtn,
                 archiveBtn,
+                pythonBtn,
                 cancelBtn,
             },
         };

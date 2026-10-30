@@ -231,6 +231,49 @@ public static class KitPaletteMerge
         return paired;
     }
 
+    /// <summary>One generator that declares a model some part also declares, and what came of it.</summary>
+    /// <param name="Part">The part it was merged onto; null when the pair was refused.</param>
+    /// <param name="Uncovered">For a refused pair: each candidate part, and the parameters it declares
+    /// that the cell does not — the ones that "did not cover" (overview D7).</param>
+    public sealed record ModelPairing(
+        string GeneratorId, string Model, string? Part,
+        IReadOnlyList<(string Part, IReadOnlyList<string> Missing)> Uncovered)
+    {
+        public bool Made => Part is not null;
+    }
+
+    /// <summary>
+    /// What <see cref="Compose"/> did with every generator that declares a model a part also declares
+    /// — the import report's pairing section (brief-gdf-2 R-gdf2-5b). <b>Report only</b>: it reads the
+    /// composed tiles and decides nothing, so it cannot disagree with the palette.
+    /// </summary>
+    public static IReadOnlyList<ModelPairing> ExplainModelPairings(
+        IReadOnlyList<PaletteItem> composed,
+        IReadOnlyDictionary<string, string> generatorModels,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? generatorParameters = null)
+    {
+        // A part is a tile that states a model; a layout-only tile states none.
+        var parts = composed.Where(i => i.Pdk is { ModelName.Length: > 0 }).ToList();
+        var result = new List<ModelPairing>();
+        foreach (var (gid, model) in generatorModels.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(model)) continue;
+            var candidates = parts.Where(p => string.Equals(p.Pdk!.ModelName, model, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (candidates.Count == 0) continue;
+
+            if (candidates.FirstOrDefault(p => string.Equals(p.PCellGeneratorId, gid, StringComparison.OrdinalIgnoreCase)) is { } made)
+            {
+                result.Add(new ModelPairing(gid, model, made.DisplayName, []));
+                continue;
+            }
+
+            var declared = new HashSet<string>(generatorParameters?.GetValueOrDefault(gid) ?? [], StringComparer.OrdinalIgnoreCase);
+            result.Add(new ModelPairing(gid, model, null,
+                [.. candidates.Select(p => (p.DisplayName, (IReadOnlyList<string>)[.. PartParameterNames(p).Where(n => !declared.Contains(n)).Order(StringComparer.OrdinalIgnoreCase)]))]));
+        }
+        return result;
+    }
+
     /// <summary>The parameters a part declares, as the KIT names them. circuitRF's own
     /// <c>ModelLibrary</c> row is excluded because no kit has ever heard of it, so requiring a cell to
     /// declare it would rule out every cell for every part.</summary>

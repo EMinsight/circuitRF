@@ -2323,6 +2323,11 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             long dbu = PCellUnits.MetresToDbu(siValue, _vm!.Model.DbuPerMicron);
             return LayoutUnits.Format(dbu, _vm.DisplayUnit, _vm.Model.DbuPerMicron);
         }
+        // A unitless number far from 1 is shown in full, round-trippable form. Five decimals turned a
+        // gdsfactory kit's inductance of 3.3303e-11 (passed through exactly, brief-gdf-2 D3) into "0" —
+        // and the row's text is what an edit commits, so showing it that way invites storing a zero.
+        if (string.IsNullOrEmpty(unit) && siValue != 0 && (Math.Abs(siValue) < 1e-3 || Math.Abs(siValue) >= 1e9))
+            return siValue.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
         string display = SchematicToLayoutGenerator.Fmt(SchematicToLayoutGenerator.ToDisplayValue(unit, siValue));
         return string.IsNullOrEmpty(unit) ? display : $"{display} {unit}";
     }

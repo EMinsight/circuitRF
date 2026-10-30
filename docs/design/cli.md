@@ -211,6 +211,7 @@ verb's own argument loop has to learn about any of them:
 |---|---|
 | `--kits <dir>` | makes an externally-supplied device model resolve headlessly, the way opening a workspace does in the GUI. Repeatable. |
 | `--trust-kit <dir>` | lets THIS run execute the PCell scripts of the kit whose generator manifest is in `<dir>`, to rebuild the generated cells a layout places — §23. Repeatable. |
+| `--python <interp>` | the interpreter a gdsfactory kit runs in for THIS run, ahead of the one its user chose in the application (per user, by module name, never in the workspace) — §34.1. |
 | `--workspace <dir \| .cws>` | the workspace a LOOSE schematic (a Known File outside any workspace folder) is run from, as a window's workspace is in the GUI: a cell reference that names nothing is looked for there, last of all (`workspace-and-project-tree.md` §4.5). Ignored for a document inside a workspace. Each instance it decides for is reported — `note:` when the workspace's one cell was used, `warning:` when there were two to choose from — and a path naming no workspace is a refusal. NOT taken for `em`, whose own `--workspace` means the same thing for a `.cem`, nor for `convert`, whose `--workspace` is where imported layers are grafted. |
 | `--json` | one JSON document on stdout and nothing else — §3.2 |
 | `--only`, `--group` | narrow that document's `result` by cube and group name — §3.2 |
@@ -4513,6 +4514,35 @@ headlessly. It writes nothing. A kit that cannot be loaded is `run.kit.not-loade
 **An extraction's conflicts are said** (`run.extraction.conflict`) by `netlist` and the run verbs — the
 sentences the GUI posts after Simulate, an instance the extraction SKIPPED above all, which was otherwise
 simply absent from the netlist.
+
+### 34.1 A gdsfactory kit (brief-gdf-2)
+
+```
+circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code]
+circuitrf import pdk <folder holding a gdsfactory source tree> --python <interp> --into <workspace> [--allow-code]
+circuitrf explain --pdk <kit> [<workspace>] [--python <interp>]
+```
+
+A gdsfactory kit is an installed Python package, so it is named by **module**. Every step is
+`GdsfactoryKitImport`'s in `src/Design`, which File ▸ Import PDK's "A Python package (gdsfactory)…" source
+calls too: the kit is found by reading `*.dist-info/METADATA` files in the interpreter's site-packages
+(the one process started is the interpreter answering its version — no kit code), the declaration is
+written (`<module>-pcells/`, `Module` + `ModuleVersion`, `Interpreter` null), and — only with consent —
+the kit is described once so the tally can say what it offers. A folder that holds a gdsfactory
+**source tree** (a package whose `__init__.py` imports gdsfactory and constructs `Pdk(`) takes the same
+road. `docs/design/pcell-gdsfactory-bridge.md` is the full account.
+
+- **The interpreter is per user.** `--python` names it for this run; otherwise the one recorded in the
+  application for that module. Neither is a refusal naming `--python`. `--python` is taken before
+  dispatch (like `--trust-kit`), so every geometry verb that rebuilds a gdsfactory kit's cells honours it.
+- **Consent** keys on the kit's installed directory with links resolved; `--allow-code` grants it for this
+  one import and is never recorded. Without it the kit is declared, not run, and the import exits 0
+  saying so.
+- **Refusals** are discovery's sentences: not a Python, older than 3.12 or the kit's own
+  `Requires-Python`, gdsfactory missing (a `--no-deps` install), no such module.
+- **`explain --pdk`** reads the declaration and the installed version from files and reports which
+  interpreter resolves and whether it came from `--python` or the user's preference
+  (`explain.pdk.interpreter` / `explain.pdk.no-interpreter` / `explain.pdk.note`).
 
 Gate: `tests/Ui.Tests/Cli/ImportPdkCliVerbTests.cs` — the verb as a process against the in-process
 `PdkWorkspaceImport.Import` (the `.cws` reference and both declaration files, byte for byte), the

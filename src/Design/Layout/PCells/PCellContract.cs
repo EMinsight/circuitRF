@@ -340,6 +340,10 @@ public enum PCellDimension
 /// always did. <paramref name="Dimension"/> is the one exception to "optional means display-only":
 /// it decides the UNIT the parameter is shown and typed in, and its <see cref="PCellDimension.None"/>
 /// default is a real answer, not an absent one.</para>
+///
+/// <para><paramref name="Hint"/> is said by the HOST, not the generator: a line for the editor's
+/// tooltip about whose units a value is in (a gdsfactory kit's floats are the kit's own numbers —
+/// brief-gdf-2, overview D3). Nothing on the wire carries it.</para>
 /// </summary>
 public sealed record PCellParameterInfo(
     string Name,
@@ -350,7 +354,8 @@ public sealed record PCellParameterInfo(
     double? Minimum = null,
     double? Maximum = null,
     bool Computed = false,
-    PCellDimension Dimension = PCellDimension.None)
+    PCellDimension Dimension = PCellDimension.None,
+    string? Hint = null)
 {
     /// <summary>What to show beside the field — the generator's own label when it gave one that says
     /// more than the name already does, else the name.</summary>

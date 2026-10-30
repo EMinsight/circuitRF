@@ -103,6 +103,52 @@ public sealed class PCellTrustStore
 
     public int Count => _decisions.Count;
 
+    /// <summary>
+    /// <paramref name="directory"/> with every symbolic link along it resolved, then
+    /// <see cref="Normalize"/>d — the key a gdsfactory kit's consent is recorded under (brief-gdf-2
+    /// R-gdf2-2a). An installed kit is routinely reached through a link (an environment's
+    /// <c>lib64</c>, a shared tool area), and the link and its target are one kit on disk, so they are
+    /// one decision; two environments are two directories and two decisions.
+    ///
+    /// <para>Not folded into <see cref="Normalize"/> itself: every decision already recorded for a
+    /// <c>cni</c> kit is keyed on the path as written, and resolving those now would quietly turn a
+    /// recorded answer into a question.</para>
+    /// </summary>
+    public static string ResolvedDirectory(string directory)
+    {
+        string full = Normalize(directory);
+        try { return full.Length == 0 ? full : Normalize(Resolve(full, hops: 0)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return full;
+        }
+    }
+
+    /// <summary>
+    /// Walks <paramref name="full"/> one component at a time; at a link, starts again from the link's
+    /// target plus whatever was left — a target can itself run through a link (macOS's <c>/var</c> is
+    /// <c>/private/var</c>), so resolving only the last hop leaves two spellings of one directory.
+    /// Bounded, so a link loop costs the unresolved form rather than a hang.
+    /// </summary>
+    private static string Resolve(string full, int hops)
+    {
+        string? root = Path.GetPathRoot(full);
+        if (string.IsNullOrEmpty(root) || hops > 40) return full;
+
+        string[] parts = full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        string current = root;
+        for (int i = 0; i < parts.Length; i++)
+        {
+            current = Path.Combine(current, parts[i]);
+            if (new DirectoryInfo(current).LinkTarget is not { } target) continue;
+
+            string resolved = Path.GetFullPath(target, Path.GetDirectoryName(current) ?? root);
+            string rest = string.Join(Path.DirectorySeparatorChar, parts[(i + 1)..]);
+            return Resolve(rest.Length == 0 ? resolved : Path.Combine(resolved, rest), hops + 1);
+        }
+        return current;
+    }
+
     /// <summary>Absolute, separator-normalized, no trailing separator — so the same directory named
     /// two ways is one entry rather than two.</summary>
     public static string Normalize(string directory)

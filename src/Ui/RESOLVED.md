@@ -41487,3 +41487,12 @@ None writes there. The two candidates the brief named were already handled. Pyth
 is no first-run extraction (the publish is not single-file). The one writer is the developer flag
 `--generate-symbols` with no output directory, which defaults to `<BaseDirectory>/symbols-out` and
 would fail with an exception. It is not a user path and was left alone.
+
+## A unitless real far from 1 showed as "0" in the PCell parameter list (brief-gdf-2, 2026-10-30)
+
+`LayoutShapePropertiesViewModel.FormatPCellParamValue` formats every unitless real with `0.#####`, so a
+gdsfactory kit's inductance of `3.3303e-11` — passed through exactly by design — read "0". The row's text
+is what an edit commits, so the display invited storing a zero. A unitless value below 1e-3 or at or
+above 1e9 is now shown in round-trip form (`3.3303E-11`), which the row's own parser reads back exactly;
+every other row reads as it did. Found by rendering the parameter dialog for a placed gdsfactory cell
+(`tools/UiSnapshot --gdsfactory cell`).

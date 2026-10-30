@@ -192,6 +192,8 @@ public sealed partial class PCellParamRowViewModel : ObservableObject
         else if (unread)
             parts.Add("The generator did not read this on the run that drew the current artwork, " +
                       "so changing it will not change the geometry.");
+        if (info?.Hint is { Length: > 0 } hint)
+            parts.Add(hint);
         if (info is { Minimum: { } lo, Maximum: { } hi })
             parts.Add($"{FormatBound(owner, unit, lo)} to {FormatBound(owner, unit, hi)}");
         else if (info is { Minimum: { } only })

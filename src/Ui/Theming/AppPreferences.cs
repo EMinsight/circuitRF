@@ -135,6 +135,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, bool>? PCellTrust { get; set; }
 
+    // Which Python environment runs each gdsfactory kit on this machine, keyed by the kit's module
+    // name (brief-gdf-2 R-gdf2-2b). Per USER, beside the trust decisions, and never in .cws: a
+    // colleague opening the workspace is asked for theirs rather than handed a path from this machine.
+    [JsonPropertyName(CircuitRF.Design.Layout.PCells.Wire.GdsfactoryInterpreterPreferences.PreferenceKey)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? GdsfactoryInterpreters { get; set; }
+
     // L5b / R16d: "Export offers to run DRC first. Not mandatory, not silent." Null means the default,
     // which is ON — catching a spacing error before it reaches a fab is most of DRC's value, and a
     // check the user has to remember to run before every export is one they will forget before the

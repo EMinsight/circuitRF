@@ -91,6 +91,41 @@ public sealed class PCellGeneratorManifest
     /// </summary>
     public List<string> DataFiles { get; set; } = [];
 
+    /// <summary>
+    /// The gdsfactory kit this manifest declares, as an importable module name — null on every other
+    /// manifest (brief-gdf-2 R-gdf2-2b). Its presence is what makes the resolver take the gdsfactory
+    /// road: the interpreter comes from the per-USER preference keyed by this name, never from this
+    /// file, so a workspace that travels never hands anyone a path from somebody else's machine.
+    ///
+    /// <para>Optional and absent on every existing manifest, which is why it is not a
+    /// <see cref="SchemaVersion"/> bump: a reader that has never heard of it reads the rest unchanged,
+    /// and a manifest without it is written back byte for byte.</para>
+    /// </summary>
+    public string? Module { get; set; }
+
+    /// <summary>The kit's version when it was declared, so a later open can say it changed — a NOTE,
+    /// never a refusal (R-gdf2-2d).</summary>
+    public string? ModuleVersion { get; set; }
+
+    /// <summary>True when this manifest declares a gdsfactory kit (<see cref="Module"/> is set).</summary>
+    [JsonIgnore]
+    public bool IsGdsfactory => !string.IsNullOrWhiteSpace(Module);
+
+    /// <summary>
+    /// This manifest as circuitRF writes it into a workspace — the one serialization
+    /// <c>KitPCellLibrary</c> uses, so a manifest read and written again is the same bytes.
+    /// </summary>
+    public string ToJson() => JsonSerializer.Serialize(this, WorkspaceWriteOpts);
+
+    /// <summary>camelCase, indented, nulls omitted: the form <c>KitPCellLibrary.EnsureDeclared</c> has
+    /// always written.</summary>
+    internal static readonly JsonSerializerOptions WorkspaceWriteOpts = new()
+    {
+        WriteIndented          = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNamingPolicy   = JsonNamingPolicy.CamelCase,
+    };
+
     // ── Reading ───────────────────────────────────────────────────────────────
 
     /// <summary>
