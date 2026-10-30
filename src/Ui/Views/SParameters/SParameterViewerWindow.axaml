@@ -1,0 +1,386 @@
+<!-- The S-Parameter Viewer: a quick look at one Touchstone file. Left pane: what the file states (ports, option line,
+     frequency range and spacing, reference, noise block), the defects it has, and the terms to draw. Right pane: the
+     reflections on a Smith chart, and every ticked term as magnitude (dB) and phase against frequency, over exactly the
+     file's own frequency range. The plots are Data Display PlotControls hosted as the Signal Designer hosts its own,
+     and the styling is that window's: `pane` / `card` borders on the theme's chrome brushes and the one tile border
+     the application uses, sentence-case headings. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.SParameters"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ddv="using:CircuitRF.Ui.DataDisplay.ViewModels"
+        xmlns:ddvw="using:CircuitRF.Ui.Views.DataDisplay"
+        xmlns:ddconv="using:CircuitRF.Ui.DataDisplay.Converters"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
+        xmlns:sp="using:CircuitRF.Ui.Views.SParameters"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="CircuitRF.Ui.Views.SParameters.SParameterViewerWindow"
+        x:DataType="vm:SParameterViewerViewModel"
+        Title="{Binding Title}"
+        Width="1199" Height="800" MinWidth="900" MinHeight="600"
+        CanResize="True">
+
+    <!-- Delete removes the selected markers, wherever focus sits; a text field takes the key first. -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Delete" Command="{Binding DeleteSelectedMarkersCommand}"/>
+    </Window.KeyBindings>
+
+    <Window.Styles>
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8,6"/>
+            <Setter Property="Margin"          Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontSize"   Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.cardhdr">
+            <Setter Property="FontSize"   Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,2,0,4"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="12"/>
+            <Setter Property="Opacity"           Value="0.8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.val">
+            <Setter Property="FontSize"          Value="12"/>
+            <Setter Property="TextAlignment"     Value="Right"/>
+            <Setter Property="TextWrapping"      Value="Wrap"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector=":is(TextBlock).note">
+            <Setter Property="FontSize"     Value="11"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="Border.card CheckBox">
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <!-- The diagonal reads at a glance: a reflection's name is the heavier one. -->
+        <Style Selector="TextBlock.refl">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding"  Value="10,4"/>
+        </Style>
+        <Style Selector="Button.chip">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding"  Value="7,2"/>
+            <Setter Property="Margin"   Value="0,0,4,4"/>
+        </Style>
+        <!-- The plot chooser: the checked one is the accent, and its glyph follows. -->
+        <Style Selector="ToggleButton.plotpick">
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemBaseMediumLowColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="3"/>
+            <Setter Property="Padding"         Value="7,3"/>
+            <Setter Property="Margin"          Value="0,0,4,0"/>
+        </Style>
+        <Style Selector="ToggleButton.plotpick:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="ToggleButton.plotpick:checked ddc|PlotTypeGlyphControl">
+            <Setter Property="Stroke" Value="White"/>
+        </Style>
+        <Style Selector="Button.pathlink">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button.pathlink /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+        <Style Selector="Button.pathlink:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+    </Window.Styles>
+
+    <Window.Resources>
+        <!-- The DC-point warning. Yellow on purpose: the theme's warning colour is red. -->
+        <SolidColorBrush x:Key="DcWarningBrush" Color="#E6A800"/>
+        <!-- Beside the plot, vertically centred: a swatch and the name, never a box over the curves. -->
+        <DataTemplate x:Key="SideLegendItem" x:DataType="vm:SParameterLegendEntry">
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1">
+                <Rectangle Width="16" Height="3" VerticalAlignment="Center"
+                           Fill="{Binding Color, Converter={x:Static ddconv:SkColorToAvaloniaColorConverter.Instance}}"/>
+                <TextBlock FontSize="12" VerticalAlignment="Center" Text="{Binding Label}"/>
+            </StackPanel>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid RowDefinitions="*,Auto" Margin="4">
+        <Grid ColumnDefinitions="310,*">
+            <!-- ── left: the file ───────────────────────────────────────────────── -->
+            <Border Grid.Column="0" Classes="pane">
+                <DockPanel>
+                    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,6,0">
+                        <TextBlock Classes="panelhdr" Text="Touchstone file" VerticalAlignment="Center"/>
+                        <!-- Icon-only, as the Signal Designer's header buttons are: the name is in the tooltip. -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,2,0,8">
+                            <Button Name="OpenButton" Padding="6,3" Command="{Binding OpenFileCommand}"
+                                    ToolTip.Tip="Open a Touchstone file (.s1p … .sNp)">
+                                <mi:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
+                            </Button>
+                            <Button Padding="6,3" Command="{Binding ReloadCommand}"
+                                    ToolTip.Tip="Reload: read the file again, after a measurement or a run has rewritten it">
+                                <mi:MaterialIcon Kind="Refresh" Width="16" Height="16"/>
+                            </Button>
+                            <Button Padding="6,3" Command="{Binding SaveAsDataDisplayCommand}"
+                                    ToolTip.Tip="Save as Data Display: these plots as a .cdd you can keep and edit, opened in the workspace">
+                                <mi:MaterialIcon Kind="ContentSave" Width="16" Height="16"/>
+                            </Button>
+                            <Button Padding="6,3" Click="OnHelpClick"
+                                    ToolTip.Tip="Help — the S-Parameter Viewer page of the circuitRF reference">
+                                <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="0,0,6,0">
+
+                            <!-- The file itself, or why there is none. -->
+                            <Border Classes="card">
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap"
+                                               Text="{Binding FileName, FallbackValue='', TargetNullValue='No file open'}"/>
+                                    <Button Classes="pathlink" Command="{Binding RevealFileCommand}"
+                                            IsVisible="{Binding FilePath, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                            ToolTip.Tip="{Binding RevealTip}">
+                                        <TextBlock FontSize="11" Text="{Binding FilePath}" TextWrapping="Wrap"
+                                                   TextDecorations="Underline"
+                                                   Foreground="{DynamicResource SystemAccentColor}"/>
+                                    </Button>
+                                    <TextBlock Classes="note" IsVisible="{Binding IsEmpty}"
+                                               Text="Open a file with the folder button, or from a Touchstone file in the Workspace, a placed SnP component or a Data Display's dataset list."/>
+                                    <TextBlock Classes="note" IsVisible="{Binding IsLoading}" Text="Reading…"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasError}" Margin="0,4,0,0">
+                                        <mi:MaterialIcon Kind="AlertCircleOutline" Width="14" Height="14" VerticalAlignment="Top"
+                                                         Foreground="{DynamicResource CrfWarningBrush}"/>
+                                        <TextBlock FontSize="12" TextWrapping="Wrap" MaxWidth="250" Text="{Binding ErrorText}"
+                                                   Foreground="{DynamicResource CrfWarningBrush}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- File information: label left, value right. -->
+                            <Border Classes="card" IsVisible="{Binding HasFile}" Tag="facts-card">
+                                <StackPanel>
+                                    <TextBlock Classes="cardhdr" Text="File information"/>
+                                    <ItemsControl ItemsSource="{Binding Facts}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:SParameterFactRow">
+                                                <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,1">
+                                                    <TextBlock Classes="lbl" Text="{Binding Label}" Margin="0,0,10,0"/>
+                                                    <SelectableTextBlock Grid.Column="1" FontSize="12" TextAlignment="Right" TextWrapping="Wrap"
+                                                                         HorizontalAlignment="Right" VerticalAlignment="Center" Text="{Binding Text}"/>
+                                                    <TextBlock Grid.Column="2" FontSize="12" Margin="4,0,0,0" VerticalAlignment="Center"
+                                                               Text="{x:Static vm:SParameterFactRow.WarningGlyph}"
+                                                               Foreground="{StaticResource DcWarningBrush}"
+                                                               IsVisible="{Binding Warn}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- The file's defects, each a sentence naming where. -->
+                            <Border Classes="card" IsVisible="{Binding HasFindings}" Tag="findings-card">
+                                <StackPanel>
+                                    <TextBlock Classes="cardhdr" Text="Findings"/>
+                                    <ItemsControl ItemsSource="{Binding Findings}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <Grid ColumnDefinitions="Auto,*" Margin="0,2">
+                                                    <mi:MaterialIcon Kind="AlertCircleOutline" Width="14" Height="14" VerticalAlignment="Top"
+                                                                     Margin="0,1,6,0" Foreground="{DynamicResource CrfWarningBrush}"/>
+                                                    <TextBlock Grid.Column="1" FontSize="12" TextWrapping="Wrap" Text="{Binding}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- The terms to draw. Each box carries its trace's colour while it is drawn. -->
+                            <Border Classes="card" IsVisible="{Binding HasFile}" Tag="terms-card">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Classes="cardhdr" Text="Parameters"/>
+                                    <WrapPanel>
+                                        <Button Classes="chip" Content="All" Command="{Binding SelectAllCommand}"
+                                                ToolTip.Tip="Draw every term of the matrix"/>
+                                        <Button Classes="chip" Content="Reflections" Command="{Binding SelectReflectionsCommand}"
+                                                ToolTip.Tip="Draw the reflection at each port: S11, S22 …"/>
+                                        <Button Classes="chip" Content="Default" Command="{Binding SelectDefaultCommand}"
+                                                ToolTip.Tip="What the viewer opens on: every term up to four ports, else the reflections and each S(i+1,i)"/>
+                                        <Button Classes="chip" Content="None" Command="{Binding SelectNoneCommand}"/>
+                                    </WrapPanel>
+                                    <ItemsControl ItemsSource="{Binding Terms}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Columns="{Binding $parent[Window].((vm:SParameterViewerViewModel)DataContext).TermColumns}"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:SParameterTermViewModel">
+                                                <CheckBox IsChecked="{Binding IsChecked}" ToolTip.Tip="{Binding Tooltip}" MinWidth="0" Padding="4,0,6,0">
+                                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                                        <Rectangle Width="10" Height="3" VerticalAlignment="Center"
+                                                                   Fill="{Binding Color, Converter={x:Static ddconv:SkColorToAvaloniaColorConverter.Instance}}"/>
+                                                        <TextBlock Text="{Binding Name}" Classes.refl="{Binding IsReflection}"/>
+                                                    </StackPanel>
+                                                </CheckBox>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <!-- ── right: the plots ─────────────────────────────────────────────── -->
+            <Border Grid.Column="1" Classes="pane" ClipToBounds="True">
+                <Grid>
+                    <!-- Nothing open: the way in, centred. The pane stays otherwise empty. -->
+                    <Button IsVisible="{Binding !HasFile}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Classes="small" Command="{Binding OpenFileCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/>
+                            <TextBlock Text="Open Touchstone file…"/>
+                        </StackPanel>
+                    </Button>
+                    <Grid IsVisible="{Binding HasFile}" RowDefinitions="Auto,*">
+                        <!-- One plot is centred. Magnitude and phase alone stack. A round chart with one
+                             rectangular plot stacks them. All three put the round chart on top and magnitude
+                             and phase side by side below. None on leaves the pane empty. -->
+                        <StackPanel Orientation="Horizontal" Margin="2,0,0,4">
+                            <ToggleButton Classes="plotpick" IsChecked="{Binding ShowSmith, Mode=TwoWay}" ToolTip.Tip="Smith chart — the reflections">
+                                <ddc:PlotTypeGlyphControl Kind="Smith" Width="16" Height="16"
+                                                          Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+                            </ToggleButton>
+                            <ToggleButton Classes="plotpick" IsChecked="{Binding ShowPolar, Mode=TwoWay}" ToolTip.Tip="Polar chart — the transmissions">
+                                <ddc:PlotTypeGlyphControl Kind="Polar" Width="16" Height="16"
+                                                          Stroke="{DynamicResource SystemControlForegroundBaseHighBrush}"/>
+                            </ToggleButton>
+                            <ToggleButton Classes="plotpick" IsChecked="{Binding ShowMagnitude, Mode=TwoWay}" ToolTip.Tip="Magnitude, dB against frequency">
+                                <mi:MaterialIcon Kind="ChartLine" Width="16" Height="16"/>
+                            </ToggleButton>
+                            <ToggleButton Classes="plotpick" IsChecked="{Binding ShowPhase, Mode=TwoWay}" ToolTip.Tip="Phase, degrees against frequency">
+                                <mi:MaterialIcon Kind="SineWave" Width="16" Height="16"/>
+                            </ToggleButton>
+                        </StackPanel>
+                        <!-- A hidden host is given no rectangle, and the pane clips, so a Smith chart cannot
+                             paint over the plots turned on around it. -->
+                        <sp:SParameterPlotLayout Name="PlotGrid" Grid.Row="1" ClipToBounds="True"
+                                                 ShowSmith="{Binding ShowSmith}" ShowPolar="{Binding ShowPolar}"
+                                                 ShowMagnitude="{Binding ShowMagnitude}" ShowPhase="{Binding ShowPhase}">
+                        <Grid Name="SmithHost" ClipToBounds="True" IsVisible="{Binding ShowSmith}">
+                            <ddc:PlotControl Name="SmithPlotControl" ClipToBounds="True"
+                                             Plot="{Binding SmithPlot}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <Canvas IsHitTestVisible="False">
+                                <ItemsControl Name="SmithLegendList" ItemsSource="{Binding SmithLegend}"
+                                              ItemTemplate="{StaticResource SideLegendItem}"/>
+                            </Canvas>
+                        </Grid>
+                        <Grid Name="PolarHost" ClipToBounds="True" IsVisible="{Binding ShowPolar}">
+                            <ddc:PlotControl Name="PolarPlotControl" ClipToBounds="True"
+                                             Plot="{Binding PolarPlot}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <Canvas IsHitTestVisible="False">
+                                <ItemsControl Name="PolarLegendList" ItemsSource="{Binding PolarLegend}"
+                                              ItemTemplate="{StaticResource SideLegendItem}"/>
+                            </Canvas>
+                        </Grid>
+                        <Grid Name="MagnitudeHost" ClipToBounds="True" IsVisible="{Binding ShowMagnitude}">
+                            <ddc:PlotControl Name="MagnitudePlotControl" ClipToBounds="True"
+                                             Plot="{Binding MagnitudePlot}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <Canvas IsHitTestVisible="False">
+                                <ItemsControl Name="MagnitudeLegendList" ItemsSource="{Binding MagnitudeLegend}"
+                                              ItemTemplate="{StaticResource SideLegendItem}"/>
+                            </Canvas>
+                        </Grid>
+                        <Grid Name="PhaseHost" ClipToBounds="True" IsVisible="{Binding ShowPhase}">
+                            <ddc:PlotControl Name="PhasePlotControl" ClipToBounds="True"
+                                             Plot="{Binding PhasePlot}" Library="{Binding PlotHost.Library}"
+                                             CanDeletePlot="False" CanEditPlotProperties="False"/>
+                            <Canvas IsHitTestVisible="False">
+                                <ItemsControl Name="PhaseLegendList" ItemsSource="{Binding PhaseLegend}"
+                                              ItemTemplate="{StaticResource SideLegendItem}"/>
+                            </Canvas>
+                        </Grid>
+                        <!-- The hover readout. It takes no pointer, so the plot under it keeps the move. -->
+                        <Canvas Name="HoverLayer" Grid.RowSpan="3" IsHitTestVisible="False">
+                            <Border Name="HoverReadout" Background="{DynamicResource SystemChromeMediumColor}"
+                                    BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1"
+                                    CornerRadius="4" Padding="6,3" IsVisible="False">
+                                <TextBlock Name="HoverReadoutText" FontSize="12"/>
+                            </Border>
+                        </Canvas>
+                        <!-- Marker info boxes: the Data Display's own overlay, click-through (no Background) except on a box. -->
+                        <ItemsControl Name="InfoBoxLayer" Grid.RowSpan="3" Background="{x:Null}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <Canvas Background="{x:Null}"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemContainerTheme>
+                                <ControlTheme TargetType="ContentPresenter">
+                                    <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                                    <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                                </ControlTheme>
+                            </ItemsControl.ItemContainerTheme>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="ddv:MarkerInfoBoxViewModel">
+                                    <ddvw:MarkerInfoBoxView/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        </sp:SParameterPlotLayout>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ── footer: what is on show, then the one action ──────────────────────── -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="6,2,6,4">
+            <DockPanel LastChildFill="True" VerticalAlignment="Center">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
+                            Margin="10,0,0,0" IsVisible="{Binding DcPointMissing}">
+                    <TextBlock FontSize="12" Opacity="0.85" VerticalAlignment="Center" Text="No DC point"/>
+                    <TextBlock FontSize="12" Margin="4,0,0,0" VerticalAlignment="Center"
+                               Text="{x:Static vm:SParameterFactRow.WarningGlyph}"
+                               Foreground="{StaticResource DcWarningBrush}"/>
+                </StackPanel>
+                <TextBlock FontSize="12" Opacity="0.85" Text="{Binding Status}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+            </DockPanel>
+            <Button Grid.Column="1" Classes="small" Margin="6,0,0,0" Content="Close" Click="OnClose"/>
+        </Grid>
+    </Grid>
+</Window>

@@ -68,8 +68,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         AddGroupCommand       = new RelayCommand(AddGroup);
         RemoveTopGroupCommand = new RelayCommand(RemoveTopGroup, () => _canRemoveTopGroup);
         PickSnpFileCommand    = new AsyncRelayCommand(PickFileAsync);
-        ShowSnpFileCommand    = new AsyncRelayCommand(RevealSnpFileAsync,
-            () => !string.IsNullOrWhiteSpace(SnpFilePath));
+        // Preview opens the file in the S-Parameter Viewer. Enabled once the chosen file is there.
+        ShowSnpFileCommand    = new RelayCommand(ShowSnpFile, () => ResolvedSnpFile() is not null);
         OpenCvEditorCommand   = new AsyncRelayCommand(OpenCvEditorAsync);
         PickSpiceModelFileCommand = new AsyncRelayCommand(PickSpiceModelFileAsync);
         ShowSpiceModelFileCommand = new AsyncRelayCommand(RevealSpiceModelFileAsync,
@@ -590,7 +590,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     public static string[] SnpInterpDomainOptions { get; } = ["RI", "MA"];
 
     public IAsyncRelayCommand PickSnpFileCommand    { get; private set; } = null!;
-    public IAsyncRelayCommand ShowSnpFileCommand    { get; private set; } = null!;
+    public IRelayCommand ShowSnpFileCommand { get; private set; } = null!;
+
+    /// <summary>Raised by <see cref="ShowSnpFileCommand"/> with the file's absolute path; the view opens the
+    /// S-Parameter Viewer, since only it knows the window that owns this panel.</summary>
+    public event Action<string>? OpenSnpViewerRequested;
 
     [ObservableProperty] private string _snpFilePath         = "";
     [ObservableProperty] private bool   _snpRefNode          = false;
@@ -601,6 +605,20 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     [ObservableProperty] private string _snpPortCountText    = "";
 
     partial void OnSnpFilePathChanged(string value) => ShowSnpFileCommand.NotifyCanExecuteChanged();
+
+    /// <summary>The File parameter as the engine will open it — the one resolver Preview uses — or null when none is
+    /// chosen or it is not there.</summary>
+    private string? ResolvedSnpFile()
+        => !string.IsNullOrWhiteSpace(SnpFilePath)
+           && SnpPathPolicy.Resolve(SnpFilePath, _schematicVm?.WorkspaceRoot, _schematicVm?.EditModel.SchematicDirectory) is { } path
+           && System.IO.File.Exists(path)
+            ? path : null;
+
+    /// <summary>Preview: the S-Parameter Viewer on the chosen file.</summary>
+    private void ShowSnpFile()
+    {
+        if (ResolvedSnpFile() is { } path) OpenSnpViewerRequested?.Invoke(path);
+    }
 
     partial void OnSnpRefNodeChanged(bool oldValue, bool newValue)
     {
@@ -657,16 +675,6 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         }
 
         _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
-    }
-
-    private async Task RevealSnpFileAsync()
-    {
-        if (RevealFileAsync is null) return;
-        // One resolver, so Show reveals exactly the file the port-count sniff read and the engine
-        // will open. This used to spell the same rule out inline, minus the no-workspace fallback.
-        if (SnpPathPolicy.Resolve(SnpFilePath, _schematicVm?.WorkspaceRoot,
-                                  _schematicVm?.EditModel.SchematicDirectory) is not { } path) return;
-        await RevealFileAsync(path);
     }
 
     private void ApplySnpParam(string name, string value)
