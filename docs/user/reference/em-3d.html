@@ -205,7 +205,9 @@ full description.</p>
 <li><p><strong>Problem</strong> (<code>Problem3D</code>, Palace only): <em>Driven</em> for S-parameters (the default), <em>Electrostatic</em> for a
 capacitance matrix, <em>Magnetostatic</em> for an inductance matrix, <em>Eigenmode</em> for resonant frequencies and</p>
 <ol type="A" start="17">
-<li><a href="em-setup.html#package-rlc">Package RLC</a>, <a href="em-setup.html#eigenmodes">Eigenmodes</a>.</li>
+<li><a href="em-setup.html#package-rlc">Package RLC</a>, <a href="em-setup.html#eigenmodes">Eigenmodes</a>. When an
+electrostatic solve is the right way to get a capacitance, and how to put the answer in a schematic, is
+<a href="../app-notes/an03-extracting-capacitance.html">AN-03 Extracting capacitance</a>.</li>
 </ol>
 </li>
 <li><p><strong>Ports.</strong> A layout's port labels become ports. In 3D a port is <strong>lumped</strong> by default: a sheet from the
@@ -233,9 +235,11 @@ port numbered <code>PortNum</code>, wherever the part is placed, turned or mirro
 port above. A planar setup takes it as an internal port to ground. Its number is checked against the
 board's own port labels and every other component's: a number used twice is refused, naming both.</p>
 </li>
-<li><p><strong>Terminals</strong> (<code>Terminals3D</code>, static solves): the matrix's rows and columns, each named by a net.
-Every conductor on that net belongs to the terminal. A magnetostatic terminal also names the port its
-current enters by.</p>
+<li><p><strong>Terminals</strong> (<code>Terminals3D</code>, static solves): the matrix's rows and columns, each named by a net, an
+object's path or the end of one. An electrostatic terminal takes the whole piece of metal it names; a
+magnetostatic terminal also names the port its current enters by. Metal in no terminal floats, is
+ground or refuses the run, as <strong>Other metal</strong> (<code>UnassignedConductors3D</code>) says.
+<a href="em-setup.html#package-rlc">Static problems</a>.</p>
 </li>
 <li><p><strong>The air box</strong> (<code>AirBox</code>): how far each face of the solved region lies beyond the geometry, and what
 the face does to the field. It can be <em>Absorbing</em> (open space), <em>Pec</em> (a metal wall), <em>Pmc</em> or

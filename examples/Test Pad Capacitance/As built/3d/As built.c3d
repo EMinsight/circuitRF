@@ -1,0 +1,260 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"TechRef": "../../tech/six-layer-fr4.ctech",
+	"Objects": [],
+	"Instances": [
+		{
+			"Name": "U1",
+			"CellRef": "..",
+			"View": "Layout"
+		}
+	],
+	"Ports": [
+		{
+			"Number": 1,
+			"Name": "P1",
+			"Kind": "Lumped",
+			"Plane": "YZ",
+			"Offset": -6000000,
+			"Rect": {
+				"Min": [-190000, 1347000],
+				"Size": [380000, 220000]
+			},
+			"Z0": "50"
+		},
+		{
+			"Number": 2,
+			"Name": "P2",
+			"Kind": "Lumped",
+			"Plane": "YZ",
+			"Offset": 6000000,
+			"Rect": {
+				"Min": [-190000, 1347000],
+				"Size": [380000, 220000]
+			},
+			"Z0": "50"
+		}
+	],
+	"FieldPlots": [
+		{
+			"Name": "E through the test pad",
+			"Setup": "Test pad C",
+			"Solution": {
+				"Terminal": "TP"
+			},
+			"Quantity": "E",
+			"On": "ClipPlane",
+			"Axis": "Y",
+			"Offset": 0
+		}
+	],
+	"Look": {
+		"ShowEdges": true,
+		"ShowGrid": true,
+		"ShowOverlays": true,
+		"ShowPorts": true,
+		"ShowBoundaries": true,
+		"ShowImages": true
+	},
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "Test pad C",
+			"Frequency": {
+				"StartExpr": "1",
+				"StopExpr": "20",
+				"StepExpr": "",
+				"NumPoints": 101,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": false,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"YMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"YMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"ZMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				}
+			},
+			"Palace": {
+				"Quality": "Standard"
+			},
+			"Problem3D": "Electrostatic",
+			"Terminals3D": [
+				{
+					"Name": "TP",
+					"Net": "",
+					"Objects": [
+						"body:U1/Top Copper (1 oz)/1"
+					]
+				}
+			],
+			"UnassignedConductors3D": "Ground"
+		},
+		{
+			"FormatVersion": 1,
+			"Name": "Test pad C, planes floating",
+			"Frequency": {
+				"StartExpr": "1",
+				"StopExpr": "20",
+				"StepExpr": "",
+				"NumPoints": 101,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": false,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"YMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"YMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"ZMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Pec"
+				}
+			},
+			"Palace": {
+				"Quality": "Standard"
+			},
+			"Problem3D": "Electrostatic",
+			"Terminals3D": [
+				{
+					"Name": "TP",
+					"Net": "",
+					"Objects": [
+						"body:U1/Top Copper (1 oz)/1"
+					]
+				}
+			]
+		},
+		{
+			"FormatVersion": 1,
+			"Name": "Driven (Draft)",
+			"Frequency": {
+				"StartExpr": "0.5",
+				"StopExpr": "10",
+				"StepExpr": "",
+				"NumPoints": 96,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": false,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 1000,
+					"Boundary": "Absorbing"
+				},
+				"XMax": {
+					"PaddingUm": 1000,
+					"Boundary": "Absorbing"
+				},
+				"YMin": {
+					"PaddingUm": 3000,
+					"Boundary": "Absorbing"
+				},
+				"YMax": {
+					"PaddingUm": 3000,
+					"Boundary": "Absorbing"
+				},
+				"ZMin": {
+					"PaddingUm": 3000,
+					"Boundary": "Absorbing"
+				},
+				"ZMax": {
+					"PaddingUm": 3000,
+					"Boundary": "Absorbing"
+				}
+			},
+			"Palace": {
+				"Quality": "Draft",
+				"AdaptiveMaxIterations": 2
+			}
+		}
+	]
+}

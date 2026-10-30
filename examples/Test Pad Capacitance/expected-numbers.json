@@ -1,0 +1,126 @@
+{
+  "About": "The key numbers README.md states, in one place. circuitRF's tests re-run every electrostatic setup here and compare each value within its tolerance, and check that each value's Readme text appears in README.md. Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2. PeakGB is Palace's own peak memory over all its processes.",
+  "Runs": [
+    {
+      "View": "As built/3d/As built.c3d",
+      "Setup": "Test pad C",
+      "Vars": null,
+      "Terminals": [
+        "TP"
+      ],
+      "Floating": 0,
+      "PeakGB": 5.3,
+      "Readme": [
+        "44 s",
+        "5.3 GB"
+      ],
+      "Values": [
+        {
+          "Quantity": "C_fF",
+          "Label": "test-pad net, as built",
+          "Row": "TP",
+          "Column": "TP",
+          "Expected": 2139.57,
+          "Tolerance": 42.8,
+          "Readme": "2.140 pF"
+        }
+      ]
+    },
+    {
+      "View": "Fixed/3d/Fixed.c3d",
+      "Setup": "Test pad C",
+      "Vars": null,
+      "Terminals": [
+        "TP"
+      ],
+      "Floating": 0,
+      "PeakGB": 6.0,
+      "Readme": [
+        "48 s",
+        "6.0 GB"
+      ],
+      "Values": [
+        {
+          "Quantity": "C_fF",
+          "Label": "test-pad net, fixed",
+          "Row": "TP",
+          "Column": "TP",
+          "Expected": 1829.81,
+          "Tolerance": 36.6,
+          "Readme": "1.830 pF"
+        }
+      ]
+    },
+    {
+      "View": "Line only/3d/Line only.c3d",
+      "Setup": "Line C",
+      "Vars": null,
+      "Terminals": [
+        "Line"
+      ],
+      "Floating": 0,
+      "PeakGB": 5.9,
+      "Readme": [
+        "40 s",
+        "5.9 GB"
+      ],
+      "Values": [
+        {
+          "Quantity": "C_fF",
+          "Label": "the line alone",
+          "Row": "Line",
+          "Column": "Line",
+          "Expected": 1450.32,
+          "Tolerance": 29.0,
+          "Readme": "1.450 pF"
+        }
+      ]
+    },
+    {
+      "View": "As built/3d/As built.c3d",
+      "Setup": "Test pad C, planes floating",
+      "Vars": null,
+      "Terminals": [
+        "TP"
+      ],
+      "Floating": 1,
+      "PeakGB": 6.0,
+      "Readme": [
+        "56 s"
+      ],
+      "Values": [
+        {
+          "Quantity": "C_fF",
+          "Label": "test-pad net, planes floating",
+          "Row": "TP",
+          "Column": "TP",
+          "Expected": 920.23,
+          "Tolerance": 18.4,
+          "Readme": "0.920 pF"
+        }
+      ]
+    }
+  ],
+  "Derived": [
+    {
+      "Name": "StubBuiltFf",
+      "Value": 689.25,
+      "Readme": "0.689 pF"
+    },
+    {
+      "Name": "StubFixedFf",
+      "Value": 379.49,
+      "Readme": "0.379 pF"
+    },
+    {
+      "Name": "S21ShuntCdB",
+      "Value": -0.4408,
+      "Readme": "−0.44 dB"
+    },
+    {
+      "Name": "S21DrivenDb",
+      "Value": -0.6885,
+      "Readme": "−0.69 dB"
+    }
+  ]
+}

@@ -67,6 +67,16 @@
       "Summary": "Is there a cavity resonance in my band? A 50 ohm line through an aluminium housing whose first mode lies inside 8-12 GHz, found by Palace's eigenmode solve and seen as a notch in a driven sweep, and the same housing with one grounded post, which shortens the cavity the mode sees and moves it above the band."
     },
     {
+      "Folder": "Capacitance Extraction",
+      "Title": "Capacitance Extraction",
+      "Summary": "A pad beside a microstrip line, solved for its capacitance by Palace's electrostatic solver in about fifteen seconds: how to pick the terminals and the ground, how the Maxwell matrix becomes the capacitors a schematic wants, and each answer checked against a parallel-plate estimate and the line calculator."
+    },
+    {
+      "Folder": "Test Pad Capacitance",
+      "Title": "Test Pad Capacitance",
+      "Summary": "A test pad on the far side of a six-layer board with no nets, joined to a 50 ohm line through a via with unused inner pads: its capacitance as built and with the pads removed, what goes wrong when the ground planes are left floating, and a schematic showing the electrostatic C reproduce a driven 3D run below the via's resonance."
+    },
+    {
       "Folder": "SAR MRI Loop Coil",
       "Title": "SAR: MRI Loop Coil",
       "Summary": "A 7 T surface coil beside a head phantom with every capacitor gap a port: openEMS runs once and keeps each port's fields, and a schematic then tunes, matches and optimizes the coil against S11, B1 and psSAR goals while B1 and SAR follow every value with no new EM run."

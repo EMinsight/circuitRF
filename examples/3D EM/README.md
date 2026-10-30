@@ -109,6 +109,9 @@ leads, and a lid 700 µm above the wires, 1.13 mm above the floor. The die itsel
 - Each lead, with its wire and die pad, has **586 fF** to ground.
 - The two leads couple through **0.74 fF**.
 
+Capacitance extraction as a method of its own, on a board, is the subject of the **Capacitance Extraction** and
+**Test Pad Capacitance** examples.
+
 **Inductance.** `Package/em/Package L.cem`, magnetostatic, **Standard**:
 
 - Took **22 s**, with a peak of **1.8 GB**.

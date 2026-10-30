@@ -1926,7 +1926,11 @@ static void PrintStaticMatrix(RfCore.Data.DataSet data, EmSetup setup)
     int e = max > 0 ? Math.Clamp((int)Math.Floor(Math.Log10(max) / 3), -5, 0) : -5;
     double scale = Math.Pow(1000, -e);
     string unit = prefixes[e + 5] + (es ? "F" : "H");
-    string ground = setup.Ground3D is { Length: > 0 } g ? g : "the ground-reference conductors";
+    // brief-dfr31-2 — with Other metal at Ground and the ground box blank, the ground is every piece not in a terminal.
+    string ground = setup.Ground3D is { Length: > 0 } g ? g
+        : es && setup.UnassignedConductors3D == CircuitRF.Design.Layout.Em.EmUnassignedConductors.Ground
+            ? "every body not in a terminal"
+            : "the ground-reference conductors";
     Console.WriteLine($"{(es ? "Maxwell capacitance" : "Inductance")} ({unit}), ground = {ground}");
     int width = Math.Max(10, names.Max(x => x.Length) + 2);
     Console.WriteLine(new string(' ', width) + string.Concat(names.Select(x => x.PadLeft(width))));

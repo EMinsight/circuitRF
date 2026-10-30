@@ -1867,10 +1867,45 @@ comparison writes each solver's modes to its own result and no comparison file.<
 capacitance matrix) or <em>Magnetostatic</em> (the inductance matrix). The two static problems run on Palace
 only; a setup naming openEMS, or comparing it, is refused, and so is its <code>check</code>. They ignore the
 frequency sweep and the port impedances, which are kept but not read (<code>check</code> says so).</p>
-<p><strong>Terminals</strong> (<code>Terminals3D</code>) are the matrix's rows and columns, in order. Each names a <strong>net</strong> — a net
-of the layout, or a <code>.wBond</code> wire array — and every conductor on it (traces, vias, bond wires) belongs to
-that terminal. <strong>Ground net</strong> (<code>Ground3D</code>) is the reference; left blank it is the technology's
-ground-reference conductors, and the floor of the air box when that floor is a ground plane.</p>
+<p><strong>Terminals</strong> (<code>Terminals3D</code>) are the matrix's rows and columns, in order. Each names its metal by a
+<strong>net</strong> (a net of the layout, a net given to a shape in Properties ▸ Net, or a <code>.wBond</code> wire array), by
+an <strong>object's path</strong> as the 3D problem names it, or by the <strong>end of a path</strong> (<code>TESTPT</code> for
+<code>U1/Bottom Copper (1 oz)/TESTPT</code>), tried in that order. An end that several paths share is refused with
+them listed, and a name that matches nothing is refused with the nearest names. <strong>Ground</strong>
+(<code>Ground3D</code>) is the reference, named the same way; left blank it is the technology's ground-reference
+conductors, and the floor of the air box when that floor is a ground plane.</p>
+<p>An electrostatic terminal is <strong>whole pieces of metal</strong>. Objects that share a face or overlap — a pad,
+the via barrel through it, an inner landing pad and the pad on the far side, or copper pieces on one
+layer that touch — are one piece, and naming any of them takes all of it; copper on two layers joins
+only through a via. Two terminals that name one piece of metal are refused, naming both. The
+<strong>Conductor</strong> box lists the pieces of metal (▾), each by its net, or by <code>body:</code> and its largest object
+when it has none, with its layers and object count, and typing filters the list. In a 3D view's setup
+<strong>Pick</strong> takes the piece of metal you click next in the view, and the pieces a row names are selected in
+the view while you edit it. The <strong>Ground</strong> list also offers <strong>Every body not in a terminal</strong>.</p>
+<p><strong>Other metal</strong> (<code>UnassignedConductors3D</code>, electrostatic only) says what happens to metal in no
+terminal that is not the ground:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Float</code> (default, not written)</td>
+<td>The metal is connected to nothing and carries no net charge. Each piece is solved as one more terminal and then removed from the matrix, which is exact. Each piece adds one solve; more than 50 is refused, with the counts.</td>
+</tr>
+<tr>
+<td><code>Ground</code></td>
+<td>The metal is ground: plane copper and its stitching vias. The run's notes say how many pieces and the largest.</td>
+</tr>
+<tr>
+<td><code>Refuse</code></td>
+<td>The run is refused, naming the pieces.</td>
+</tr>
+</tbody>
+</table>
 <pre><code>&quot;Problem3D&quot;: &quot;Electrostatic&quot;,
 &quot;Terminals3D&quot;: [ { &quot;Name&quot;: &quot;RF_IN&quot;, &quot;Net&quot;: &quot;RF_IN&quot; }, { &quot;Name&quot;: &quot;VDD&quot;, &quot;Net&quot;: &quot;VDD&quot; } ],
 &quot;Ground3D&quot;: &quot;GND&quot;
@@ -1879,8 +1914,8 @@ ground-reference conductors, and the floor of the air box when that floor is a g
 <li><strong>Electrostatic</strong> gives <code>C</code>, the <em>Maxwell</em> matrix: <code>C[i][i]</code> is terminal i's capacitance to every
 other conductor, and each off-diagonal entry is negative. It also gives <code>C_mutual</code>, the
 lumped-circuit form: <code>C_mutual[i][i]</code> is i's capacitance to ground alone and <code>C_mutual[i][j]</code> is the
-capacitor you would draw between i and j. <strong>Every conductor must be in a terminal or be ground</strong>:
-Palace has no floating conductor, so an unlisted one is refused by name rather than silently grounded.</li>
+capacitor you would draw between i and j. With floating metal, both are the matrix of the named
+terminals after the floating pieces are removed; the matrix before is kept as <code>palace.C_full</code>.</li>
 <li><strong>Magnetostatic</strong> gives <code>L</code>. Each terminal also names a <strong>source port</strong> (<code>Source</code>, the port's number):
 the port's sheet is where its current enters and returns, so the path is port → the terminal's
 metal → back through ground. A terminal without one is refused. Conductors are surfaces, so this is

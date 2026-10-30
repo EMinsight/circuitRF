@@ -1,0 +1,161 @@
+{
+  "About": "The key numbers README.md states, in one place. circuitRF's tests re-run every setup here and compare each value within its tolerance, and check that each value's Readme text appears in README.md. Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2. PeakGB is Palace's own peak memory over all its processes.",
+  "Runs": [
+    {
+      "View": "Pad and Line/3d/Pad and Line.c3d",
+      "Setup": "Pad and line",
+      "Vars": null,
+      "Terminals": [
+        "pad",
+        "line"
+      ],
+      "Floating": 0,
+      "PeakGB": 2.6,
+      "Readme": [
+        "14 s",
+        "2.6 GB"
+      ],
+      "Values": [
+        {
+          "Quantity": "C_fF",
+          "Label": "pad's total C",
+          "Row": "pad",
+          "Column": "pad",
+          "Expected": 531.87,
+          "Tolerance": 10.6,
+          "Readme": "532 fF"
+        },
+        {
+          "Quantity": "C_fF",
+          "Label": "line's total C",
+          "Row": "line",
+          "Column": "line",
+          "Expected": 2460.11,
+          "Tolerance": 49.2,
+          "Readme": "2,460 fF"
+        },
+        {
+          "Quantity": "C_fF",
+          "Label": "pad to line, Maxwell",
+          "Row": "pad",
+          "Column": "line",
+          "Expected": -31.0,
+          "Tolerance": 0.6,
+          "Readme": "−31 fF"
+        },
+        {
+          "Quantity": "Cm_fF",
+          "Label": "line to ground",
+          "Row": "line",
+          "Column": "line",
+          "Expected": 2429.11,
+          "Tolerance": 48.6,
+          "Readme": "2,429 fF"
+        },
+        {
+          "Quantity": "Cm_fF",
+          "Label": "pad to line, circuit",
+          "Row": "pad",
+          "Column": "line",
+          "Expected": 31.0,
+          "Tolerance": 0.6,
+          "Readme": "31 fF"
+        }
+      ]
+    },
+    {
+      "View": "Pad and Line/3d/Pad and Line.c3d",
+      "Setup": "Pad and line",
+      "Vars": {
+        "gap": "0.25"
+      },
+      "Terminals": [
+        "pad",
+        "line"
+      ],
+      "Floating": 0,
+      "PeakGB": 2.6,
+      "Readme": [],
+      "Values": [
+        {
+          "Quantity": "Cm_fF",
+          "Label": "pad to line at 0.25 mm",
+          "Row": "pad",
+          "Column": "line",
+          "Expected": 56.72,
+          "Tolerance": 1.1,
+          "Readme": "57 fF"
+        }
+      ]
+    },
+    {
+      "View": "Pad and Line/3d/Pad and Line.c3d",
+      "Setup": "Pad and line",
+      "Vars": {
+        "gap": "1"
+      },
+      "Terminals": [
+        "pad",
+        "line"
+      ],
+      "Floating": 0,
+      "PeakGB": 2.6,
+      "Readme": [],
+      "Values": [
+        {
+          "Quantity": "Cm_fF",
+          "Label": "pad to line at 1 mm",
+          "Row": "pad",
+          "Column": "line",
+          "Expected": 12.69,
+          "Tolerance": 0.5,
+          "Readme": "13 fF"
+        }
+      ]
+    },
+    {
+      "View": "Pad and Line/3d/Pad and Line.c3d",
+      "Setup": "Pad, line floating",
+      "Vars": null,
+      "Terminals": [
+        "pad"
+      ],
+      "Floating": 1,
+      "PeakGB": 2.7,
+      "Readme": [],
+      "Values": [
+        {
+          "Quantity": "C_fF",
+          "Label": "pad, line floating",
+          "Row": "pad",
+          "Column": "pad",
+          "Expected": 531.48,
+          "Tolerance": 10.6,
+          "Readme": "531.48 fF"
+        }
+      ]
+    }
+  ],
+  "Derived": [
+    {
+      "Name": "CprimeCalculator",
+      "Value": 121.81,
+      "Readme": "121.8 pF/m"
+    },
+    {
+      "Name": "CprimeSolved",
+      "Value": 121.46,
+      "Readme": "121.5 pF/m"
+    },
+    {
+      "Name": "PlateFf",
+      "Value": 306.82,
+      "Readme": "307 fF"
+    },
+    {
+      "Name": "FringingPercent",
+      "Value": 42.31,
+      "Readme": "42 %"
+    }
+  ]
+}

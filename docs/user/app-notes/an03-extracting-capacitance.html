@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — AN-03 — Extracting capacitance</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/app-notes/an03-extracting-capacitance.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Application Note</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">App Notes</a> › AN-03 Extracting capacitance</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="an02-gerber-import.html" title="Previous: AN-02 — Importing a Gerber file set, and turning it into a schematic"><span class="arrow">‹</span><span class="name">AN-02 — Importing a Gerber file set, and turning it into a schematic</span></a>
+    </nav>
+  </div>
+
+  <h1>AN-03 — Extracting capacitance</h1>
+  <p class="lede">When a small piece of metal on a line is a capacitor, an electrostatic solve gets that capacitance directly, in seconds, with no ports and no de-embedding. When to use it and when not to, which metal is ground and which floats, the Maxwell matrix against the circuit one, and the answer in a schematic, on the two shipped capacitance examples.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#when">When a capacitance is the answer</a></li>
+<li><a href="#examples">The two examples</a></li>
+<li><a href="#terminals">Naming terminals on a board with no nets</a></li>
+<li><a href="#ground">Ground or floating</a></li>
+<li><a href="#maxwell">The Maxwell matrix and the circuit matrix</a></li>
+<li><a href="#checks">Checking the answer by hand</a></li>
+<li><a href="#field">Looking at the field</a></li>
+<li><a href="#schematic">Putting the answer in a schematic</a></li>
+<li><a href="#driven">The cross-check against a driven run</a></li>
+<li><a href="#checklist">Checklist</a></li>
+</ol>
+</nav>
+<h2 id="when">When a capacitance is the answer</h2>
+<p>A test pad, a via stub, a connector pin, the pad under a part, the coupling between two nets: each is a small
+piece of metal hanging on a line. While it is small against the wavelength, its effect on the circuit <strong>is</strong>
+its capacitance. A rule of thumb is a tenth of a wavelength in the dielectric: a 1 mm pad on FR-4 is under
+λ/10 up to about 14 GHz.</p>
+<p>An <strong>electrostatic</strong> solve gets that capacitance directly. It is one solve per terminal, with no frequency
+sweep, no ports and no de-embedding. It is fast, it settles quickly as the mesh is refined, and the answer is a
+number you can put straight into a schematic as a shunt C.</p>
+<p>A <strong>driven</strong> S-parameter solve gets the same physics indirectly. You fit C from Y₁₁/jω, or from how much S21
+drops. That takes minutes to hours, and de-embedding the line around the pad brings an error of its own. A
+driven solve is also only as good as its mesh, and a coarse one reads a small capacitor badly. The
+<a href="#driven">driven cross-check</a> below shows by how much.</p>
+<p><strong>When it is the wrong tool:</strong></p>
+<ul>
+<li>It gives no <strong>inductance</strong>. A via stub is a capacitor behind an inductor, and above roughly half its
+resonance the inductor matters. A magnetostatic solve gives the inductance.</li>
+<li>It gives no <strong>loss</strong>, and no <strong>frequency dependence</strong>.</li>
+<li>Once the metal is a sizeable fraction of a wavelength it is a resonator, not a lumped C.</li>
+<li><strong>What counts as ground, and what floats, changes the answer.</strong> <a href="#ground">Ground or floating</a> shows how much.</li>
+</ul>
+<p>The working pattern: cross-check once against a driven run, then use the cheap method for every design
+iteration after that.</p>
+<h2 id="examples">The two examples</h2>
+<p><strong>File ▸ New ▸ Examples</strong> has both. Each <code>README.md</code> carries the same numbers as this note, and each workspace's
+<code>expected-numbers.json</code> holds them for circuitRF's own tests. Every number here was measured on an Apple M4 with
+10 cores and 16 GB, Palace 0.18.1 on 10 processes, at the <strong>Standard</strong> preset.</p>
+<ul>
+<li><strong>Capacitance Extraction</strong>: a 2 mm square pad 0.5 mm from a 50 Ω microstrip line on 0.508 mm FR-4, drawn in
+the 3D editor. Each run takes about 15 s.</li>
+<li><strong>Test Pad Capacitance</strong>: a six-layer board, 12 × 8 mm, with no nets. A 50 Ω line on top, a via down to a
+1.5 mm test pad on the bottom, an unused pad on the via in each of four inner ground planes, the planes'
+openings round the via, and eight stitching vias. Three boards (as built, with the pads removed and the
+opening under the test pad enlarged, and the line alone), and a schematic comparing them. Each electrostatic
+run takes under a minute.</li>
+</ul>
+<h2 id="terminals">Naming terminals on a board with no nets</h2>
+<p>A board imported from Gerber files has no nets: every piece of copper is just a shape on a layer. An
+electrostatic terminal is named by <strong>picking the metal</strong>, not by typing a net.</p>
+<p>In the 3D view's <strong>Simulate ▸ Setup Analyses…</strong>, choose <strong>Electrostatic</strong> and <strong>Palace</strong>, then in the
+<strong>Terminals</strong> table press <strong>+</strong> and the row's <strong>Pick</strong> button, and click the metal in the view. The row takes
+the <strong>whole piece of metal</strong> the click touched. In Test Pad Capacitance one click on the bottom test pad takes
+the pad, the via barrel, the four unused inner pads, the top via pad and the line, because they all touch: they
+are one conductor, and they are at one potential. The <strong>Conductor</strong> box's ▾ lists every piece of metal, by its
+net or, with none, by <code>body:</code> and its largest object, with its layers and object count. The
+<a href="../reference/em-setup.html#package-rlc">setup reference</a> has the rules for typing a name instead.</p>
+<p>The <strong>Ground</strong> list offers the same pieces, and one more entry: <strong>Every body not in a terminal</strong>. On a board
+with no nets that is usually the right ground. It takes every plane, pour and stitching via that is not in a
+terminal.</p>
+<h2 id="ground">Ground or floating</h2>
+<p>Metal that is in no terminal and is not the ground is decided by <strong>Other metal</strong>:</p>
+<ul>
+<li><em>Float</em>, the default: the metal is connected to nothing, so it carries no net charge. circuitRF solves it as
+one more terminal and then removes it from the matrix. That is exact, not an approximation.</li>
+<li><em>Ground</em>: the metal is ground. <strong>Every body not in a terminal</strong> sets this.</li>
+<li><em>Refuse</em>: the run is refused, naming the metal.</li>
+</ul>
+<p><strong>The choice can change the answer by more than a factor of two.</strong> In Test Pad Capacitance, the test-pad net
+reads <strong>2.140 pF</strong> with the planes grounded. Left at the default, the planes float, and the only ground left is
+the metal box round the model. The same net then reads <strong>0.920 pF</strong>: the planes sit between the pad and its
+ground and carry no charge. A board's planes are ground in the circuit, so they must be ground in the solve.</p>
+<p><strong>Floating metal that shares little field barely matters.</strong> In Capacitance Extraction the pad reads <strong>532 fF</strong>
+with the line grounded and <strong>531.48 fF</strong> with the line floating. Removing the floating line from the matrix
+gives C_pad − C_pl²/C_line = 531.87 − 31.00²/2,460.11 = 531.48 fF, the same number to the solve's last digit.</p>
+<h2 id="maxwell">The Maxwell matrix and the circuit matrix</h2>
+<p>Every electrostatic result holds two matrices. In Capacitance Extraction, with the pad and the line as terminals
+and the plane as ground:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>C</code>, Maxwell: pad</th>
+<th><code>C</code>, Maxwell: line</th>
+<th><code>C_mutual</code>, circuit: pad</th>
+<th><code>C_mutual</code>, circuit: line</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>pad</strong></td>
+<td>532 fF</td>
+<td>−31 fF</td>
+<td>501 fF</td>
+<td>31 fF</td>
+</tr>
+<tr>
+<td><strong>line</strong></td>
+<td>−31 fF</td>
+<td>2,460 fF</td>
+<td>31 fF</td>
+<td>2,429 fF</td>
+</tr>
+</tbody>
+</table>
+<p><code>C</code> is the <strong>Maxwell</strong> matrix, which is what the solver reports. Its diagonal is a terminal's charge with that
+terminal at 1 V and every other terminal at 0 V: its capacitance to <strong>everything</strong>. The off-diagonal entries are
+negative: raising the line induces opposite charge on the pad.</p>
+<p>A schematic wants <strong>capacitors</strong>: one from each terminal to ground, and one between each pair. The conversion is</p>
+<ul>
+<li>the capacitor between i and j is −C[i][j]: here <strong>31 fF</strong>;</li>
+<li>the capacitor from i to ground is the row sum of C: here 532 − 31 = 501 fF for the pad, and 2,460 − 31 =
+<strong>2,429 fF</strong> for the line.</li>
+</ul>
+<p>That is <code>C_mutual</code>, which circuitRF also writes, so nothing needs to be converted by hand. Use C[i][i], the
+Maxwell diagonal, only when everything else really is grounded. Use <code>C_mutual</code> when you draw the circuit.</p>
+<h2 id="checks">Checking the answer by hand</h2>
+<p>Two checks in Capacitance Extraction need no solver at all.</p>
+<p><strong>The pad against εA/d.</strong> A parallel-plate capacitor with the pad's 2 × 2 mm area over 0.508 mm of εr 4.4
+gives <strong>307 fF</strong>. The solve gives 532 fF, so the parallel-plate formula misses <strong>42 %</strong> of it: the field from
+the pad's edges and its top surface. On a small pad over a thick laminate the fringing field is nearly half
+the answer.</p>
+<p><strong>The line against the line calculator.</strong> A lossless line's capacitance per metre is C′ = √εeff/(c·Z₀). The
+line calculator gives Z₀ 49.95 Ω and εeff 3.327 for the 0.92 mm line, so C′ is <strong>121.8 pF/m</strong>. The line's
+capacitance to ground is 2,429 fF over 20 mm, or <strong>121.5 pF/m</strong>. The walls at the line's ends are zero-charge
+walls, so the line behaves as if it carries on forever and no end effect is in the number.</p>
+<p><strong>Coupling against distance.</strong> Moving the pad away from the line, by changing the <code>gap</code> variable and running
+again, gives a coupling of <strong>57 fF</strong> at 0.25 mm, 31 fF at 0.5 mm and <strong>13 fF</strong> at 1 mm. A 3D setup cannot sweep a
+variable that moves geometry, so each point is its own run.</p>
+<h2 id="field">Looking at the field</h2>
+<p>Both examples ship a field plot on a clip plane: <strong>E through the pad</strong> in Capacitance Extraction and <strong>E through
+the test pad</strong> in Test Pad Capacitance. After a run, tick it in the Object Tree's <strong>Field Plots</strong> group. Its
+<strong>Solution</strong> is a terminal: the field with that terminal at 1 V. To move the cut after the solve, select the plot
+and drag the slider beside its position in the Properties Inspector. Nothing is solved again: the plane is
+cut through the saved field. The field is strongest where the capacitance is: under a pad, in a gap, and in a
+test pad's case in the thin laminate between the pad and the nearest plane.</p>
+<h2 id="schematic">Putting the answer in a schematic</h2>
+<p>A capacitance from a net-wide terminal includes the line's own capacitance, which the line's model in the
+schematic already has. So <strong>subtract the net with the extra metal cut away</strong>. In Test Pad Capacitance:</p>
+<table>
+<thead>
+<tr>
+<th>Board</th>
+<th>Test-pad net</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>As built</td>
+<td>2.140 pF</td>
+</tr>
+<tr>
+<td>Pads removed, opening enlarged</td>
+<td>1.830 pF</td>
+</tr>
+<tr>
+<td>The line alone</td>
+<td>1.450 pF</td>
+</tr>
+</tbody>
+</table>
+<p>The test pad adds <strong>0.689 pF</strong> as built and <strong>0.379 pF</strong> fixed. Each is a shunt capacitor from the line's midpoint
+to ground. The <strong>Compare</strong> cell's schematic does exactly that, in its variables <code>C_built</code> and <code>C_fixed</code>.</p>
+<h2 id="driven">The cross-check against a driven run</h2>
+<p>Compare's schematic has five copies of the 12 mm line, each with ports at its ends:</p>
+<ol>
+<li>the line with a shunt <code>C_built</code>;</li>
+<li>with a shunt <code>C_fixed</code>;</li>
+<li>with the TESTPAD model of the as-built pad, its closed-form estimate;</li>
+<li>the driven Palace run of the as-built board, as a Touchstone file;</li>
+<li><code>C_built</code> behind the via's inductance, <code>L_via</code>, from the TESTPAD estimate.</li>
+</ol>
+<p>Its Data Display plots |S21| of all five. At 2.4 GHz, the shunt C from the electrostatic solve gives
+<strong>−0.44 dB</strong> and the driven run <strong>−0.69 dB</strong>. Below about half the stub's resonance the electrostatic number
+reproduces the driven one. Higher up, the via's inductance takes over and the driven run dips at the
+stub's resonance, at 7.4 GHz, which a capacitor alone cannot do. Trace 5 shows the dip coming back when the inductance is
+added.</p>
+<p>The driven run is the expensive half. It took 7.3 min at <strong>Draft</strong> with two refinement passes, and its mesh is
+first order. A driven solve at that setting still overstates a small capacitor's loading, so of the two
+the electrostatic number, at Standard, is the one to trust. Run the driven solve once, to see that the two
+agree where they should, and then iterate on the electrostatic one.</p>
+<h2 id="checklist">Checklist</h2>
+<ul>
+<li>Is the metal small against the wavelength? If not, solve it driven.</li>
+<li>Pick the terminal by clicking the metal, and check the row took the whole piece you meant.</li>
+<li>On a board with no nets, set the ground to <strong>Every body not in a terminal</strong>. Leaving the planes floating can
+more than halve the answer.</li>
+<li>Read <code>C_mutual</code> for a schematic, and <code>C</code> only when everything else is at 0 V.</li>
+<li>Subtract the net without the extra metal, so the line is not counted twice.</li>
+<li>Check once against a closed form or a driven run, then trust the cheap method.</li>
+</ul>
+
+<nav class="page-nav">
+  <a class="prev" href="an02-gerber-import.html"><span class="dir">Previous</span><span class="name">AN-02 — Importing a Gerber file set, and turning it into a schematic</span></a>
+  <span></span>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

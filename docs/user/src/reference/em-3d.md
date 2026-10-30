@@ -130,7 +130,9 @@ full description.
   [More](em-setup.html#solver-3d).
 - **Problem** (`Problem3D`, Palace only): *Driven* for S-parameters (the default), *Electrostatic* for a
   capacitance matrix, *Magnetostatic* for an inductance matrix, *Eigenmode* for resonant frequencies and
-  Q. [Package RLC](em-setup.html#package-rlc), [Eigenmodes](em-setup.html#eigenmodes).
+  Q. [Package RLC](em-setup.html#package-rlc), [Eigenmodes](em-setup.html#eigenmodes). When an
+  electrostatic solve is the right way to get a capacitance, and how to put the answer in a schematic, is
+  [AN-03 Extracting capacitance](../app-notes/an03-extracting-capacitance.html).
 - **Ports.** A layout's port labels become ports. In 3D a port is **lumped** by default: a sheet from the
   line's end to its return, with the port's Z₀ across it. The return is found in the layout: the nearer of
   the first plane with metal under the end below the line and the first above it, a ground-reference layer

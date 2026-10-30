@@ -1460,7 +1460,6 @@ src/Engine/Envelope/EnvelopeEngine.cs|envelope step {step} (t = {p.StartS + (ste
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: singular port impedance matrix
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: the harmonic-balance start point did not converge
 src/Engine/Envelope/EnvelopeEngine.cs|envelope: the linear network's size changes with frequency (a model adds unknowns only at some frequencies)
-src/Engine/Envelope/EnvelopeEngineMt.cs|envelope probe '{nm}' is not a node of the circuit
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {EnvelopeEngine.MaxStepSplit} sub-steps
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: mixing products {lat.Label(a)} and {lat.Label(b)} fall on the same frequency 
 src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: the multi-tone harmonic-balance start point did not converge
@@ -1527,3 +1526,8 @@ src/RfCore/Signals/SignalSpec.cs|carrier field {key}={v} is not a spreading fact
 src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW, PCW, FSK, DBPSK, CSS or FILE)
 src/Engine/Em3d/Em3dStaticResult.cs|The floating bodies' block of the matrix is singular.
 src/Engine/Em3d/Em3dStaticResult.cs|The matrix and the floating flags disagree in size.
+src/Core/Expressions/Evaluator.cs|{cl.Name}: no IProbe named '{probe}' in '{analysisName}'. IProbes: [{string.Join(
+src/Core/Expressions/Evaluator.cs|{cl.Name}: the instantaneous power needs the waveforms; set SaveWaveforms=yes on '{analysisName}'.
+src/Engine/Mom/PlanarFillMerged.cs|FillMerged needs a mesh carrying a rooftop merge (PlanarMesh.Merge); this one has none. 
+src/Engine/Mom/PlanarRooftopMerge.cs|Rooftop merging could not express a run boundary in elemental rooftops after 
+src/Engine/Mom/PlanarSystem.cs|Rooftop merging is built for a single conductor level with no vias, and the mesher 

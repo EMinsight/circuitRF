@@ -1,0 +1,233 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [
+		{
+			"$type": "Box",
+			"Name": "ground",
+			"Material": "Copper",
+			"Min": [{ "Expr": "-len/2", "Unit": "Mm" }, { "Expr": "-brd/2", "Unit": "Mm" }, { "Expr": "-t", "Unit": "Mm" }],
+			"Size": [{ "Expr": "len", "Unit": "Mm" }, { "Expr": "brd", "Unit": "Mm" }, { "Expr": "t", "Unit": "Mm" }]
+		},
+		{
+			"$type": "Box",
+			"Name": "substrate",
+			"Material": "FR-4",
+			"Min": [{ "Expr": "-len/2", "Unit": "Mm" }, { "Expr": "-brd/2", "Unit": "Mm" }, { "Expr": "0", "Unit": "Mm" }],
+			"Size": [{ "Expr": "len", "Unit": "Mm" }, { "Expr": "brd", "Unit": "Mm" }, { "Expr": "h", "Unit": "Mm" }]
+		},
+		{
+			"$type": "Box",
+			"Name": "line",
+			"Material": "Copper",
+			"Min": [{ "Expr": "-len/2", "Unit": "Mm" }, { "Expr": "-w/2", "Unit": "Mm" }, { "Expr": "h", "Unit": "Mm" }],
+			"Size": [{ "Expr": "len", "Unit": "Mm" }, { "Expr": "w", "Unit": "Mm" }, { "Expr": "t", "Unit": "Mm" }]
+		},
+		{
+			"$type": "Box",
+			"Name": "pad",
+			"Material": "Copper",
+			"Min": [{ "Expr": "-a/2", "Unit": "Mm" }, { "Expr": "w/2 + gap", "Unit": "Mm" }, { "Expr": "h", "Unit": "Mm" }],
+			"Size": [{ "Expr": "a", "Unit": "Mm" }, { "Expr": "a", "Unit": "Mm" }, { "Expr": "t", "Unit": "Mm" }]
+		}
+	],
+	"Variables": [
+		{
+			"Name": "len",
+			"Expression": "20",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "brd",
+			"Expression": "16",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "h",
+			"Expression": "0.508",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "t",
+			"Expression": "0.035",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "w",
+			"Expression": "0.92",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "a",
+			"Expression": "2",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "gap",
+			"Expression": "0.5",
+			"Unit": "Mm"
+		}
+	],
+	"FieldPlots": [
+		{
+			"Name": "E through the pad",
+			"Setup": "Pad and line",
+			"Solution": {
+				"Terminal": "pad"
+			},
+			"Quantity": "E",
+			"On": "ClipPlane",
+			"Axis": "X",
+			"Offset": 0
+		}
+	],
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "Pad and line",
+			"Frequency": {
+				"StartExpr": "1",
+				"StopExpr": "20",
+				"StepExpr": "",
+				"NumPoints": 101,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": false,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pmc"
+				},
+				"XMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pmc"
+				},
+				"YMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Pmc"
+				},
+				"YMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Pmc"
+				},
+				"ZMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 5000,
+					"Boundary": "Pmc"
+				}
+			},
+			"Palace": {
+				"Quality": "Standard"
+			},
+			"Problem3D": "Electrostatic",
+			"Terminals3D": [
+				{
+					"Name": "pad",
+					"Net": "",
+					"Objects": [
+						"pad"
+					]
+				},
+				{
+					"Name": "line",
+					"Net": "",
+					"Objects": [
+						"line"
+					]
+				}
+			],
+			"Ground3D": "ground"
+		},
+		{
+			"FormatVersion": 1,
+			"Name": "Pad, line floating",
+			"Frequency": {
+				"StartExpr": "1",
+				"StopExpr": "20",
+				"StepExpr": "",
+				"NumPoints": 101,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": false,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pmc"
+				},
+				"XMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pmc"
+				},
+				"YMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Pmc"
+				},
+				"YMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Pmc"
+				},
+				"ZMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 5000,
+					"Boundary": "Pmc"
+				}
+			},
+			"Palace": {
+				"Quality": "Standard"
+			},
+			"Problem3D": "Electrostatic",
+			"Terminals3D": [
+				{
+					"Name": "pad",
+					"Net": "",
+					"Objects": [
+						"pad"
+					]
+				}
+			],
+			"Ground3D": "ground"
+		}
+	]
+}

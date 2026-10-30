@@ -799,3 +799,46 @@ inside.
 **A filter's passband goal is only held at the grid.** On its own 151 points the minimax optimum sits at
 exactly −0.50 dB at both band edges and its deepest ripple; on 1,501 points it dips to −0.509 dB at
 1.045 GHz. The README states this as the setting traded for speed.
+
+## Capacitance Extraction and Test Pad Capacitance (brief-dfr31-2, 2026-10-29)
+
+**Authored through the setup panel, not written by hand.** `tests/Ui.Tests/Examples/CapacitanceExamplesAuthoring.cs`
+(skipped unless `CRF_AUTHOR_CAPACITANCE=1`) makes every electrostatic setup through `EmSetupEditorViewModel`: a terminal
+row, its Pick armed, `PickConductor` on the object a click would hit, and the ground from the ground picker (an object's
+piece of metal, or **Every body not in a terminal**). Test Pad Capacitance's boards are generated artwork with every pad
+drawn on its own layer and no net anywhere, in a technology with no ground-reference layer, and each 3D view is
+`C3dHierarchy.NewFromLayout`'s. Pad and Line's geometry is drawn in its `.c3d`; only its setups are made there.
+
+**A 3D setup cannot sweep a variable that moves geometry.** The thermal sweep refuses one by name, and the static and
+driven setups have no sweep of a variable at all, so the brief's three-point gap sweep is three runs of one setup with
+`gap` changed in the Variables panel. The README and the test say so; the test sets the VAR on the loaded document,
+which is what the Variables panel does. **`circuitrf em --set` does not reach a 3D view's VARs**: it sets a global of a
+circuit-driven thermal run, and on an electrostatic `.c3d` run it is accepted and has no effect. Not changed here.
+
+**A test pad's terminal is its whole net.** Clicking the bottom pad takes the line too, because the line, the via, the
+unused pads and the pad touch. The stub's own capacitance is therefore the net less the net with the stub cut away,
+which is why the example has a **Line only** cell. Measured: 2.140 pF as built, 1.830 pF fixed, 1.450 pF line only.
+
+**Leaving the planes floating more than halves the answer** (0.920 pF against 2.140 pF): with Other metal at its
+default, Float, on a board with no ground-reference layer the planes carry no charge and the only ground left is the
+metal box round the model. That is the reason the README makes **Every body not in a terminal** step 3.
+
+**Lumped ports on an absorbing face load themselves.** The first driven setup put the air box's x faces at zero padding,
+so each port sheet lay in an absorbing face: |S11| was −9.5 dB and |S21| −3.6 dB at 0.5 GHz on a 12 mm 50 Ω line, 70 % of
+the power lost. With 1 mm of air beyond the board's ends the line alone reads |S11| below −16 dB to 9 GHz.
+
+**Draft overstates a small capacitor's loading in a driven run.** Below 3 GHz, Draft with no refinement loaded the line
+like roughly twice the electrostatic stub; two refinement passes (still first order) closed most of the gap, for 7.3 min
+against 2 min. At 2.4 GHz the shunt-C chain and the refined driven run agree within the brief's 0.5 dB. Above about half
+the stub's resonance (≈7.5 GHz in the driven run) the via's inductance dominates, so Compare also carries the
+electrostatic C behind TESTPAD's via inductance.
+
+**`circuitrf em` printed "ground = the ground-reference conductors"** for an electrostatic run whose ground box is blank
+and whose Other metal is Ground. It now prints "every body not in a terminal" (`src/Cli/CliEntry.cs`).
+
+**Pad and Line.cdd is a Table of the four matrix columns, in the Engineering number format (`FormatString` `S`).** At the
+default fixed format a capacitance in farads prints as 0.000. Scaling in the trace spec does not work:
+`plot --trace cube=C[:,"pad"]*1e15` is accepted, drawn, and written to the `.cdd` with the factor gone, so the
+table still reads 0.000. Not changed here. The table is stored at its minimum size, each column fitted to its header
+and cells, and the box to the columns and rows, as a double-click on the gripper sizes it
+(`CapacitanceExamplesAuthoring.PadAndLineTableAtItsMinimumSize`, run against a fresh result).
