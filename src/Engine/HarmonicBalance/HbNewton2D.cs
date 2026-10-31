@@ -108,7 +108,7 @@ public static class HbNewton2D
         // identical transcription of HbNewton.Solve's structure (HB-P3 M1); see HbNewton.Backtrack
         // for why the three loops need it and why a converging solve is unchanged by it.
         var V0 = new Complex[N, M];
-        bool stateRows = HbNewton.HasStateRow(netlist, interfaceNodes);   // MC-25: see HbNewton.HasStateRow
+        var judge = HbNewton.JudgeFor(netlist, interfaceNodes);   // MC-25, MC-30: see HbNewton.JudgeFor
 
         var (iNl, qNl, G, C) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes, portITime);
         iNlLast   = iNl;
@@ -139,14 +139,15 @@ public static class HbNewton2D
 
             double fEntry = fN;
             Array.Copy(V, V0, V.Length);
-            double[]? w = stateRows ? HbNewton.LineSearchWeights(J, unknowns) : null;
-            var step = HbNewton.Backtrack(HbNewton.WeightedL2(F, w), lambda, lam =>
+            double[]? w = judge != HbNewton.LineSearchJudge.Plain ? HbNewton.LineSearchWeights(J, unknowns) : null;
+            var norm = HbNewton.LineSearchNorm.At(F, w, judge);
+            var step = HbNewton.Backtrack(norm.Start, lambda, lam =>
             {
                 Array.Copy(V0, V, V.Length);
                 ApplyUpdate2D(V, dV, N, M, lam);
                 (iNl, qNl, G, C) = EvaluateNonlinear2D(V, grid, N, N1, N2, netlist, interfaceNodes, portITime);
                 F = BuildF2D(V, yNN, iSrc, iNl, qNl, grid, N, f1, f2);
-                return HbNewton.WeightedL2(F, w);
+                return norm.Of(F);
             });
             if (w is not null) step = step with { Residual = HbNewton.L2(F) };
             iNlLast = iNl;

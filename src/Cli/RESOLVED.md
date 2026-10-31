@@ -3368,3 +3368,17 @@ PDF (the first page says it was cancelled) before exiting 130. The MCP `review` 
   the second time and names the folder to import instead.
 - **`--technology` is still checked BEFORE anything is written** with `GdsfactoryKitDiscovery.FindSourceTree`
   — the one place the CLI asks that question itself: it validates a flag, it does not route the import.
+
+## MC-30 — `dc` runs the sweep that wraps it; `model export` names the Verilog-A spelling (2026-10-30)
+
+- **`dc` consults chain selection only when some `parametric_sweep` bottoms out in a DC.** Calling `SelectTop`
+  unconditionally would print its ambiguity note for a bench that declares two DC directives and no sweep, and the
+  brief requires an unswept `dc` to print exactly what it did. The swept path is `RunDcSweep`, beside
+  `RunSparamSweep`: the verb's own `DcSettingsFrom` settings go to `ParametricSweepEngine.Run`, measurements are
+  evaluated under the inner DC's name, a convergence count goes to stderr, and exit 2 means any point failed. `-o`
+  takes `.npy`/`.mat`/`.txt` for both forms; any other extension is refused while the arguments are read
+  (`dc.export.unsupported-format`). Gate: `DcSweepCliTests` (a BJT family, Vbe inside Vce, compared bit for bit
+  with the engine in process).
+- **`model export --veriloga` / `--va` / `--vams` / `--verilog-a` / `--format va`** refuse with `the extension of -o
+  picks the format: -o <stem>.va` instead of "unknown option". `model explain` on an Active `.cmc` ends with two
+  `export` lines giving both spellings. Both live in `Model.cs`; nothing in `ModelCommands` changed.

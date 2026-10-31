@@ -228,6 +228,13 @@ internal static class CliDiagnostics
         "'{sweep}' sweeps this S-parameter analysis, and a Touchstone file has no axis for the sweep. " +
         "Write the result as cubes: -o {suggestion} (.npy, .mat or .txt).", ("sweep", sweep), ("suggestion", suggestion));
 
+    /// <summary><c>dc -o</c> with an extension naming no cube format (brief MC-30 R-mc30-1).</summary>
+    public static Diagnostic DcUnsupportedExportFormat(string path, string extension) => Diagnostic.Create(
+        "dc.export.unsupported-format",
+        DiagnosticSeverity.Error,
+        "dc: '{path}' — '{extension}' names no format this verb writes. Write .npy, .mat or .txt.",
+        ("path", path), ("extension", extension));
+
     public static Diagnostic SparamUnsupportedExportFormat(string path, string extension) => Diagnostic.Create(
         "sparam.export.unsupported-format",
         DiagnosticSeverity.Error,

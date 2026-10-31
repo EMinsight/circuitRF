@@ -64,6 +64,10 @@ public interface IDeviceWorkerTransport : IDisposable
     /// Default implementation for a transport with no process behind it.</para>
     /// </summary>
     string ErrorOutputAfterRefusal() => RecentErrorOutput;
+
+    /// <summary>The worker's exit code once it has exited, else null — and always null for a transport with no process
+    /// behind it.</summary>
+    int? ExitCode => null;
 }
 
 /// <summary>
@@ -404,6 +408,11 @@ public sealed class ProcessDeviceWorkerTransport : IDeviceWorkerTransport
     public bool IsAlive
     {
         get { try { return !_process.HasExited; } catch { return false; } }
+    }
+
+    public int? ExitCode
+    {
+        get { try { return _process.HasExited ? _process.ExitCode : null; } catch { return null; } }
     }
 
     public string RecentErrorOutput

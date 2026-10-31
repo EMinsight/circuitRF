@@ -652,15 +652,32 @@ public static class ChargeFit
                                         List<string> report, RunControl? rc)
     {
         rc?.BeginStage($"Interpolating {name}");
-        var f1 = Interpolant(c1, s.Interpolant, data, AnnSettings(s.Hidden, s.Activation, s.MaxIterations, settings, 0.0), rc);
-        var f2 = Interpolant(c2, s.Interpolant, data, AnnSettings(s.Hidden, s.Activation, s.MaxIterations, settings, 0.0), rc);
-
-        var poly = data.Domain.Polygon;
-        double[] vgs = Regrid.Axis(poly.Min(p => p.Vgs), poly.Max(p => p.Vgs), s.GridStep);
-        double[] vds = Regrid.Axis(poly.Min(p => p.Vds), poly.Max(p => p.Vds), s.GridStep);
+        Func<double, double, double> f1, f2;
+        double[] vgs, vds;
+        double step = s.GridStep;
+        // Capacitances already on a complete vgs × vds grid are splined through their own samples and integrated on that
+        // grid (MC-30 D1); a grid with holes, or scattered points, goes through the chosen interpolant as before.
+        var grid = DataGrid.Detect([.. data.X.Select(p => new[] { p.Vgs, p.Vds })]);
+        if (grid is { Complete: true })
+        {
+            (vgs, vds) = (grid.Sites[0], grid.Sites[1]);
+            f1 = OnGrid(grid, c1);
+            f2 = OnGrid(grid, c2);
+            step = Math.Max(vgs.Zip(vgs.Skip(1), (p, q) => q - p).Max(), vds.Zip(vds.Skip(1), (p, q) => q - p).Max());
+            report.Add($"{name}: Table on the data's own {grid.Shape} grid.");
+        }
+        else
+        {
+            if (grid is not null) report.Add(grid.HolesSentence(name, Inputs));
+            f1 = Interpolant(c1, s.Interpolant, data, AnnSettings(s.Hidden, s.Activation, s.MaxIterations, settings, 0.0), rc);
+            f2 = Interpolant(c2, s.Interpolant, data, AnnSettings(s.Hidden, s.Activation, s.MaxIterations, settings, 0.0), rc);
+            var poly = data.Domain.Polygon;
+            vgs = Regrid.Axis(poly.Min(p => p.Vgs), poly.Max(p => p.Vgs), s.GridStep);
+            vds = Regrid.Axis(poly.Min(p => p.Vds), poly.Max(p => p.Vds), s.GridStep);
+        }
         double typical = Math.Sqrt(c1.Concat(c2).Average(v => v * v));
         rc?.BeginStage($"Integrating {name}", vgs.Length + vds.Length, "line(s)");
-        var (a, b) = LineIntegral.OntoGrid(f1, f2, anchor, vgs, vds, 1e-7 * typical * s.GridStep, rc);
+        var (a, b) = LineIntegral.OntoGrid(f1, f2, anchor, vgs, vds, 1e-7 * typical * step, rc);
 
         double[] values = s.Path switch
         {
@@ -679,12 +696,26 @@ public static class ChargeFit
         return Constituent.Table(name, Inputs, data.Domain, s.Smoothing);
     }
 
+    /// <summary>One capacitance as an interpolating tensor spline through its own samples on the data's grid — exact at the
+    /// samples; the charge table's own smoothing applies once, to the charges.</summary>
+    private static Func<double, double, double> OnGrid(DataGrid grid, double[] c)
+    {
+        var values = new double[grid.Sites[0].Length * grid.Sites[1].Length];
+        for (int k = 0; k < c.Length; k++) values[grid.Flat[k]] = c[k];
+        var table = new TableEvaluator(grid.Sites, TensorSplineFit.Fit(grid.Sites, values));
+        return (vgs, vds) =>
+        {
+            Span<double> g = stackalloc double[2];
+            return table.Evaluate([vgs, vds], g);
+        };
+    }
+
     /// <summary>A smooth function of one capacitance over the scattered points: a radial-basis interpolant through them, or a
     /// network trained on them and continued linearly outside the hull.</summary>
     internal static Func<double, double, double> Interpolant(double[] c, RegridSource source, ChargeData data,
                                                              AnnTrainingSettings ann, RunControl? rc)
     {
-        if (source == RegridSource.RBF) return Regrid.Rbf(data.X, c);
+        if (source == RegridSource.RBF) return Regrid.RbfWithinLimit(data.X, c, rc);
         var trained = AnnTrainer.Train(new AnnTrainingProblem(2) { Values = new AnnValueData(data.Points, c, data.Weight) }, ann, rc);
         // Two inputs, so the domain's polygon alone: data at two or more temperatures carries a T box the network has no input for.
         var linear = new GuidedExtrapolation(trained.Network, data.Domain with { Box = [] }, Inputs, 0.0, null);

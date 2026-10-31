@@ -117,7 +117,7 @@ convention behind both.</p>
 | Verb | Takes | Runs | Writes |
 |---|---|---|---|
 | `sparam` | `.cnl` or `.csch` | The linear S-parameter engine over a frequency sweep | A Touchstone `.sNp`, always |
-| `dc` | `.cnl` or `.csch` | The nonlinear DC engine | Node voltages, probe currents and measurements, to stdout |
+| `dc` | `.cnl` or `.csch` | The nonlinear DC engine, or the sweep that wraps it | Node voltages, probe currents and measurements, to stdout; the cubes with `-o` |
 | `hb` | `.cnl` or `.csch` | Harmonic balance, single- or multi-tone | Spectra tables to stdout; `-o .mat/.npy/.txt` |
 | `lp` | `.cnl` or `.csch` | Loadpull over the directive's Γ grid | A per-Γ-point table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
@@ -263,7 +263,7 @@ want the per-port references in a form every tool reads, write <code>.npy</code>
 
 ## `dc` — the operating point {#dc}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf dc &lt;file.cnl|.csch&gt; [--set var=expr]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf dc &lt;file.cnl|.csch&gt; [--set var=expr] [-o out.{npy,mat,txt}]</code></pre>
 
 ```text
 $ circuitrf dc hero2.cnl
@@ -280,7 +280,33 @@ prints the converged node voltages, any probe currents and the netlist's `measur
 measurement names the result by the DC analysis that declares it (`DC1.V("n_drain")`), as it does in
 the window — and
 [exits 2](#exit) if the solve did not converge — the operating point is the one thing every nonlinear
-analysis is built on, so a non-converged DC is a failed run, not a partial one.
+analysis is built on, so a non-converged DC is a failed run, not a partial one. `-o` writes the result
+cubes and the measurements as `.npy`, `.mat` or `.txt`.
+
+**A `parametric_sweep` that wraps the DC analysis runs as the sweep**, as it does for `sparam`, `hb`, `lp`
+and `lpp`: an I–V family is a DC inside two sweeps, and running the DC alone would return one point. The
+sweep's name goes to stderr with the count of points that did not converge; stdout carries the
+measurements over the whole family, and `-o` writes the cubes with one axis per sweep. A swept run
+exits 2 if any point did not converge.
+
+```text
+$ circuitrf dc family.cnl -o family.npy
+DC sweep 'SWD': 21 point(s) over Vds
+DC: converged at all 504 point(s)
+Measurements:
+  Id  [Vds:21 x Vgs:24]
+  ...
+Wrote family.npy
+```
+
+with the sweeps in the netlist, the inner one stepping `Vgs` at each `Vds`:
+
+```text
+analysis DC1 type=dc
+analysis SWG type=parametric_sweep Var=Vgs Start=-5 Stop=0.75 Step=0.25 Inner=DC1
+analysis SWD type=parametric_sweep Var=Vds Start=0 Stop=20 Step=1 Inner=SWG
+measure Id = DC1.I("ID")
+```
 
 ## `hb` — harmonic balance {#hb}
 

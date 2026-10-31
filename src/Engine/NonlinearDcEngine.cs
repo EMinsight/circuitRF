@@ -1341,6 +1341,12 @@ public sealed class NonlinearDcEngine
             (f, j) = BuildResidualAndJacobian(x, sourceFrac);
             return true;
         }
+        catch (DeviceWorkerExitedException)
+        {
+            // Not a refusal: the worker is gone, every smaller step would fail the same way against a dead pipe, and the
+            // run — not this solve — restarts it (MC-30 R-mc30-6).
+            throw;
+        }
         catch (ExternalDeviceException ex)
         {
             _lastRefusal = ex.Message;

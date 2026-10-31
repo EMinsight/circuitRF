@@ -547,12 +547,20 @@ static int RunDc(string[] args)
     // Vg=1` ran without the override and said nothing. Scanned here, where the whole argument list
     // is still in one piece.
     var sets = new List<(string Name, string Expr)>();
+    string? output = null;
     for (int i = 1; i < args.Length; i++)
     {
         if (!args[i].StartsWith('-')) return JsonRun.Fail(CliDiagnostics.RunMultipleInputs("dc", args[i]));
         if (args[i] == "--set" && i + 1 < args.Length)
         {
             if (!TryTakeSet("dc", args[++i], sets, out int setRefusal)) return setRefusal;
+            continue;
+        }
+        if (args[i] is "-o" or "--output" && i + 1 < args.Length)
+        {
+            output = args[++i];
+            if (SparamDataFormat(output) is null)
+                return JsonRun.Fail(CliDiagnostics.DcUnsupportedExportFormat(output, Path.GetExtension(output)));
             continue;
         }
         if (args[i] is not ("--max-iter" or "--maxiter" or "--dc-steps" or "--gmin"))
@@ -571,8 +579,19 @@ static int RunDc(string[] args)
             return kindRefusal;
         var (lib, tb) = source;
         ApplySets(tb, sets);
-        var nl = new Elaborator(lib) { BaseDirectory = CircuitSource.ReferenceBaseOf(input) }.Elaborate(tb);
+        string? refBase = CircuitSource.ReferenceBaseOf(input);
+        var nl = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
         var shown = PrintWarnings(nl);
+
+        // A parametric_sweep wrapping the DC analysis is dispatched at the SWEEP, as `sparam`, `hb`,
+        // `lp` and `lpp` dispatch theirs (brief MC-30 R-mc30-1): an I–V family is exactly this shape,
+        // and running the inner alone returned one operating point with the sweep axis gone. Chain
+        // selection is consulted only when some sweep bottoms out in a DC, so an unswept bench —
+        // even one declaring two DC directives — prints exactly what it always printed.
+        if (tb.Analyses.OfType<ParametricSweepAnalysis>().Any(ps => BaseOfChain(ps, tb) is DcAnalysis) &&
+            SelectTop(tb, null, a => a is DcAnalysis, "DC", "analysis <name> type=dc ...",
+                      out _) is ParametricSweepAnalysis sweep)
+            return RunDcSweep(sweep, lib, tb, nl, shown, refBase, settings, output);
 
         var result = NonlinearDcEngine.Run(nl, settings);
 
@@ -625,9 +644,67 @@ static int RunDc(string[] args)
                 PrintCube($"  {name}", cube, maxRows: 24, allPoints: false);
         }
 
+        if (output is not null)
+        {
+            var format = SparamDataFormat(output)!.Value;
+            EnsureOutputDirectory(output);
+            DataSetExporter.Export(JsonRun.Data, output, format, new ExportOptions(Format: format));
+            Console.WriteLine($"Wrote {output}");
+            JsonRun.AddOutput(JsonRun.KindOf(output), output);
+        }
+
         return result.Converged ? 0 : 2;
     }
     catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+}
+
+/// <summary>
+/// <c>dc</c> on a chain topped by a parametric_sweep: <see cref="ParametricSweepEngine"/> with the verb's own solver
+/// settings, the measurements over the whole result named after the inner analysis, a per-point convergence count on
+/// stderr, and an export through <see cref="DataSetExporter"/> when <c>-o</c> is given. A family has no one table of
+/// node voltages to print, so stdout carries the measurements and the file carries the cubes.
+/// </summary>
+static int RunDcSweep(ParametricSweepAnalysis sweep, Library lib, TestBench tb, ElaboratedNetlist nl,
+                      (int Notes, int Warnings) shown, string? refBase, AnalysisSettings settings, string? output)
+{
+    Console.Error.WriteLine(
+        $"DC sweep '{sweep.Name}': {sweep.SweepValues.Length} point(s) over {sweep.SweepVarName}");
+    var ds = ParametricSweepEngine.Run(sweep, lib, tb, settings, baseDirectory: refBase,
+                                       control: RunHost.Control, diagnosticsInto: nl);
+    PrintWarnings(nl, shown);
+    JsonRun.Analysis = sweep.Name;
+
+    var inner = BaseOfChain(sweep, tb);
+    var measDs = inner is not null ? EvaluateMeasurements(tb, nl, inner.Name, ds, run: null) : null;
+    var exportDs = measDs is { Cubes.Count: > 0 } ? MergeForExport(ds, measDs) : ds;
+    JsonRun.Data = exportDs;
+
+    int total = 0, failed = 0;
+    if (ds.Contains("Converged"))
+        foreach (double v in ds["Converged"].RealValues) { total++; if (v == 0.0) failed++; }
+    Console.Error.WriteLine(failed == 0
+        ? $"DC: converged at all {total} point(s)"
+        : $"DC: DID NOT CONVERGE at {failed} of {total} point(s)");
+
+    if (measDs is { Cubes.Count: > 0 })
+    {
+        Console.WriteLine("Measurements:");
+        foreach (var (name, cube) in measDs.Cubes.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            PrintCube($"  {name}", cube, maxRows: 24, allPoints: false);
+    }
+
+    if (output is not null)
+    {
+        var format = SparamDataFormat(output)!.Value;
+        EnsureOutputDirectory(output);
+        DataSetExporter.Export(exportDs, output, format, new ExportOptions(Format: format));
+        Console.WriteLine($"Wrote {output}");
+        JsonRun.AddOutput(JsonRun.KindOf(output), output);
+    }
+    else
+        Console.Error.WriteLine("[circuitRF] the swept cubes are written only by -o out.{npy,mat,txt}.");
+
+    return failed == 0 ? 0 : 2;
 }
 
 // ── --set, for the verbs that read it in their own loops ─────────────────────
@@ -2699,7 +2776,7 @@ static int PrintHelp()
     Console.WriteLine("  sparam <file.cnl|.csch> [--freq start:stop:step] [-o out.sNp]");
     Console.WriteLine("           (NDF=yes on the directive adds the normalized determinant function");
     Console.WriteLine("            and the network's right-half-plane pole count)");
-    Console.WriteLine("  dc     <file.cnl|.csch>   (DC operating point)");
+    Console.WriteLine("  dc     <file.cnl|.csch> [-o out.{npy,mat,txt}]   (DC operating point; runs the sweep if one wraps it)");
     Console.WriteLine("  hb     <file.cnl|.csch>   (harmonic balance; runs the sweep if one wraps it)");
     Console.WriteLine("  lp     <file.cnl|.csch>   (loadpull over the directive's Gamma grid)");
     Console.WriteLine("  lpp    <file.cnl|.csch>   (loadpull pursuit: searches for MXP / MXE)");

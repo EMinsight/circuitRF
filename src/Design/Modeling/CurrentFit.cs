@@ -64,13 +64,37 @@ public static class CurrentFit
     public static string? Summary(CmcDocument doc)
     {
         if (Record(doc) is not { } r) return null;
-        var parts = new List<string> { $"Id: {MethodText(r.Id.Method, Settings(doc).Id.Hidden)}" };
+        var hidden = Settings(doc).Id.Hidden;
+        var parts = new List<string> { $"Id: {MethodText(r.Id.Method, hidden)}" };
         if (r.Errors.TryGetValue("Id", out var e))
         {
             parts.Add(e.HeldOutCount > 0 ? $"held-out {G(100 * e.HeldOutRelative)} %" : $"training {G(100 * e.TrainRelative)} %");
             parts.Add($"domain {e.TrainCount + e.HeldOutCount} pts");
         }
-        return string.Join(" · ", parts);
+        string line = string.Join(" · ", parts);
+        return UnderFit(r.Id.Method, hidden, e) is { } advice ? $"{line}. {advice}" : line;
+    }
+
+    /// <summary>The held-out error, relative to Id's range, above which a large ANN fit is said to under-fit (MC-30 D3).</summary>
+    public const double UnderFitError = 0.02;
+
+    /// <summary>The training points above which an under-fit is the network's size rather than the data's noise (MC-30 D3).
+    /// The shipped examples hold 50 and 638, at 1.6 % and 1.1 %, so neither trips it.</summary>
+    public const int UnderFitPoints = 2000;
+
+    /// <summary>
+    /// One sentence naming the next network size up, when an ANN Id's held-out error exceeds <see cref="UnderFitError"/> over
+    /// more than <see cref="UnderFitPoints"/> training points: <c>2×8 under-fits 24,000 points: try 2×16, or a Table.</c>
+    /// The defaults stay as they are — growing them would change every existing document's next fit.
+    /// </summary>
+    internal static string? UnderFit(string method, IReadOnlyList<int> hidden, FitErrorRecord? e)
+    {
+        if (method != Constituent.AnnMethod || hidden.Count == 0 || e is null
+            || e.HeldOutCount == 0 || e.HeldOutRelative <= UnderFitError || e.TrainCount <= UnderFitPoints)
+            return null;
+        string Size(IEnumerable<int> h) { var l = h.ToList(); return l.All(w => w == l[0]) ? $"{l.Count}×{l[0]}" : string.Join("-", l); }
+        return string.Create(CultureInfo.InvariantCulture,
+            $"{Size(hidden)} under-fits {e.TrainCount:N0} points: try {Size(hidden.Select(w => 2 * w))}, or a Table.");
     }
 
     /// <summary>A fitted constituent's method as the summary line names it: an ANN with its layers (<c>ANN 2×8</c>, or each
@@ -758,6 +782,14 @@ public static class CurrentFit
     private static Payload FitTable(Target t, CurrentConstituentSettings s, IvPoints iv, CurrentFitSettings settings,
                                     List<string> report, RunControl? rc, AnnDerivativeData? rf = null)
     {
+        // Points already on a complete grid are the table (MC-30 D1): no re-grid, no Regrid setting consulted. A grid with
+        // holes falls through to the re-grid, and says which sites broke it.
+        if (DataGrid.Detect(iv.X) is { } grid)
+        {
+            if (grid.Complete) return FitTableOnGrid(t, s, iv, grid, settings, report);
+            report.Add(grid.HolesSentence(t.Name, iv.Inputs));
+        }
+
         var (held, trainX, trainU, trainW) = Training(t, iv, settings);
 
         // The function the grid is sampled from, in the payload's own domain: a network trained on the training points
@@ -791,7 +823,8 @@ public static class CurrentFit
             throw new ModelingException(t.Name, "a table with T or a trap state as an input re-grids through an ANN; the RBF interpolant is two-dimensional.");
         else
         {
-            var rbf = Regrid.Rbf([.. trainX.Select(p => (p[0], p[1]))], trainU);
+            rc?.BeginStage($"Building the RBF interpolant for {t.Name}");
+            var rbf = Regrid.RbfWithinLimit([.. trainX.Select(p => (p[0], p[1]))], trainU, rc);
             source = p => rbf(p[0], p[1]);
         }
 
@@ -819,6 +852,48 @@ public static class CurrentFit
         double gx = Gx(f, iv.X, own);
         var eval = Guided(f, iv.Domain, iv.Inputs, gx, own);
         return new Payload(t.Name, eval, arrays, gx, Error(eval, iv.X, t.Y, held), Edges(f, iv.X, own, gx));
+    }
+
+    /// <summary>
+    /// A table on the data's own grid (MC-30 D1): the samples themselves, splined, with whole grid lines along vgs held out so
+    /// the training points stay a grid and the held-out error still measures what the table does between lines.
+    /// </summary>
+    private static Payload FitTableOnGrid(Target t, CurrentConstituentSettings s, IvPoints iv, DataGrid grid,
+                                          CurrentFitSettings settings, List<string> report)
+    {
+        var held = grid.HeldOutLines(settings.HeldOutFraction, out var heldLine);
+        // The first axis without its held-out lines, and each kept line's new index.
+        var keep = Enumerable.Range(0, heldLine.Length).Where(i => !heldLine[i]).ToArray();
+        var remap = new int[heldLine.Length];
+        for (int k = 0; k < keep.Length; k++) remap[keep[k]] = k;
+        var sites = grid.Sites.ToArray();
+        sites[0] = [.. keep.Select(i => grid.Sites[0][i])];
+
+        var u = t.U;
+        var values = new double[sites.Aggregate(1, (a, x) => a * x.Length)];
+        for (int k = 0; k < iv.X.Length; k++)
+        {
+            if (held[k]) continue;
+            int f = remap[grid.Index[k][0]];
+            for (int a = 1; a < sites.Length; a++) f = f * sites[a].Length + grid.Index[k][a];
+            values[f] = u[k];
+        }
+        var coefficients = TensorSplineFit.Fit(sites, values, s.Smoothing);
+        var arrays = ComposedArrays.Table(t.Name, iv.Inputs, sites, values, coefficients).ToList();
+
+        int heldCount = heldLine.Count(h => h);
+        report.Add($"{t.Name}: Table on the data's own {grid.Shape} grid" +
+                   (heldCount > 0 ? $", {heldCount} {iv.Inputs[0]} line(s) held out." : "."));
+        double step = Enumerable.Range(0, Math.Min(2, sites.Length))
+                                .Max(a => sites[a].Zip(sites[a].Skip(1), (p, q) => q - p).Max());
+        if (step / 2 > settings.SmallestSwing)
+            report.Add($"{t.Name}: table step {G(step)} V: low-level IM below ~{G(step / 2)} V swing unreliable.");
+
+        var f2 = t.Output(new TableEvaluator(sites, coefficients));
+        var own = OwnOver(t.Own, iv.Inputs.Count);
+        double gx = Gx(f2, iv.X, own);
+        var eval = Guided(f2, iv.Domain, iv.Inputs, gx, own);
+        return new Payload(t.Name, eval, arrays, gx, Error(eval, iv.X, t.Y, held), Edges(f2, iv.X, own, gx));
     }
 
     /// <summary><paramref name="f"/> at every site of the grid, row-major, the last axis fastest.</summary>

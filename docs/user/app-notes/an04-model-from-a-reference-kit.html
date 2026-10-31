@@ -49,7 +49,7 @@
 <li><a href="#composer">In Model Composer, step by step</a></li>
 <li><a href="#defaults">When the defaults are not enough</a></li>
 <li><a href="#validate">Checking the model against the kit</a></li>
-<li><a href="#direct">Writing the .cmodel directly</a></li>
+<li><a href="#direct">Tables on the kit's own grid</a></li>
 <li><a href="#cli">The same flow headless</a></li>
 <li><a href="#checklist">Checklist</a></li>
 </ol>
@@ -436,8 +436,8 @@ deep pinch-off to forward conduction, several temperatures, tens of thousands of
 that. Look at the fit before changing anything:</p>
 <ul>
 <li><strong>The status line</strong> after a fit gives each constituent's held-out error and its training domain, e.g.
-<code>Id: ANN 2×8 · held-out 0.8 % · domain 412 pts</code>. A held-out error well above the training error means the network
-is too small or under-trained for the data.</li>
+<code>Id: ANN 2×8 · held-out 0.8 % · domain 412 pts</code>. When an ANN's held-out error passes 2 % of the current's range on
+more than 2,000 training points, it adds the next size up: <code>2×8 under-fits 24,000 points: try 2×16, or a Table.</code></li>
 <li><strong>The Error tab</strong> on the Current step maps model minus data over the bias plane. An error concentrated in one corner
 — subthreshold, the knee, the hot end — says which lever to pull.</li>
 <li><strong>The Gm and Gds tabs</strong> compare the data's own derivatives with the model's. Harmonic balance runs on the
@@ -458,7 +458,11 @@ derivatives, so a current that fits in value and not in slope still drives badly
 </tr>
 <tr>
 <td>Subthreshold current poor</td>
-<td>Lower the drain-current weighting floor, <code>IdFloor</code> in the document's current settings (<a href="../reference/file-formats.html">File formats</a>), so small currents count for more</td>
+<td>Lower <strong>Id floor</strong> on the Current step (<code>IdFloor</code>, a fraction of the largest current), so small currents count for more</td>
+</tr>
+<tr>
+<td>Small gate currents lost</td>
+<td>Lower <strong>Ig floor</strong> on the Current step (<code>IgFloor</code>), the level below which <code>Ig</code> is fitted on a linear rather than a logarithmic scale</td>
 </tr>
 <tr>
 <td>The knee or the hot end poor</td>
@@ -466,7 +470,7 @@ derivatives, so a current that fits in value and not in slope still drives badly
 </tr>
 <tr>
 <td>Every ANN size leaves a residual</td>
-<td>A <strong>Table</strong> constituent: on dense simulated data it follows the samples by construction</td>
+<td>A <strong>Table</strong> constituent: on gridded kit data it is the samples themselves (<a href="#direct">below</a>)</td>
 </tr>
 <tr>
 <td>An equation template does not fit</td>
@@ -474,11 +478,12 @@ derivatives, so a current that fits in value and not in slope still drives badly
 </tr>
 </tbody>
 </table>
-<p><strong>Table re-gridding.</strong> A <code>Table</code> constituent samples a smooth function of the points onto its grid and fits a spline
-to that. The function is an ANN trained on the points by default, or a radial-basis interpolant (<strong>RBF</strong>) through them.
-The RBF solves one dense system over every point: its memory grows with the square of the point count and its time
-with the cube. It suits a few thousand points; for the tens of thousands a dense kit sweep gives, re-grid through the
-ANN, or write the table directly (<a href="#direct">below</a>).</p>
+<p><strong>Table re-gridding.</strong> When the points do not lie on a grid, a <code>Table</code> constituent samples a smooth function of them
+onto its grid and fits a spline to that. The function is an ANN trained on the points by default, or a radial-basis
+interpolant (<strong>RBF</strong>) through them. The RBF solves one dense system over every point, so its memory grows with the
+square of the point count and its time with the cube: 1,000 points take a tenth of a second, 4,000 about 11 s, 5,000
+about 22 s. Above 5,000 points the fit refuses before it starts and names the ANN instead. A dense kit sweep is
+usually a grid, and then no re-grid happens at all.</p>
 <h2 id="validate">Checking the model against the kit</h2>
 <p>The validation is only as fair as the benches on the two sides are equal. A difference in the bench reads as a
 difference in the model.</p>
@@ -499,12 +504,20 @@ few biases. The core was fitted inside the network; this checks the two together
 </ul>
 <p>When a comparison disagrees, the dashed loop in <a href="#flow">the flow</a> goes back into the composer — a step's settings, a
 network value, <code>Rth</code> — not back to the source simulator, unless the data itself was short.</p>
-<h2 id="direct">Writing the .cmodel directly</h2>
-<p>A <code>.cmodel</code> is an open format, and every constituent the composer writes can also be written by a script:
-<a href="../reference/cmodel.html">Writing a .cmodel</a>. For gridded intrinsic tables this is a real alternative to fitting.
-A <a href="../reference/cmodel.html#table">Table constituent</a> is a tensor-product cubic spline on a grid of sites, so the
-samples themselves, on the grid they were taken on, are the table: no network to train, no re-grid. The network, the
-scaling rules and the thermal model go in the same file, and <strong>circuitrf check</strong> reads it back.</p>
+<h2 id="direct">Tables on the kit's own grid</h2>
+<p>Intrinsic-plane tables from a kit lie exactly on the swept Vgs × Vds (× T) grid, and for those the <strong>Table</strong> method
+is the route to take. When a constituent's training points form a complete grid, every combination present once, the
+fit uses the samples themselves as the table: a tensor-product cubic spline through them, with no network to train
+and no re-grid, and no Re-grid setting consulted. The status line says so, e.g. <code>Id: Table on the data's own 101 × 121 × 5 grid, 10 vgs line(s) held out.</code> The held-out points are whole grid lines along Vgs, so the training
+points stay a grid and the held-out error still measures the table between lines, comparably with the other
+methods. The Charge step does the same with capacitances on a grid: each is splined through its own samples and
+integrated on that grid.</p>
+<p>A grid with a hole, from an excluded point or a sample the source simulator did not converge, is re-gridded instead,
+and the status line names the missing sites: <code>Id: the data is a 101 × 121 grid missing 1 site(s) — (vgs -1, vds 2) — so it is re-gridded.</code> Re-run that sample, or accept the re-grid.</p>
+<p><strong>Writing the <code>.cmodel</code> by hand</strong> remains the route for a law the composer cannot fit: a <code>.cmodel</code> is an open format
+(<a href="../reference/cmodel.html">Writing a .cmodel</a>), a <a href="../reference/cmodel.html#table">Table constituent</a> is a
+tensor-product cubic spline on a grid of sites, and the network, the scaling rules and the thermal model go in the
+same file. <strong>circuitrf check</strong> reads it back.</p>
 <p>The composer remains the place to <strong>check</strong> such a model. <code>circuitrf model validate kit.cmc --model kit.cmodel</code>
 compares it with a document's data exactly as the Validate step compares a fitted one, and <code>circuitrf model check-charge</code> on a <code>.cnl</code> that places it checks its charges.</p>
 <h2 id="cli">The same flow headless</h2>

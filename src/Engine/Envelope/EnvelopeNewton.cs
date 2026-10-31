@@ -28,17 +28,17 @@ internal sealed class EnvelopeNewton
     public const int MaxIterations = 50;
 
     private readonly int _dof;
-    private readonly bool _stateRows;
+    private readonly HbNewton.LineSearchJudge _judge;
     private DenseLu? _lu;
     private double[]? _w;
 
     public int JacobianBuilds { get; private set; }
     public long Iterations { get; private set; }
 
-    public EnvelopeNewton(int dof, bool stateRows)
+    public EnvelopeNewton(int dof, HbNewton.LineSearchJudge judge)
     {
         _dof = dof;
-        _stateRows = stateRows;
+        _judge = judge;
     }
 
     /// <summary>Drops the held Jacobian — the step's <c>alpha</c> changed, so it no longer describes the step.</summary>
@@ -78,13 +78,13 @@ internal sealed class EnvelopeNewton
             r0 = rn;
             Array.Copy(V, V0, V.Length);
             var d = Direction(F);
-            double fJudged = HbNewton.WeightedL2(F, _w);
+            var norm = HbNewton.LineSearchNorm.At(F, _w, _judge);
 
             if (!fresh)
             {
                 Apply(V, V0, d, 1.0);
                 var (F1, st1) = evaluate(V);
-                if (Accepts(HbNewton.WeightedL2(F1, _w), fJudged, 1.0))
+                if (Accepts(norm.Of(F1), norm.Start, 1.0))
                 {
                     (F, st) = (F1, st1);
                     rn = MaxAbs(F);
@@ -95,14 +95,14 @@ internal sealed class EnvelopeNewton
                 if (!Refresh(st, jacobian)) return null;
                 fresh = true;
                 d = Direction(F);
-                fJudged = HbNewton.WeightedL2(F, _w);
+                norm = HbNewton.LineSearchNorm.At(F, _w, _judge);
             }
 
-            HbNewton.Backtrack(fJudged, 1.0, lam =>
+            HbNewton.Backtrack(norm.Start, 1.0, lam =>
             {
                 Apply(V, V0, d, lam);
                 (F, st) = evaluate(V);
-                return HbNewton.WeightedL2(F, _w);
+                return norm.Of(F);
             });
             rn = MaxAbs(F);
         }
@@ -112,7 +112,7 @@ internal sealed class EnvelopeNewton
     private bool Refresh<T>(T st, Func<T, double[]> jacobian)
     {
         var J = jacobian(st);
-        _w = _stateRows ? HbNewton.LineSearchWeights(J, _dof) : null;
+        _w = _judge != HbNewton.LineSearchJudge.Plain ? HbNewton.LineSearchWeights(J, _dof) : null;
         _lu = DenseLu.Factor(J, _dof);
         JacobianBuilds++;
         return _lu is not null;

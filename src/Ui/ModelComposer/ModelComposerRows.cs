@@ -14,6 +14,17 @@ using Material.Icons;
 
 namespace CircuitRF.Ui.ModelComposer;
 
+/// <summary>
+/// One row of the Data step's needs list (brief MC-30 D5): a kind of data, lit when the document's data sets hold it, with
+/// what it gives the model — or, dim, what would light it. Derived on every refresh and never stored; not a button.
+/// </summary>
+public sealed record NeedRow(string Data, string Gives, bool Lit, string Missing)
+{
+    public string Detail => Lit ? Gives : Missing;
+    public MaterialIconKind Icon => Lit ? MaterialIconKind.CheckCircleOutline : MaterialIconKind.CircleOutline;
+    public double Opacity => Lit ? 1.0 : 0.5;
+}
+
 /// <summary>One step on the rail: its name, its glyph, whether it can be opened yet and why not, and a stale marker.</summary>
 public sealed partial class ModelStepItem(string name, MaterialIconKind icon) : ObservableObject
 {

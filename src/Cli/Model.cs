@@ -122,10 +122,20 @@ internal static class Model
         JsonRun.Verb = Verb + " " + noun;
 
         var a = new Args();
+        bool askedForVerilogA = false;
         for (int i = 1; i < args.Length; i++)
         {
             string s = args[i];
             if (!s.StartsWith('-') || s == "-") { a.Positionals.Add(s); continue; }
+            // A Verilog-A export asked for by a flag (brief MC-30 R-mc30-7): there is none, because -o's extension
+            // picks the format, and "unknown option" did not lead anyone there. Refused after the loop, with the name.
+            if (noun == "export" && (s is "--veriloga" or "--va" or "--vams" or "--verilog-a"
+                                     || s == "--format" && i + 1 < args.Length && IsVerilogAWord(args[i + 1])))
+            {
+                askedForVerilogA = true;
+                if (s == "--format") i++;
+                continue;
+            }
             if (Flags.All(f => f.Flag != s)) return JsonRun.Fail(CliDiagnostics.ModelUnknownOption(s));
             a.Given.Add(s);
             if (Switches.Contains(s)) continue;
@@ -135,6 +145,11 @@ internal static class Model
             a.Values[s] = value;
             // `--cell <workspace> <name>`: the name is the next word when it is not a flag; `--name` says it otherwise.
             if (s == "--cell" && i + 1 < args.Length && !args[i + 1].StartsWith('-')) a.CellName = args[++i];
+        }
+        if (askedForVerilogA)
+        {
+            string stem = a.Positionals.Count > 0 ? Path.GetFileNameWithoutExtension(a.Positionals[0]) : "<name>";
+            return JsonRun.Fail(CliDiagnostics.ModelRefused("export", $"the extension of -o picks the format: -o {stem}.va"));
         }
         foreach (string flag in a.Given)
             if (Flags.First(f => f.Flag == flag) is var row && !row.Nouns.Contains(noun))
@@ -157,7 +172,7 @@ internal static class Model
                 "deembed"      => Report(noun, path, ModelCommands.Deembed(path, rc)),
                 "fit"          => Fit(path, a, rc),
                 "check-charge" => CheckCharge(path, a, rc),
-                "explain"      => Report(noun, path, ModelCommands.Explain(path, rc)),
+                "explain"      => Report(noun, path, WithExportSpellings(path, ModelCommands.Explain(path, rc))),
                 "export"       => Export(path, a, rc),
                 "validate"     => Validate(path, a, rc),
                 _              => ReportNoun(path, a, rc),
@@ -320,6 +335,20 @@ internal static class Model
         if (!failed) return 0;
         JsonRun.Report(CliDiagnostics.ModelCheckFailed("check-charge", $"the spurious DC is {Pct(report.LargeSignal!.Relative)} of the fundamental gate current, above {Pct(threshold)}"));
         return 3;
+    }
+
+    private static bool IsVerilogAWord(string w) => w.ToLowerInvariant() is "va" or "vams" or "veriloga" or "verilog-a" or "verilog";
+
+    /// <summary><c>explain</c> on an Active document ends with the two spellings of its export, so the Verilog-A one is
+    /// found from the document rather than from a refused flag (R-mc30-7).</summary>
+    private static IReadOnlyList<ModelLine> WithExportSpellings(string path, IReadOnlyList<ModelLine> lines)
+    {
+        if (path.EndsWith(CmodelFile.Extension, StringComparison.OrdinalIgnoreCase) || CmcFile.Read(path).Kind != CmcKind.Active)
+            return lines;
+        string stem = Path.GetFileNameWithoutExtension(path);
+        return [.. lines,
+                new ModelLine("export", "cmodel",   $"export: circuitrf model export {Path.GetFileName(path)} -o {stem}{CmodelFile.Extension}"),
+                new ModelLine("export", "veriloga", $"export: circuitrf model export {Path.GetFileName(path)} -o {stem}.va   (Verilog-A)")];
     }
 
     /// <summary>The formats an Active model exports as, by <c>-o</c>'s extension — <c>render</c>'s rule.</summary>

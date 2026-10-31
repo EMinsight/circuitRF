@@ -140,5 +140,27 @@ public interface IExternalDeviceProvider
 /// from strings the provider supplied at runtime, so circuitRF's own code carries no knowledge of
 /// any particular provider.</para>
 /// </summary>
-public sealed class ExternalDeviceException(string message, Exception? inner = null)
+public class ExternalDeviceException(string message, Exception? inner = null)
     : Exception(message, inner);
+
+/// <summary>
+/// The worker process serving a device EXITED — not a point it refused, which a solve answers by trying a smaller step,
+/// but a process that is gone and takes every later evaluation with it (brief MC-30 R-mc30-6). Typed so a sweep can
+/// tell the two apart: a refusal is the solve's business, an exit is the run's — it restarts the worker and runs the
+/// point again, and a second exit at the same point stops the run with this one's <see cref="Summary"/>.
+/// </summary>
+public sealed class DeviceWorkerExitedException(string message, string origin, int? exitCode, string lastErrorLine,
+                                                Exception? inner = null)
+    : ExternalDeviceException(message, inner)
+{
+    public string Origin { get; } = origin;
+    /// <summary>The process's exit code, when the operating system reported one.</summary>
+    public int? ExitCode { get; } = exitCode;
+    /// <summary>The last line the worker wrote to its error stream, or empty.</summary>
+    public string LastErrorLine { get; } = lastErrorLine;
+
+    /// <summary>One sentence: which worker, its exit code and its last word.</summary>
+    public string Summary =>
+        $"the device worker ({Origin}) exited" + (ExitCode is { } c ? $" with code {c}" : "") +
+        (LastErrorLine.Length > 0 ? $": {LastErrorLine}" : ".");
+}

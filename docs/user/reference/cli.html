@@ -179,8 +179,8 @@ convention behind both.</p>
 <tr>
 <td><code>dc</code></td>
 <td><code>.cnl</code> or <code>.csch</code></td>
-<td>The nonlinear DC engine</td>
-<td>Node voltages, probe currents and measurements, to stdout</td>
+<td>The nonlinear DC engine, or the sweep that wraps it</td>
+<td>Node voltages, probe currents and measurements, to stdout; the cubes with <code>-o</code></td>
 </tr>
 <tr>
 <td><code>hb</code></td>
@@ -523,7 +523,7 @@ option line repeated. Nothing is renormalized: the numbers are the ones the solv
 want the per-port references in a form every tool reads, write <code>.npy</code> instead.</p>
 </div>
 <h2 id="dc"><code>dc</code> — the operating point</h2>
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf dc &lt;file.cnl|.csch&gt; [--set var=expr]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf dc &lt;file.cnl|.csch&gt; [--set var=expr] [-o out.{npy,mat,txt}]</code></pre>
 <pre><code class="language-text">$ circuitrf dc hero2.cnl
 DC: converged in 3 iteration(s), residual 7.27E-16
 Node voltages:
@@ -537,7 +537,27 @@ prints the converged node voltages, any probe currents and the netlist's <code>m
 measurement names the result by the DC analysis that declares it (<code>DC1.V(&quot;n_drain&quot;)</code>), as it does in
 the window — and
 <a href="#exit">exits 2</a> if the solve did not converge — the operating point is the one thing every nonlinear
-analysis is built on, so a non-converged DC is a failed run, not a partial one.</p>
+analysis is built on, so a non-converged DC is a failed run, not a partial one. <code>-o</code> writes the result
+cubes and the measurements as <code>.npy</code>, <code>.mat</code> or <code>.txt</code>.</p>
+<p><strong>A <code>parametric_sweep</code> that wraps the DC analysis runs as the sweep</strong>, as it does for <code>sparam</code>, <code>hb</code>, <code>lp</code>
+and <code>lpp</code>: an I–V family is a DC inside two sweeps, and running the DC alone would return one point. The
+sweep's name goes to stderr with the count of points that did not converge; stdout carries the
+measurements over the whole family, and <code>-o</code> writes the cubes with one axis per sweep. A swept run
+exits 2 if any point did not converge.</p>
+<pre><code class="language-text">$ circuitrf dc family.cnl -o family.npy
+DC sweep 'SWD': 21 point(s) over Vds
+DC: converged at all 504 point(s)
+Measurements:
+  Id  [Vds:21 x Vgs:24]
+  ...
+Wrote family.npy
+</code></pre>
+<p>with the sweeps in the netlist, the inner one stepping <code>Vgs</code> at each <code>Vds</code>:</p>
+<pre><code class="language-text">analysis DC1 type=dc
+analysis SWG type=parametric_sweep Var=Vgs Start=-5 Stop=0.75 Step=0.25 Inner=DC1
+analysis SWD type=parametric_sweep Var=Vds Start=0 Stop=20 Step=1 Inner=SWG
+measure Id = DC1.I(&quot;ID&quot;)
+</code></pre>
 <h2 id="hb"><code>hb</code> — harmonic balance</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf hb &lt;file.cnl|.csch&gt; [-a name] [--set var=expr] [-o out.npy]</code></pre>
 <p>The same verb runs <strong>single- and multi-tone</strong> — which it is comes from the netlist's directive, not

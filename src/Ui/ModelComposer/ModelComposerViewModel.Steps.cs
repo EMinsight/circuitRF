@@ -111,6 +111,10 @@ public sealed partial class ModelComposerViewModel
     [ObservableProperty] private string _currentSeed = "";
     [ObservableProperty] private string _currentRestarts = "";
     [ObservableProperty] private string _currentHeldOut = "";
+    /// <summary>MC-30 D4: the drain- and gate-current floors, the `.cmc` fields <c>IdFloor</c> and <c>IgFloor</c> and no other
+    /// store — each a fraction of the largest current, shown as one.</summary>
+    [ObservableProperty] private string _currentIdFloor = "";
+    [ObservableProperty] private string _currentIgFloor = "";
     [ObservableProperty] private bool _dispersion;
 
     public const string DispersionTip = "DC/RF dispersion as an RF current of its own — the simpler alternative to heating and traps.";
@@ -133,6 +137,8 @@ public sealed partial class ModelComposerViewModel
         CurrentSeed = s.Seed.ToString(CultureInfo.InvariantCulture);
         CurrentRestarts = s.Restarts.ToString(CultureInfo.InvariantCulture);
         CurrentHeldOut = Num(100 * s.HeldOutFraction);
+        CurrentIdFloor = Num(s.IdFloor);
+        CurrentIgFloor = Num(s.IgFloor);
         Dispersion = s.Dispersion is not null;
     }
 
@@ -219,6 +225,20 @@ public sealed partial class ModelComposerViewModel
 
     partial void OnCurrentHeldOutChanged(string value) =>
         EditCurrent(value, (s, t) => TryNum(t, out double v) && v is >= 0 and < 100 ? s with { HeldOutFraction = v / 100 } : null, "held-out %");
+
+    partial void OnCurrentIdFloorChanged(string value) =>
+        EditCurrent(value, (s, t) => TryNum(t, out double v) && v > 0 ? s with { IdFloor = v } : null, "drain-current floor");
+
+    partial void OnCurrentIgFloorChanged(string value) =>
+        EditCurrent(value, (s, t) => TryNum(t, out double v) && v > 0 ? s with { IgFloor = v } : null, "gate-current floor");
+
+    /// <summary>The floors' tooltips: what each weights, and what lowering it buys.</summary>
+    public const string IdFloorTip =
+        "Drain-current weighting floor, as a fraction of the largest |Id|: a point weighs 1/max(|Id|, floor)². " +
+        "Lower it to fit sub-threshold current more closely.";
+    public const string IgFloorTip =
+        "Gate-current floor I0, as a fraction of the largest |Ig|: Ig is fitted as asinh(Ig/I0). " +
+        "Lower it to resolve small gate currents.";
 
     partial void OnDispersionChanged(bool value) =>
         EditCurrent(value ? "on" : "off", (s, _) => s with { Dispersion = value ? s.Dispersion ?? new DispersionFitSettings() : null }, "dispersion");

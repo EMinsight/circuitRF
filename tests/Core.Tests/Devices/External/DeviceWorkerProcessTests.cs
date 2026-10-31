@@ -471,7 +471,7 @@ public sealed class DeviceWorkerProcessTests
         while (transport.IsAlive && DateTime.UtcNow < deadline) Thread.Sleep(10);
         Assert.False(transport.IsAlive, "the worker did not exit after being told to shut down");
 
-        var ex = Assert.Throws<ExternalDeviceException>(
+        var ex = Assert.ThrowsAny<ExternalDeviceException>(
             () => channel.Send(w => w.WriteString("cmd", "describe")));
 
         // Whichever way it surfaces — the write hitting a broken pipe or the read hitting EOF — it
@@ -512,7 +512,7 @@ public sealed class DeviceWorkerProcessTests
         // Deliberately NO wait for the process to be reaped. Polling for that is what gives the
         // background reader time to catch up, and it is the absence of that grace — a request sent
         // the instant the provider is resolved — that produced the empty report in the field.
-        var ex = Assert.Throws<ExternalDeviceException>(
+        var ex = Assert.ThrowsAny<ExternalDeviceException>(
             () => channel.Send(w => w.WriteString("cmd", "describe")));
 
         Assert.Contains(reason, ex.Message);

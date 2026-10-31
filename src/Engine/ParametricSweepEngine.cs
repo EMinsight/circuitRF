@@ -196,24 +196,42 @@ public static class ParametricSweepEngine
 
             try
             {
-                // DISPOSED PER POINT, and that is a correctness requirement rather than hygiene.
-                // A device an external provider supplies lives in a WORKER process; re-elaborating
-                // per point — which is how a swept variable reaches the circuit at all — asks for a
-                // fresh one every time, and nothing else would ever give them back. Measured: a
-                // 201 × 101 DC sweep over a compiled compact model asks for 20,502 instances of a
-                // worker that holds 4,096, and the run dies part-way through.
-                //
-                // Safe because what RunInner returns is a DataSet of numbers: nothing downstream
-                // holds a model, and the warm-start seed is a plain complex array.
-                using var netlist = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
-                thermal.Drive = DriveText(sweep.SweepVarName, val, effUnit, baseUnit, outerDrive);
-                netlist.WireThermal = thermal;
-                datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState,
-                    warmStart ? seed : null, out var nextSeed, innerControl, wspCache));
-                seed = warmStart ? nextSeed : null;
+                // A worker that EXITS mid-point (MC-30 R-mc30-6): this attempt is reported failed with the worker's exit code
+                // and last line, the next elaboration restarts it (the registry replaces a dead provider), and the point runs
+                // once more. A second exit at the same point stops the run with that message.
+                for (int attempt = 0; ; attempt++)
+                try
+                {
+                    // DISPOSED PER POINT, and that is a correctness requirement rather than hygiene.
+                    // A device an external provider supplies lives in a WORKER process; re-elaborating
+                    // per point — which is how a swept variable reaches the circuit at all — asks for a
+                    // fresh one every time, and nothing else would ever give them back. Measured: a
+                    // 201 × 101 DC sweep over a compiled compact model asks for 20,502 instances of a
+                    // worker that holds 4,096, and the run dies part-way through.
+                    //
+                    // Safe because what RunInner returns is a DataSet of numbers: nothing downstream
+                    // holds a model, and the warm-start seed is a plain complex array.
+                    using var netlist = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                    thermal.Drive = DriveText(sweep.SweepVarName, val, effUnit, baseUnit, outerDrive);
+                    netlist.WireThermal = thermal;
+                    datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState,
+                        warmStart ? seed : null, out var nextSeed, innerControl, wspCache));
+                    seed = warmStart ? nextSeed : null;
 
-                // Before this netlist goes away with everything the run wrote on it.
-                diagnosticsInto?.MergeDiagnosticsFrom(netlist);
+                    // Before this netlist goes away with everything the run wrote on it.
+                    diagnosticsInto?.MergeDiagnosticsFrom(netlist);
+                    break;
+                }
+                catch (CircuitRF.Core.Devices.External.DeviceWorkerExitedException ex)
+                {
+                    string at = DriveText(sweep.SweepVarName, val, effUnit, baseUnit, outerDrive);
+                    if (attempt > 0)
+                        throw new CircuitRF.Core.Devices.External.ExternalDeviceException(
+                            $"Sweep '{sweep.Name}' stopped at {at}: {ex.Summary} It exited at this point twice.", ex);
+                    diagnosticsInto?.AddWarning(
+                        $"Sweep '{sweep.Name}' at {at}: {ex.Summary} The point failed; the worker was restarted and the point run again.");
+                    seed = null;
+                }
             }
             finally
             {

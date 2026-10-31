@@ -25166,6 +25166,33 @@ ones flag — the per-port numbers themselves are the finding. Gate: `PortLossLi
   applied to a sheet moved in to where its return begins (the line runs on past it by design), to a wave port, or
   when cutting would split the metal. Gate: `PortSheetWidthTests` (the counter and the smallest edge, `[GmshFact]`).
 
+## MC-30 — Model Composer: a table on the data's own grid, the RBF limit, the under-fit sentence (2026-10-30)
+
+- **A gridded constituent is fitted on its own grid (D1).** `DataGrid.Detect` groups each input's coordinates within
+  1e-9 of the axis span; when every combination is present once, `CurrentFit.FitTableOnGrid` splines the samples
+  themselves and `ChargeFit.FitTable` splines each capacitance through its samples and integrates on that grid. Held-out
+  points are whole `vgs` lines (about `HeldOutFraction` of them, never the first or last), so the training points stay
+  a grid. On an 11 × 12 synthetic intrinsic grid the direct table's training RMS is below 1e-12 of the range where the
+  RBF re-grid of the same data (one site removed) is above 1e-6 (`TableOnDataGridTests`). A set at most 2 % short of a
+  grid is a grid "with holes": it re-grids, and the report names the first three missing sites; anything sparser is
+  scattered and says nothing. Data at the DEVICE plane through a network is scattered after de-embedding, so no
+  existing test or shipped example changes: `synthetic-gan` and `simulated-tables` fit Id with an ANN.
+- **The RBF limit is 5,000 points, measured (D2).** `Rbf2D`'s multiquadric factor is one dense LDLᵀ over two N×N
+  arrays. Release build on the reference machine (an arm64 laptop), a jittered grid on [0, 1]²: 1k 0.11 s / 59 MB peak RSS, 2k 0.90 s / 107 MB,
+  4k 11.4 s / 300 MB, 5k 22.1 s / 444 MB, 6k 43.5 s / 853 MB, 8k 119 s / 1.30 GB. Cache misses make it steeper than N³
+  past 2k. 5,000 is where it passes ~30 s. `Regrid.RbfWithinLimit` refuses above it before anything is allocated
+  (`RbfTooLargeException`, an `ArgumentException`, so `model fit` reports it as a refusal), quoting 16·N² bytes. Only the
+  user-chosen RBF paths call it (`CurrentFit` re-grid, `ChargeFit.Interpolant`); the step plots and the validation
+  report's curl maps call `Regrid.Rbf` unconditionally and are not limited. The factor checks `RunControl.Token` once
+  per column, so Cancel answers within one column.
+- **The under-fit sentence (D3)** is in `CurrentFit.Summary`, the status line, from the record: an ANN `Id` whose
+  held-out error passes 2 % of its range on more than 2,000 training points. The shipped examples sit at 1.6 % on 50
+  points (`simulated-tables`) and 1.1 % on 638 (`synthetic-gan`), so neither trips it.
+- **Open (D6): affine periphery scaling.** A kit's scalable network often follows `a + b·N` per value, which `fixed`,
+  `perFinger` and `perFingerInverse` cannot express. Adding a rule changes three files together: the `.cmc` network
+  scaling (`CmcExtrinsic` / its settings), the `.cmodel` writer and reader (`CmodelFile`), and the Verilog-A export
+  (`src/Design/Modeling/VerilogA/CmodelVerilogA.cs`, where each value's scaling is written). Deferred to its own brief.
+
 ## DFR32-1 — the default air box: R-1 measured, and it is a No-go (2026-10-30)
 
 **The default was not changed.** The brief asks for the smallest multiple of H (the dielectric height from the top conductor

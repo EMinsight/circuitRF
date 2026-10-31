@@ -656,6 +656,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "convert.target.unrecognised",
         "convert.target.unsupported",
         "convert.technology.unreadable",
+        "dc.export.unsupported-format",
         "elab.note",
         "elab.warning",
         "em.c3d.setup",

@@ -565,6 +565,11 @@ count, and where its charges read their capacitances: `Y`, its capacitance `tabl
 points is warned about, since the matrix convention has `C12 = −Cgd`: the circuit set was probably meant. Selecting a set
 points the plots and the cursor's lists at it.
 
+Under the list, an active document shows **what its data supports**, one row per kind of data in
+[the table above](#needs): I–V, S or capacitances, cold-FET S, two or more temperatures, pulsed data and
+large-signal runs. A lit row says what that data gives the model; a dim one says what would light it, in the words
+the step rail uses for a step that cannot open yet, so the two never disagree.
+
 | Plot tab | Shows |
 |---|---|
 | Output | Id against Vds, one curve per Vgs; excluded points as × |
@@ -649,20 +654,29 @@ temperatures, so that hot DC points and cooler pulsed points are not fitted by o
 With fewer S biases than a method needs, its entry in the picker gives the reason when you hover over it, and a fit
 with it is refused rather than run with another method.
 
-A table samples a smooth function of the points onto its grid: an ANN trained on them (the default) or a radial-basis
-interpolant through them (**RBF**). The RBF solves one dense system over every point, so its memory grows with the
-square of the point count and its time with the cube; it suits a few thousand points, and a dense simulated sweep
-re-grids through the ANN.
+**A table on gridded data is the data.** When a constituent's training points form a complete grid in its inputs,
+every combination present once, as intrinsic-plane simulated tables do, the table is a spline through the samples
+themselves on that grid: no re-grid, and the Re-grid setting is not read. Its held-out points are whole grid lines
+along `vgs`, so the rest stay a grid. A charge table does the same with capacitances on a grid. A grid with a missing
+site, an excluded point for one, is re-gridded, and the report names the sites missing.
+
+Otherwise a table samples a smooth function of the points onto its grid: an ANN trained on them (the default) or a
+radial-basis interpolant through them (**RBF**). The RBF solves one dense system over every point, so its memory grows
+with the square of the point count and its time with the cube: about 11 s at 4,000 points and 22 s at 5,000. Above
+5,000 points a fit with it is refused before it starts; re-grid through the ANN.
 
 Restarts, the seed and the held-out percentage belong to the step. After a fit the status strip reads, for example,
-`Id: ANN 2×8 · held-out 0.8 % · domain 412 pts`.
+`Id: ANN 2×8 · held-out 0.8 % · domain 412 pts`. An ANN `Id` whose held-out error passes 2 % of its range over more
+than 2,000 training points adds the next size up: `2×8 under-fits 24,000 points: try 2×16, or a Table.`
 
 ## The Current step {#current}
 
 {{ui: model-composer-steps}}
 
 Pickers for `Id` and `Ig` — an equation `Ig` is two expressions, `IgGs` and `IgGd` — and **DC/RF dispersion**, the
-simpler alternative to self-heating and traps.
+simpler alternative to self-heating and traps. **Id floor** and **Ig floor**, under the pickers, are the document's
+`IdFloor` and `IgFloor`, each a fraction of the largest current: `Id` is weighted by `1/max(|Id|, floor)²`, so a lower
+floor fits subthreshold current more closely, and `Ig` is fitted as `asinh(Ig/I0)` with `I0` the gate floor.
 
 | Plot tab | Shows |
 |---|---|

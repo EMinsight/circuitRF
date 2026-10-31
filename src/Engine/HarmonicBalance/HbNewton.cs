@@ -267,7 +267,7 @@ public static class HbNewton
 
         // Scratch the line search steps FROM — the accepted iterate every trial restarts at.
         var V0 = new Complex[N, K + 1];
-        bool stateRows = HasStateRow(netlist, interfaceNodes);
+        var judge = JudgeFor(netlist, interfaceNodes);
 
         // ── 0. One evaluation before the loop ─────────────────────────────────
         // From here the loop's ENTRY state is always the last accepted trial's evaluation, so
@@ -324,10 +324,11 @@ public static class HbNewton
             int worst = WorstNode(F, N, K, out double worstShare);
             Array.Copy(V, V0, V.Length);
             // The line search judges a self-admittance-scaled norm when a row is not a KCL in amperes
-            // (MC-25); the convergence test above stays on ‖F‖ in amperes either way.
-            double[]? w = stateRows ? LineSearchWeights(J, unknowns) : null;
-            double fJudged = WeightedL2(F, w);
-            var step = Backtrack(fJudged, lambda, lam =>
+            // (MC-25), accepting a trial that decreases it OR ‖F‖ in amperes (MC-30, LineSearchNorm); the
+            // convergence test above stays on ‖F‖ in amperes either way.
+            double[]? w = judge != LineSearchJudge.Plain ? LineSearchWeights(J, unknowns) : null;
+            var norm = LineSearchNorm.At(F, w, judge);
+            var step = Backtrack(norm.Start, lambda, lam =>
             {
                 Array.Copy(V0, V, V.Length);
                 ApplyUpdate(V, dV, N, K, lam);
@@ -335,7 +336,7 @@ public static class HbNewton
                     EvaluateNonlinear(V, N, K, gridN, netlist, interfaceNodes, cc, iNlLast, out ctrlJac,
                                       portITime);
                 F = BuildF(V, yNN, iSrc, iNl, qNl, N, K, omega0, higherBuckets);
-                return WeightedL2(F, w);
+                return norm.Of(F);
             });
             if (w is not null) step = step with { Residual = L2(F) };
             iNlLast = iNl;
@@ -457,6 +458,44 @@ public static class HbNewton
         return false;
     }
 
+    /// <summary>How a line search judges a trial (MC-25, MC-30).</summary>
+    public enum LineSearchJudge
+    {
+        /// <summary>‖F‖₂ in amperes: every interface row is a KCL.</summary>
+        Plain,
+        /// <summary>The self-admittance-scaled norm alone: a device DECLARED rows that are not in amperes (MC-25).</summary>
+        Scaled,
+        /// <summary>Either norm decreasing: an external device's internal node is on the interface, and what it carries is
+        /// not known (MC-30).</summary>
+        ScaledOrPlain,
+    }
+
+    /// <summary>
+    /// The judge for this interface. An external device's free internal nodes are OPAQUE: circuitRF cannot know whether one
+    /// is a series-resistance junction, a temperature or a trap state normalised by a millifarad, and the units a provider
+    /// reports do not say — an exported composed model's trap node is an ordinary electrical node whose row holds ~1.3e7 S
+    /// of susceptance at 2 GHz. Judged in raw amperes that row vetoed step after step: 26 device evaluations per Newton
+    /// iteration against its ComposedFET twin's 1.9, and 4 of 49 loadpull loads lost near compression. Judged by the scaled
+    /// norm alone, a weakly connected internal row's large weight made its round-off the floor, and the solve stalled at
+    /// 1e-8…1e-11 A against a 1e-12 tolerance the twin met. Accepting a trial that decreases either is both fast and
+    /// exact. A device's DECLARED state ports keep MC-25's scaled norm unchanged — accepting the plain norm there loses
+    /// a hard native start point — so a netlist with no external device solves exactly as before.
+    /// </summary>
+    public static LineSearchJudge JudgeFor(ElaboratedNetlist netlist, int[] interfaceNodes)
+    {
+        if (_unscaled) return LineSearchJudge.Plain;
+        foreach (int nlIdx in netlist.NonlinearComponents)
+        {
+            var ec = netlist.Components[nlIdx];
+            if (ec.Model is not CircuitRF.Core.Devices.External.ExternalDeviceModel ext) continue;
+            foreach (var n in ext.Descriptor.Nodes)
+                if (!n.External && n.SlavedTo is null && !n.CollapsedToGround && 2 * n.Index < ec.Nodes.Length
+                    && Array.IndexOf(interfaceNodes, ec.Nodes[2 * n.Index]) >= 0)
+                    return LineSearchJudge.ScaledOrPlain;
+        }
+        return HasStateRow(netlist, interfaceNodes) ? LineSearchJudge.Scaled : LineSearchJudge.Plain;
+    }
+
     /// <summary>
     /// One weight per (node, harmonic): <c>1/|Y_self|</c>, the magnitude of that row pair's own 2×2 diagonal block
     /// <c>[[G, −B], [B, G]]</c>, shared by its real and imaginary rows. Each residual then reads as the voltage that would
@@ -489,6 +528,30 @@ public static class HbNewton
         double s = 0;
         for (int r = 0; r < F.Length; r++) { double x = F[r] * w[r]; s += x * x; }
         return Math.Sqrt(s);
+    }
+
+    /// <summary>
+    /// What a line search judges a trial by (brief MC-30). <see cref="LineSearchJudge.Plain"/> and
+    /// <see cref="LineSearchJudge.Scaled"/> exactly as before. <see cref="LineSearchJudge.ScaledOrPlain"/>: a trial passes
+    /// when it decreases EITHER the self-admittance-scaled norm or the plain norm in amperes, each relative to the
+    /// iterate it steps from: <c>min(‖W·F‖/‖W·F₀‖, ‖F‖/‖F₀‖)</c> against a start of 1. The scaled norm alone is what
+    /// stops a state row from vetoing every step far from the solution (MC-25); near it, a weakly-connected row's large
+    /// weight makes its round-off the scaled norm's floor, and judged by that alone an exported Verilog-A model stalled
+    /// at 1e-8…1e-11 A against a 1e-12 tolerance its ComposedFET twin met. Either norm decreasing is a real decrease,
+    /// and the Newton step is a descent direction of both, so Armijo still holds for the one that passes.
+    /// </summary>
+    public readonly record struct LineSearchNorm(double[]? W, double Weighted0, double Amps0, bool Either)
+    {
+        public static LineSearchNorm At(double[] F, double[]? w, LineSearchJudge judge) =>
+            new(w, WeightedL2(F, w), L2(F), judge == LineSearchJudge.ScaledOrPlain);
+
+        private bool Relative => Either && W is not null && Weighted0 > 0 && Amps0 > 0;
+
+        /// <summary>The value the search starts from.</summary>
+        public double Start => Relative ? 1.0 : Weighted0;
+
+        /// <summary>A trial's value, on the same scale as <see cref="Start"/>.</summary>
+        public double Of(double[] F) => Relative ? Math.Min(WeightedL2(F, W) / Weighted0, L2(F) / Amps0) : WeightedL2(F, W);
     }
 
     /// <summary>

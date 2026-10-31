@@ -18,7 +18,7 @@ keywords: Model Composer, reference kit, design kit, PDK, nonlinear model, FET m
 <li><a href="#composer">In Model Composer, step by step</a></li>
 <li><a href="#defaults">When the defaults are not enough</a></li>
 <li><a href="#validate">Checking the model against the kit</a></li>
-<li><a href="#direct">Writing the .cmodel directly</a></li>
+<li><a href="#direct">Tables on the kit's own grid</a></li>
 <li><a href="#cli">The same flow headless</a></li>
 <li><a href="#checklist">Checklist</a></li>
 </ol>
@@ -332,8 +332,8 @@ deep pinch-off to forward conduction, several temperatures, tens of thousands of
 that. Look at the fit before changing anything:
 
 - **The status line** after a fit gives each constituent's held-out error and its training domain, e.g.
-  `Id: ANN 2×8 · held-out 0.8 % · domain 412 pts`. A held-out error well above the training error means the network
-  is too small or under-trained for the data.
+  `Id: ANN 2×8 · held-out 0.8 % · domain 412 pts`. When an ANN's held-out error passes 2 % of the current's range on
+  more than 2,000 training points, it adds the next size up: `2×8 under-fits 24,000 points: try 2×16, or a Table.`
 - **The Error tab** on the Current step maps model minus data over the bias plane. An error concentrated in one corner
   — subthreshold, the knee, the hot end — says which lever to pull.
 - **The Gm and Gds tabs** compare the data's own derivatives with the model's. Harmonic balance runs on the
@@ -344,16 +344,18 @@ Then, one lever at a time:
 | Symptom | Try |
 |---|---|
 | Held-out error high everywhere | A larger network on the method picker (more neurons, or a third layer), more iterations, or more restarts on the step |
-| Subthreshold current poor | Lower the drain-current weighting floor, `IdFloor` in the document's current settings ([File formats](../reference/file-formats.html)), so small currents count for more |
+| Subthreshold current poor | Lower **Id floor** on the Current step (`IdFloor`, a fraction of the largest current), so small currents count for more |
+| Small gate currents lost | Lower **Ig floor** on the Current step (`IgFloor`), the level below which `Ig` is fitted on a linear rather than a logarithmic scale |
 | The knee or the hot end poor | More points there in the source simulator; a sampled grid can always be made finer |
-| Every ANN size leaves a residual | A **Table** constituent: on dense simulated data it follows the samples by construction |
+| Every ANN size leaves a residual | A **Table** constituent: on gridded kit data it is the samples themselves ([below](#direct)) |
 | An equation template does not fit | Expected over a wide range: the templates are for compact, few-parameter models. Use an ANN or a Table |
 
-**Table re-gridding.** A `Table` constituent samples a smooth function of the points onto its grid and fits a spline
-to that. The function is an ANN trained on the points by default, or a radial-basis interpolant (**RBF**) through them.
-The RBF solves one dense system over every point: its memory grows with the square of the point count and its time
-with the cube. It suits a few thousand points; for the tens of thousands a dense kit sweep gives, re-grid through the
-ANN, or write the table directly ([below](#direct)).
+**Table re-gridding.** When the points do not lie on a grid, a `Table` constituent samples a smooth function of them
+onto its grid and fits a spline to that. The function is an ANN trained on the points by default, or a radial-basis
+interpolant (**RBF**) through them. The RBF solves one dense system over every point, so its memory grows with the
+square of the point count and its time with the cube: 1,000 points take a tenth of a second, 4,000 about 11 s, 5,000
+about 22 s. Above 5,000 points the fit refuses before it starts and names the ANN instead. A dense kit sweep is
+usually a grid, and then no re-grid happens at all.
 
 ## Checking the model against the kit {#validate}
 
@@ -377,13 +379,25 @@ difference in the model.
 When a comparison disagrees, the dashed loop in [the flow](#flow) goes back into the composer — a step's settings, a
 network value, `Rth` — not back to the source simulator, unless the data itself was short.
 
-## Writing the .cmodel directly {#direct}
+## Tables on the kit's own grid {#direct}
 
-A `.cmodel` is an open format, and every constituent the composer writes can also be written by a script:
-[Writing a .cmodel](../reference/cmodel.html). For gridded intrinsic tables this is a real alternative to fitting.
-A [Table constituent](../reference/cmodel.html#table) is a tensor-product cubic spline on a grid of sites, so the
-samples themselves, on the grid they were taken on, are the table: no network to train, no re-grid. The network, the
-scaling rules and the thermal model go in the same file, and **circuitrf check** reads it back.
+Intrinsic-plane tables from a kit lie exactly on the swept Vgs × Vds (× T) grid, and for those the **Table** method
+is the route to take. When a constituent's training points form a complete grid, every combination present once, the
+fit uses the samples themselves as the table: a tensor-product cubic spline through them, with no network to train
+and no re-grid, and no Re-grid setting consulted. The status line says so, e.g. `Id: Table on the data's own
+101 × 121 × 5 grid, 10 vgs line(s) held out.` The held-out points are whole grid lines along Vgs, so the training
+points stay a grid and the held-out error still measures the table between lines, comparably with the other
+methods. The Charge step does the same with capacitances on a grid: each is splined through its own samples and
+integrated on that grid.
+
+A grid with a hole, from an excluded point or a sample the source simulator did not converge, is re-gridded instead,
+and the status line names the missing sites: `Id: the data is a 101 × 121 grid missing 1 site(s) — (vgs -1, vds 2)
+— so it is re-gridded.` Re-run that sample, or accept the re-grid.
+
+**Writing the `.cmodel` by hand** remains the route for a law the composer cannot fit: a `.cmodel` is an open format
+([Writing a .cmodel](../reference/cmodel.html)), a [Table constituent](../reference/cmodel.html#table) is a
+tensor-product cubic spline on a grid of sites, and the network, the scaling rules and the thermal model go in the
+same file. **circuitrf check** reads it back.
 
 The composer remains the place to **check** such a model. `circuitrf model validate kit.cmc --model kit.cmodel`
 compares it with a document's data exactly as the Validate step compares a fitted one, and `circuitrf model

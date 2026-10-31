@@ -262,7 +262,35 @@ public sealed partial class ModelComposerViewModel : ObservableObject, IDisposab
             step.IsDone = step.IsEnabled && !step.IsStale && IsDone(step.Name);
         }
         if (SelectedStep is { IsEnabled: false }) SelectedStep = Steps[0];
+        RefreshNeeds();
         NotifyRunItems();
+    }
+
+    /// <summary>MC-30 D5: what the imported data sets can support, one row per kind of data in model-composer.md#needs.</summary>
+    public ObservableCollection<NeedRow> NeedRows { get; } = [];
+
+    /// <summary>
+    /// The needs list, from the rail itself: a row a step stands for is lit exactly when that step is enabled and, dim, shows
+    /// that step's own reason — so the list and the rail cannot disagree. Active documents only; the row count is fixed, so
+    /// the list's height does not move as sets are imported.
+    /// </summary>
+    private void RefreshNeeds()
+    {
+        NeedRows.Clear();
+        if (!IsActive) return;
+        NeedRow FromStep(string data, string gives, string step) =>
+            Steps.FirstOrDefault(s => s.Name == step) is { } item
+                ? new NeedRow(data, gives, item.IsEnabled, item.Reason)
+                : new NeedRow(data, gives, false, "");
+        int temperatures = Document.DataSets.Select(s => s.Conditions.AmbientC).OfType<double>().Distinct().Count();
+        NeedRows.Add(FromStep("I–V", "Id and Ig.", "Current"));
+        NeedRows.Add(FromStep("S, Y or capacitances", "Qg and Qd.", "Charge"));
+        NeedRows.Add(FromStep("Cold-FET S", "The network fit.", "Network"));
+        NeedRows.Add(new NeedRow("Two or more temperatures", "T and self-heating.", temperatures >= 2,
+                                 temperatures == 1 ? "Needs a set at a second temperature." : "Needs sets at two temperatures."));
+        NeedRows.Add(FromStep("Pulsed I–V or S", "Traps.", "Traps"));
+        NeedRows.Add(new NeedRow("Power, two-tone, loadpull", "Validation.",
+                                 Document.DataSets.Any(s => s.Kind == DataSetKind.LargeSignal), "Needs a large-signal data set."));
     }
 
     /// <summary>The stale steps: the last open's (data and network moved under a fit), and Traps whenever the trap model now

@@ -274,8 +274,8 @@ public sealed class EnvelopeEngineMt
         Record(0);
 
         int dof = 2 * N * M;
-        bool stateRows = HbNewton.HasStateRow(_nl, ifNodes);
-        var newton = new EnvelopeNewton(dof, stateRows);
+        var judge = HbNewton.JudgeFor(_nl, ifNodes);
+        var newton = new EnvelopeNewton(dof, judge);
         var vHist = new List<Complex[,]> { (Complex[,])V.Clone() };
         int splitSteps = 0, finestSplit = 1;
 
@@ -370,7 +370,7 @@ public sealed class EnvelopeEngineMt
             for (int sub = 2; sub <= EnvelopeEngine.MaxStepSplit; sub *= 2)
             {
                 double aSub = sub / h;
-                var nw = new EnvelopeNewton(dof, stateRows);
+                var nw = new EnvelopeNewton(dof, judge);
                 var x = prods.Select(pr => pr.Xm1).ToArray();
                 var q = qm1;
                 var vs = (Complex[,])vHist[^1].Clone();

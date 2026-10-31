@@ -26,6 +26,12 @@ using System.Text.Json;
 //  no reply to send, so it says why on its error stream and exits. That stream
 //  is the only description the user ever gets of such a failure, which is why it
 //  is part of the reference rather than left to each worker to remember.
+//
+//  --exit-on-eval <n> and --exit-when-vgs-above <v> make it die MID-RUN, as a
+//  model that crashes does: the n-th eval of this process, or any eval at a
+//  gate-source voltage above v, writes one line to the error stream and exits
+//  with code 3 without replying. They exist so a host's handling of a worker that
+//  exits under it can be tested against a real process.
 // ─────────────────────────────────────────────────────────────────────────────
 
 if (args is ["--fail-with", var reason, ..])
@@ -36,6 +42,11 @@ if (args is ["--fail-with", var reason, ..])
 }
 
 var worker = new Worker();
+for (int a = 0; a + 1 < args.Length; a++)
+{
+    if (args[a] == "--exit-on-eval") worker.ExitOnEval = int.Parse(args[a + 1], CultureInfo.InvariantCulture);
+    if (args[a] == "--exit-when-vgs-above") worker.ExitAboveVgs = double.Parse(args[a + 1], CultureInfo.InvariantCulture);
+}
 return worker.Run(Console.OpenStandardInput(), Console.OpenStandardOutput());
 
 /// <summary>
@@ -132,6 +143,25 @@ file sealed class Worker
     private readonly Dictionary<int, Device> _instances = [];
     private int _nextHandle = 1;
 
+    /// <summary>Exit on this eval of the process (1-based); 0 never.</summary>
+    public int ExitOnEval;
+    /// <summary>Exit on any eval at a gate-source voltage above this.</summary>
+    public double ExitAboveVgs = double.PositiveInfinity;
+    private int _evals;
+
+    /// <summary>The deliberate crash: one line on the error stream, then gone without a reply.</summary>
+    private void ExitIfAsked(double[] payload)
+    {
+        bool vgs = false;
+        for (int k = 0; k + 2 < payload.Length; k += Device.NodeCount)
+            vgs |= payload[k] - payload[k + 2] > ExitAboveVgs;
+        if (++_evals != ExitOnEval && !vgs) return;
+        Console.Error.WriteLine(vgs ? $"crashed: vgs above {ExitAboveVgs.ToString(CultureInfo.InvariantCulture)} V"
+                                    : $"crashed on eval {_evals}");
+        Console.Error.Flush();
+        Environment.Exit(3);
+    }
+
     public int Run(Stream input, Stream output)
     {
         while (true)
@@ -152,7 +182,7 @@ file sealed class Worker
                     case "describe": reply = Describe();                        break;
                     case "create":   reply = Create(root);                      break;
                     case "probe":    reply = Probe(root);                       break;
-                    case "eval":     reply = Eval(root, payload, out bulk);     break;
+                    case "eval":     ExitIfAsked(payload); reply = Eval(root, payload, out bulk); break;
                     case "destroy":  reply = Destroy(root);                     break;
 
                     case "shutdown":

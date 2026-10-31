@@ -33,6 +33,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading;
 
 namespace RfCore.Loadpull;
 
@@ -70,7 +71,8 @@ public sealed class Rbf2D
     // ----------------------------------------------------------------
     public Rbf2D(
         ReadOnlySpan<double> xRe, ReadOnlySpan<double> xIm, ReadOnlySpan<double> values,
-        RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null)
+        RbfKernel kernel = RbfKernel.Multiquadric, double smooth = 1e-3, double? epsilon = null,
+        CancellationToken cancel = default)
     {
         _kernel = kernel;
 
@@ -132,7 +134,7 @@ public sealed class Rbf2D
 
         // --- LDLᵀ solve for weights ---------------------------------
         double[] work = (double[])a.Clone();
-        bool ok = LdltFactor(work, _n);
+        bool ok = LdltFactor(work, _n, cancel);
 
         if (!ok)
         {
@@ -140,7 +142,7 @@ public sealed class Rbf2D
             double ridge = Math.Abs(trace) > 0 ? 1e-12 * trace / _n : 1e-12;
             work = (double[])a.Clone();
             for (int i = 0; i < _n; i++) work[i * _n + i] += ridge;
-            ok = LdltFactor(work, _n);
+            ok = LdltFactor(work, _n, cancel);
         }
 
         if (!ok)
@@ -708,11 +710,13 @@ public sealed class Rbf2D
     //
     //  Returns false if any pivot |D[j]| < 1e-14 (singular/ill-cond).
     // ================================================================
-    private static bool LdltFactor(double[] a, int n)
+    private static bool LdltFactor(double[] a, int n, CancellationToken cancel = default)
     {
         const double PivotTol = 1e-14;
         for (int j = 0; j < n; j++)
         {
+            // Once per column: O(N) checks against O(N³) work, so Cancel answers within one column of a large factor.
+            cancel.ThrowIfCancellationRequested();
             // D[j] = A[j,j] - sum_k L[j,k]^2 * D[k]  for k < j
             // (L[j,k] already stored in a[j*n+k]; D[k] in a[k*n+k])
             double d = a[j * n + j];

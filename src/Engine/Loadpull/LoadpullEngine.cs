@@ -330,9 +330,14 @@ public sealed class LoadpullEngine
                 Complex[,]? gridSeed = FindNearestSeed(gi, gamma, convergedV, gridPointList);
                 var gpr = RunOneTermination(p, ctx, z, gi, gridSeed);
 
-                var lastConv = gpr.PinSteps.LastOrDefault(s => s.Converged);
-                if (lastConv is not null)
-                    convergedV[gi] = lastConv.V;
+                // The neighbour seed is this load's FIRST converged rung — the tickle, or PinStart without one — because that is
+                // the drive the next load starts at. Its LAST rung is the compressed state, tens of dB above, and seeding a
+                // −50 dBm tickle from it asked one Newton solve to walk the whole drive-up back down: a device whose network,
+                // thermal and trap nodes all sit in the nonlinear partition (an exported Verilog-A model) failed it at 48 of
+                // 49 loads where the same model as a ComposedFET did not (brief MC-30 R-mc30-5; src/Engine/RESOLVED.md).
+                var firstConv = gpr.PinSteps.FirstOrDefault(s => s.Converged);
+                if (firstConv is not null)
+                    convergedV[gi] = firstConv.V;
 
                 gridPoints.Add(gpr);
                 Console.Error.WriteLine(

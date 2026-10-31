@@ -3899,3 +3899,75 @@ measured effect on the PA was under 0.002 dB either way. Envelope tests 83/83, s
   power the envelope delivered; then the two agree to 0.011 K on a 12.5 K rise.
 - **Dropping the cross-array terms** (each array's own ⟨|I|²⟩ only) read 96.28 °C against HB's 97.50 °C for two coupled
   arrays in parallel, so the gate catches it.
+
+## MC-30 — Verilog-A convergence parity, and a worker that exits mid-run (2026-10-30)
+
+**Reproduced on scratch copies of the GanVerilogA bench, one instance per bench** (a joint DC hides which side failed),
+the same model as `gan_4x125.cmodel` (ComposedFET) and as the exported `gan_4x125.va`:
+
+| Bench | ComposedFET | Verilog-A, before | after the seed fix | after the line-search judge too |
+|---|---|---|---|---|
+| DC, terminals through chokes, Vgs −5…0.75 × Vds 0…20 (504 points) | 504/504 | 504/504 | 504/504 | 504/504 |
+| DC, 1 kΩ gate and 25 Ω load line, Vgs −5…0.75 × Vdd 0…40 (504 points) | 504/504 | 504/504 | 504/504 | 504/504 |
+| The example's own DC sweep and HB drive sweep, both instances | all | all | all | all |
+| GanLoadpull's 49-load grid to 3 dB compression: loads reaching it | 49/49 | **1/49** | 45/49 | **49/49** |
+| the same, Pin rungs converged | 1,025/1,025 | 21/69 | 1,018/1,022 | 1,025/1,025 |
+| the grid's wall clock (Debug) | 10.5 s | — | 32 min 46 s | 13.7 s |
+
+**DC was never the problem** on these benches; the brief's gate (the DC sweep converges at every point on both sides)
+held before any change. **The loadpull was.** Every load after the first stopped at the −50 dBm tickle, Newton stuck
+at ‖F‖ 0.3–0.7. The same load run alone (cold start) converged, so the failure was the seed: `LoadpullEngine.Run`
+stored each load's LAST converged rung — the compressed state — as the neighbour seed, and the next load's tickle,
+50+ dB below it, started from there. The native model survives that start because its network and thermal network are
+linear elements outside the Newton loop; the exported module carries the network, the thermal node and the trap node
+inside the device (nine internal nodes), so the whole drive-up has to be walked back in one solve. **The candidates the
+brief listed were checked and are not it**: the native core has no junction limiting either, both sides scale the trap
+node by the same `TrapDynamics.NodeCapacitance` (1e-3) with identical capture/emission equations, and an OSDI model's
+Jacobian is the compiler's exact derivative. **Fix:** the neighbour seed is the load's FIRST converged rung (the tickle,
+or PinStart without one) — the drive the next load starts at. The native side's printed results are unchanged to the
+shown precision (its `.npy` moves in the last bits); the loadpull, Hero 3 and parametric-sweep tests are 146/146.
+
+**The 4 near-compression losses, and the Verilog-A grid's 32 min 46 s, had one cause, now fixed.** A scratch harness
+ran grid point 1 alone (cold, 21 rungs, Debug), wrapping the provider to time and count every evaluation:
+
+| One load | Newton iterations | HB evaluations | per iteration | worker time | wall |
+|---|---|---|---|---|---|
+| ComposedFET (unchanged by the fix) | 131 | 248 | 1.9 | — | 0.27 s |
+| Verilog-A, before | 845 | 22,124 | 26.2 | 5.2 s (26 %) | 19.6 s |
+| Verilog-A, after | 99 | 107 | 1.1 | 0.03 s | 0.33 s |
+
+Batching was not it (one worker call per HB evaluation, 32 samples, ~8 µs per sample), and neither was partition size
+(an evaluation costs about the same on both sides): the NUMBER of evaluations was 89×, the line search rejecting step
+after step. MC-25's self-admittance-scaled line-search norm switched on only for a device's DECLARED `StatePorts`;
+`ExternalDeviceModel` declares none, so the exported module's trap node (1 mF, ≈1.3e7 S at 2 GHz) was judged in raw
+amperes and swamped every KCL row. **Forcing the scaled norm on was not enough**: it fixed the loadpull but stalled 10
+of `VerilogALinearChargeTests`' HB points at 1e-8…1e-11 A against their 1e-12 tolerance (a weakly connected internal
+row's large weight makes its round-off the scaled norm's floor). **Accepting either norm for EVERY state row was not
+right either**: it lost `EnvelopeConvergenceTests.AStepTheLineSearchCannotTake_IsRetakenInSubSteps`' native start point.
+So the fix is three-way, `HbNewton.JudgeFor` → `LineSearchJudge`: **Plain** with no state rows, **Scaled** (MC-25,
+unchanged) for declared state rows, and **ScaledOrPlain** — a trial passes when it decreases either norm, relative to
+the iterate (`LineSearchNorm`) — when an external device's free internal node is on the interface, since what such a
+node carries cannot be known. Every HB loop (single-tone, 2-D, N-tone) and both envelope engines take it. A netlist
+with no external device solves exactly as before (the ComposedFET's counts above are identical). `StatePorts` is NOT
+widened: harmonicaRF reads `HasStateRow` to relax its tolerance to `StateNodeTol` and the envelope reads `StatePorts`
+to filter its seam warning, and neither should change for a compiled model.
+
+**After: the 49-load grid reaches compression at 49/49 loads, 1,025/1,025 rungs, in 13.7 s** (the ComposedFET grid
+10.5 s), and the two placements agree to the log's 0.01 dB print resolution in Pout over 976 common rungs. Gate:
+`VerilogALineSearchTests` (one load of that bench on the shipped model: Verilog-A at most twice the ComposedFET's
+evaluations — 107 against 248; with the judge reverted it is 22,124 and fails). Suites run: Engine HB / loadpull /
+envelope / external / Hero / sweep 724, Harmonica 270, Core external 313, Ui Verilog-A / external / trap 202.
+
+**A worker that exits mid-run (R-mc30-6).** `DeviceWorkerChannel` now throws `DeviceWorkerExitedException` (a subtype of
+`ExternalDeviceException`, which is no longer sealed) whenever the process has gone, carrying its exit code (new
+`IDeviceWorkerTransport.ExitCode`, null for a stream transport) and its last error line; `ExternalDeviceModel.Guarded`
+keeps the type when it prefixes the instance name. `NonlinearDcEngine.TryBuildResidualAndJacobian` rethrows it rather
+than treating it as a refusal — every smaller step would fail the same way against a dead pipe. `ParametricSweepEngine`
+catches it per point: the attempt is reported (`Sweep 'SW1' at Vg = 2: the device worker (…) exited with code 3:
+<last line> The point failed; the worker was restarted and the point run again.`), the re-elaboration restarts the
+worker (the registry already replaces a dead provider it owns), and the point runs once more; a second exit at the same
+point stops the run with that sentence. The brief's "marked failed … and the run continues" is read as the failed
+ATTEMPT being reported and the point retried, since a NaN point in an I–V family is worse than either a real value or a
+clear stop, and only a retry gives "a second exit at the same point" a meaning. Loadpull's own grid loop and envelope
+are not covered. Gate: `WorkerExitMidRunTests`, with `tools/DeviceWorkerExample --exit-on-eval n` /
+`--exit-when-vgs-above v`.

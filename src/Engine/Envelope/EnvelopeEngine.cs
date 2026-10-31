@@ -370,8 +370,8 @@ public sealed class EnvelopeEngine
 
         // ── time stepping ─────────────────────────────────────────────────
         int dof = 2 * N * (K + 1);
-        bool stateRows = HbNewton.HasStateRow(_nl, ifNodes);
-        var newton = new EnvelopeNewton(dof, stateRows);
+        var judge = HbNewton.JudgeFor(_nl, ifNodes);
+        var newton = new EnvelopeNewton(dof, judge);
         var vHist = new List<Complex[,]> { (Complex[,])V.Clone() };
         double tolAbs = p.Tol;
         bool prof = Environment.GetEnvironmentVariable("CRF_ENV_PROFILE") is not null;
@@ -471,7 +471,7 @@ public sealed class EnvelopeEngine
             for (int m = 2; m <= MaxStepSplit; m *= 2)
             {
                 double aSub = m / h;
-                var nw = new EnvelopeNewton(dof, stateRows);
+                var nw = new EnvelopeNewton(dof, judge);
                 var x = products.Select(pr => pr.Xm1).ToArray();
                 var q = qm1;
                 var vs = (Complex[,])vHist[^1].Clone();

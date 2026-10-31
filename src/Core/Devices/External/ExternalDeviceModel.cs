@@ -246,6 +246,12 @@ public sealed class ExternalDeviceModel : ComponentModel, IDisposable
         {
             return call();
         }
+        catch (DeviceWorkerExitedException ex)
+        {
+            // Still an EXIT, named for this instance: the sweep tells it from a refusal by its type (MC-30 R-mc30-6).
+            throw new DeviceWorkerExitedException($"External device '{InstanceLabel}': {ex.Message}", ex.Origin,
+                                                  ex.ExitCode, ex.LastErrorLine, ex);
+        }
         catch (ExternalDeviceException ex)
         {
             throw new ExternalDeviceException($"External device '{InstanceLabel}': {ex.Message}", ex);
