@@ -52,7 +52,8 @@ public static class PCellGeneratorContentHash
         problem = null;
 
         var files = new List<string>();
-        if (!CollectInto(files, manifestDirectory, manifest, out problem))
+        var stamped = new List<string>();
+        if (!CollectInto(files, stamped, manifestDirectory, manifest, out problem))
             return "";
 
         // Sorted by the path each file is named RELATIVE to the manifest, so the hash does not
@@ -102,12 +103,50 @@ public static class PCellGeneratorContentHash
             }
         }
 
+        // Stamped files: name, length and last write — see CollectInto for which and why. Hashed after
+        // the content entries and only when there are any, so a manifest without them keys as it did.
+        foreach (string absolute in stamped.Distinct(StringComparer.Ordinal)
+                                           .OrderBy(f => Relative(manifestDirectory, f), StringComparer.Ordinal))
+        {
+            try
+            {
+                var info = new FileInfo(absolute);
+                byte[] stamp = Encoding.UTF8.GetBytes(
+                    $"stamp:{Relative(manifestDirectory, absolute)}\n{info.Length}\n{info.LastWriteTimeUtc.Ticks}\n");
+                sha.TransformBlock(stamp, 0, stamp.Length, null, 0);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                problem = $"'{absolute}' could not be read, so the PCell generators in " +
+                          $"'{manifestDirectory}' have no stable content key: {ex.Message}";
+                return "";
+            }
+        }
+
         sha.TransformFinalBlock([], 0, 0);
         return Convert.ToHexString(sha.Hash!)[..12].ToLowerInvariant();
     }
 
+    /// <summary>How many stamped files a gdsfactory kit may carry before the same "pointed at by accident"
+    /// conclusion is drawn. Far above <see cref="MaxFiles"/>: a stamp costs a directory entry, not a read.</summary>
+    public const int MaxStampedFiles = 50_000;
+
+    /// <summary>
+    /// <paramref name="files"/> receives what is hashed by CONTENT; <paramref name="stamped"/> what is
+    /// hashed by name, length and last-write time.
+    ///
+    /// <para><b>A gdsfactory kit is more than its scripts.</b> Its declaration (brief-gdf-2) names the whole
+    /// installed package as its source, and that package carries the fixed-GDS cells, layer maps and
+    /// YAML a cell is built from; and the entry script runs from the declaration folder, outside it. Both
+    /// went unhashed, so an edited entry script, or a kit update that changed only a <c>.gds</c>, reused
+    /// the cells the old one built. The entry script is hashed by content; the package's non-script files
+    /// are STAMPED rather than read, because a kit's fixed layouts can run to hundreds of megabytes and
+    /// reading them on every open is the cost <see cref="MaxBytes"/> exists to refuse. A reinstall
+    /// re-stamps everything and regenerates once, which is the safe direction.</para>
+    /// </summary>
     private static bool CollectInto(
-        List<string> files, string manifestDirectory, PCellGeneratorManifest manifest, out string? problem)
+        List<string> files, List<string> stamped, string manifestDirectory, PCellGeneratorManifest manifest,
+        out string? problem)
     {
         problem = null;
 
@@ -141,7 +180,20 @@ public static class PCellGeneratorContentHash
             foreach (string file in found)
             {
                 if (!SourceExtensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase))
+                {
+                    if (manifest.IsGdsfactory && IsKitData(root, file))
+                    {
+                        stamped.Add(Path.GetFullPath(file));
+                        if (stamped.Count > MaxStampedFiles)
+                        {
+                            problem = $"The gdsfactory kit declared in '{manifestDirectory}' carries more than " +
+                                      $"{MaxStampedFiles} files, which is a directory pointed at by accident rather " +
+                                      "than a kit; its cells will be regenerated every session rather than cached.";
+                            return false;
+                        }
+                    }
                     continue;
+                }
                 files.Add(Path.GetFullPath(file));
                 if (files.Count > MaxFiles)
                 {
@@ -153,6 +205,9 @@ public static class PCellGeneratorContentHash
                 }
             }
         }
+
+        // A gdsfactory kit's entry script runs from the declaration folder, outside the kit it names.
+        if (manifest.IsGdsfactory) Add(manifest.ResolveEntry(manifestDirectory));
 
         // Declared data files, taken whatever they are — declaring one is the statement that the
         // geometry depends on it.
@@ -174,6 +229,17 @@ public static class PCellGeneratorContentHash
         }
 
         return true;
+    }
+
+    /// <summary>A file of a gdsfactory kit's package that is data rather than bytecode: everything but
+    /// compiled caches, which change when nothing the kit says has.</summary>
+    private static bool IsKitData(string root, string file)
+    {
+        string ext = Path.GetExtension(file);
+        if (ext.Equals(".pyc", StringComparison.OrdinalIgnoreCase) || ext.Equals(".pyo", StringComparison.OrdinalIgnoreCase))
+            return false;
+        string rel = Relative(root, file);
+        return !rel.Split('/').Any(part => part == "__pycache__");
     }
 
     private static string Relative(string root, string path)

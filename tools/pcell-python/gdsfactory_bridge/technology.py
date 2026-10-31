@@ -8,9 +8,10 @@ It imports the kit, so circuitRF runs it only after consent, exactly as it runs 
 The document holds:
 
 - ``layers``: the kit's layer name → ``[layer, datatype]``.
-- ``layerViews``: the path of a layer-properties file the kit's own ``LayerViews.to_lyp`` wrote into a
-  fresh temporary directory (circuitRF reads it with the reader it already has, then deletes it), or
-  null when the kit has no layer views.
+- ``layerViews``: the path of a layer-properties file the kit's own ``LayerViews.to_lyp`` wrote into the
+  directory ``CRF_GDF_VIEWS_DIR`` names — one circuitRF made for this run, reads with the reader it
+  already has, and removes itself (a fresh temporary directory when run by hand) — or null when the kit
+  has no layer views.
 - ``stack``: one entry per level, in the kit's order: ``name``, ``layer`` (``[layer, datatype]`` when the
   level names one layer, else the expression as text), ``zmin``, ``thickness``, ``material``,
   ``sidewall_angle``, ``info``.
@@ -172,7 +173,9 @@ def read(module_name: str) -> dict[str, Any]:
         if views is not None and not hasattr(views, "to_lyp") and hasattr(pdk, "get_layer_views"):
             views = pdk.get_layer_views()
         if views is not None and hasattr(views, "to_lyp"):
-            path = os.path.join(tempfile.mkdtemp(prefix="crf-gdf-views-"), "layer_views.lyp")
+            # circuitRF hands over a directory it made and removes itself; run by hand, a fresh one.
+            out_dir = os.environ.get("CRF_GDF_VIEWS_DIR") or tempfile.mkdtemp(prefix="crf-gdf-views-")
+            path = os.path.join(out_dir, "layer_views.lyp")
             views.to_lyp(path)
             body["layerViews"] = path
     except Exception as exc:  # noqa: BLE001

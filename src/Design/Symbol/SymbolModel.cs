@@ -142,8 +142,10 @@ public static class SymbolFill
     /// Reads a typed fill percentage. Accepted: a number from 0 to 100, with or without a trailing <c>%</c>,
     /// surrounding spaces, and a decimal point or a decimal comma (<c>25</c>, <c>25 %</c>, <c>12.5</c>,
     /// <c>12,5</c>). Refused, with <paramref name="problem"/> saying why: anything that is not such a number —
-    /// <c>NaN</c> and <c>Infinity</c>, which .NET would otherwise parse, thousands separators, exponents — and
-    /// anything outside 0–100. The reasons are short enough for the one line the inspector reserves under the box.
+    /// <c>NaN</c> and <c>Infinity</c>, which .NET would otherwise parse, exponents, more than one separator
+    /// (<c>1,000.5</c>) — anything outside 0–100, and a comma followed by exactly three digits (<c>1,000</c>,
+    /// <c>12,500</c>), which reads as a thousands separator as readily as a decimal comma, so either guess is a
+    /// silent wrong answer. The reasons are short enough for the one line the inspector reserves under the box.
     /// The result is rounded to <see cref="Resolution"/>.
     /// </summary>
     public static bool TryParsePercent(string? text, out double percent, out string? problem)
@@ -162,6 +164,12 @@ public static class SymbolFill
             || !t.Any(char.IsAsciiDigit))
         {
             problem = "Not a number. Type 0 to 100 %.";
+            return false;
+        }
+        int comma = t.IndexOf(',');
+        if (comma >= 0 && t.Length - comma - 1 == 3)
+        {
+            problem = "Comma unclear. Type 0 to 100 %.";
             return false;
         }
         double v = double.Parse(t.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture);

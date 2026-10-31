@@ -121,6 +121,11 @@ public sealed class ProcessPCellWorkerTransport : IPCellWorkerTransport
         // saving on a kit with dozens of modules, so it is REDIRECTED rather than turned off.
         info.Environment["PYTHONPYCACHEPREFIX"] = CircuitRF.Design.UserStateDirectory.SubDir("pcell-cache");
 
+        // Says "this process is a worker, its stdout is the wire" to library code that runs kit code
+        // before run() claims the wire — gdsfactory_bridge.register_pdk builds every cell while
+        // describing, and a C extension printing there would land ahead of the first frame.
+        info.Environment["CRF_PCELL_WORKER"] = "1";
+
         if (pythonPath is { Count: > 0 })
         {
             // Prepended to whatever the user already has rather than replacing it — a developer with

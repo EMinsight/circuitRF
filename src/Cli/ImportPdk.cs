@@ -82,6 +82,9 @@ internal static class ImportPdk
                 $"--technology builds a gdsfactory kit's technology (--module, or a folder holding a gdsfactory " +
                 $"kit's source tree), and '{source}' holds none."));
 
+        if (name is not null && PdkWorkspaceImport.KitNameProblem(name) is { } nameProblem)
+            return JsonRun.Fail(CliDiagnostics.ImportPdkRefused($"--name '{name}': {nameProblem}"));
+
         string full = Path.GetFullPath(into);
         if (File.Exists(full)) full = Path.GetDirectoryName(full)!;
         if ((Directory.Exists(full) ? WorkspaceRootFinder.WorkspaceDirOf(full) : null) is not { } wsRoot)
@@ -103,6 +106,9 @@ internal static class ImportPdk
         if (report.Status == PdkImportStatus.Failed)
             return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
                 $"{report.KitName} could not be read; nothing was recorded."));
+        if (!PdkWorkspaceImport.IsRecordable(report))
+            return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
+                $"circuitRF recognised nothing it can use in '{report.RootPath}'; nothing was recorded."));
         if (result.InstallProblem is { } installProblem)
             return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
                 $"{report.KitName}: its parts could not be installed: {installProblem}"));
@@ -163,7 +169,7 @@ internal static class ImportPdk
                   "they may not run. --allow-code runs them for this one import."
                 : $"The kit's layout generators in '{folder}' were not started: nobody has allowed this kit's " +
                   "code to run on this machine, and a headless import cannot ask. --allow-code runs them for " +
-                  "this one import; Settings ▸ General ▸ Generated Artwork records a decision."));
+                  "this one import; opening the workspace in circuitRF asks, and records the answer."));
             return;
         }
 

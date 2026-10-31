@@ -4142,3 +4142,30 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
   `docs/design/pdk-import.md` §9; the comment on `src/Core/CLAUDE.md`'s "Automatic exact-name binding"
   line predates this. Gates: `StatedSubcircuitPairingTests` (the stated name over a test-folder copy;
   a per-corner definition resolved to the nominal corner's).
+
+## Review of briefs gdf-1 / gdf-1b: pairing, element letter and the DC gate (2026-10-30)
+
+- **A record symbol's element letter is read off the FORMAT's first word**, which is what writes the
+  line: `@spiceprefix` gives the template's prefix (or what follows it when blank), `@name` the name's
+  first letter, a literal letter itself. Read off the template alone, `X@name` with `name=R1` became a
+  primitive resistor, and a format never writing `@spiceprefix` became a subcircuit call because the
+  template set one. Gate: `KitSymbolFileReaderTests.K22_…`.
+- **A stated-name symbol with an extra terminal also pairs with a definition of its pins alone**, which
+  extraction already accepts; the stated count is preferred when both exist. Gate:
+  `StatedSubcircuitPairingTests.ASymbolStatingABodyTerminal_…`.
+- **A primitive part's card file takes the same nominal-corner tie-break as a stated subcircuit**: a card
+  declared once per corner file left the part unpaired. Gate: `…APrimitiveCardDeclaredOncePerCorner_…`.
+- **Checking folders are matched by WORD, not prefix**: `test…` also excluded a model folder whose name
+  merely began with those letters. The word list (`PdkImporter.CheckingWords`) keeps every word the
+  prefix rule caught in a measured kit's folder names as far as known; the three open kits were NOT
+  re-measured after the change. Gate: `…AModelFolderWhoseNameBeginsWithTestLetters_…`.
+- **`DcAffectingUnmapped` returns null for a family with no DC list**, and extraction refuses the built-in
+  on null — the routing had sent every translatable card type (JFET, MESFET, VDMOS, classical MOS, bead)
+  to the built-in while only diode and bipolar cards had a "refuse rather than approximate" gate. A
+  capacitor or inductor card lists nothing (an open and a short at DC); a resistor card lists all it
+  leaves behind but noise and the geometry words.
+- **Diode: `JS` binds as `Is`** (the same saturation current, both × AREA — it was refused as left behind),
+  **and `IBVL` is DC-affecting.** Gates: `KitCardTranslationTests.ADiodeCardStatingJs_…`,
+  `…ListsTheLowLevelBreakdownCurrent`.
+- Checked and NOT a defect: a section reading itself under another case is already caught as a cycle at
+  once — the reader's open-file set compares case-insensitively.

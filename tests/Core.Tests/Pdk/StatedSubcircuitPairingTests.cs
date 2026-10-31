@@ -100,4 +100,74 @@ public sealed class StatedSubcircuitPairingTests : IDisposable
 
         Assert.Equal("models/amp__tt.lib", Amp().DefinitionRelativePath);
     }
+
+    /// <summary>
+    /// A symbol stating a body terminal pairs with a definition that has only the drawn pins, as
+    /// extraction accepts it: requiring pins plus extras left that part unpaired.
+    /// </summary>
+    [Fact]
+    public void ASymbolStatingABodyTerminal_PairsWithADefinitionOfItsPinsAlone()
+    {
+        Write("symbols/amp.sym", """
+            v {version=1.2}
+            K {type=subcircuit
+            format="@name @pinlist @body amp_core g=@g"
+            template="name=X1 body=sub! g=2"
+            }
+            B 5 -2.5 -2.5 2.5 2.5 {name=in dir=inout}
+            B 5 37.5 -2.5 42.5 2.5 {name=out dir=inout}
+            """);
+        Write("models/parts.lib", """
+            .subckt amp_core in out g=1
+            R1 in out {g}
+            .ends amp_core
+            """);
+
+        Assert.Equal("amp_core", Amp().DefinitionCell);
+    }
+
+    /// <summary>A folder of real models whose name merely begins with "test" letters is not a checking folder.</summary>
+    [Fact]
+    public void AModelFolderWhoseNameBeginsWithTestLetters_StillDefinesParts()
+    {
+        WriteSymbol();
+        Write("testchip_models/parts.lib", """
+            .subckt amp_core in out g=1
+            R1 in out {g}
+            .ends amp_core
+            """);
+
+        Assert.Equal("testchip_models/parts.lib", Amp().DefinitionRelativePath);
+    }
+
+    /// <summary>
+    /// A primitive part whose card is declared once per corner file points at the file its nominal
+    /// corner reads — the tie-break a stated subcircuit already had. Without it the part was unpaired.
+    /// </summary>
+    [Fact]
+    public void APrimitiveCardDeclaredOncePerCorner_PointsAtTheNominalCornersFile()
+    {
+        Write("symbols/dprim.sym", """
+            v {version=1.2}
+            K {type=diode
+            format="@name @pinlist @model"
+            template="name=D1 model=dcard"
+            }
+            B 5 -2.5 -2.5 2.5 2.5 {name=p dir=inout}
+            B 5 37.5 -2.5 42.5 2.5 {name=n dir=inout}
+            """);
+        foreach (string corner in new[] { "tt", "ss" })
+            Write($"models/d__{corner}.lib", $".model dcard d is={(corner == "tt" ? "1e-15" : "2e-15")}\n");
+        Write("models/corners.lib", """
+            .lib tt
+            .include d__tt.lib
+            .endl tt
+            .lib ss
+            .include d__ss.lib
+            .endl ss
+            """);
+
+        var part = PdkImporter.Import(_root).Parts.Single(p => p.Id == "dprim");
+        Assert.Equal("models/d__tt.lib", part.DefinitionRelativePath);
+    }
 }

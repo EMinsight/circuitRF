@@ -22,8 +22,12 @@ names no kit (the module is an argument). Brief: `docs/sonnet-briefs/brief-gdf-5
   a cross product.
 - `--build-timeout`: seconds gdsfactory may spend building one set (default 60). A set that does not
   finish is the kit's refusal and is not sent — a gdsfactory build can loop without end on one parameter
-  value, inside compiled code. Each set is built in a forked child killed at the limit; where there is no
-  fork, builds run in the harness's own process with no limit.
+  value, inside compiled code. Each set, and each cell's build at its defaults when the cells are classified,
+  is built in a forked child killed at the limit; where there is no fork, builds run in the harness's own
+  process with no limit. A child that dies WITHOUT a result (a crash, not a refusal) is counted on its own
+  as "not compared" and attributed to neither side.
+- `--circuitrf` may be the installed `circuitRF` executable or the CLI's `.dll`. Every call puts the verb
+  first, because the installed executable starts the application unless its first argument is a verb.
 - Exit 0 when nothing is attributed to circuitRF, 1 otherwise.
 
 ## The environment
@@ -56,8 +60,9 @@ Several kits pinning the same gdsfactory can share one environment.
 | Attribution | When |
 |---|---|
 | gdsfactory or the kit | it fails in gdsfactory alone: a set gdsfactory refuses; a cell it cannot build at its defaults; circuitRF matching gdsfactory's in-process flattening while gdsfactory's own GDS differs from it; a cell whose two gdsfactory builds of one set differ (it draws a clock, not its parameters) |
-| circuitRF | it builds in gdsfactory and fails, or differs, through circuitRF — including a not-offered reason the harness disagrees with |
+| circuitRF | it builds in gdsfactory and fails, or differs, through circuitRF — including a not-offered reason the harness disagrees with, and any pin that differs from its port whatever the geometry did |
 | out of scope | a decision of the series excludes it (a cell named like a built-in) |
+| unattributed (the harness) | the harness's own reference build process died without a result, so nothing was compared |
 
 A failure attributed to circuitRF is fixed in the code that owns it and the matrix is re-run **for that
 kit only** — with `--cells` for the cell in question first. The report says what broke; do not re-run

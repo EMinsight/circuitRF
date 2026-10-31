@@ -526,6 +526,12 @@ KPY
             echo "⚠️  NOT SMOKE-TESTED: this $(uname -m) Mac cannot execute a ${MACHO_ARCH} bundle."
             [ "$MACHO_ARCH" = x86_64 ] && echo "   Install Rosetta to check it: softwareupdate --install-rosetta"
             UNSMOKED="${UNSMOKED} ${ARCH}"
+            # The no-Python check reads files and runs nothing, so it holds for this bundle all the same.
+            dotnet "$SMOKE_DLL" --no-python "${APP_BUNDLE}/Contents/MacOS/${NAME}" || {
+                echo "❌ ${NAME}.app (${ARCH}) carries a Python environment (see above)."
+                echo "   This bundle must not be imaged."
+                exit 1
+            }
         fi
     fi
 done

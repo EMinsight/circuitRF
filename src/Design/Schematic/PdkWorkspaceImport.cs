@@ -62,6 +62,24 @@ public static class PdkWorkspaceImport
         }
     }
 
+    /// <summary>
+    /// Why <paramref name="kitName"/> cannot name a kit, or null. Every part reference is built from it
+    /// (<c>pdk://kit/part</c>, split at the FIRST slash), a model-library override is appended to it after
+    /// <see cref="DeviceWorkerProviderResolver.LibraryOverrideSeparator"/>, and it is written as a
+    /// <c>Provider=</c> value on a netlist line that splits on whitespace — so any of those characters in
+    /// it leaves every placed part unresolvable, with no error at the import.
+    /// </summary>
+    public static string? KitNameProblem(string kitName)
+    {
+        if (string.IsNullOrWhiteSpace(kitName)) return "a kit's name cannot be blank.";
+        foreach (char c in kitName)
+            if (char.IsWhiteSpace(c) || char.IsControl(c) || c is '/' or '\\' or '"' or '=' or ';'
+                || c == DeviceWorkerProviderResolver.LibraryOverrideSeparator)
+                return $"a kit's name cannot contain '{(char.IsWhiteSpace(c) || char.IsControl(c) ? "a space" : c.ToString())}' — "
+                     + "its parts are referenced through it, and that character would split the reference.";
+        return null;
+    }
+
     /// <summary>The sentence for a kit whose cell library could not even be looked for.</summary>
     public static string PCellExamineProblem(string kitName, string problem)
         => $"'{kitName}': its parametric-cell library could not be examined: {problem}";
@@ -116,12 +134,23 @@ public static class PdkWorkspaceImport
         => PdkPartInstaller.Install(report, libraryRoots: LibraryRootsOf(cwsPath));
 
     /// <summary>
+    /// Whether a read kit is one a workspace should record at all: not a path that could not be read, and
+    /// not a folder in which circuitRF recognised nothing usable. Recording either left a reference to
+    /// something that is not a kit, re-read on every open of the workspace.
+    /// </summary>
+    public static bool IsRecordable(PdkImportReport report)
+        => report.Status is not (PdkImportStatus.Failed or PdkImportStatus.NotRecognized);
+
+    /// <summary>
     /// Records an installed kit in its workspace: the <c>.cws</c> reference, and its parametric-cell
     /// library's declaration when it ships one. Never throws for either — a kit that loaded stays loaded
-    /// when one of these could not be written, and the result says which.
+    /// when one of these could not be written, and the result says which. <b>Writes nothing</b> for a
+    /// report that is not <see cref="IsRecordable"/>; the report's own blocker already says why.
     /// </summary>
     public static CommitResult Commit(string cwsPath, PdkImportReport report, PdkPartInstaller.InstallOutcome outcome)
     {
+        if (!IsRecordable(report)) return new CommitResult(null, null, null);
+
         string wsRoot = Path.GetDirectoryName(Path.GetFullPath(cwsPath))!;
 
         // Registered under the name the INSTALLER settled on, never the report's own: every part
@@ -134,12 +163,12 @@ public static class PdkWorkspaceImport
 
     /// <summary>
     /// <see cref="Read"/>, <see cref="Install"/> and <see cref="Commit"/>, in the order File ▸ Import PDK
-    /// runs them. Nothing is committed for a report that could not be read at all.
+    /// runs them. Nothing is installed or committed for a report that is not <see cref="IsRecordable"/>.
     /// </summary>
     public static ImportResult Import(string kitPath, string cwsPath, string? kitName = null)
     {
         var report = Read(kitPath, kitName);
-        if (report.Status == PdkImportStatus.Failed) return new ImportResult(report, null, null, null);
+        if (!IsRecordable(report)) return new ImportResult(report, null, null, null);
 
         PdkPartInstaller.InstallOutcome outcome;
         try { outcome = Install(report, cwsPath); }
@@ -271,8 +300,11 @@ public static class PdkWorkspaceImport
                     manifests.Add((r.Provider, m));
                 loaded.Add(r.Provider);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex)
             {
+                // Any failure, not only a file error: this runs ahead of every headless run in the
+                // workspace, most of which never use the kit, and one kit that throws must cost that
+                // kit's parts — said — rather than the run.
                 problems.Add($"'{r.Provider}' could not be read: {ex.Message}");
             }
         }

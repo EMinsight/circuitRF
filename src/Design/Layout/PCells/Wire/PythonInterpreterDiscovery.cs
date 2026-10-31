@@ -14,12 +14,24 @@ public sealed record PythonInterpreter(
     string Command, IReadOnlyList<string> Arguments, string Version, string HowFound)
 {
     /// <summary>How this is written into a workspace so the choice can be corrected by hand: the
-    /// command, with any prefix arguments after it.</summary>
+    /// command, with any prefix arguments after it. A command with whitespace in it is QUOTED, so
+    /// <see cref="ParseRecord"/> reads it back as one command rather than a command and stray arguments.</summary>
     public string ToRecord()
-        => Arguments.Count == 0 ? Command : Command + " " + string.Join(' ', Arguments);
+    {
+        string command = Command.Any(char.IsWhiteSpace) ? $"\"{Command}\"" : Command;
+        return Arguments.Count == 0 ? command : command + " " + string.Join(' ', Arguments);
+    }
 
-    /// <summary>Reads back <see cref="ToRecord"/>. A quoted first token is honoured so a path with a
-    /// space in it (the common case on Windows) round-trips.</summary>
+    /// <summary>
+    /// Reads back <see cref="ToRecord"/>. A quoted first token is honoured so a path with a space in it
+    /// (the common case on Windows) round-trips.
+    ///
+    /// <para>An UNQUOTED path with a space in it is honoured too, when it names a file: a path picked in
+    /// a file dialog, typed after <c>--python</c> or written by hand arrives exactly like that, and
+    /// splitting <c>C:\Users\First Last\venv\Scripts\python.exe</c> at its space ran <c>C:\Users\First</c>.
+    /// The longest leading run of words that is an existing file is the command; the rest are its
+    /// arguments. A record with no such prefix splits at spaces, as it always did.</para>
+    /// </summary>
     public static (string Command, IReadOnlyList<string> Arguments)? ParseRecord(string? recorded)
     {
         if (string.IsNullOrWhiteSpace(recorded)) return null;
@@ -32,6 +44,13 @@ public sealed record PythonInterpreter(
             if (close < 0) return null;
             return (recorded[1..close], Split(recorded[(close + 1)..]));
         }
+
+        if (recorded.Contains(' '))
+            for (int end = recorded.Length; end > 0; end = recorded.LastIndexOf(' ', end - 1))
+            {
+                string head = recorded[..end].TrimEnd();
+                if (head.Contains(' ') && File.Exists(head)) return (head, Split(recorded[end..]));
+            }
 
         var parts = Split(recorded);
         return parts.Count == 0 ? null : (parts[0], parts.Skip(1).ToList());

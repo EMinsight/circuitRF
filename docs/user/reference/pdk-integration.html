@@ -50,6 +50,7 @@ run time.</p>
 <ol>
 <li><a href="#what">What a kit contributes</a></li>
 <li><a href="#openpdk">OpenPDK</a></li>
+<li><a href="#two-kinds">Two kinds of open kit</a></li>
 <li><a href="#importing">Importing one</a></li>
 <li><a href="#where">Where the parts go</a></li>
 <li><a href="#models">How a kit's models are evaluated</a></li>
@@ -109,6 +110,16 @@ one follows is not derivable from anything the model reports, and is supplied as
 you are building a kit yourself, or normalising a supplied one, that is the layout to follow: it is an
 open standard, it is what circuitRF's importer expects to find, and it keeps a kit portable between
 tools. <a href="pdk-authoring.html">PDK Authoring</a> covers producing one.</p>
+<h2 id="two-kinds">Two kinds of open kit</h2>
+<p>An open kit can arrive in two forms, and each supplies a different half of a design.</p>
+<ul>
+<li><strong>The kit's own tree</strong> is a folder from the kit's publisher, imported as this page describes, with no
+Python needed. It gives the schematic side: parts with symbols, their models and corners.</li>
+<li><strong>A gdsfactory kit</strong> is a Python package you install with <code>pip</code> into your own Python. It gives the
+layout side: parametric layout cells with their ports, and the kit's layer stack as a technology.</li>
+</ul>
+<p>Import both and a layout cell declaring the same model as a part merges onto that part's palette tile.
+<a href="gdsfactory-kits.html">Using a gdsfactory kit</a> covers the second kind.</p>
 <h2 id="importing">Importing one</h2>
 <p><strong>File ▸ Manage Libraries… ▸ Add…</strong> (<kbd>Ctrl/⌘ P</kbd>), then pick the kit's folder.</p>
 <div class="callout note">

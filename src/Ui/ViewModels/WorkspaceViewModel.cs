@@ -826,7 +826,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (!allowed.Value)
             {
                 Messages.Info($"Generated artwork from {Plural(pending.Count, "kit")} will draw as " +
-                              "placeholders. Settings ▸ General ▸ Generated Artwork asks again.");
+                              "placeholders. Settings ▸ Security & Permissions changes the answer for each kit.");
                 return;
             }
 
@@ -853,6 +853,52 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     private static string Plural(int n, string noun) => n == 1 ? $"1 {noun}" : $"{n} {noun}s";
+
+    /// <summary>
+    /// Applies a kit permission changed in Settings to every open workspace (Settings ▸ Security &amp;
+    /// Permissions lists one row per kit). A broadcast, not a static event, for
+    /// <see cref="RefreshRevisionSurfacesEverywhere"/>'s reason: a static event would hold every
+    /// workspace view model that ever subscribed.
+    /// </summary>
+    public static void ApplyPCellTrustEverywhere()
+    {
+        foreach (var window in Views.WorkspaceLocator.AllWindows())
+            if (window.DataContext is WorkspaceViewModel vm) vm.ApplyPCellTrustChange();
+    }
+
+    /// <summary>
+    /// Re-reads the recorded answers into the store this workspace's resolver already consults, then
+    /// does what <see cref="RequestPCellConsent"/> does after an Allow. <b>Stopping the providers is
+    /// what makes a refusal real</b>: a kit unticked in Settings has an interpreter running if a design
+    /// used it, and the gate is only consulted when one is started. A kit that has just become allowed
+    /// regenerates the workspace's cells, exactly as granting it from the prompt would.
+    /// </summary>
+    private void ApplyPCellTrustChange()
+    {
+        if (_pcellTrust is not { } trust || _pcellResolver is not { } resolver) return;
+
+        var recorded = CircuitRF.Ui.Layout.PCells.PCellTrustPreferences.Load();
+        var kits = resolver.Kits;
+        bool newlyAllowed = kits.Any(k =>
+            trust.Decide(k.TrustKey) != CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Allowed
+            && recorded.Any(r => r.Value && string.Equals(CircuitRF.Design.Layout.PCells.Wire.PCellTrustStore.Normalize(r.Key),
+                                                         CircuitRF.Design.Layout.PCells.Wire.PCellTrustStore.Normalize(k.TrustKey),
+                                                         StringComparison.OrdinalIgnoreCase)));
+        trust.ReplaceAll(recorded);
+
+        resolver.StopProviders();
+        CircuitRF.Design.Layout.PCells.PCellRegistry.InvalidateResolved();
+        if (newlyAllowed && CurrentWorkspacePath is { } cws)
+        {
+            try { RegenerateAllGeneratedCells(cws); }
+            catch (Exception ex)
+            {
+                Messages.Warning($"Generated cells could not be rebuilt after the permission changed: {ex.Message}");
+            }
+        }
+        RefreshAllOpenLayoutTech();
+        RefreshPCellPaletteItems();
+    }
 
     /// <summary>
     /// Asks, once per gdsfactory kit with no environment chosen on this machine, which interpreter runs
@@ -6269,8 +6315,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         else
         {
             if (await GdsfactoryKitDialog.PickInterpreterAsync(window, tree.Module, candidates) is not { } chosen) return;
-            var env = CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.CheckEnvironment(chosen, tree.Display, out _, out string? refusal);
-            if (env is null || !CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.Fits(tree, env, chosen, out refusal))
+            // Off the UI thread: it starts the interpreter (GdsfactoryKitDialog's own reason).
+            var (env, refusal) = await Task.Run(() =>
+            {
+                var e = CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.CheckEnvironment(chosen, tree.Display, out _, out string? r);
+                if (e is not null && !CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.Fits(tree, e, chosen, out r)) e = null;
+                return (e, r);
+            });
+            if (env is null)
             {
                 Messages.Error($"Import PDK — {refusal}");
                 return;
@@ -6321,7 +6373,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             // reload below, which is what mounts them on the palette.
             if (report is { Problem: null } && report.Symbols.Count + report.Glyphs.Count > 0)
             {
-                symbols = KitGlyphSymbol.Install(kitFolder, report);
+                // Off the UI thread: a kit's drawings are the kit's data, and reading one is parsing work
+                // whose cost the kit decides, not this window.
+                symbols = await Task.Run(() => KitGlyphSymbol.Install(kitFolder, report));
                 foreach (var (cell, text, warning) in symbols.Lines)
                     if (warning) Messages.Warning($"Import PDK — {cell}: {text}");
                     else Messages.Info($"Import PDK — {cell}: {text}");

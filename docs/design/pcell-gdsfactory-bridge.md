@@ -68,11 +68,16 @@ bridge never imports gdsfactory**: `register_pdk` does, so an environment withou
 ## 2. Finding kits without running them
 
 `GdsfactoryKitDiscovery` asks the chosen interpreter one thing — `sys.version_info` and its
-site-packages directories, a `-I -c` script importing only `sys` and `sysconfig` — and then reads
+site-packages directories, a `-I -S -c` script importing only `os`, `sys` and `sysconfig` (`-S`
+because `site` executes every `.pth` file in site-packages; the directories are the ones the interpreter
+would search, in its order — a virtual environment's, then the user scheme only when it is used, then
+the base interpreter's when the environment includes it) — and then reads
 files only: every `*.dist-info/METADATA` whose `Requires-Dist` names gdsfactory (unconditionally; a
 requirement only under an extra is an optional integration, not a kit). For each it reports the
 distribution, version, `Requires-Python`, top-level module (`top_level.txt`, else `RECORD`) and
-installed directory. **No kit module is imported to list kits.** A kit **source tree** is recognised
+installed directory. A distribution that requires gdsfactory but installs no package directory — an
+editable install, above all — is **listed as refused**, naming its source folder to import instead.
+**No kit module is imported to list kits.** A kit **source tree** is recognised
 structurally: a package whose `__init__.py` head imports gdsfactory and constructs `Pdk(`.
 
 Refusals name the fact: an interpreter that is not Python; below 3.12 or below the kit's own
@@ -88,6 +93,12 @@ requires it — what a `--no-deps` install leaves behind. circuitRF installs not
   spellings of one directory. `PCellKit.TrustKey` carries the key, so the prompt, the resolver and a
   headless run agree. `cni` kits keep their manifest-folder key: re-keying them would turn every
   recorded answer back into a question.
+- **…only while the declaration adds no code of its own.** An entry script that is not circuitRF's
+  generated one (code lines compared; comments ignored), or a `pythonPath` reaching anywhere but the
+  source tree's own root, keys the kit on its declaration folder instead — a workspace from someone
+  else is asked about, not run on permission given to the kit. The worker runs with `-P`, so the entry
+  script's folder is not on `sys.path`, and the chosen environment must hold the module at the very
+  directory the declaration names: another environment's copy is refused, never run.
 - **The consent prompt** shows Package, Version, Location and Interpreter rows for a gdsfactory kit,
   and says "Running this kit runs its Python code with your user account."
 - **The manifest records `Interpreter = null`**, the module (`Module`) and the version seen
@@ -104,6 +115,7 @@ requires it — what a `--no-deps` install leaves behind. circuitRF installs not
   directory that does not exist, and dropped out of the key silently; `PCellGeneratorContentHash` now
   resolves it through `ResolveRef`.)
 - **A recorded version different from the installed one is one NOTE per kit per open**, never a refusal.
+  The consent prompt states the installed version; re-importing the kit updates the recorded one.
 
 ## 4. Describe
 

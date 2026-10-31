@@ -56,6 +56,12 @@ public sealed record PCellKit(string Directory, string EntryScript)
     /// as always; for a gdsfactory kit, the kit's INSTALLED directory with links resolved
     /// (<see cref="PCellTrustStore.ResolvedDirectory"/>) — it is that directory's code that runs, and
     /// a second workspace declaring the same installed kit is the same question (brief-gdf-2 R-gdf2-2a).
+    ///
+    /// <para>That holds only while the workspace adds no code of its own. A declaration whose entry
+    /// script is not the one circuitRF generates, or whose <c>pythonPath</c> reaches anywhere but the
+    /// kit's own source-tree root, runs workspace code under the kit's name — so it is keyed on its
+    /// declaration folder, like any other kit, and a workspace that arrived from someone else is asked
+    /// about rather than run on the strength of permission given to the kit.</para>
     /// </summary>
     public string TrustKey { get; init; } = Directory;
 
@@ -63,8 +69,12 @@ public sealed record PCellKit(string Directory, string EntryScript)
     /// shows the package rows below.</summary>
     public string? Module { get; init; }
 
-    /// <summary>The version recorded when the kit was declared.</summary>
+    /// <summary>The kit's version as the consent prompt states it: what is INSTALLED now, because that
+    /// is what would run — the recorded one when nothing installed says.</summary>
     public string? ModuleVersion { get; init; }
+
+    /// <summary>The version the workspace recorded when it declared the kit.</summary>
+    public string? RecordedVersion { get; init; }
 
     /// <summary>Where the kit's code is installed.</summary>
     public string? Location { get; init; }
@@ -126,13 +136,16 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
     /// <param name="note">Where a NOTE goes — something worth saying that is not a problem, such as a
     /// gdsfactory kit whose installed version changed since it was declared. Null sends it to
     /// <paramref name="report"/>.</param>
+    /// <param name="runProbe">How a gdsfactory kit's interpreter is asked for its version and package
+    /// directories — the seam <see cref="GdsfactoryKitDiscovery.Probe"/> takes. Null runs it for real.</param>
     public PCellWorkerResolver(
         string rootDirectory,
         Func<PCellGeneratorManifest, string, PythonInterpreter?>? findInterpreter = null,
         Action<string>? report = null,
         Func<string, PCellTrustDecision>? trust = null,
         Func<string, string?>? moduleInterpreter = null,
-        Action<string>? note = null)
+        Action<string>? note = null,
+        Func<string, string?>? runProbe = null)
     {
         _rootDirectory = rootDirectory;
         _findInterpreter = findInterpreter ?? DefaultInterpreter;
@@ -140,8 +153,11 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
         _trust = trust;
         _moduleInterpreter = moduleInterpreter ?? GdsfactoryInterpreterPreferences.Recorded;
         _note = note ?? report;
+        _runProbe = runProbe;
         Rescan();
     }
+
+    private readonly Func<string, string?>? _runProbe;
 
     /// <summary>
     /// What this workspace recorded last time, replayed rather than re-derived. Set before the first
@@ -209,7 +225,7 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
             return null;
         }
 
-        var env = GdsfactoryKitDiscovery.Probe(chosen, out string? notPython);
+        var env = GdsfactoryKitDiscovery.Probe(chosen, out string? notPython, _runProbe);
         if (env is null)
         {
             _report?.Invoke($"The gdsfactory kit '{module}' cannot run: {notPython}");
@@ -226,6 +242,28 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
             return null;
         }
 
+        // The environment chosen must hold THE kit this declaration names — the installed directory
+        // permission was given for, and the one the cache key hashed. The choice is per user and by
+        // module NAME, so nothing else ties the two together: a different environment's copy of the
+        // module is different code, which nobody has allowed, and running it on the strength of the
+        // other copy's permission is a consent bypass (overview D2: "a different environment asks
+        // again"). A source tree is found through PYTHONPATH, ahead of site-packages, so it is its
+        // own answer.
+        if (kitRoot is not null && manifest.ResolvePythonPath(manifestDirectory).Count == 0)
+        {
+            string? here = GdsfactoryKitDiscovery.PackageDirectoryIn(env.SitePackages, module);
+            if (here is null || !string.Equals(PCellTrustStore.ResolvedDirectory(here), PCellTrustStore.ResolvedDirectory(kitRoot),
+                                               StringComparison.OrdinalIgnoreCase))
+            {
+                _report?.Invoke($"The gdsfactory kit '{module}' cannot run in '{chosen}': " +
+                                (here is null ? $"that environment has no '{module}' installed" : $"that environment's '{module}' is at '{here}'") +
+                                $", and this workspace declares the one at '{kitRoot}', which is what permission was given for. " +
+                                "Import the kit again from the environment that should run it (File ▸ Import PDK), " +
+                                "or choose the environment it is installed in.");
+                return null;
+            }
+        }
+
         if (GdsfactoryKitDiscovery.GdsfactoryVersionIn(env.SitePackages) is not { } gfVersion)
         {
             _report?.Invoke(GdsfactoryKitDiscovery.MissingGdsfactorySentence(chosen, module));
@@ -234,7 +272,10 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
 
         _gdsfactoryVersionByDir[manifestDirectory] = gfVersion;
         var parsed = PythonInterpreter.ParseRecord(chosen)!.Value;
-        return new PythonInterpreter(parsed.Command, parsed.Arguments, env.Version, "chosen for this kit on this machine");
+        // -P keeps the entry script's own folder — workspace content — off the front of sys.path, so
+        // nothing lying beside the script can shadow the kit, gdsfactory or circuitRF's own package. The
+        // probe above proved the interpreter is at least 3.12, which knows the flag.
+        return new PythonInterpreter(parsed.Command, [.. parsed.Arguments, "-P"], env.Version, "chosen for this kit on this machine");
     }
 
     /// <summary>gdsfactory's version per gdsfactory-kit manifest directory, as its interpreter reported it.</summary>
@@ -271,11 +312,14 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
 
         // One NOTE per gdsfactory kit per open when what is installed is not what was declared — a
         // kit upgraded under a workspace is ordinary, and still worth knowing (R-gdf2-2d). Files only.
+        // Once per resolver, not per Rescan: an import reloads the generators, and the same note again
+        // on every reload is noise that teaches people to stop reading notes.
         foreach (var (dir, manifest) in _manifests.ToList())
             if (manifest.IsGdsfactory && manifest.ModuleVersion is { Length: > 0 } recorded
                 && manifest.ResolveKitRoot(dir) is { } kitRoot
                 && GdsfactoryKitDiscovery.InstalledVersion(kitRoot) is { Length: > 0 } installed
-                && !string.Equals(installed, recorded, StringComparison.Ordinal))
+                && !string.Equals(installed, recorded, StringComparison.Ordinal)
+                && _versionNoted.Add($"{dir}\n{recorded}\n{installed}"))
                 _note?.Invoke($"The gdsfactory kit '{manifest.Module}' was {recorded} when this workspace declared " +
                               $"it and is {installed} now; its cells are generated by the installed version.");
     }
@@ -327,13 +371,42 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
         string? location = manifest.ResolveKitRoot(dir);
         return kit with
         {
-            TrustKey      = location is null ? dir : PCellTrustStore.ResolvedDirectory(location),
-            Module        = manifest.Module,
-            ModuleVersion = manifest.ModuleVersion,
-            Location      = location,
-            Interpreter   = _moduleInterpreter(manifest.Module!),
+            TrustKey        = TrustKeyOf(dir, manifest),
+            Module          = manifest.Module,
+            ModuleVersion   = (location is null ? null : GdsfactoryKitDiscovery.InstalledVersion(location)) ?? manifest.ModuleVersion,
+            RecordedVersion = manifest.ModuleVersion,
+            Location        = location,
+            Interpreter     = _moduleInterpreter(manifest.Module!),
         };
     }
+
+    /// <summary>What a declared kit's consent is recorded under — <see cref="PCellKit.TrustKey"/>, without
+    /// the rest of <see cref="KitOf"/> (the installed version is a directory scan the gate does not need).</summary>
+    private static string TrustKeyOf(string dir, PCellGeneratorManifest manifest)
+        => manifest.IsGdsfactory && manifest.ResolveKitRoot(dir) is { } location && AddsNoCodeOfItsOwn(dir, manifest, location)
+            ? PCellTrustStore.ResolvedDirectory(location)
+            : dir;
+
+    /// <summary>
+    /// Whether a gdsfactory kit's declaration runs nothing but the kit (see <see cref="PCellKit.TrustKey"/>):
+    /// the entry script is circuitRF's own, and <c>pythonPath</c> is empty (an installed kit) or exactly the
+    /// root its source tree imports from. With <c>-P</c> on the interpreter
+    /// (<see cref="GdsfactoryInterpreter"/>) the entry script's folder is not on the path, so those are the
+    /// only two ways a workspace can put code of its own into the run.
+    /// </summary>
+    private static bool AddsNoCodeOfItsOwn(string dir, PCellGeneratorManifest manifest, string location)
+    {
+        if (!KitPCellLibrary.IsGeneratedGdsfactoryEntry(manifest.ResolveEntry(dir), manifest.Module!)) return false;
+
+        var path = manifest.ResolvePythonPath(dir);
+        if (path.Count == 0) return true;
+        if (path.Count > 1) return false;
+        string expected = Path.Combine(path[0], manifest.Module!.Replace('.', Path.DirectorySeparatorChar));
+        return string.Equals(PCellTrustStore.Normalize(expected), PCellTrustStore.Normalize(location), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Version notes already given by this resolver — see <see cref="Rescan"/>.</summary>
+    private readonly HashSet<string> _versionNoted = new(StringComparer.Ordinal);
 
     /// <summary>The hint a gdsfactory kit's real parameters carry: the number is the kit's own, passed
     /// through exactly (overview D3), so the editor states whose units it is in.</summary>
@@ -488,6 +561,16 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
 
     private string ContentKeyOf(string manifestDirectory, PCellGeneratorManifest manifest)
     {
+        // A gdsfactory upgrade can change a kit's geometry with the kit itself untouched, so the version
+        // the interpreter reports is part of what built the cell (R-gdf2-2c). Appended on every call
+        // rather than cached with the rest: StopProviders keeps the cached keys on purpose, and an
+        // interpreter re-probed after it may report a different gdsfactory.
+        string gfSuffix = _gdsfactoryVersionByDir.TryGetValue(manifestDirectory, out var gf) ? $"+gf{gf}" : "";
+        return BaseContentKeyOf(manifestDirectory, manifest) + gfSuffix;
+    }
+
+    private string BaseContentKeyOf(string manifestDirectory, PCellGeneratorManifest manifest)
+    {
         if (_contentKeys.TryGetValue(manifestDirectory, out var cached)) return cached;
 
         string key = PCellGeneratorContentHash.Compute(manifestDirectory, manifest, out var problem);
@@ -504,10 +587,6 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
         // see PCellPythonPackage.ContentKey. Appended only when there is one, so a build that cannot
         // locate its own package produces exactly the keys it always did.
         if (PCellPythonPackage.ContentKey is { Length: > 0 } host) key = $"{key}+{host}";
-
-        // A gdsfactory upgrade can change a kit's geometry with the kit itself untouched, so the version
-        // the interpreter reports is part of what built the cell (R-gdf2-2c).
-        if (_gdsfactoryVersionByDir.TryGetValue(manifestDirectory, out var gf)) key = $"{key}+gf{gf}";
 
         _contentKeys[manifestDirectory] = key;
         return key;
@@ -561,12 +640,12 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
                 // a workspace switched away mid-question) leaves the decision Unknown, and Unknown
                 // does not run. Degrade, never deny: the kit's cells draw as the existing Not Found
                 // placeholder and every other kit, every built-in and the design itself are untouched.
-                string trustKey = KitOf(dir, manifest).TrustKey;
+                string trustKey = TrustKeyOf(dir, manifest);
                 if (_trust is not null && _trust(trustKey) is var decision && decision != PCellTrustDecision.Allowed)
                 {
                     _report?.Invoke(decision == PCellTrustDecision.Denied
                         ? $"The generated artwork in '{trustKey}' is not allowed to run on this machine, so its " +
-                          "cells draw as placeholders. Settings ▸ General ▸ Generated Artwork asks again."
+                          "cells draw as placeholders. Settings ▸ Security & Permissions changes the answer."
                         : $"The generated artwork in '{trustKey}' has not been allowed to run yet, so its cells " +
                           "draw as placeholders.");
                     continue;

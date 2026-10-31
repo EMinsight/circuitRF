@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dlg="clr-namespace:CircuitRF.Ui.Views.Dialogs"
+             x:Class="CircuitRF.Ui.Views.Dialogs.PCellTrustSettingsView">
+
+  <!--
+    Which kits may run their own artwork scripts — ONE ROW PER KIT, each changed on its own. It replaced
+    a single "Ask Again…" button that forgot every answer at once: a user who refused one kit by mistake
+    had to re-answer every other kit's prompt to undo it, and nothing on screen said which kits were held
+    or what each had been told.
+
+    Each row is a recorded answer: the kit's folder name, the directory the answer is keyed on, the
+    interpreter a gdsfactory kit runs in, an Allowed box and Clear. The box takes effect in every open
+    workspace at once (WorkspaceViewModel.ApplyPCellTrustEverywhere) — unticking ends a running kit's
+    interpreter rather than waiting for the workspace to be reopened. Clear makes the kit ASK next
+    time; it never runs meanwhile, since an unasked kit is not started.
+
+    The Allowed box sits in a fixed column so it never moves with the length of a name or a path.
+  -->
+
+  <StackPanel Spacing="0">
+    <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,6">
+      <TextBlock Grid.Column="0" Text="External PDKs — Generated Artwork" FontSize="11" FontWeight="SemiBold"
+                 Opacity="0.55" VerticalAlignment="Bottom"/>
+      <!-- Always present, so nothing in this row moves as kits are cleared: with hundreds of answers
+           recorded, finding one kit by scrolling is not a way to find it. Matches the name or the path. -->
+      <TextBox Grid.Column="1" Name="FilterBox" Width="200" FontSize="11" Margin="0,0,8,0"
+               Padding="6,2" MinHeight="22" VerticalContentAlignment="Center"
+               Watermark="Filter kits" TextChanged="OnFilterChanged"/>
+      <Button Grid.Column="2" Name="ClearAllButton" Content="Clear All" FontSize="11"
+              Padding="8,2" HorizontalContentAlignment="Center" Click="OnClearAllClick"
+              ToolTip.Tip="Clear every kit's answer, so each one asks again the next time a workspace using it opens."/>
+    </Grid>
+
+    <TextBlock FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,8"
+               Text="Kits that draw their cells with their own Python code. circuitRF asks once per kit; change any answer here."/>
+
+    <Border CornerRadius="4" BorderThickness="1" ClipToBounds="True"
+            BorderBrush="{DynamicResource CrfTileBorderBrush}">
+      <Panel>
+        <TextBlock Name="EmptyText" FontSize="12" Opacity="0.6" Margin="10,10" TextWrapping="Wrap"
+                   Text="No answers recorded. When a workspace uses a kit that draws its own artwork, circuitRF asks once, and the answer is listed here."/>
+
+        <TextBlock Name="NoMatchText" FontSize="12" Opacity="0.6" Margin="10,10" TextWrapping="Wrap"
+                   IsVisible="False" Text="No kit matches the filter."/>
+
+        <!-- Its OWN scroll region, bounded: the tab already scrolls, but a few hundred rows in that one
+             would push the workers, updates and compiler sections out of reach. About six rows show. -->
+        <ScrollViewer Name="KitScroller" MaxHeight="320" HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+        <ItemsControl Name="KitRows" Margin="0,0,0,-1">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="dlg:PCellTrustRow">
+              <Border BorderThickness="0,0,0,1" BorderBrush="{DynamicResource CrfTileBorderBrush}"
+                      Padding="10,7,8,7">
+                <Grid ColumnDefinitions="*,96,Auto" RowDefinitions="Auto,Auto,Auto">
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Name}" FontSize="12"
+                             FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                             VerticalAlignment="Center"/>
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding Detail}" FontSize="11"
+                             Opacity="0.6" TextTrimming="PathSegmentEllipsis" Margin="0,2,0,0"
+                             ToolTip.Tip="{Binding Path}"/>
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding Interpreter, StringFormat='Runs in {0}'}"
+                             FontSize="11" Opacity="0.6" TextTrimming="PathSegmentEllipsis" Margin="0,2,0,0"
+                             IsVisible="{Binding Interpreter, Converter={x:Static ObjectConverters.IsNotNull}}"
+                             ToolTip.Tip="{Binding Interpreter}"/>
+
+                  <CheckBox Grid.Row="0" Grid.RowSpan="3" Grid.Column="1" Content="Allowed"
+                            FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0"
+                            IsChecked="{Binding Allowed}"
+                            ToolTip.Tip="Ticked, this kit's code runs whenever a design uses one of its cells. Unticked, its cells draw as placeholders and nothing of it runs."/>
+                  <Button Grid.Row="0" Grid.RowSpan="3" Grid.Column="2" Content="Clear" FontSize="11"
+                          Padding="8,2" VerticalAlignment="Center" HorizontalContentAlignment="Center"
+                          Click="OnClearClick" Tag="{Binding}"
+                          ToolTip.Tip="Clear this answer. The kit asks again the next time a workspace using it opens, and nothing of it runs until then."/>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        </ScrollViewer>
+      </Panel>
+    </Border>
+
+    <TextBlock Name="CountText" FontSize="11" Opacity="0.6" Margin="0,4,0,0"/>
+  </StackPanel>
+</UserControl>

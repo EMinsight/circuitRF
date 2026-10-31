@@ -64,6 +64,13 @@ public enum ProcessStackEntryKind
 /// and its level names are not its layer table's names, so name matching would bind nothing. An EMPTY
 /// list binds nothing at all.
 /// </param>
+/// <param name="NoInsulationAbove">
+/// Conductor only — the source states that nothing insulating lies directly on this conductor: it is the
+/// top of the stack, or another conductor rests on it. A stack file's conductor is embedded in the
+/// dielectric above it, so the builder takes its thickness back out of that run and reports when the run
+/// is too thin to give it back; with nothing above at all there is nothing to take it from, the geometry
+/// is exact, and that report would be false. A stack file never sets it (brief-gdf-3).
+/// </param>
 public sealed record ProcessStackEntry(
     ProcessStackEntryKind Kind,
     string                Name,
@@ -79,7 +86,8 @@ public sealed record ProcessStackEntry(
     double                ResistanceOhms              = 0,
     double                ConductivitySm              = 0,
     double                LossTangent                 = 0,
-    IReadOnlyList<LayerKey>? DrawnOn                  = null);
+    IReadOnlyList<LayerKey>? DrawnOn                  = null,
+    bool                  NoInsulationAbove           = false);
 
 /// <summary>
 /// A whole interconnect technology file, read. <see cref="Entries"/> is in FILE ORDER, which is the

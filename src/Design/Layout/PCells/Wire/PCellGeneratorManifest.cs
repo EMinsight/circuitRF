@@ -264,6 +264,44 @@ public sealed class PCellGeneratorManifest
     }
 
     /// <summary>
+    /// Brings an existing gdsfactory kit's declaration up to date on a re-import: <see cref="KitRoot"/>,
+    /// the <see cref="PythonPath"/> a source tree needs (none for an installed kit) and
+    /// <see cref="ModuleVersion"/>. Written in the one workspace serialization (<see cref="ToJson"/>), and
+    /// only when something changed. False, writing nothing, for a manifest that does not declare
+    /// <paramref name="module"/> — the caller then falls back to <see cref="TryRepointKitRoot"/>.
+    /// </summary>
+    public static bool TryUpdateGdsfactoryDeclaration(
+        string directory, string module, string kitRoot, string? pythonPathRoot, string? version,
+        out bool changed, out string? problem)
+    {
+        changed = false;
+        problem = null;
+        string path = Path.Combine(directory, FileName);
+        try
+        {
+            if (!File.Exists(path)) return false;
+            var manifest = JsonSerializer.Deserialize<PCellGeneratorManifest>(File.ReadAllText(path), JsonOpts);
+            if (manifest is null || !string.Equals(manifest.Module, module, StringComparison.Ordinal)) return false;
+
+            string before = manifest.ToJson();
+            manifest.KitRoot = StoreRef(kitRoot, directory);
+            manifest.PythonPath = pythonPathRoot is { } root ? [StoreRef(root, directory)] : [];
+            if (version is not null) manifest.ModuleVersion = version;
+            string after = manifest.ToJson();
+            if (after == before) return true;
+
+            File.WriteAllText(path, after);
+            changed = true;
+            return true;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            problem = ex.Message;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// A path as the manifest should store it: relative when it stays inside the manifest's own tree,
     /// absolute otherwise. Same rule (and the same reasoning) as <c>WorkspaceRefs.ToStoredRef</c> — a
     /// relative reference survives the tree moving, and nothing makes a reference to somewhere else

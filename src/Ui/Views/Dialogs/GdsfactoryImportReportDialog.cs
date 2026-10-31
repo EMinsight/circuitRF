@@ -58,7 +58,7 @@ public static class GdsfactoryImportReportDialog
 
         if (!allowed)
             body.Children.Add(Para("Its code has not been allowed to run on this machine, so what it offers is not " +
-                                   "known yet and its cells draw as placeholders. Settings ▸ General ▸ Generated Artwork asks again."));
+                                   "known yet and its cells draw as placeholders. Settings ▸ Security & Permissions changes the answer."));
         else if (report is null || report.Problem is not null)
             body.Children.Add(Para($"The kit could not be described: {report?.Problem ?? problem}"));
         else

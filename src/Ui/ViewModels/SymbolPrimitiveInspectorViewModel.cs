@@ -552,6 +552,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
 
     public void SetContext(SymbolEditorViewModel? vm)
     {
+        CommitFillSlider();   // into the editor the drag was made in, before it is replaced
         if (_vm is not null) _vm.PropertyChanged -= OnVmPropertyChanged;
         _vm = vm;
         if (_vm is not null) _vm.PropertyChanged += OnVmPropertyChanged;
@@ -594,6 +595,9 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         // Always track the original for the switching check (prevents focus loss during live ops).
         var original = _vm.EditableSymbol.Primitives[idx];
         bool switching = original != _prim || _primIdx != idx;
+        // A fill drag the release never ended belongs to the shape it moved: record it there, before the inspector
+        // moves on, so the next shape's drag does not inherit its starting value.
+        if (switching) CommitFillSlider();
         _prim    = original;
         _primIdx = idx;
 
@@ -626,6 +630,8 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
 
     private void SetEmpty(string msg)
     {
+        CommitFillSlider();
+        _fillDragStart = null;   // with no editor left to record it in, the drag is over all the same
         _prim = null; _primIdx = -1;
         _isRefreshing = true;
         IsEmptyState  = true;

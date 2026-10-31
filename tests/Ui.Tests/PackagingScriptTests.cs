@@ -1415,9 +1415,10 @@ public class PackagingScriptTests
     /// circuitRF runs the user's own interpreter; shipping gdsfactory, a kit or its GPL layout-engine
     /// dependency would put that licence on our side. The rule is CliSmoke's sixth check — compiled here
     /// from the same file, <c>tools/CliSmoke/BundledPython.cs</c> — so every tree every packaging script
-    /// smoke-tests (the test above) is held by it. It names no package: an installed one always leaves a
-    /// <c>site-packages</c> or <c>*.dist-info</c> directory or a <c>.whl</c> behind. On macOS the tree is
-    /// the whole <c>.app</c>, not just <c>Contents/MacOS</c>, where the executable sits.
+    /// smoke-tests (the test above) is held by it, and a tree the machine cannot execute is still scanned
+    /// (<c>CliSmoke --no-python</c>). It names no package: an installation leaves its directories or files
+    /// behind, and a package copied in without them still carries its compiled extension modules. On macOS
+    /// the tree is the whole <c>.app</c>, not just <c>Contents/MacOS</c>, where the executable sits.
     /// </summary>
     [Fact]
     public void NoPublishTree_CarriesAPythonEnvironment()
@@ -1431,21 +1432,33 @@ public class PackagingScriptTests
             File.WriteAllText(Path.Combine(macos, "circuitRF"), "");
             Directory.CreateDirectory(Path.Combine(macos, "pcell-python", "gdsfactory_bridge"));   // ours: allowed
             Directory.CreateDirectory(Path.Combine(app, "Contents", "Resources", "py", "lib", "site-packages", "x"));
+            File.WriteAllText(Path.Combine(macos, "pcell-python", "gdsfactory_bridge", "bridge.py"), "");   // ours
             Directory.CreateDirectory(Path.Combine(macos, "vendor", "somekit-1.0.dist-info"));
+            Directory.CreateDirectory(Path.Combine(macos, "vendor", "otherkit.egg-info"));
             File.WriteAllText(Path.Combine(macos, "somekit-1.0-py3-none-any.whl"), "");
+            File.WriteAllText(Path.Combine(macos, "vendor", "paths.pth"), "");
+            Directory.CreateDirectory(Path.Combine(macos, "copied", "engine"));                // no metadata at all…
+            File.WriteAllText(Path.Combine(macos, "copied", "engine", "core.cpython-312-darwin.so"), "");   // …but native parts
 
             Assert.Equal(app, CliSmoke.BundledPython.TreeOf(Path.Combine(macos, "circuitRF")));
             Assert.Equal(new[]
             {
+                Path.Combine("Contents", "MacOS", "copied", "engine", "core.cpython-312-darwin.so"),
                 Path.Combine("Contents", "MacOS", "somekit-1.0-py3-none-any.whl"),
+                Path.Combine("Contents", "MacOS", "vendor", "otherkit.egg-info"),
+                Path.Combine("Contents", "MacOS", "vendor", "paths.pth"),
                 Path.Combine("Contents", "MacOS", "vendor", "somekit-1.0.dist-info"),
                 Path.Combine("Contents", "Resources", "py", "lib", "site-packages"),
             }.Order(StringComparer.Ordinal), CliSmoke.BundledPython.Find(app));
         }
         finally { Directory.Delete(root, recursive: true); }
 
-        // And the smoke check runs it, on the tree around the executable it was given.
+        // And the smoke check runs it, on the tree around the executable it was given — and every script runs it
+        // alone on a tree it could not smoke-test.
         Assert.Contains("BundledPython.Find(tree)", File.ReadAllText(RepoFile("tools", "CliSmoke", "Program.cs")), StringComparison.Ordinal);
+        foreach (var script in new[] { RepoFile("packaging", "linux", "build-linux.sh"), RepoFile("packaging", "macos", "build-macos.sh"),
+                                       RepoFile("packaging", "windows", "build-windows.ps1") })
+            Assert.Matches(@"dotnet\s+""?\$\{?(SMOKE_DLL|smokeDll)\}?""?\s+--no-python\s", File.ReadAllText(script));
     }
 
     /// <summary>

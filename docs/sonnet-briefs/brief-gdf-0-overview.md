@@ -1,6 +1,6 @@
 # gdsfactory kits — series overview: open process kits written as gdsfactory packages
 
-**Series:** gdsfactory kits · **Tag:** `R-gdf{n}-m` · **Briefs:** 1–5
+**Series:** gdsfactory kits · **Tag:** `R-gdf{n}-m` · **Briefs:** 1–6
 **Area:** `tools/pcell-python/` (a new `gdsfactory_bridge` package beside `cni`),
 `src/Design/Layout/PCells/Wire/` (`KitPCellLibrary.cs`, `PCellGeneratorManifest.cs`,
 `PCellWorkerResolver.cs`, `PCellTrust.cs`), `src/Core/Pdk/` (`PdkImporter`, `PdkFormatRegistry`),
@@ -174,6 +174,7 @@ Findings that shape the briefs:
 | 3 | [Layer stack and materials to `.ctech`](brief-gdf-3-layer-stack-to-technology.md) | a technology built from a kit's stack, materials and layer views, through the ONE `ProcessTechnologyBuilder` | 2 |
 | 4 | [Symbols from a kit's own glyphs](brief-gdf-4-symbols-from-kit-glyphs.md) | *optional (D9)* | 2 |
 | 5 | [Acceptance matrix and docs](brief-gdf-5-acceptance-matrix.md) | every cell of every kit in §2, through circuitRF, compared with gdsfactory's own GDS; the user page | 1–3 |
+| 6 | [Follow-ups](brief-gdf-6-follow-ups.md) | headless kits loaded on demand; one Import PDK for the GUI and the CLI (a folder holding both kinds imports both; archives from the CLI); compile advice only where the kit ships source; `--python` per module | 1–5 |
 
 Briefs 1 and 2 are independent and may run in parallel. Brief 3 needs the adapter's process.
 

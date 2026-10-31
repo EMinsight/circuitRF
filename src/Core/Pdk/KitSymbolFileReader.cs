@@ -188,7 +188,7 @@ public static class KitSymbolFileReader
                 if (tpl.Value is { Length: > 0 } templateText)
                 {
                     var tplAttrs = ParseAttributes(templateText);
-                    element = ElementOf(tplAttrs);
+                    element = ElementOf(tplAttrs, fmt.Value);
                     if (fmt.Value is { Length: > 0 } formatText)
                         (called, arguments) = CallIn(formatText, tplAttrs);
                 }
@@ -562,16 +562,35 @@ public static class KitSymbolFileReader
     }
 
     /// <summary>
-    /// The element letter the netlist line is written with: the template's <c>spiceprefix</c>, else
-    /// the first letter of its instance <c>name</c> — which is how the format itself decides it.
+    /// The element letter the netlist line is written with, read off the FORMAT's first word, which is
+    /// what writes it: <c>@spiceprefix</c> gives the template's <c>spiceprefix</c> (and, when that is
+    /// blank, whatever follows it), <c>@name</c> the first letter of the instance <c>name</c>, and a
+    /// literal letter itself — <c>X@name</c> is a subcircuit call whatever the name begins with, and a
+    /// format that never writes <c>@spiceprefix</c> is not changed by the template setting one.
+    /// With no format, or a first word that is none of these, the template decides as it always has.
     /// </summary>
-    private static string? ElementOf(Dictionary<string, Attribute> template)
+    private static string? ElementOf(Dictionary<string, Attribute> template, string? format)
     {
-        if (template.TryGetValue("spiceprefix", out var prefix) && prefix.Value.Length > 0)
-            return prefix.Value[..1].ToUpperInvariant();
-        if (template.TryGetValue("name", out var name) && name.Value.Length > 0 && char.IsAsciiLetter(name.Value[0]))
-            return name.Value[..1].ToUpperInvariant();
-        return null;
+        string? Prefix() => template.TryGetValue("spiceprefix", out var p) && p.Value.Length > 0
+            ? p.Value[..1].ToUpperInvariant() : null;
+        string? NameLetter() => template.TryGetValue("name", out var n) && n.Value.Length > 0 && char.IsAsciiLetter(n.Value[0])
+            ? n.Value[..1].ToUpperInvariant() : null;
+
+        string first = (format ?? "").TrimStart().Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries)
+                                     .FirstOrDefault() ?? "";
+        while (first.Length > 0)
+        {
+            if (first.StartsWith("@spiceprefix", StringComparison.Ordinal))
+            {
+                if (Prefix() is { } prefix) return prefix;
+                first = first["@spiceprefix".Length..];
+                continue;
+            }
+            if (first.StartsWith("@name", StringComparison.Ordinal)) return NameLetter();
+            if (char.IsAsciiLetter(first[0])) return first[..1].ToUpperInvariant();
+            break;
+        }
+        return Prefix() ?? NameLetter();
     }
 
     /// <summary>

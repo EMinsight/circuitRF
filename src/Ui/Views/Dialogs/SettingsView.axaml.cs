@@ -225,8 +225,6 @@ public partial class SettingsView : Window
             // that is not the one running.
             WireClearanceUpDown.Value = (decimal)WBondWireClearance.Mil;
 
-            UpdatePCellTrustStatus(prefs.PCellTrust?.Count ?? 0);
-
         }
         finally { _updatingGeneral = false; }
     }
@@ -435,23 +433,6 @@ public partial class SettingsView : Window
         var mode = (MessageTimestampMode)MsgTimestampCombo.SelectedIndex;
         AppPreferencesIo.Update(p => p.MessageTimestamp = mode);
         MessageDisplay.Mode = mode;   // live
-    }
-
-    // ── Generated artwork permissions ────────────────────────────────────────
-    //
-    // The one way back from "Don't Allow". A refusal is recorded (otherwise the prompt nags, and a
-    // prompt that nags is one people learn to dismiss unread), so there has to be somewhere to
-    // reverse it. Global rather than per-workspace because the decisions themselves are.
-
-    private void UpdatePCellTrustStatus(int remembered)
-        => PCellTrustStatus.Text = remembered == 0
-            ? "Nothing remembered."
-            : remembered == 1 ? "1 kit remembered." : $"{remembered} kits remembered.";
-
-    private void OnForgetPCellTrustClick(object? sender, RoutedEventArgs e)
-    {
-        CircuitRF.Ui.Layout.PCells.PCellTrustPreferences.Forget();
-        UpdatePCellTrustStatus(0);
     }
 
     // ── Theme combo ──────────────────────────────────────────────────────────

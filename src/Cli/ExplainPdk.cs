@@ -51,7 +51,7 @@ internal static class ExplainPdk
             {
                 Console.WriteLine($"location: {location}");
                 string? installed = GdsfactoryKitDiscovery.InstalledVersion(location);
-                string versions = $"version recorded: {kit.ModuleVersion ?? "(none)"}; installed: {installed ?? "(not stated)"}";
+                string versions = $"version recorded: {kit.RecordedVersion ?? "(none)"}; installed: {installed ?? "(not stated)"}";
                 Console.WriteLine(versions);
                 JsonRun.Note(CliDiagnostics.ExplainPdkNote(versions));
             }

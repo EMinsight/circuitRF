@@ -168,6 +168,31 @@ public sealed class PythonInterpreterDiscoveryTests : IDisposable
         Assert.Equal(["-X", "utf8"], parsed.Value.Arguments);
     }
 
+    /// <summary>An UNQUOTED path with a space in it — what a file dialog, <c>--python</c> or a hand edit
+    /// hands over — is one command when it names a file; and a spaced command is written back quoted.</summary>
+    [Fact]
+    public void AnUnquotedPathWithASpace_ThatNamesAFile_IsOneCommand_AndIsWrittenBackQuoted()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "crf py " + Guid.NewGuid().ToString("N")[..8], "First Last");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string exe = Path.Combine(dir, "python");
+            File.WriteAllText(exe, "");
+
+            var bare = PythonInterpreter.ParseRecord(exe);
+            Assert.Equal((exe, 0), (bare!.Value.Command, bare.Value.Arguments.Count));
+            var withArg = PythonInterpreter.ParseRecord(exe + " -X utf8");
+            Assert.Equal(exe, withArg!.Value.Command);
+            Assert.Equal(["-X", "utf8"], withArg.Value.Arguments);
+
+            string record = new PythonInterpreter(exe, ["-X", "utf8"], "3.13.0", "x").ToRecord();
+            Assert.Equal($"\"{exe}\" -X utf8", record);
+            Assert.Equal(exe, PythonInterpreter.ParseRecord(record)!.Value.Command);
+        }
+        finally { try { Directory.Delete(Path.GetDirectoryName(dir)!, recursive: true); } catch { } }
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

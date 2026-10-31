@@ -34,6 +34,7 @@ import contextlib
 import importlib
 import inspect
 import os
+import re
 import sys
 import traceback
 from typing import Any, Callable
@@ -176,15 +177,31 @@ def _ports_of(component: Any) -> list[dict[str, Any]]:
     return ports
 
 
-def _kind_of(default: Any) -> str | None:
+def _annotated_float(annotation: Any) -> bool:
+    """Whether a parameter's annotation says it takes a float — ``float``, ``"float"`` (a kit written with
+    ``from __future__ import annotations`` leaves every annotation a string), ``float | None`` and the like.
+    """
+    if annotation is inspect.Parameter.empty or annotation is None:
+        return False
+    if annotation is float:
+        return True
+    text = annotation if isinstance(annotation, str) else repr(annotation)
+    return re.search(r"(?<![\w.])float(?!\w)", text) is not None
+
+
+def _kind_of(default: Any, annotation: Any = inspect.Parameter.empty) -> str | None:
     """The circuitRF kind a default declares, or None when it is not offered.
 
     bool BEFORE int: a bool is an int in Python, and the other order sends every flag as 1.
+
+    An int default on a parameter ANNOTATED float is a real: ``length: float = 10`` is how kits — and
+    gdsfactory's own components, 163 times over — write a float default, and declaring it an integer
+    would refuse 10.5 and truncate what was sent.
     """
     if isinstance(default, bool):
         return "bool"
     if isinstance(default, int):
-        return "int"
+        return "real" if _annotated_float(annotation) else "int"
     if isinstance(default, float):
         return "real"
     if isinstance(default, str):
@@ -293,8 +310,12 @@ def register_pdk(module_name: str, registry: Any = None) -> PdkRegistration:
     **A cell that cannot be offered is skipped and reported, never fatal** — one broken cell must not
     cost a designer every other cell in the kit.
     """
-    # Describing builds every cell, before the worker's run() has claimed stdout for the wire
-    # (crf.claim_stdout), and a cell that prints must not print onto it.
+    # Describing builds every cell, before the worker's run() has claimed stdout for the wire, and a
+    # cell that prints must not print onto it. redirect_stdout catches Python's print() only; a C
+    # extension writes to descriptor 1 itself, so in a worker (circuitRF sets CRF_PCELL_WORKER for it)
+    # the descriptor is claimed first. Anywhere else stdout is the caller's — the report's IS its answer.
+    if os.environ.get("CRF_PCELL_WORKER") == "1":
+        crf.claim_stdout()
     with contextlib.redirect_stdout(sys.stderr):
         return _register(module_name, registry)
 
@@ -362,14 +383,15 @@ def _register(module_name: str, registry: Any) -> PdkRegistration:
             if p.default is p.empty:
                 required.append(p.name)
                 continue
-            kind = _kind_of(p.default)
+            kind = _kind_of(p.default, p.annotation)
+            default = float(p.default) if kind == "real" else p.default
             if kind is None:
                 hidden.append(p.name)
             elif kind == "string" and p.default in layer_name_set:
                 # A layer name: a real parameter, but not the one a designer reaches for first.
-                layer_params.append((p.name, kind, p.default))
+                layer_params.append((p.name, kind, default))
             else:
-                ordinary.append((p.name, kind, p.default))
+                ordinary.append((p.name, kind, default))
 
         if required:
             refuse(cell, REQUIRED_ARGUMENTS, ", ".join(required))

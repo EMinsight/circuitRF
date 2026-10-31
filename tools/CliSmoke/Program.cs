@@ -31,8 +31,9 @@
 //       answers `{"op":"selftest"}` with "ok":true and "oas_valid":true, and exits 0 on `shutdown`.
 //       --no-gdstk <why> reports and passes; neither skips and says so.
 //    6. NO PYTHON SHIPS (brief-gdf-5 R-gdf5-3, gdsfactory series D10): the tree around <executable>
-//       -- the whole .app on macOS -- holds no site-packages directory, no *.dist-info directory and
-//       no *.whl. circuitRF runs the user's own interpreter; BundledPython.cs is the rule.
+//       -- the whole .app on macOS -- holds no Python environment, installed package, compiled extension
+//       module or interpreter. circuitRF runs the user's own interpreter; BundledPython.cs is the rule.
+//       `CliSmoke --no-python <executable>` runs this check alone, for a tree this machine cannot execute.
 // ================================================================
 
 using System.Collections.Concurrent;
@@ -41,6 +42,12 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CircuitRF.Cli.Serve;
+
+// `CliSmoke --no-python <executable>`: check 6 ALONE. It reads files and runs nothing, so it holds for a tree
+// built for an architecture this machine cannot execute — which the full smoke run has to skip. Every packaging
+// script runs it on exactly those trees.
+if (args.Length == 2 && args[0] == "--no-python")
+    return NoBundledPython(Path.GetFullPath(args[1])) ? 0 : 1;
 
 string? expectedOcct = null, noKernelWhy = null, expectedGdstk = null, noGdstkWhy = null;
 bool usage = args.Length < 2 || args.Length % 2 != 0;
@@ -160,16 +167,7 @@ if (isAppImage)
     Console.WriteLine("skip  bundled Python  -> an AppImage is built from a publish tree this check already passed");
 else
 {
-    string tree = CliSmoke.BundledPython.TreeOf(exe);
-    var bundled = CliSmoke.BundledPython.Find(tree);
-    if (bundled.Count == 0)
-        Console.WriteLine("ok    bundled Python  -> no site-packages, *.dist-info or *.whl in the tree");
-    else
-    {
-        Console.Error.WriteLine($"FAIL  bundled Python: circuitRF runs the user's own interpreter and ships none, but {tree} holds:");
-        foreach (string p in bundled) Console.Error.WriteLine($"        {p}");
-        failures++;
-    }
+    if (!NoBundledPython(exe)) failures++;
 }
 
 if (unpacked is not null) try { Directory.Delete(unpacked, recursive: true); } catch { /* best effort */ }
@@ -178,6 +176,21 @@ Console.WriteLine(failures == 0
     ? "PASS  the command line in this publish tree answers."
     : $"FAIL  {failures} of 6 checks failed; this tree must not be packaged.");
 return failures == 0 ? 0 : 1;
+
+// Check 6 (BundledPython.cs is the rule): true when the tree around the executable carries no Python.
+static bool NoBundledPython(string exe)
+{
+    string tree = CliSmoke.BundledPython.TreeOf(exe);
+    var bundled = CliSmoke.BundledPython.Find(tree);
+    if (bundled.Count == 0)
+    {
+        Console.WriteLine("ok    bundled Python  -> no Python environment, installed package or extension module in the tree");
+        return true;
+    }
+    Console.Error.WriteLine($"FAIL  bundled Python: circuitRF runs the user's own interpreter and ships none, but {tree} holds:");
+    foreach (string p in bundled) Console.Error.WriteLine($"        {p}");
+    return false;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 

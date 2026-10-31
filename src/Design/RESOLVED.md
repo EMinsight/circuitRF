@@ -24928,3 +24928,80 @@ DIRECTORY it found first. It now starts gdsfactory kits first (stable order with
 is drawn; the collision is still reported, saying why. Measured consequence on that kit: two of the tree's parts that
 took artwork from the tree's own same-named cells no longer pair, because the package's cell takes different
 parameters (23 parts with symbol and artwork, was 25).
+
+## The kit-glyph converter: two hangs and nine misreadings (review of brief-gdf-4, 2026-10-30)
+
+A review of `KitGlyphSymbol` ran each suspicion through `TryBuild` before fixing it; each is a test in
+`KitGlyphSymbolTests` (the two hangs behind a 10 s bound, so a regression fails instead of stalling the run).
+
+- **Two endless loops, both reachable from a kit file at import.** A number after a closepath (`Z 5`) was read as
+  an implicit repeat of `Z`, which consumes nothing — the path reader now stops there, counts the rest as
+  `path (unreadable data)`, and stops on ANY step that reads nothing. And `PlaceAlong`'s 20,000-try cap broke only
+  its inner loop, so 40 pins against 20 lead ends still walked ~10^11 outer choices; the cap now bounds both.
+- **The root `<svg>`'s own style was never applied.** `fill="none" stroke="…"` stated once on the root — the usual
+  idiom of a stroke-drawn glyph — left every child at "neither stated", which is drawn filled: solid blocks.
+- **A frame drawn on the box edge offered its corners as lead ends** (a side along the top looks like a lead into
+  the left edge from its end), pulling pins onto the corners and away from the real leads, with no warning. A
+  segment lying along an edge is no lead, and a closed subpath's segments never are.
+- **Paths**: an outline closed after a curve lost its closing edge; a filled path's inner subpath was filled solid
+  (now keyholed into its outer when the fill rule makes it a hole — even-odd, or non-zero with opposite winding;
+  a TINTED ring's outline therefore shows the slit as a line); an open filled subpath is filled, as SVG fills it;
+  an unknown command dropped the subpath in progress uncounted.
+- **Paint**: shapes nobody sees in the glyph (no fill and no stroke, `transparent`, `opacity="0"`) were drawn as
+  frames; `fill-opacity` compounded down the tree although CSS inherits it (only `opacity` composes); a white
+  background written as `rgb()` or a light colour name was drawn solid, and so was a gradient fill (`url(…)`,
+  whose definition is dropped and counted) — now its outline; a `<style>` kept in `<defs>` was reported as dropped.
+- Also from the same review, outside the converter: `circuitrf convert` turns ANY failure into a refusal (exit 1,
+  the exception's kind named when it is not an I/O or format one); the symbol inspector records a fill drag on the
+  shape it moved when the selection changes before the release; `1,000` in the fill box is refused as ambiguous;
+  CliSmoke's no-Python scan also finds `*.egg-info`, `*.egg`, `*.pth`, `dist-packages`, compiled extension
+  modules and a bundled interpreter, and `CliSmoke --no-python` runs it on the trees a script cannot execute.
+
+## Review of briefs gdf-1 / gdf-1b: kit-part extraction and the import (2026-10-30)
+
+- **A primitive kit part's one-element cell is named from a hash of everything it is built from**
+  (provider, card file, model-library override, header, element line, card values). Named from the part
+  id alone, a second kit's part of the same id ran on the first kit's card — extraction keeps the first
+  cell of a name it meets. Gate: `KitCardDeviceRoutingTests.PrimitivePartsOfOneIdFromTwoKits_…`.
+- **A junction perimeter `pj` is dropped only while the card states no sidewall term** (`CJSW`, `CJP`,
+  `JSW`, `ISW`, `JTUNSW` nonzero); with one stated it is refused, since it is half the junction. Gate:
+  `…APerimeterOnACardStatingASidewall_…`. A card family with no DC list is refused, not run on the
+  built-in (`src/Core/RESOLVED.md`, same date). Gate: `…ACardFamilyWithNoDcList_…`.
+- **A body terminal wired to a net nothing in the schematic names is reported** as connecting to nothing
+  else (a kit's global-net spelling such as `sub!` is not circuitRF's). Gate:
+  `KitPartSubcircuitBindingTests.ABodyTerminalOnANetNothingNames_…`.
+- **`opt`, `yield` and `fields` print extraction conflicts** — `PreparedCircuit.ExtractionConflicts`; they
+  reached only `netlist` and the run verbs. Gate: `ImportPdkCliVerbTests.APreparedSchematicSays…`.
+- **`PdkWorkspaceImport` records nothing for a report that is not `IsRecordable`** (Failed or
+  NotRecognized) — `Commit` gates it too, so the GUI's own import stops recording a folder that is not a
+  kit. `import pdk` refuses such a folder (exit 1), and refuses a `--name` holding a character that splits
+  a part reference (`/`, `\`, the override separator `|`, whitespace, `"`, `=`, `;` — `KitNameProblem`).
+  Gates: `ImportPdkCliVerbTests.AFolderHoldingNoKit_…`, `…ANameThatWouldSplitItsPartReferences_…`.
+- `LoadReferenced` turns ANY exception from one kit into that kit's problem sentence, not only an I/O one:
+  it runs ahead of every headless run in the workspace.
+
+## Review of briefs gdf-2 / gdf-3: consent, environment, process (2026-10-30)
+
+- **A gdsfactory kit's consent covered code it does not contain.** Keyed on the installed directory, it
+  also ran the workspace's own entry script and `pythonPath`, and whatever copy of the module the chosen
+  interpreter imported. Now: a declaration that adds code (entry script not the generated one, code lines
+  compared; a `pythonPath` beyond the source-tree root) is keyed on its folder; the worker runs with `-P`;
+  and `GdsfactoryInterpreter` refuses an environment whose module is not at the declared directory.
+  Gates: `GdsfactoryAdapterTests.ADeclarationThatAddsCode_…`, `…AnEnvironmentWhoseKitIsADifferentDirectory_…`.
+- **`ReadToEnd()` before `WaitForExit(timeout)` never times out** — it returns only when the child closes
+  stdout — and an unread redirected stderr deadlocks a chatty child. Probe and bridge go through
+  `BoundedProcess`. Gate: `…AChildThatHangs_IsKilledAtTheDeadline`.
+- **`-I` does not stop `site`**, which runs every `.pth`; the probe is `-I -S`. **Under `-S`, Python 3.12/3.13
+  report the BASE interpreter's `sys.prefix` for a virtual environment** (it is `site` that sets it until
+  3.14), so the probe finds the environment by `site`'s own `pyvenv.cfg` rule. Measured on 3.13 and 3.14
+  venvs, with and without system site-packages: the probe's list equals the worker's `sys.path`.
+- **`-m` puts the working directory first on `sys.path`**: the bridge runs with `-P`.
+- **An unquoted interpreter path with a space split at the space** (file picker, `--python`); `ParseRecord`
+  takes the longest leading run naming a file, and `ToRecord` quotes. **`length: float = 10` was declared an
+  integer** (163 such parameters in gdsfactory's own components); the annotation now decides.
+- **The cache key missed the entry script and the kit's data files**; the script is hashed, the package's
+  non-`.py` files stamped (name, length, mtime) so a large fixed-layout set is not read on every open.
+- **A conductor with nothing on it reported a "zero separation"** (`ProcessStackEntry.NoInsulationAbove`);
+  an unknown σ is now a counted WARNING; a substrate whose card states σ = 0 no longer makes every level of
+  its material a device layer. The layer-views directory is circuitRF's, made and always removed by it —
+  a directory named in the process's output was deleted recursively.

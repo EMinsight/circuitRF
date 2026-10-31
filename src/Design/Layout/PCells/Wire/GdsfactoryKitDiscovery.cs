@@ -68,58 +68,80 @@ public static class GdsfactoryKitDiscovery
     public const int MinimumMajor = 3, MinimumMinor = 12;
 
     /// <summary>
-    /// The probe. Imports nothing beyond <c>sys</c> and <c>sysconfig</c>, and runs with <c>-I</c> so no
-    /// environment variable and no current directory can put kit code on its path. The user scheme is
-    /// asked for separately because <c>-I</c> leaves it off <c>sys.path</c>, and a kit installed with
-    /// <c>--user</c> is still a kit in this environment.
+    /// The probe. Imports nothing beyond <c>sys</c>, <c>sysconfig</c> and <c>os</c>, and runs with
+    /// <c>-I -S</c>: <c>-I</c> so no environment variable and no current directory can put kit code on
+    /// its path, and <c>-S</c> because <c>-I</c> alone still runs <c>site</c>, which executes every
+    /// <c>.pth</c> file in site-packages — an installed distribution's own code, before anyone has
+    /// allowed it to run (overview D2).
+    ///
+    /// <para>The directories are printed in the order the interpreter would search them, and only the
+    /// ones it WOULD search: a virtual environment's own, then the user scheme, then the base
+    /// interpreter's. A virtual environment leaves the last two off unless its <c>pyvenv.cfg</c>
+    /// includes the system site-packages, and listing the user scheme anyway "finds" a kit, or a
+    /// gdsfactory, the environment cannot import.</para>
+    ///
+    /// <para><b>The virtual environment is found here, not read off <c>sys.prefix</c>.</b> Before
+    /// Python 3.14 it is <c>site</c> that points <c>sys.prefix</c> at the environment, so under
+    /// <c>-S</c> a 3.12 or 3.13 environment reports its BASE interpreter's site-packages. The rule is
+    /// <c>site</c>'s own: a <c>pyvenv.cfg</c> beside the executable or one level up, and the
+    /// environment is the executable's grandparent.</para>
     /// </summary>
     private const string ProbeScript =
-        "import sys, sysconfig\n" +
+        "import os, sys, sysconfig\n" +
         "print('%d.%d.%d' % sys.version_info[:3])\n" +
-        "p = sysconfig.get_paths()\n" +
-        "print(p.get('purelib', ''))\n" +
-        "print(p.get('platlib', ''))\n" +
-        "try:\n" +
-        "    print(sysconfig.get_path('purelib', sysconfig.get_preferred_scheme('user')))\n" +
-        "except Exception:\n" +
-        "    pass\n";
+        "exe_dir = os.path.dirname(os.path.abspath(sys.executable))\n" +
+        "prefix = os.path.dirname(exe_dir)\n" +
+        "cfg = next((c for c in (os.path.join(exe_dir, 'pyvenv.cfg'), os.path.join(prefix, 'pyvenv.cfg')) if os.path.isfile(c)), None)\n" +
+        "system_site = cfg is None\n" +
+        "if cfg:\n" +
+        "    try:\n" +
+        "        with open(cfg, encoding='utf-8') as f:\n" +
+        "            for line in f:\n" +
+        "                key, _, value = line.partition('=')\n" +
+        "                if key.strip().lower() == 'include-system-site-packages':\n" +
+        "                    system_site = value.strip().lower() == 'true'\n" +
+        "    except OSError:\n" +
+        "        pass\n" +
+        "if cfg:\n" +
+        "    v = sysconfig.get_paths(vars={'base': prefix, 'platbase': prefix})\n" +
+        "    print(v.get('purelib', ''))\n" +
+        "    print(v.get('platlib', ''))\n" +
+        "if system_site:\n" +
+        "    try:\n" +
+        "        print(sysconfig.get_path('purelib', sysconfig.get_preferred_scheme('user')))\n" +
+        "    except Exception:\n" +
+        "        pass\n" +
+        "if not cfg:\n" +
+        "    p = sysconfig.get_paths()\n" +
+        "    print(p.get('purelib', ''))\n" +
+        "    print(p.get('platlib', ''))\n" +
+        "if cfg and system_site:\n" +
+        "    b = sysconfig.get_paths(vars={'base': sys.base_prefix, 'platbase': sys.base_exec_prefix})\n" +
+        "    print(b.get('purelib', ''))\n" +
+        "    print(b.get('platlib', ''))\n";
 
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
 
     /// <summary>
     /// Runs <see cref="ProbeScript"/> under <paramref name="interpreter"/> and returns its stdout, or
-    /// null when it would not run. The default for every <c>runProbe</c> seam below.
+    /// null when it would not run, failed, or ran past <see cref="ProbeTimeout"/>. The default for every
+    /// <c>runProbe</c> seam below.
     /// </summary>
     public static string? RunProbe(string interpreter)
     {
         var parsed = PythonInterpreter.ParseRecord(interpreter);
         if (parsed is null) return null;
 
-        var info = new ProcessStartInfo(parsed.Value.Command)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            RedirectStandardInput  = true,
-            UseShellExecute        = false,
-            CreateNoWindow         = true,
-        };
+        var info = new ProcessStartInfo(parsed.Value.Command);
         foreach (string a in parsed.Value.Arguments) info.ArgumentList.Add(a);
         info.ArgumentList.Add("-I");
+        info.ArgumentList.Add("-S");
         info.ArgumentList.Add("-c");
         info.ArgumentList.Add(ProbeScript);
 
         try
         {
-            using var probe = Process.Start(info);
-            if (probe is null) return null;
-            probe.StandardInput.Close();
-            string output = probe.StandardOutput.ReadToEnd();
-            if (!probe.WaitForExit((int)ProbeTimeout.TotalMilliseconds))
-            {
-                try { probe.Kill(entireProcessTree: true); } catch { /* already gone */ }
-                return null;
-            }
-            return probe.ExitCode == 0 ? output : null;
+            return BoundedProcess.Run(info, ProbeTimeout) is { TimedOut: false, ExitCode: 0 } run ? run.Stdout : null;
         }
         catch (Exception) { return null; }
     }
@@ -160,17 +182,19 @@ public static class GdsfactoryKitDiscovery
                 $"'{interpreter}' is Python {env.Version}; gdsfactory kits need Python {MinimumMajor}.{MinimumMinor} " +
                 "or newer. circuitRF installs nothing: choose an environment that has a newer Python.");
 
-        var found = ScanSitePackages(env.SitePackages);
+        var notListed = new List<GdsfactoryKitRefusal>();
+        var found = ScanSitePackages(env.SitePackages, notListed);
         string? gfVersion = GdsfactoryVersionIn(env.SitePackages);
 
-        if (found.Count == 0)
+        if (found.Count == 0 && notListed.Count == 0)
             return new GdsfactoryDiscovery(env, gfVersion, [], [],
                 $"The Python environment at '{interpreter}' holds no gdsfactory kit: no installed distribution " +
                 $"requires gdsfactory (looked in {string.Join(", ", env.SitePackages.Select(s => $"'{s}'"))}).");
 
         if (gfVersion is null)
-            return new GdsfactoryDiscovery(env, null, [], [.. found.Select(k => new GdsfactoryKitRefusal(k, "gdsfactory is not installed"))],
-                MissingGdsfactorySentence(interpreter, found[0].Display));
+            return new GdsfactoryDiscovery(env, null, [],
+                [.. found.Select(k => new GdsfactoryKitRefusal(k, "gdsfactory is not installed")), .. notListed],
+                MissingGdsfactorySentence(interpreter, (found.FirstOrDefault() ?? notListed[0].Kit).Display));
 
         var kits = new List<GdsfactoryKit>();
         var refused = new List<GdsfactoryKitRefusal>();
@@ -180,6 +204,7 @@ public static class GdsfactoryKitDiscovery
             else refused.Add(new GdsfactoryKitRefusal(kit,
                 $"{kit.Display} needs Python {kit.RequiresPython}; '{interpreter}' is Python {env.Version}."));
         }
+        refused.AddRange(notListed);
 
         return new GdsfactoryDiscovery(env, gfVersion, kits, refused,
             kits.Count == 0 ? string.Join(" ", refused.Select(r => r.Reason)) : null);
@@ -196,7 +221,13 @@ public static class GdsfactoryKitDiscovery
     // ── files ────────────────────────────────────────────────────────────────
 
     /// <summary>Every distribution in <paramref name="sitePackages"/> whose METADATA requires gdsfactory.</summary>
-    public static IReadOnlyList<GdsfactoryKit> ScanSitePackages(IEnumerable<string> sitePackages)
+    /// <param name="notListed">
+    /// Receives each distribution that requires gdsfactory but installs no package directory a kit can be
+    /// run from — most often an EDITABLE install, whose code stays in its source tree — with the reason.
+    /// Saying so is the point: skipping it in silence told the user the environment held no kit at all.
+    /// </param>
+    public static IReadOnlyList<GdsfactoryKit> ScanSitePackages(
+        IEnumerable<string> sitePackages, List<GdsfactoryKitRefusal>? notListed = null)
     {
         var kits = new List<GdsfactoryKit>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -211,15 +242,76 @@ public static class GdsfactoryKitDiscovery
             {
                 var meta = ReadMetadata(Path.Combine(info, "METADATA"));
                 if (meta is null || !RequiresGdsfactory(meta.RequiresDist)) continue;
-                if (!seen.Add(NormalizeName(meta.Name))) continue;
+                // The first site that INSTALLS the distribution answers for it, exactly as the import
+                // system would; a site holding only an unusable record of it does not hide a later one.
+                if (seen.Contains(NormalizeName(meta.Name))) continue;
 
-                if (TopLevelModule(info, site) is not { } module) continue;
+                if (TopLevelModule(info, site, out var named) is not { } module)
+                {
+                    if (notListed is not null && !notListed.Any(r => NormalizeName(r.Kit.Distribution) == NormalizeName(meta.Name)))
+                        notListed.Add(NotInstalledHere(meta, info, named));
+                    continue;
+                }
+                seen.Add(NormalizeName(meta.Name));
+                notListed?.RemoveAll(r => NormalizeName(r.Kit.Distribution) == NormalizeName(meta.Name));
                 kits.Add(new GdsfactoryKit(meta.Name, meta.Version, meta.RequiresPython, module,
                                            Path.Combine(site, module)));
             }
         }
 
         return kits;
+    }
+
+    /// <summary>
+    /// The refusal for a distribution that requires gdsfactory but has no package directory in
+    /// site-packages. An editable install (PEP 610's <c>direct_url.json</c> says so) names where its code
+    /// really is, so the sentence can say which folder to import instead.
+    /// </summary>
+    private static GdsfactoryKitRefusal NotInstalledHere(Metadata meta, string distInfo, string? named)
+    {
+        string? source = EditableSource(distInfo);
+        string module = named ?? NormalizeName(meta.Name).Replace('-', '_');
+        var kit = new GdsfactoryKit(meta.Name, meta.Version, meta.RequiresPython, module, source ?? "");
+        string reason = source is not null
+            ? $"{kit.Display} is an editable install: its code is in '{source}', not in this environment's " +
+              "site-packages, so it cannot be offered from here. Import that folder instead (File ▸ Import PDK ▸ " +
+              "Choose folder…, or circuitrf import pdk <folder>)."
+            : $"{kit.Display} installs no package directory circuitRF can run it from (a single-file module or a " +
+              "namespace package), so it cannot be offered from here. Import its source tree as a folder instead " +
+              "(File ▸ Import PDK ▸ Choose folder…, or circuitrf import pdk <folder>).";
+        return new GdsfactoryKitRefusal(kit, reason);
+    }
+
+    /// <summary>The local directory an editable install's <c>direct_url.json</c> points at, or null.</summary>
+    private static string? EditableSource(string distInfo)
+    {
+        string path = Path.Combine(distInfo, "direct_url.json");
+        try
+        {
+            if (!File.Exists(path)) return null;
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            var root = doc.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !root.TryGetProperty("dir_info", out var dirInfo) || dirInfo.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !dirInfo.TryGetProperty("editable", out var editable) || editable.ValueKind != System.Text.Json.JsonValueKind.True
+                || !root.TryGetProperty("url", out var url) || url.GetString() is not { } u
+                || !Uri.TryCreate(u, UriKind.Absolute, out var uri) || !uri.IsFile)
+                return null;
+            return uri.LocalPath;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                    or InvalidOperationException) { return null; }
+    }
+
+    /// <summary>
+    /// Where <paramref name="module"/> (dotted) is installed among <paramref name="sitePackages"/>, searched
+    /// in their order — the package directory the interpreter would import, by files alone — or null.
+    /// </summary>
+    public static string? PackageDirectoryIn(IEnumerable<string> sitePackages, string module)
+    {
+        string relative = module.Replace('.', Path.DirectorySeparatorChar);
+        return sitePackages.Select(s => Path.Combine(s, relative))
+                           .FirstOrDefault(d => File.Exists(Path.Combine(d, "__init__.py")));
     }
 
     /// <summary>gdsfactory's own installed version, read from its METADATA, or null when it is absent.</summary>
@@ -404,8 +496,12 @@ public static class GdsfactoryKitDiscovery
     /// else the first directory <c>RECORD</c> lists. Only a name that exists as a package directory in
     /// <paramref name="site"/> is accepted — consent keys on that directory.
     /// </summary>
-    private static string? TopLevelModule(string distInfo, string site)
+    private static string? TopLevelModule(string distInfo, string site) => TopLevelModule(distInfo, site, out _);
+
+    /// <param name="named">The first name the record states, whether or not it exists as a package here.</param>
+    private static string? TopLevelModule(string distInfo, string site, out string? named)
     {
+        named = null;
         var candidates = new List<string>();
         try
         {
@@ -428,6 +524,8 @@ public static class GdsfactoryKitDiscovery
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
 
+        named = candidates.FirstOrDefault(c => !c.StartsWith("__editable__", StringComparison.Ordinal)
+                                               && !c.StartsWith('_') && !c.EndsWith(".pth", StringComparison.Ordinal));
         return candidates.FirstOrDefault(c => File.Exists(Path.Combine(site, c, "__init__.py")));
     }
 

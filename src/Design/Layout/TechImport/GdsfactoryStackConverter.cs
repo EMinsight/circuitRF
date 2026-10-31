@@ -278,12 +278,18 @@ public static class GdsfactoryStackConverter
             }
         }
 
+        // A conductor with nothing insulating on it — the top of the stack, or another conductor resting
+        // on its top — has no run to lengthen; the builder is told so rather than reporting a zero
+        // separation that is not there. A conductor OVERLAPPING the one above it is not flagged: the
+        // builder cannot place that, and its report of it stands (R-gdf3-2e).
         double above = stackTop;
         foreach (var c in conductors)
         {
+            bool nothingAbove = Math.Abs(c.Top - above) <= ToleranceUm;
             EmitRun(c.Top, above, c.Thickness);
             entries.Add(new ProcessStackEntry(ProcessStackEntryKind.Conductor, c.Name,
-                ThicknessUm: c.Thickness, ConductivitySm: c.Sigma ?? 0, DrawnOn: [c.Source.Key!.Value]));
+                ThicknessUm: c.Thickness, ConductivitySm: c.Sigma ?? 0, DrawnOn: [c.Source.Key!.Value],
+                NoInsulationAbove: nothingAbove));
             above = Math.Min(above, c.Zmin);
         }
         EmitRun(substrateTop, above, 0);
@@ -295,6 +301,22 @@ public static class GdsfactoryStackConverter
             entries.Add(new ProcessStackEntry(ProcessStackEntryKind.Via, v.Name,
                 SpanFrom: v.Lower!.Name, SpanTo: v.Upper!.Name, ConductivitySm: v.Sigma ?? 0,
                 DrawnOn: [v.Source.Key!.Value]));
+
+        // ── conductivity nothing states ─────────────────────────────────────────
+        // A conductor or via decided by the via-span rule has no card, so its σ is 0: a value chosen with
+        // nothing to go on, which is a WARNING like every other one (the builder's own note of it is the
+        // same fact at a lower level, and is dropped below rather than said twice).
+        var unknownSigma = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var c in conductors.Concat(vias).Where(l => l.Sigma is not > 0))
+        {
+            filled++;
+            unknownSigma.Add(c.Name);
+            Warning($"σ unknown for the {(c.Role == Role.Via ? "via" : "conductor")} \"{c.Name}\" — " +
+                    (c.Source.Material is { Length: > 0 } m && c.Card is null
+                        ? $"its material \"{m}\" has no card"
+                        : "no material card states it") +
+                    "; set before running EM (it is 0 S/m).");
+        }
 
         var description = new ProcessStackDescription("", entries, []);
         var built = ProcessTechnologyBuilder.Build(description, layerTable, fallbackName);
@@ -313,7 +335,8 @@ public static class GdsfactoryStackConverter
         if (substrate is { Card: not null }) cardOf[substrateName] = substrate.Source.Material!;
         AttachMaterials(built.Technology, doc, cardOf, Note);
 
-        foreach (string n in built.Notes) Note(n);
+        foreach (string n in built.Notes)
+            if (!unknownSigma.Any(c => n == ProcessTechnologyBuilder.NoConductivityNote(c))) Note(n);
 
         int conductorCount = built.Technology.Stackup.Layers.Count(l => l.Kind == StackupKind.Conductor);
         int viaCount = built.Technology.Stackup.Layers.Count(l => l.Kind == StackupKind.Via);
@@ -394,7 +417,8 @@ public static class GdsfactoryStackConverter
     /// them up by their summed thickness. They stay drawing layers, and a via that lands on one — a contact
     /// to the front end — is reported and left out, because its lower end is not a conductor of the
     /// stack. A device layer is a level that reaches below the substrate's top, or is made of what the
-    /// substrate is made of: the substrate level's own material, or — when the kit states no substrate —
+    /// substrate is made of: the substrate level's own material (unless its card states σ = 0 — nothing is
+    /// implanted into an insulator), or — when the kit states no substrate —
     /// the material of the levels that reach below the wafer surface, which is what a well is implanted
     /// into. Comparing two of the kit's own strings is not matching a name circuitRF knows.</para>
     ///
@@ -416,7 +440,14 @@ public static class GdsfactoryStackConverter
 
         bool BelowSurface(Level l) => l.Zmin < substrateTop - ToleranceUm;
         var deviceMaterials = new HashSet<string>(StringComparer.Ordinal);
-        if (substrate?.Source.Material is { Length: > 0 } sm) deviceMaterials.Add(sm);
+        // A substrate whose card states it is an INSULATOR (σ = 0) has nothing implanted into it: a level
+        // above the surface made of the same material is that material deposited again — a glass or
+        // fused-silica substrate under an oxide of the same name — so it is a dielectric of the stack.
+        bool statedInsulator = substrate?.Card?.Sigma is 0;
+        if (substrate?.Source.Material is { Length: > 0 } sm)
+        {
+            if (!statedInsulator) deviceMaterials.Add(sm);
+        }
         else
             foreach (var l in others)
                 if (BelowSurface(l) && !l.KnownConductor && l.Source.Material is { Length: > 0 } m) deviceMaterials.Add(m);

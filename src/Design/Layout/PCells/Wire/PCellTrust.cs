@@ -88,7 +88,7 @@ public sealed class PCellTrustStore
     /// <summary>
     /// Records a decision and writes it. <b>A refusal is recorded too</b> — otherwise every open
     /// re-asks about the same kit, and a prompt that nags is a prompt people learn to dismiss without
-    /// reading. Reversing a refusal is what the Settings "forget" action is for.
+    /// reading. Reversing a refusal is what Settings ▸ Security &amp; Permissions is for, one kit at a time.
     /// </summary>
     public void Record(string manifestDirectory, bool allowed)
     {
@@ -102,6 +102,18 @@ public sealed class PCellTrustStore
     }
 
     public int Count => _decisions.Count;
+
+    /// <summary>
+    /// Replaces every decision with <paramref name="decisions"/> and persists nothing — what an open
+    /// workspace does after Settings changed one kit's answer, so the gate its resolver already holds
+    /// (this instance's <see cref="Decide"/>) answers from the new record without being rebuilt.
+    /// </summary>
+    public void ReplaceAll(IEnumerable<KeyValuePair<string, bool>> decisions)
+    {
+        _decisions.Clear();
+        foreach (var (path, allowed) in decisions)
+            if (Normalize(path) is { Length: > 0 } key) _decisions[key] = allowed;
+    }
 
     /// <summary>
     /// <paramref name="directory"/> with every symbolic link along it resolved, then

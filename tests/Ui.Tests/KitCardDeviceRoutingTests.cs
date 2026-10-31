@@ -39,7 +39,7 @@ public sealed class KitCardDeviceRoutingTests : IDisposable
         D1 a b dsyn area=area0 pj=4u
         D2 a b dsyn area=area0
         .ends dpart
-        .model dsyn d is=1e-15 n=1.05 rs=2 cjsw=1e-15
+        .model dsyn d is=1e-15 n=1.05 rs=2 kf=1e-14
         """;
 
     private void Write(string relative, string text)
@@ -49,9 +49,9 @@ public sealed class KitCardDeviceRoutingTests : IDisposable
         File.WriteAllText(full, text);
     }
 
-    private void InstallSubcircuitKit(IReadOnlyList<OsdiModel>? osdi = null)
+    private void InstallSubcircuitKit(IReadOnlyList<OsdiModel>? osdi = null, string library = Library)
     {
-        Write("models/dev.lib", Library);
+        Write("models/dev.lib", library);
         var report = new PdkImportReport { RootPath = _root, KitName = Kit };
         report.Parts.Add(new PdkPart(
             "DPART", "D part",
@@ -129,9 +129,49 @@ public sealed class KitCardDeviceRoutingTests : IDisposable
 
         // Two instances of one card: each thing the card leaves behind is said once.
         Assert.Single(ext.Conflicts, c => c.Contains("'dsyn'", StringComparison.Ordinal)
-                                       && c.Contains("cjsw", StringComparison.Ordinal));
+                                       && c.Contains("kf", StringComparison.Ordinal));
         Assert.Single(ext.Conflicts, c => c.Contains("'dsyn'", StringComparison.Ordinal)
                                        && c.Contains("'pj'", StringComparison.Ordinal));
+    }
+
+    /// <summary>A junction perimeter on an instance is dropped only while the card states no sidewall
+    /// term: with CJSW stated it is half the junction, and the built-in has no home for it.</summary>
+    [Fact]
+    public void APerimeterOnACardStatingASidewall_IsRefused_NotDropped()
+    {
+        InstallSubcircuitKit(library: """
+            .subckt dpart a b area0=2
+            D1 a b dsw area=area0 pj=4u
+            .ends dpart
+            .model dsw d is=1e-15 cjsw=1e-15
+            """);
+
+        var ext = Extract("DPART");
+        var d1  = ext.Library.Find("dpart")!.Instances.Single(i => i.InstanceName == "D1");
+
+        Assert.Equal("dsw", d1.Reference);   // left as written, so the failure names it
+        Assert.Contains(ext.Conflicts, c => c.Contains("'pj'", StringComparison.Ordinal)
+                                         && c.Contains("CJSW", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>A card family with no record of which of its parameters move a DC answer is not run on
+    /// the built-in: what it leaves behind cannot be shown harmless, so it is refused, not approximated.</summary>
+    [Fact]
+    public void ACardFamilyWithNoDcList_IsNotRunOnTheBuiltIn()
+    {
+        InstallSubcircuitKit(library: """
+            .subckt dpart a b
+            J1 a b 0 jsyn
+            .ends dpart
+            .model jsyn njf vto=-2 beta=1e-3
+            """);
+
+        var ext = Extract("DPART");
+        var j1  = ext.Library.Find("dpart")!.Instances.Single(i => i.InstanceName == "J1");
+
+        Assert.Equal("jsyn", j1.Reference);
+        Assert.Contains(ext.Conflicts, c => c.Contains("'jsyn'", StringComparison.Ordinal)
+                                         && c.Contains("refused rather than approximated", StringComparison.Ordinal));
     }
 
     // ── 5 — a card follows the SELECTED corner section ────────────────────────
@@ -205,5 +245,50 @@ public sealed class KitCardDeviceRoutingTests : IDisposable
         Assert.Equal("2E-15", Value(d, "Is"));
         Assert.Contains("r_w", Value(d, "Area"), StringComparison.Ordinal);
         Assert.Equal(cell.Name, ext.TestBench.Instances.Single(i => i.InstanceName == "X1").Reference);
+    }
+
+    /// <summary>
+    /// Two kits whose primitive parts share an id get two cells. The extraction keeps the first cell
+    /// of a name it meets, and a name made from the part id alone ran the second kit's part on the
+    /// first kit's card, silently.
+    /// </summary>
+    [Fact]
+    public void PrimitivePartsOfOneIdFromTwoKits_EachKeepTheirOwnCard()
+    {
+        foreach (var (kit, isat) in new[] { ("KitOne", "2e-15"), ("KitTwo", "7e-15") })
+        {
+            string root = Path.Combine(_root, kit);
+            Directory.CreateDirectory(Path.Combine(root, "libs.sym"));
+            Directory.CreateDirectory(Path.Combine(root, "libs.spice"));
+            File.WriteAllText(Path.Combine(root, "libs.sym", "dprim.sym"), """
+                v {version=1.2}
+                K {type=diode
+                format="@name @pinlist @model"
+                template="name=D1 model=dprim_card"
+                }
+                B 5 -2.5 -22.5 2.5 -17.5 {name=p dir=inout}
+                B 5 -2.5 17.5 2.5 22.5 {name=n dir=inout}
+                """);
+            File.WriteAllText(Path.Combine(root, "libs.spice", "prims.lib"), $".model dprim_card d is={isat}\n");
+            var outcome = PdkPartInstaller.Install(PdkImporter.Import(root, kit));
+            PdkKitRegistry.SetKit(null, outcome.KitName, outcome.Parts ?? []);
+        }
+
+        var model = new SchematicEditModel { SchematicDirectory = Path.GetTempPath() };
+        int n = 0;
+        foreach (string kit in new[] { "KitOne", "KitTwo" })
+            model.Components.Add(new EditableComponent
+            {
+                InstanceName = $"X{++n}", Symbol = SymbolKind.Generic, CellRef = PdkKitRegistry.RefFor(kit, "dprim"),
+            });
+        var ext = NetExtractor.Extract(model, "tb");
+
+        string IsOf(string instance)
+        {
+            string cell = ext.TestBench.Instances.Single(i => i.InstanceName == instance).Reference;
+            return Value(Assert.Single(ext.Library.Find(cell)!.Instances), "Is");
+        }
+        Assert.Equal("2E-15", IsOf("X1"));
+        Assert.Equal("7E-15", IsOf("X2"));
     }
 }

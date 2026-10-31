@@ -76,7 +76,7 @@ public sealed class GdsfactoryKitDialog : Window
                 },
             });
         _kits.SelectionChanged += (_, _) => _continue.IsEnabled = _kits.SelectedItem is KitRow { IsUsable: true };
-        _interpreters.SelectionChanged += (_, _) => Rediscover();
+        _interpreters.SelectionChanged += async (_, _) => await RediscoverAsync();
 
         var body = new StackPanel { Margin = new Thickness(20, 16), Spacing = 8 };
         body.Children.Add(new TextBlock
@@ -161,21 +161,40 @@ public sealed class GdsfactoryKitDialog : Window
         _interpreters.SelectedItem = path;
     }
 
-    private void Rediscover()
+    /// <summary>Which <see cref="RediscoverAsync"/> is current: a later selection makes an earlier,
+    /// still-running probe's answer stale, and a stale answer must not overwrite the current one.</summary>
+    private int _generation;
+
+    /// <summary>
+    /// Reads the chosen environment. OFF the UI thread: it starts the interpreter (a first start after an
+    /// install compiles bytecode for seconds, and a wedged interpreter waits out the probe's timeout), and
+    /// a dialog that freezes while it does looks like a crash.
+    /// </summary>
+    private async Task RediscoverAsync()
     {
+        int generation = ++_generation;
         _continue.IsEnabled = false;
         _kits.ItemsSource = null;
         if (_interpreters.SelectedItem is not string interpreter) return;
+        _status.Text = $"Reading the Python environment at '{interpreter}'…";
 
         if (_module is not null)
         {
-            var env = GdsfactoryKitImport.CheckEnvironment(interpreter, _module, out string? gf, out string? refusal);
+            string module = _module;
+            var (env, gf, refusal) = await Task.Run(() =>
+            {
+                var e = GdsfactoryKitImport.CheckEnvironment(interpreter, module, out string? g, out string? r);
+                return (e, g, r);
+            });
+            if (generation != _generation) return;
             _status.Text = env is null ? refusal : $"Python {env.Version}, gdsfactory {gf}.";
             _continue.IsEnabled = env is not null;
             return;
         }
 
-        _discovery = GdsfactoryKitDiscovery.Discover(interpreter);
+        var discovery = await Task.Run(() => GdsfactoryKitDiscovery.Discover(interpreter));
+        if (generation != _generation) return;
+        _discovery = discovery;
         var rows = _discovery.Kits.Select(k => new KitRow(k, null))
             .Concat(_discovery.Refused.Select(r => new KitRow(r.Kit, r.Reason)))
             .ToList();

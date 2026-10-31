@@ -55,6 +55,11 @@ public sealed class PreparedCircuit
     /// (<see cref="NetExtractor.ExtractionResult.PartRefusals"/>). Empty for every other input.</summary>
     public IReadOnlyList<string> PartRefusals { get; private set; } = [];
 
+    /// <summary>What the extraction could not build — an instance it SKIPPED above all
+    /// (<see cref="NetExtractor.ExtractionResult.Conflicts"/>), which is otherwise simply absent from the
+    /// circuit with nothing said. Empty for every other input.</summary>
+    public IReadOnlyList<string> ExtractionConflicts { get; private set; } = [];
+
     /// <summary>The placed vendor parts as tunables, with their candidates
     /// (<see cref="NetExtractor.ExtractionResult.PartTunables"/>) — what the catalog an evaluation of this circuit
     /// builds offers as <c>Instance.Part</c>. Empty for every other input: a <c>.cnl</c> cannot say it.</summary>
@@ -135,6 +140,7 @@ public sealed class PreparedCircuit
         prepared.PartRangeWarnings = extracted.PartRangeWarnings;
         prepared.PartRefusals      = extracted.PartRefusals;
         prepared.PartTunables      = extracted.PartTunables;
+        prepared.ExtractionConflicts = extracted.Conflicts;
         return prepared;
     }
 
@@ -158,6 +164,7 @@ public sealed class PreparedCircuit
             prepared.PartRangeWarnings = extracted.PartRangeWarnings;
             prepared.PartRefusals      = extracted.PartRefusals;
             prepared.PartTunables      = extracted.PartTunables;
+            prepared.ExtractionConflicts = extracted.Conflicts;
             return prepared;
         }
         catch (Exception ex)

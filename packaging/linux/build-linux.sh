@@ -472,6 +472,11 @@ for ARCH in $ARCHES; do
         echo "WARNING: NOT SMOKE-TESTED - this ${HOST_ARCH} machine cannot execute a ${ARCH} build."
         echo "         Install qemu-user-static (binfmt) to check it, or build on ${ARCH}."
         UNSMOKED="${UNSMOKED} ${ARCH}"
+        # The no-Python check reads files and runs nothing, so it holds for this tree all the same.
+        dotnet "$SMOKE_DLL" --no-python "${PUBLISH}/circuitRF" || {
+            echo "ERROR: ${PUBLISH} carries a Python environment (see above). This tree must not be packaged."
+            exit 1
+        }
     fi
 
     for KIND in $KINDS; do

@@ -411,4 +411,26 @@ public sealed class KitSymbolFileReaderTests
         Assert.Equal(["body"], s!.ExtraTerminals);
         Assert.Empty(KitSymbolFileReader.Read(ThreeTerminal)!.ExtraTerminals ?? []);
     }
+
+    /// <summary>
+    /// The element letter is what the FORMAT writes: a literal letter ahead of <c>@name</c> makes a
+    /// subcircuit call of an instance named R1, and a format that never writes <c>@spiceprefix</c> is a
+    /// primitive whatever prefix the template sets. Read off the template alone, both were inverted.
+    /// </summary>
+    [Fact]
+    public void K22_TheElementLetterIsTheOneTheFormatWrites()
+    {
+        string Element(string format, string template) => KitSymbolFileReader.Read($$"""
+            v {version=1.2}
+            K {type=res
+            format="{{format}}"
+            template="{{template}}"}
+            B 5 -2.5 -2.5 2.5 2.5 {name=p dir=inout}
+            B 5 17.5 -2.5 22.5 2.5 {name=n dir=inout}
+            """)!.Element!;
+
+        Assert.Equal("X", Element("X@name @pinlist @model", "name=R1 model=res_a"));
+        Assert.Equal("M", Element("@name @pinlist @model", "name=M1 spiceprefix=X model=fet_a"));
+        Assert.Equal("X", Element("@spiceprefix@name @pinlist @model", "name=M1 spiceprefix=X model=fet_a"));
+    }
 }

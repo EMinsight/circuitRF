@@ -647,6 +647,11 @@ To package deliberately without a working one: set CRF_ALLOW_NO_DEVICE_WORKER=1
         Write-Host "WARNING: NOT SMOKE-TESTED - this $hostArch machine cannot execute a $Arch build."
         Write-Host '         Windows on ARM runs all three; build there to check every architecture.'
         $unsmoked += $Arch
+        # The no-Python check reads files and runs nothing, so it holds for this tree all the same.
+        & dotnet $smokeDll --no-python (Join-Path $publish $exeName)
+        if ($LASTEXITCODE -ne 0) {
+            throw "publish\$rid carries a Python environment (see above). This tree must not be packaged."
+        }
     }
     else {
         $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "circuitrf-smoke-$Arch"

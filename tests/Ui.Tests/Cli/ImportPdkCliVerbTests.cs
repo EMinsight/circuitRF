@@ -115,6 +115,45 @@ public sealed class ImportPdkCliVerbTests : IDisposable
             Assert.DoesNotContain(gone, code, StringComparison.Ordinal);
     }
 
+    // ── what is never recorded ───────────────────────────────────────────────────────────────────
+
+    private static string? RefsOf(string ws)
+    {
+        var refs = WorkspacePersistence.LoadFromFile(Path.Combine(ws, WorkspacePersistence.FileName)).PdkRefs;
+        return refs is { Count: > 0 } ? JsonSerializer.Serialize(refs) : null;
+    }
+
+    /// <summary>A name holding a character that splits a part reference is refused before anything is
+    /// written: <c>pdk://a/b/widget</c> reads back as kit 'a', and no placed part would resolve.</summary>
+    [Fact]
+    public void ANameThatWouldSplitItsPartReferences_IsRefused()
+    {
+        string ws = Workspace("ws_badname");
+
+        var (exit, err) = Run("import", "pdk", Kit(), "--into", ws, "--name", "a/b");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("--name", err, StringComparison.Ordinal);
+        Assert.Null(RefsOf(ws));
+    }
+
+    /// <summary>A folder in which circuitRF recognises nothing usable is refused and not recorded — it
+    /// used to be referenced from the workspace and re-read on every open, with exit 0.</summary>
+    [Fact]
+    public void AFolderHoldingNoKit_IsRefusedAndNotRecorded()
+    {
+        string notKit = Path.Combine(_root, "notakit");
+        Directory.CreateDirectory(notKit);
+        File.WriteAllBytes(Path.Combine(notKit, "blob.bin"), [0, 1, 2, 3, 0, 255]);
+        string ws = Workspace("ws_notkit");
+
+        var (exit, err) = Run("import", "pdk", notKit, "--into", ws);
+
+        Assert.True(exit == 1, err);
+        Assert.Contains("recognised nothing it can use", err, StringComparison.Ordinal);
+        Assert.Null(RefsOf(ws));
+    }
+
     // ── consent ──────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Without consent no interpreter is even looked for, so no kit code can run; the import
@@ -162,6 +201,55 @@ public sealed class ImportPdkCliVerbTests : IDisposable
         Assert.True(exit == 0, err);
         // Resolved through the kit — without the load it is an unresolved reference and no instance.
         Assert.Matches(@"(?m)^ExtDevice:X1\s.*Provider=synthkit\s.*w=3E-06", File.ReadAllText(cnl));
+    }
+
+    /// <summary>
+    /// <c>opt</c>, <c>yield</c> and <c>fields</c> read a schematic as a prepared circuit, and what its
+    /// extraction could not build is said there too — it used to reach only <c>netlist</c> and the run
+    /// verbs, so a skipped or half-wired kit part vanished from an optimisation without a word.
+    /// </summary>
+    [Fact]
+    public void APreparedSchematicSaysWhatItsExtractionCouldNotBuild()
+    {
+        string kit = Path.Combine(_root, "bodykit");
+        Directory.CreateDirectory(Path.Combine(kit, "libs.sym"));
+        Directory.CreateDirectory(Path.Combine(kit, "libs.spice"));
+        File.WriteAllText(Path.Combine(kit, "libs.sym", "widget.sym"), """
+            v {version=1.2}
+            K {type=res
+            format="@name @pinlist @body widget w=@w"
+            template="name=X1 body=sub! w=1u"}
+            B 5 -2.5 -2.5 2.5 2.5 {name=a dir=inout}
+            B 5 17.5 -2.5 22.5 2.5 {name=b dir=inout}
+            """);
+        File.WriteAllText(Path.Combine(kit, "libs.spice", "devices.lib"), """
+            .subckt widget a b bn w=1u
+            R1 a b {w*1e6}
+            R2 b bn 1e9
+            .ends widget
+            """);
+        string ws = Workspace("ws_prepared");
+        Assert.Equal(0, Run("import", "pdk", kit, "--into", ws).Exit);
+        PdkKitRegistry.ResetAllForTests();
+
+        string csch = Path.Combine(ws, "bench.csch");
+        var model = new SchematicEditModel { SchematicDirectory = ws };
+        model.Components.Add(new EditableComponent
+        {
+            InstanceName = "X1", Symbol = SymbolKind.Generic, CellRef = PdkKitRegistry.RefFor("bodykit", "widget"),
+        });
+        SchematicPersistence.SaveToFile(csch, model, "bench");
+
+        var (realErr, err) = (Console.Error, new StringWriter());
+        try
+        {
+            Console.SetError(err);
+            JsonRun.Reset();
+            CircuitSource.PrepareSchematic(csch);
+        }
+        finally { Console.SetError(realErr); }
+
+        Assert.Matches(@"(?m)^warning: .*X1.*'body'", err.ToString());
     }
 
     // ── harness ──────────────────────────────────────────────────────────────────────────────────

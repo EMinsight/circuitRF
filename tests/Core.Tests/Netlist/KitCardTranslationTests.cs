@@ -63,6 +63,26 @@ public sealed class KitCardTranslationTests
         Assert.Equal(["jsw"], SpiceModelCardTranslation.DcAffectingUnmapped(t));
     }
 
+    /// <summary>A diode card's JS is its saturation current under the dialect's other spelling, so a
+    /// card stating only JS binds it as Is rather than leaving it behind.</summary>
+    [Fact]
+    public void ADiodeCardStatingJs_BindsItAsTheSaturationCurrent()
+    {
+        var t = SpiceModelCardTranslation.Translate(Card(".model dj d js=3e-15 n=1.1"));
+
+        Assert.Equal("3E-15", t.Binding!.Parameters.Single(p => p.Name == "Is").Expression);
+        Assert.DoesNotContain("js", t.Binding.Unmapped, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The low-level breakdown current moves a reverse-biased DC answer, so it is listed.</summary>
+    [Fact]
+    public void DcAffectingUnmapped_ListsTheLowLevelBreakdownCurrent()
+    {
+        var t = SpiceModelCardTranslation.Translate(Card(".model db d is=1e-15 bv=5 ibvl=1e-9"));
+
+        Assert.Equal(["ibvl"], SpiceModelCardTranslation.DcAffectingUnmapped(t));
+    }
+
     /// <summary>
     /// A corner file's section reading ANOTHER section of the same file is not a cycle. Keyed on the
     /// file alone it was refused as one, and every card behind it went unread.

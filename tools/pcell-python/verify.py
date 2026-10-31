@@ -468,6 +468,26 @@ check(len(_lines) == 3 and "gdsfactory is not installed in the Python environmen
 check(len(_lines) == 3 and _lines[2] == _lines[0],
       "gdsfactory_bridge.technology answers with the same sentence as a problem (brief-gdf-3)")
 
+print("\ngdsfactory_bridge parameter kinds")
+# A float written with an int literal (``length: float = 10``) is a real, not an integer: declaring it an
+# integer refused 10.5 and truncated what was sent. A string annotation (from __future__ import annotations)
+# counts the same as the type itself.
+from gdsfactory_bridge.bridge import _kind_of  # noqa: E402
+import inspect as _inspect  # noqa: E402
+
+
+def _kinds_fixture(length: float = 10, count: int = 3, width: "float | None" = 2, flag: bool = True,
+                   bare=4, pair: "Floats" = 1, gap: float = 0.5, name: str = "x"):  # noqa: F821
+    pass
+
+
+_kinds = {p.name: _kind_of(p.default, p.annotation) for p in _inspect.signature(_kinds_fixture).parameters.values()}
+check(_kinds["length"] == "real" and _kinds["width"] == "real" and _kinds["gap"] == "real",
+      "an int default on a float-annotated parameter is declared real")
+check(_kinds["count"] == "int" and _kinds["bare"] == "int" and _kinds["pair"] == "int",
+      "an int default with an int, absent or non-float annotation stays an integer")
+check(_kinds["flag"] == "bool" and _kinds["name"] == "string", "flags and text keep their kinds")
+
 print()
 if _failures:
     print(f"{len(_failures)} FAILED:")

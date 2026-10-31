@@ -132,6 +132,12 @@ technology itself, build it with `circuitrf import pdk … --technology` and ope
 dotnet run --project tools/UiSnapshot --no-build -- --gdsfactory <step> --python <interp> --kit <tree> -o out.png
 ```
 
+`permissions` opens Settings on Security & Permissions, on a throwaway per-user state directory seeded with three
+recorded kit answers (a gdsfactory package allowed, with its interpreter; a script kit refused; a kit no longer on
+disk). `permissions-many` adds two hundred more, for the list's own scrolling and the filter. `--kit-row
+allow:<kit>`, `deny:<kit>` or `clear:<kit>` clicks that row's Allowed box or Clear button and prints what is now
+recorded; `--type FilterBox=<text>` types into the filter. `--kit` is optional here.
+
 **The 3D editor** draws a `.c3d` on the platform's own GPU backend (Metal, D3D11 or Vulkan — what the application
 picks), through the editor's view model and Export Picture's own `CapturePicture`. No window is opened, so this mode
 starts no Avalonia platform at all:

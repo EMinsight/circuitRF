@@ -400,7 +400,7 @@ public static class ProcessTechnologyBuilder
                         remaining  -= take;
                     }
 
-                    if (remaining > NegligibleUm)
+                    if (remaining > NegligibleUm && !e.NoInsulationAbove)
                         notes.Add($"Conductor \"{e.Name}\" is {e.ThicknessUm:0.###} µm thick but the " +
                                   $"insulation above it accounts for {e.ThicknessUm - remaining:0.###} µm; " +
                                   $"the remaining {remaining:0.###} µm was taken as zero separation. The " +
@@ -413,10 +413,7 @@ public static class ProcessTechnologyBuilder
                     double sigma = e.ConductivitySm > 0
                         ? e.ConductivitySm
                         : Conductivity(e.SheetResistanceOhmPerSquare, e.ThicknessUm);
-                    if (sigma <= 0)
-                        notes.Add($"Conductor \"{e.Name}\" states no sheet resistance or conductivity, so " +
-                                  "its conductivity could not be derived. Set it in the Technology Editor " +
-                                  "before running anything that depends on loss.");
+                    if (sigma <= 0) notes.Add(NoConductivityNote(e.Name));
 
                     output.Add(new StackupLayer
                     {
@@ -691,6 +688,13 @@ public static class ProcessTechnologyBuilder
     /// Bulk conductivity from sheet resistance and thickness: a square of sheet of thickness t has
     /// resistance 1/(σ·t), so σ = 1/(Rs·t).
     /// </summary>
+    /// <summary>The note for a conductor whose conductivity nothing states. One sentence in one place, so a
+    /// caller that reports the same fact at a higher level (<see cref="GdsfactoryStackConverter"/>) can
+    /// recognise this one and not say it twice.</summary>
+    internal static string NoConductivityNote(string conductor)
+        => $"Conductor \"{conductor}\" states no sheet resistance or conductivity, so its conductivity could " +
+           "not be derived. Set it in the Technology Editor before running anything that depends on loss.";
+
     private static double Conductivity(double sheetResistanceOhmPerSquare, double thicknessUm)
         => sheetResistanceOhmPerSquare > 0 && thicknessUm > 0
             ? 1.0 / (sheetResistanceOhmPerSquare * thicknessUm * 1e-6)

@@ -95,7 +95,9 @@ public static class SpiceModelCardTranslation
 
     private static readonly (string Target, string[] Sources)[] DiodeMap =
     [
-        ("Is",   ["IS"]),
+        // JS is the same saturation current under the dialect's other spelling (both scale with
+        // AREA), so a card stating only JS binds rather than being refused for "leaving it behind".
+        ("Is",   ["IS", "JS"]),
         ("Rs",   ["RS"]),
         ("N",    ["N"]),
         ("Tt",   ["TT"]),
@@ -488,7 +490,10 @@ public static class SpiceModelCardTranslation
 
     /// <summary>
     /// The card parameters a binding does NOT carry that would change a DC operating point, by the
-    /// card's own spelling — empty when everything left behind is charge, noise or a no-op.
+    /// card's own spelling — empty when everything left behind is charge, noise or a no-op, and
+    /// <b>null when circuitRF holds no record of which of this family's parameters move a DC answer</b>.
+    /// A caller that would stand the built-in in for the card refuses on null: "refuse rather than
+    /// approximate" cannot be honoured for a family nobody has listed (brief-gdf-1b R-gdf1b-3).
     ///
     /// <para><b>A parameter stated at the value that means "not modelled" changes nothing</b>, and
     /// kits state those routinely (<c>IK=0</c>, <c>TRS=0</c>), so a literal zero — and NKF at its
@@ -497,24 +502,31 @@ public static class SpiceModelCardTranslation
     ///
     /// <para>Temperature coefficients are on the list because the card states its own TNOM and a run
     /// is rarely at it, so they move the operating point of every run that is not.</para>
+    ///
+    /// <para>A capacitor and an inductor are an open and a short at DC whatever else their card says,
+    /// so nothing they leave behind is listed. A resistor's DC value is its R and its temperature law,
+    /// both carried, so everything else it leaves behind is listed except noise and the geometry words
+    /// (a card standing in for an instance is reached only when no geometry is applied).</para>
     /// </summary>
-    public static IReadOnlyList<string> DcAffectingUnmapped(ModelCardTranslation translation)
+    public static IReadOnlyList<string>? DcAffectingUnmapped(ModelCardTranslation translation)
     {
         ArgumentNullException.ThrowIfNull(translation);
         if (translation.Binding is not { } binding) return [];
 
-        HashSet<string>? relevant = binding.EngineReference switch
+        Func<string, bool>? relevant = binding.EngineReference switch
         {
-            "Diode"                => DiodeDcParameters,
-            "BJT_NPN" or "BJT_PNP" => BjtDcParameters,
+            "Diode"                => DiodeDcParameters.Contains,
+            "BJT_NPN" or "BJT_PNP" => BjtDcParameters.Contains,
+            "C" or "L"             => _ => false,
+            "R"                    => name => !ResistorDcInert.Contains(name),
             _                      => null,
         };
-        if (relevant is null) return [];
+        if (relevant is null) return null;
 
         var listed = new List<string>();
         foreach (string name in binding.Unmapped)
         {
-            if (!relevant.Contains(name)) continue;
+            if (!relevant(name)) continue;
             if (!translation.Card.Parameters.TryGetValue(name, out var value)) continue;
             double inert = name.Equals("NKF", StringComparison.OrdinalIgnoreCase) ? 0.5 : 0.0;
             if (double.TryParse(value, System.Globalization.NumberStyles.Float,
@@ -526,13 +538,23 @@ public static class SpiceModelCardTranslation
     }
 
     /// <summary>
+    /// What a resistor card can leave behind without moving its DC value: flicker-noise words, and the
+    /// geometry words a sheet-resistance card applies to an instance's width and length.
+    /// </summary>
+    private static readonly HashSet<string> ResistorDcInert = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "KF", "AF", "WF", "LF", "EF", "RSH", "DEFW", "DEFL", "NARROW", "SHORT",
+    };
+
+    /// <summary>
     /// Diode parameters circuitRF's diode has no home for that move a DC answer: sidewall and
-    /// density saturation currents, the high-injection knees, tunnelling, and the temperature
-    /// coefficients of RS, BV and the temperature law selector.
+    /// density saturation currents, the high-injection knees, tunnelling, the low-level breakdown
+    /// current, and the temperature coefficients of RS, BV and the temperature law selector.
+    /// (NBVL is not listed: it is inert unless IBVL is stated, and IBVL is.)
     /// </summary>
     private static readonly HashSet<string> DiodeDcParameters = new(StringComparer.OrdinalIgnoreCase)
     {
-        "JS", "JSW", "ISW", "IK", "IKF", "IKR", "JTUN", "JTUNSW",
+        "JS", "JSW", "ISW", "IK", "IKF", "IKR", "JTUN", "JTUNSW", "IBVL",
         "TRS", "TRS1", "TRS2", "TCV", "TBV1", "TBV2", "TLEV",
     };
 

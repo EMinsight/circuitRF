@@ -195,7 +195,7 @@ for (int i = 0; i < args.Length; i++)
         case "--archive" when i + 1 < args.Length: archive = Path.GetFullPath(args[++i]); break;
         case "--manage-libraries" when i + 1 < args.Length: manageLibraries = Path.GetFullPath(args[++i]); break;
         case "--add-vendor-library" when i + 1 < args.Length: addVendorLibrary = Path.GetFullPath(args[++i]); break;
-        // brief-gdf-2: the gdsfactory views — trust | pick | interpreter | report | prompt — with the
+        // brief-gdf-2: the gdsfactory views — trust | pick | interpreter | report | prompt | permissions — with the
         // interpreter that has gdsfactory and (for trust/interpreter/report) a kit source tree.
         case "--gdsfactory" when i + 1 < args.Length: gdsfactory = args[++i]; break;
         case "--python" when i + 1 < args.Length: gdsfactoryPython = args[++i]; break;
@@ -208,7 +208,7 @@ for (int i = 0; i < args.Length; i++)
             sizeGiven = true;
             break;
         case "--click" or "--drag" or "--key" or "--shot" or "--rclick" or "--menu" or "--type" or "--button" or "--hover"
-            or "--unit" or "--rename-stackup" or "--rename-tech"
+            or "--unit" or "--rename-stackup" or "--rename-tech" or "--kit-row"
             when i + 1 < args.Length:
             steps.Add((args[i], args[++i]));
             break;
@@ -681,6 +681,25 @@ foreach (var (kind, arg) in steps)
             Pump();
             Console.WriteLine($"focus after double-click: {(host.FocusManager?.GetFocusedElement() as Control)?.Name ?? "none"}");
             host.KeyTextInput(arg);
+            break;
+        }
+        case "--kit-row":
+        {
+            // allow:<kit> | deny:<kit> | clear:<kit> — a real click on that kit's Allowed box or Clear
+            // button in Settings' Generated Artwork list (the "permissions" gdsfactory step).
+            var dialog = TopDialog() ?? host;
+            int colon = arg.IndexOf(':');
+            string verb = arg[..colon], kitName = arg[(colon + 1)..];
+            var controls = dialog.GetVisualDescendants().OfType<Control>()
+                .Where(c => c.DataContext is CircuitRF.Ui.Views.Dialogs.PCellTrustRow r && r.Name == kitName && c.IsEffectivelyVisible);
+            Control target = verb == "clear"
+                ? controls.OfType<Button>().First(b => b is not Avalonia.Controls.Primitives.ToggleButton)
+                : controls.OfType<CheckBox>().First(cb => (cb.IsChecked == true) != (verb == "allow"));
+            var c = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), dialog)!.Value;
+            dialog.MouseDown(c, MouseButton.Left, RawInputModifiers.None);
+            dialog.MouseUp(c, MouseButton.Left, RawInputModifiers.None);
+            Pump();
+            Console.WriteLine($"{arg}: recorded {string.Join(", ", CircuitRF.Ui.Layout.PCells.PCellTrustPreferences.Load().Select(kv => $"{Path.GetFileName(kv.Key)}={(kv.Value ? "allowed" : "refused")}"))}");
             break;
         }
         case "--button":
@@ -1302,8 +1321,39 @@ bool OpenGdsfactory(string step)
             host.Width = sizeGiven ? width : 320; host.Height = sizeGiven ? height : 720;
             break;
         }
+        case "permissions" or "permissions-many":
+        {
+            // Settings ▸ Security & Permissions on a throwaway state directory seeded with three answers:
+            // a gdsfactory package allowed (with its interpreter), a script kit refused, and a kit that
+            // is no longer on disk — so each row shape shows, and --kit-row changes are real writes.
+            string state = Path.Combine(Path.GetTempPath(), "crf-permissions-" + Guid.NewGuid().ToString("N")[..8]);
+            CircuitRF.Ui.AppDataRoot.RedirectTo(state);
+            string package = tree?.InstalledDirectory ?? Path.Combine(state, "site-packages", "synthkit");
+            Directory.CreateDirectory(package);
+            if (tree is null) File.WriteAllText(Path.Combine(package, "__init__.py"), "");
+            string scripts = Path.Combine(state, "kits", "mmic-pcells");
+            Directory.CreateDirectory(scripts);
+            File.WriteAllText(Path.Combine(scripts, "pcell-generators.json"), "{}");
+            CircuitRF.Ui.Layout.PCells.PCellTrustPreferences.Set(package, true);
+            CircuitRF.Ui.Layout.PCells.PCellTrustPreferences.Set(scripts, false);
+            CircuitRF.Ui.Layout.PCells.PCellTrustPreferences.Set(Path.Combine(state, "old-env", "lib", "python3.12", "site-packages", "retired_kit"), true);
+            CircuitRF.Ui.Layout.PCells.GdsfactoryInterpreterChoices.Record(Path.GetFileName(package), python);
+            // permissions-many: two hundred more, the scale a shared tool area reaches, for the list's own scrolling.
+            if (step == "permissions-many")
+                CircuitRF.Ui.Theming.AppPreferencesIo.Update(p =>
+                {
+                    for (int k = 0; k < 200; k++)
+                        p.PCellTrust![Path.Combine(state, "area", $"cell_lib_{k:D3}")] = k % 7 != 0;
+                });
+            var settings = new CircuitRF.Ui.Views.Dialogs.SettingsView(null);
+            if (sizeGiven) { settings.Width = width; settings.Height = height; }
+            _ = settings.ShowDialog(host);
+            Pump();
+            settings.GetVisualDescendants().OfType<TabControl>().First().SelectedIndex = 2;
+            break;
+        }
         default:
-            Console.Error.WriteLine($"--gdsfactory: unknown step '{step}' (prompt, pick, interpreter, trust, report, report-open, tech-overwrite, cell, symbols, palette)");
+            Console.Error.WriteLine($"--gdsfactory: unknown step '{step}' (prompt, pick, interpreter, trust, report, report-open, tech-overwrite, cell, symbols, palette, permissions, permissions-many)");
             return false;
     }
     Pump();

@@ -119,18 +119,18 @@ public static class GdsfactoryKitImport
         var env = CheckEnvironment(interpreter, module, out string? gfVersion, out refusal, runProbe);
         if (env is null) return null;
 
-        var kits = GdsfactoryKitDiscovery.ScanSitePackages(env.SitePackages);
+        var notListed = new List<GdsfactoryKitRefusal>();
+        var kits = GdsfactoryKitDiscovery.ScanSitePackages(env.SitePackages, notListed);
         var kit = kits.FirstOrDefault(k => k.Module == module);
         if (kit is null)
         {
-            string relative = module.Replace('.', Path.DirectorySeparatorChar);
-            string? dir = env.SitePackages
-                .Select(s => Path.Combine(s, relative))
-                .FirstOrDefault(d => File.Exists(Path.Combine(d, "__init__.py")));
+            string? dir = GdsfactoryKitDiscovery.PackageDirectoryIn(env.SitePackages, module);
             if (dir is null)
             {
-                refusal = $"No package '{module}' is installed for '{interpreter}'" +
-                          (kits.Count > 0 ? $"; its gdsfactory kits are {string.Join(", ", kits.Select(k => k.Module))}." : ".");
+                // An editable install of exactly this module is named, with the folder to import instead.
+                refusal = notListed.FirstOrDefault(r => r.Kit.Module == module)?.Reason
+                          ?? $"No package '{module}' is installed for '{interpreter}'" +
+                             (kits.Count > 0 ? $"; its gdsfactory kits are {string.Join(", ", kits.Select(k => k.Module))}." : ".");
                 return null;
             }
 
@@ -206,38 +206,79 @@ public static class GdsfactoryKitImport
     /// <summary>
     /// Runs <c>python -m gdsfactory_bridge.technology</c> for <paramref name="kit"/> (brief-gdf-3 R-gdf3-1a):
     /// its layers, layer views, stack and material cards. <b>It runs the kit's code</b>, through the same
-    /// interpreter, path and consent as <see cref="ReadReport"/>. The layer-properties file the kit wrote is
-    /// read into <paramref name="layerTable"/> here and its temporary directory removed, so nothing the kit
-    /// wrote outlives the call.
+    /// interpreter, path and consent as <see cref="ReadReport"/>.
+    ///
+    /// <para>The layer-properties file the kit's views are written to lives in a directory circuitRF makes
+    /// and removes itself, whatever the run did — handed over as <see cref="LayerViewsDirectoryVariable"/>.
+    /// A directory named in the process's OUTPUT was once deleted recursively, which is a delete of
+    /// whatever a stray line of that output named; and a run that printed no document leaked it.</para>
     /// </summary>
     public static GdsfactoryStackDocument? ReadTechnology(
         string interpreter, GdsfactoryKit kit, out ProcessLayerTable? layerTable, out string? problem)
     {
         layerTable = null;
-        if (RunBridge(interpreter, kit, "gdsfactory_bridge.technology", out problem) is not { } run) return null;
-        if (GdsfactoryStackDocument.Parse(run.Line) is not { } doc)
+        string views = Path.Combine(Path.GetTempPath(), "crf-gdf-views-" + Guid.NewGuid().ToString("N")[..12]);
+        try
         {
-            problem = $"reading '{kit.Module}''s technology gave no answer" + (run.StderrTail.Length > 0 ? $": {run.StderrTail}" : ".");
+            Directory.CreateDirectory(views);
+            if (RunBridge(interpreter, kit, "gdsfactory_bridge.technology", out problem,
+                          new Dictionary<string, string> { [LayerViewsDirectoryVariable] = views }) is not { } run)
+                return null;
+            if (GdsfactoryStackDocument.Parse(run.Line) is not { } doc)
+            {
+                problem = $"reading '{kit.Module}''s technology gave no answer" + (run.StderrTail.Length > 0 ? $": {run.StderrTail}" : ".");
+                return null;
+            }
+
+            // Only a file inside the directory handed over is read; anything else the output names is not.
+            if (doc.LayerViews is { Length: > 0 } named && !IsInside(named, views)) doc.LayerViews = null;
+            layerTable = doc.LayerTable();
+            doc.LayerViews = null;
+            return doc;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            problem = ex.Message;
             return null;
         }
-
-        layerTable = doc.LayerTable();
-        if (doc.LayerViews is { Length: > 0 } views)
+        finally
         {
-            try { Directory.Delete(Path.GetDirectoryName(views)!, recursive: true); }
+            try { Directory.Delete(views, recursive: true); }
             catch { /* a temporary file left behind is not worth failing an import over */ }
-            doc.LayerViews = null;
         }
-        return doc;
+    }
+
+    /// <summary>The environment variable <c>gdsfactory_bridge.technology</c> writes the kit's layer views
+    /// into — a directory circuitRF created for this one run.</summary>
+    public const string LayerViewsDirectoryVariable = "CRF_GDF_VIEWS_DIR";
+
+    private static bool IsInside(string path, string directory)
+    {
+        try
+        {
+            string full = Path.GetFullPath(path);
+            string dir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)) + Path.DirectorySeparatorChar;
+            return full.StartsWith(dir, OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException) { return false; }
     }
 
     private readonly record struct BridgeRun(string Line, string StderrTail);
 
     /// <summary>
-    /// One <c>python -m &lt;bridgeModule&gt; &lt;module&gt;</c>, with circuitRF's own package and the kit's
+    /// One <c>python -P -m &lt;bridgeModule&gt; &lt;module&gt;</c>, with circuitRF's own package and the kit's
     /// root on the path: the last stdout line that starts a JSON object, and the last stderr line.
+    ///
+    /// <para><b><c>-P</c></b>, because <c>-m</c> otherwise puts the CURRENT DIRECTORY first on
+    /// <c>sys.path</c>: run from a kit's own repository, the working copy there would be described
+    /// instead of the installed kit the user allowed, and any <c>json.py</c> lying in that directory
+    /// would be imported. <c>-I</c> is not used — it also drops the <c>PYTHONPATH</c> this relies on.
+    /// Every interpreter that gets here passed <see cref="CheckEnvironment"/>, so it is at least 3.12 and
+    /// knows the flag.</para>
     /// </summary>
-    private static BridgeRun? RunBridge(string interpreter, GdsfactoryKit kit, string bridgeModule, out string? problem)
+    private static BridgeRun? RunBridge(
+        string interpreter, GdsfactoryKit kit, string bridgeModule, out string? problem,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         problem = null;
         var parsed = PythonInterpreter.ParseRecord(interpreter);
@@ -248,19 +289,14 @@ public static class GdsfactoryKitImport
             return null;
         }
 
-        var info = new ProcessStartInfo(parsed.Value.Command)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            RedirectStandardInput  = true,
-            UseShellExecute        = false,
-            CreateNoWindow         = true,
-        };
+        var info = new ProcessStartInfo(parsed.Value.Command);
         foreach (string a in parsed.Value.Arguments) info.ArgumentList.Add(a);
+        info.ArgumentList.Add("-P");
         info.ArgumentList.Add("-m");
         info.ArgumentList.Add(bridgeModule);
         info.ArgumentList.Add(kit.Module);
         info.Environment["PYTHONPYCACHEPREFIX"] = UserStateDirectory.SubDir("pcell-cache");
+        foreach (var (key, value) in environment ?? new Dictionary<string, string>()) info.Environment[key] = value;
         var path = new List<string> { own };
         if (kit.PythonPathRoot is { } root) path.Add(root);
         string existing = Environment.GetEnvironmentVariable("PYTHONPATH") ?? "";
@@ -268,21 +304,20 @@ public static class GdsfactoryKitImport
 
         try
         {
-            using var process = Process.Start(info);
-            if (process is null) { problem = $"'{interpreter}' could not be started."; return null; }
-            process.StandardInput.Close();
-            var stderr = process.StandardError.ReadToEndAsync();
-            string stdout = process.StandardOutput.ReadToEnd();
-            if (!process.WaitForExit((int)ReportTimeout.TotalMilliseconds))
+            if (BoundedProcess.Run(info, ReportTimeout) is not { } run)
             {
-                try { process.Kill(entireProcessTree: true); } catch { /* already gone */ }
-                problem = $"describing '{kit.Module}' took longer than {ReportTimeout.TotalSeconds:0} s.";
+                problem = $"'{interpreter}' could not be started.";
+                return null;
+            }
+            if (run.TimedOut)
+            {
+                problem = $"describing '{kit.Module}' took longer than {ReportTimeout.TotalSeconds:0} s, so it was stopped.";
                 return null;
             }
 
-            string line = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                .LastOrDefault(l => l.StartsWith('{')) ?? "";
-            string tail = stderr.Result.Trim().Split('\n').LastOrDefault()?.Trim() ?? "";
+            string line = run.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                    .LastOrDefault(l => l.StartsWith('{')) ?? "";
+            string tail = run.Stderr.Trim().Split('\n').LastOrDefault()?.Trim() ?? "";
             return new BridgeRun(line, tail);
         }
         catch (Exception ex)

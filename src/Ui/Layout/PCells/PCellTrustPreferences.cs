@@ -25,11 +25,31 @@ public static class PCellTrustPreferences
         => AppPreferencesIo.Update(p => p.PCellTrust =
             decisions.Count == 0 ? null : new Dictionary<string, bool>(decisions));
 
-    /// <summary>Drops every recorded decision, so circuitRF asks about each kit again. The one way
-    /// back from a refusal — reachable from Settings.</summary>
-    public static void Forget() => AppPreferencesIo.Update(p => p.PCellTrust = null);
+    /// <summary>Changes ONE kit's recorded answer — Settings' per-kit switch. Matched on the key as
+    /// recorded, so a key differing only in case (the store compares ignoring it) is the same row.</summary>
+    public static void Set(string key, bool allowed)
+        => AppPreferencesIo.Update(p =>
+        {
+            p.PCellTrust ??= new Dictionary<string, bool>();
+            p.PCellTrust[MatchingKey(p.PCellTrust, key) ?? key] = allowed;
+        });
 
-    public static int RememberedCount() => AppPreferencesIo.Load().PCellTrust?.Count ?? 0;
+    /// <summary>Drops ONE kit's recorded answer, so circuitRF asks about that kit again the next time a
+    /// workspace declaring it opens. Nothing runs meanwhile: an unasked kit is not started.</summary>
+    public static void Forget(string key)
+        => AppPreferencesIo.Update(p =>
+        {
+            if (p.PCellTrust is null || MatchingKey(p.PCellTrust, key) is not { } found) return;
+            p.PCellTrust.Remove(found);
+            if (p.PCellTrust.Count == 0) p.PCellTrust = null;
+        });
+
+    /// <summary>Drops every recorded decision, so circuitRF asks about each kit again.</summary>
+    public static void ForgetAll() => AppPreferencesIo.Update(p => p.PCellTrust = null);
+
+    private static string? MatchingKey(Dictionary<string, bool> table, string key)
+        => table.Keys.FirstOrDefault(k => string.Equals(
+               PCellTrustStore.Normalize(k), PCellTrustStore.Normalize(key), StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>The per-user gdsfactory interpreter choice (brief-gdf-2 R-gdf2-2b): module name → the

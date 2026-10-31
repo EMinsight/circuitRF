@@ -85,6 +85,8 @@ public sealed class SymbolFillTests
     [InlineData("-1")]
     [InlineData("100.1")]
     [InlineData("0x10")]
+    [InlineData("1,000")]     // a thousands separator as readily as a decimal comma: either reading is a guess
+    [InlineData("12,500")]
     public void ATypedFillThatIsNotAPercentageFrom0To100_IsRefusedWithAReason(string text)
     {
         Assert.False(SymbolFill.TryParsePercent(text, out _, out string? problem));
@@ -125,6 +127,36 @@ public sealed class SymbolFillTests
         inspector.CommitFillText();
         Assert.False(inspector.FillInvalid);
         Assert.True(rect.Filled);
+    }
+
+    /// <summary>A drag whose release never arrived belongs to the shape it moved: switching to another shape
+    /// records it there, so the next shape's drag starts from its own value and undoes to it.</summary>
+    [Fact]
+    public void ADragInterruptedBySelectingAnotherShape_IsRecordedOnTheShapeItMoved()
+    {
+        var a = Rect(0);
+        var b = Rect(0.5);
+        b.Cx = 1000;
+        var editable = new EditableSymbol();
+        editable.Primitives.Add(a);
+        editable.Primitives.Add(b);
+        var editor = new SymbolEditorViewModel(editable);
+        var inspector = new SymbolPrimitiveInspectorViewModel();
+        inspector.SetContext(editor);
+
+        editor.OnPointerPressed(-100, 0, KeyModifiers.None);
+        editor.OnPointerReleased(-100, 0);
+        inspector.FieldFillSlider = 30;                               // a drag on a, never released
+
+        editor.OnPointerPressed(900, 0, KeyModifiers.None);           // b's outline
+        editor.OnPointerReleased(900, 0);
+        inspector.FieldFillSlider = 80;
+        inspector.CommitFillSlider();
+
+        editor.UndoCommand.Execute(null);
+        Assert.Equal(0.5, SymbolFill.Of(b), 6);                       // b's own starting value, not a's
+        editor.UndoCommand.Execute(null);
+        Assert.Equal(0, SymbolFill.Of(a), 6);                         // a's drag was its own undo step
     }
 
     private static int CentreAlpha(double fill) => PixelAlpha(Rect(fill), 50, 50);

@@ -91,6 +91,7 @@ internal static class CircuitSource
         WorkspaceKits.EnsureLoadedFor(cschPath);
         var circuit = PreparedCircuit.FromSchematic(cschPath, CliEntry.HostWorkspace);
         ReportHostCellChoices(circuit.HostCellChoices);
+        ReportConflicts(circuit.ExtractionConflicts, circuit.PartRefusals);
         ReportVendorParts(circuit.PartRefusals, circuit.PartRangeWarnings);
         return circuit;
     }
@@ -126,9 +127,14 @@ internal static class CircuitSource
     /// by <see cref="ReportVendorParts"/>, so it is not said twice.
     /// </summary>
     public static void ReportConflicts(NetExtractor.ExtractionResult extracted)
+        => ReportConflicts(extracted.Conflicts, extracted.PartRefusals);
+
+    /// <summary><see cref="ReportConflicts(NetExtractor.ExtractionResult)"/> for a circuit already
+    /// prepared — what <c>opt</c>, <c>yield</c> and <c>fields</c> read a schematic as.</summary>
+    public static void ReportConflicts(IReadOnlyList<string> conflicts, IReadOnlyList<string> partRefusals)
     {
-        var saidElsewhere = new HashSet<string>(extracted.PartRefusals, StringComparer.Ordinal);
-        foreach (var text in extracted.Conflicts)
+        var saidElsewhere = new HashSet<string>(partRefusals, StringComparer.Ordinal);
+        foreach (var text in conflicts)
         {
             if (saidElsewhere.Contains(text)) continue;
             var d = CliDiagnostics.RunExtractionConflict(text);

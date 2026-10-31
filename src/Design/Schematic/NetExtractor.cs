@@ -1247,16 +1247,31 @@ public static class NetExtractor
         if (binding.EngineReference.Contains("FET_", StringComparison.Ordinal) && (rd is not null || rs is not null))
             return "it states a lead resistance, which circuitRF's MESFET has no parameter for.";
 
-        var dc = SpiceModelCardTranslation.DcAffectingUnmapped(translation);
+        // Null is a family nobody has listed the DC-moving parameters of: whatever the card leaves
+        // behind might change the operating point, and that is not knowable here, so the built-in does
+        // not stand in for it (brief-gdf-1b R-gdf1b-3, "refused rather than approximated").
+        if (SpiceModelCardTranslation.DcAffectingUnmapped(translation) is not { } dc)
+            return $"circuitRF's built-in '{binding.EngineReference}' has no record of which of this card's " +
+                   "parameters change the DC operating point, so what it leaves behind cannot be shown to be " +
+                   "harmless; it is refused rather than approximated.";
         if (dc.Count > 0)
             return $"it states {string.Join(", ", dc)}, which circuitRF's built-in " +
                    $"'{binding.EngineReference}' does not carry and which change the DC operating point, " +
                    "so it is refused rather than approximated.";
 
+        var sidewall = SidewallStated(binding, translation.Card);
         foreach (var o in inst.Overrides)
-            if (InstanceWordFor(binding, o.Name) is null && !IsDroppedGeometry(binding, o.Name))
-                return $"the instance states '{o.Name}', which circuitRF's '{binding.EngineReference}' " +
-                       "has nowhere to put.";
+        {
+            if (InstanceWordFor(binding, o.Name) is not null) continue;
+            if (IsDroppedGeometry(binding, o.Name))
+            {
+                if (sidewall.Count == 0) continue;
+                return $"the instance states a junction perimeter '{o.Name}' and the card a sidewall term " +
+                       $"({string.Join(", ", sidewall)}), which circuitRF's diode has no home for.";
+            }
+            return $"the instance states '{o.Name}', which circuitRF's '{binding.EngineReference}' " +
+                   "has nowhere to put.";
+        }
 
         return null;
     }
@@ -1324,9 +1339,38 @@ public static class NetExtractor
         return null;
     }
 
-    /// <summary>A junction perimeter: a diode's sidewall geometry, inert once no sidewall parameter is stated.</summary>
+    /// <summary>
+    /// A junction perimeter: a diode's sidewall geometry, inert — and so dropped — only while the card
+    /// states no sidewall term (<see cref="SidewallStated"/>). With one stated it is the perimeter half
+    /// of the junction, and dropping it would lose that half.
+    /// </summary>
     private static bool IsDroppedGeometry(ModelCardBinding binding, string word)
         => binding.EngineReference == "Diode" && word.Equals("pj", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The sidewall terms a diode card states other than at "not modelled" zero, by the card's own
+    /// spelling. The perimeter capacitance is not a DC parameter, so the DC gate passes it, but it is
+    /// exactly what an instance's perimeter scales.
+    /// </summary>
+    private static List<string> SidewallStated(ModelCardBinding binding, SpiceModelCard card)
+    {
+        var stated = new List<string>();
+        if (binding.EngineReference != "Diode") return stated;
+        foreach (var (name, value) in card.Parameters)
+        {
+            if (!SidewallWords.Contains(name)) continue;
+            if (double.TryParse(value, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out double v) && v == 0.0)
+                continue;
+            stated.Add(name);
+        }
+        return stated;
+    }
+
+    private static readonly HashSet<string> SidewallWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CJSW", "CJP", "JSW", "ISW", "JTUNSW",
+    };
 
     /// <summary>
     /// The original rule: the instance's reference IS the device type, and the kit's own provider
@@ -1700,7 +1744,20 @@ public static class NetExtractor
                     conflicts.Add($"Instance '{comp.InstanceName}': its '{terminal}' terminal names no net; skipped.");
                     return null;
                 }
-                nets.Add(EditableNetLabel.NormalizeName(net));
+                string named = EditableNetLabel.NormalizeName(net);
+                nets.Add(named);
+
+                // A net nothing drawn here names is a terminal left floating — the kit's own convention
+                // for such a name (a global net) is not circuitRF's, so say so rather than simulate an
+                // open body as if it were tied.
+                if (named != "0" && !named.Equals("gnd", StringComparison.OrdinalIgnoreCase) &&
+                    !netNames.Values.Contains(named, StringComparer.Ordinal))
+                {
+                    string note = $"Instance '{comp.InstanceName}': its '{terminal}' terminal is wired to the net " +
+                                  $"'{named}', which nothing in this schematic names, so that terminal connects to " +
+                                  $"nothing else. Place a net label '{named}' where it belongs.";
+                    if (!conflicts.Contains(note)) conflicts.Add(note);
+                }
             }
 
         var overrides = new List<ParameterAssignment>();
@@ -1791,11 +1848,23 @@ public static class NetExtractor
         string words = System.Text.RegularExpressions.Regex.Replace(
             ccell.ExternalElementArguments ?? "", @"@(\w+)", "$1");
 
+        // The name carries EVERYTHING the cell is built from, hashed: the caller keeps the first cell of
+        // a name it meets, so a name made of the part id alone let a second kit's part of the same id —
+        // or the same part bound to another model library — run on the first one's card, silently.
+        string modelLibrary = comp.Parameters
+            .FirstOrDefault(p => p.Name.Equals(PdkPartInstaller.ModelLibraryParameter, StringComparison.Ordinal))
+            ?.Expression.Trim() ?? "";
+        string body = $" {string.Join(" ", ports)} {string.Join(" ", header)}\n" +
+                      $"{element}1 {string.Join(" ", ports)} {card.Name} {words}\n";
+        string identity = string.Join("\n", ccell.ExternalProvider ?? "", ccell.ExternalNetlistPath ?? "",
+                                      modelLibrary, body,
+                                      string.Join(",", card.Parameters.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                                                                      .Select(kv => $"{kv.Key}={kv.Value}")));
+        string digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                            System.Text.Encoding.UTF8.GetBytes(identity)))[..10].ToLowerInvariant();
         string name = "kitelem_" + new string([.. (ccell.ExternalType ?? cardName)
-                          .Select(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_' ? ch : '_')]);
-        string text = $".subckt {name} {string.Join(" ", ports)} {string.Join(" ", header)}\n" +
-                      $"{element}1 {string.Join(" ", ports)} {card.Name} {words}\n" +
-                      $".ends {name}\n";
+                          .Select(ch => char.IsAsciiLetterOrDigit(ch) || ch == '_' ? ch : '_')]) + "_" + digest;
+        string text = $".subckt {name}{body}.ends {name}\n";
 
         var built = SpiceNetlistReader.Read(text, fileLabel: name);
         var cell  = built.Library.Find(name);

@@ -209,4 +209,42 @@ public class GdsfactoryStackConverterTests
         foreach (var l in withoutCards.Stackup.Layers) l.Material = null;
         Assert.Equal(expected, TechPersistence.Serialize(withoutCards));
     }
+    // ── review fixes ───────────────────────────────────────────────────────────
+
+    /// <summary>A top conductor with nothing on it is exact geometry, not a zero separation; a conductor
+    /// with no card is a WARNING that it is 0 S/m, said once rather than again as the builder's note.</summary>
+    [Fact]
+    public void ATopConductorWithNothingOnIt_IsNotAZeroSeparation_AndAnUnknownSigmaIsOneWarning()
+    {
+        // The fixture without its cap, so the top metal has nothing on it, and met1 with no card.
+        string[] levels = [.. Levels.Where(l => !l.StartsWith("{\"name\":\"cap\","))
+                                    .Select(l => l.StartsWith("{\"name\":\"met1\",") ? Level("met1", 10, 1.0, 0.5, "mystery") : l)];
+        var r = GdsfactoryStackConverter.Convert(Doc(levels, Cards), null, "synth");
+
+        Assert.DoesNotContain(r.Notes, n => n.Text.Contains("zero separation"));
+        Assert.Equal(StackupKind.Conductor, r.Technology.Stackup.Layers.Single(l => l.Name == "met1").Kind);
+        var sigma = Assert.Single(r.Notes, n => n.Text.StartsWith("σ unknown for the conductor \"met1\""));
+        Assert.Equal(TechnologyNoteSeverity.Warning, sigma.Severity);
+        Assert.Contains("\"mystery\" has no card", sigma.Text);
+        Assert.DoesNotContain(r.Notes, n => n.Text.StartsWith("Conductor \"met1\" states no sheet resistance"));
+    }
+
+    /// <summary>A substrate whose card states it is an insulator has nothing implanted into it: an oxide of
+    /// the same material above it is a dielectric of the stack, not a device layer.</summary>
+    [Fact]
+    public void OnAStatedInsulatorSubstrate_ALevelOfTheSameMaterialAboveIt_IsADielectric()
+    {
+        string[] levels =
+        [
+            Level("substrate", 99, -200, 200, "glass"),
+            Level("ild",       98,    0, 1.0, "glass"),
+            Level("met1",      10,  1.0, 0.5, "metal"),
+        ];
+        string[] cards = [Card("glass", 0.0, 3.8), Card("metal", 3.0e7, null)];
+        var r = GdsfactoryStackConverter.Convert(Doc(levels, cards), null, "synth");
+
+        var ild = Assert.Single(r.Technology.Stackup.Layers, l => l.Name == "ild");
+        Assert.Equal((StackupKind.Dielectric, 3.8), (ild.Kind, ild.Epsr));
+        Assert.DoesNotContain(r.Notes, n => n.Text.StartsWith("Device layers"));
+    }
 }

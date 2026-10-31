@@ -231,8 +231,19 @@ A kit can ship **generator scripts** that draw the artwork for its parameterised
 asks before running any of them. The answer is remembered per kit, keyed by that kit's directory on
 disk, so the prompt does not nag — and because a refusal is remembered too, there has to be a way back.
 
-**Ask Again…** forgets every remembered answer, and the line beside it says how many are held. The next
-workspace that uses a kit's generators asks about it again from scratch.
+Every kit you have answered for is listed on its own row: its folder name, the directory the answer is
+kept under and, for a gdsfactory kit, the Python environment it runs in.
+
+- **Allowed** turns that kit on or off. The change applies at once in every open workspace: unticking a
+  kit stops its code, and its cells draw as placeholders; ticking it builds them.
+- **Clear** removes that kit's answer. The next workspace that uses the kit asks about it again, and
+  nothing of it runs until you answer.
+- **Clear All** removes every answer.
+- **Filter kits** narrows a long list to the kits whose name or directory contains what you type. The
+  line under the list counts the kits, and how many of them are not allowed.
+
+A row whose directory is no longer there says **Not found on this machine**: the kit was moved or
+uninstalled, and Clear removes it.
 
 <div class="callout note">
 <span class="label">Trust never travels with a workspace</span>

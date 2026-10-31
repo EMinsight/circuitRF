@@ -134,7 +134,7 @@ A gdsfactory kit is Python code, and nothing of it runs until you allow it.
 The prompt names the package, its version, where it is installed and the interpreter that would run
 it. Your answer is remembered on this machine, keyed by the kit's installed directory, so the same kit
 in a different environment asks again. It never travels with a workspace. **Don't Allow** leaves the
-kit's cells as placeholders and changes nothing else. Settings ▸ General ▸ Generated Artwork asks again.
+kit's cells as placeholders and changes nothing else. Settings ▸ Security & Permissions changes the answer, kit by kit.
 
 ## What you get {#get}
 

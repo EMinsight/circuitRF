@@ -40,8 +40,21 @@ public static class DocSettingsFixtures
     /// </summary>
     public static FigureScene Technology() => Tab(1);
 
-    /// <summary>Security &amp; Permissions: what circuitRF may RUN, and what it may FETCH.</summary>
-    public static FigureScene Security() => Tab(2);
+    /// <summary>Security &amp; Permissions: what circuitRF may RUN, and what it may FETCH.
+    ///
+    /// <para>The Generated Artwork list shows two sample kits, one allowed and one refused, rather than
+    /// the throwaway state directory's empty list — the page's prose is about changing one kit's answer,
+    /// and an empty list illustrates none of it. The paths are made up and belong to nobody.</para></summary>
+    public static FigureScene Security()
+    {
+        PCellTrustSettingsView.RowsForCapture =
+        [
+            ("/opt/envs/rf/lib/python3.12/site-packages/synthkit", true, "/opt/envs/rf/bin/python3"),
+            ("/home/designer/kits/mmic-pcells", false, null),
+        ];
+        try { return Tab(2); }
+        finally { PCellTrustSettingsView.RowsForCapture = null; }
+    }
 
     /// <summary>
     /// Revision Control: which git, who changes are attributed to, what is kept and for how long.

@@ -33,6 +33,13 @@ public sealed class KitPartSubcircuitBindingTests : IDisposable
     private CircuitRF.Core.Design.Instance PlaceAndExtract(
         string subckt, CcellFile ccellExtras, params (string Name, string Value)[] parameters)
     {
+        var result = PlaceAndExtractAll(subckt, ccellExtras, parameters);
+        return Assert.Single(result.TestBench.Instances, i => i.InstanceName == "X1");
+    }
+
+    private NetExtractor.ExtractionResult PlaceAndExtractAll(
+        string subckt, CcellFile ccellExtras, params (string Name, string Value)[] parameters)
+    {
         string netlist = Path.Combine(_dir, "kit.spice");
         File.WriteAllText(netlist, subckt);
 
@@ -56,8 +63,7 @@ public sealed class KitPartSubcircuitBindingTests : IDisposable
             comp.Parameters.Add(new EditableParameter { Name = name, Expression = value });
         model.Components.Add(comp);
 
-        var result = SchematicCircuit.Extract(model, "tb");
-        return Assert.Single(result.TestBench.Instances, i => i.InstanceName == "X1");
+        return SchematicCircuit.Extract(model, "tb");
     }
 
     /// <summary>The kit's netlist dialect is case-insensitive and circuitRF compares names ordinally;
@@ -97,5 +103,26 @@ public sealed class KitPartSubcircuitBindingTests : IDisposable
         Assert.Equal(Part, x1.Reference);
         Assert.Equal(3, x1.NetBindings.Count);
         Assert.Equal("sub!", x1.NetBindings[2]);
+    }
+
+    /// <summary>A body terminal wired to a net nothing in the schematic names connects to nothing else,
+    /// and is said to: the kit's global-net convention is not circuitRF's, and an open body simulates.</summary>
+    [Fact]
+    public void ABodyTerminalOnANetNothingNames_IsReportedAsFloating()
+    {
+        var result = PlaceAndExtractAll("""
+            .subckt widget a b bn w=1
+            R1 a b {w}
+            R2 b bn 1e9
+            .ends
+            """,
+            new CcellFile
+            {
+                ExternalExtraTerminals  = ["body"],
+                ExternalFixedParameters = new() { ["body"] = "sub!" },
+            });
+
+        Assert.Contains(result.Conflicts, c => c.Contains("'body'", StringComparison.Ordinal)
+                                            && c.Contains("connects to nothing else", StringComparison.Ordinal));
     }
 }

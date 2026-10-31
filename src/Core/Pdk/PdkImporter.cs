@@ -429,8 +429,8 @@ public static class PdkImporter
             bool primitive = symbol.Element is "D" or "Q" or "R" or "C" or "M" && symbol.CalledName is not null;
             bool stated    = symbol.Element == "X" && symbol.CalledName is not null;
             var sub = primitive ? null
-                    : stated    ? StatedSubcircuitFor(symbol.CalledName!,
-                                                      symbol.Pins.Count + (symbol.ExtraTerminals?.Count ?? 0),
+                    : stated    ? StatedSubcircuitFor(symbol.CalledName!, symbol.Pins.Count,
+                                                      symbol.ExtraTerminals?.Count ?? 0,
                                                       subcircuits, report)
                     : BestSubcircuitFor(id, subcircuits);
             string? cardFile = null;
@@ -616,9 +616,10 @@ public static class PdkImporter
     }
 
     /// <summary>
-    /// The one file a card is declared in — the kit's canonical library when several declare it,
-    /// and nothing when that still leaves more than one, because picking between two definitions of
-    /// one name is the guess the kit did not make.
+    /// The one file a card is declared in — the kit's canonical library when several declare it, then
+    /// the one the kit's NOMINAL corner reads (the tie-break <see cref="StatedSubcircuitFor"/> makes, for
+    /// a kit stating one card file per corner), and nothing when that still leaves more than one,
+    /// because picking between two definitions of one name is the guess the kit did not make.
     /// </summary>
     private static string? CardFileFor(string card, Dictionary<string, List<string>> cardFiles, PdkImportReport report)
     {
@@ -627,14 +628,43 @@ public static class PdkImporter
 
         var canonical = CanonicalLibraries(report);
         var preferred = files.Where(f => canonical.Contains(FileNameOf(f))).ToList();
-        return preferred.Count == 1 ? preferred[0] : null;
+        if (preferred.Count == 1) return preferred[0];
+
+        var reached = NominalCornerFiles(report);
+        var nominal = files
+            .Where(f => ResolveAssetPath(report.RootPath, report.KitRoot, f) is { } full
+                        && reached.Contains(Path.GetFullPath(full)))
+            .ToList();
+        return nominal.Count == 1 ? nominal[0] : null;
     }
 
+    /// <summary>
+    /// A kit's own test, regression or LVS folder: a folder name holding one of those WORDS, read by
+    /// splitting it on case changes, digits and separators. A prefix match ("test…") also took a
+    /// folder of real models whose name merely begins with the letters — a chip, a technology.
+    /// </summary>
     private static bool IsCheckingFolder(string relativePath)
-        => relativePath.Split('/', '\\').SkipLast(1).Any(s =>
-               s.StartsWith("test", StringComparison.OrdinalIgnoreCase)
-            || s.Contains("regression", StringComparison.OrdinalIgnoreCase)
-            || s.Equals("lvs", StringComparison.OrdinalIgnoreCase));
+        => relativePath.Split('/', '\\').SkipLast(1).Any(segment => WordsOf(segment).Any(CheckingWords.Contains));
+
+    private static readonly HashSet<string> CheckingWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "test", "tests", "testing", "testbench", "testbenches", "testcase", "testcases", "testdata",
+        "testsuite", "regression", "regressions", "lvs",
+    };
+
+    /// <summary>A folder name's words: split on anything not a letter, and before an upper-case letter that follows a lower-case one.</summary>
+    private static IEnumerable<string> WordsOf(string segment)
+    {
+        var word = new StringBuilder();
+        for (int i = 0; i < segment.Length; i++)
+        {
+            char c = segment[i];
+            bool boundary = !char.IsLetter(c) || (char.IsUpper(c) && i > 0 && char.IsLower(segment[i - 1]));
+            if (boundary && word.Length > 0) { yield return word.ToString(); word.Clear(); }
+            if (char.IsLetter(c)) word.Append(c);
+        }
+        if (word.Length > 0) yield return word.ToString();
+    }
 
     /// <summary>
     /// The model libraries the kit's own corner files name as their NOMINAL pairing.
@@ -709,16 +739,18 @@ public static class PdkImporter
     ///
     /// <para><b>Strict, and never a fallback to a guess.</b> The name must match (the dialect is
     /// case-insensitive) and the terminal count must equal the symbol's pins plus its stated extra
-    /// terminals. Several matching definitions are resolved only by the kit's own canonical library;
+    /// terminals — or the pins alone, which extraction accepts as well (a definition that leaves the
+    /// body to its own default); the stated count is preferred when both exist. Several matching
+    /// definitions are resolved only by the kit's own canonical library;
     /// still more than one, or none, leaves the part unpaired — a symbol that STATES what it calls and
     /// is handed something else would build a circuit the kit never described.</para>
     /// </summary>
     private static SubcircuitDef? StatedSubcircuitFor(
-        string called, int terminals, List<SubcircuitDef> subcircuits, PdkImportReport report)
+        string called, int pins, int extras, List<SubcircuitDef> subcircuits, PdkImportReport report)
     {
-        var matches = subcircuits
-            .Where(s => s.Name.Equals(called, StringComparison.OrdinalIgnoreCase) && s.PinCount == terminals)
-            .ToList();
+        var named = subcircuits.Where(s => s.Name.Equals(called, StringComparison.OrdinalIgnoreCase)).ToList();
+        var matches = named.Where(s => s.PinCount == pins + extras).ToList();
+        if (matches.Count == 0 && extras > 0) matches = [.. named.Where(s => s.PinCount == pins)];
         if (matches.Count <= 1) return matches.FirstOrDefault();
 
         var canonical = CanonicalLibraries(report);

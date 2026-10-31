@@ -226,4 +226,171 @@ public sealed class GdsfactoryAdapterTests : IDisposable
         Assert.Equal(inductance, request.Parameters["inductance"].AsReal());
         Assert.Equal(2.5, request.Parameters["width"].AsReal());
     }
+    // ── review fixes (consent, environment, process, record) ──────────────────
+
+    /// <summary>A gdsfactory declaration of <paramref name="kitDir"/> in a fresh workspace, and that workspace.</summary>
+    private (string Ws, string Folder) Declared(string kitDir, string name = "ws")
+    {
+        string ws = Path.Combine(_root, name);
+        Directory.CreateDirectory(ws);
+        string folder = KitPCellLibrary.EnsureDeclaredGdsfactory(
+            ws, new GdsfactoryKit("synth-rf-kit", "0.4.1", null, "synth_rf_kit", kitDir), out _, out _)!;
+        return (ws, folder);
+    }
+
+    /// <summary>The positive half of R-gdf2-2b: the interpreter this user chose for the module is the one
+    /// launched, probed through the seam, with -P so the entry script's folder is not on the path.</summary>
+    [Fact]
+    public void TheRecordedInterpreter_IsTheOneLaunched_WithTheScriptFolderOffThePath()
+    {
+        string site = Site();
+        Distribution(site, "synth-rf-kit", "0.4.1", "synth_rf_kit", ["gdsfactory"]);
+        var (ws, folder) = Declared(Path.Combine(site, "synth_rf_kit"));
+
+        var probed = new List<string>();
+        var reports = new List<string>();
+        using var resolver = new PCellWorkerResolver(ws, report: reports.Add, trust: _ => PCellTrustDecision.Unknown,
+            moduleInterpreter: m => m == "synth_rf_kit" ? "/envs/rf/bin/python" : null,
+            runProbe: FakeProbe("3.12.4", [site], probed));
+
+        var interpreter = resolver.DefaultInterpreter(PCellGeneratorManifest.TryRead(folder, out _)!, folder);
+        Assert.True(interpreter is not null, string.Join("\n", reports));
+        Assert.Equal("/envs/rf/bin/python", interpreter!.Command);
+        Assert.Equal(["-P"], interpreter.Arguments);
+        Assert.Equal(["/envs/rf/bin/python"], probed);
+    }
+
+    /// <summary>Finding 1: consent is for the installed directory the declaration names. An environment
+    /// whose own copy of the module is elsewhere is different code, and is refused rather than run.</summary>
+    [Fact]
+    public void AnEnvironmentWhoseKitIsADifferentDirectory_IsRefused_NotRunOnTheOtherCopysPermission()
+    {
+        string siteA = Site("envA");
+        Distribution(siteA, "synth-rf-kit", "0.4.1", "synth_rf_kit", ["gdsfactory"]);
+        string siteB = Site("envB");
+        Distribution(siteB, "synth-rf-kit", "0.4.1", "synth_rf_kit", ["gdsfactory"]);
+        var (ws, folder) = Declared(Path.Combine(siteA, "synth_rf_kit"));
+
+        var reports = new List<string>();
+        using var resolver = new PCellWorkerResolver(ws, report: reports.Add, trust: _ => PCellTrustDecision.Allowed,
+            moduleInterpreter: _ => "/envs/b/bin/python", runProbe: FakeProbe("3.12.4", [siteB], []));
+
+        Assert.Null(resolver.DefaultInterpreter(PCellGeneratorManifest.TryRead(folder, out _)!, folder));
+        Assert.Contains(reports, r => r.Contains("cannot run in '/envs/b/bin/python'") && r.Contains(Path.Combine(siteB, "synth_rf_kit")));
+    }
+
+    /// <summary>Finding 2: permission given to a kit covers a declaration that adds no code of its own. An
+    /// edited entry script, or a pythonPath reaching elsewhere, is keyed on the declaration folder.</summary>
+    [Fact]
+    public void ADeclarationThatAddsCode_IsKeyedOnItsFolder_NotOnTheKitsPermission()
+    {
+        string kitDir = Path.Combine(Site(), "synth_rf_kit");
+        Directory.CreateDirectory(kitDir);
+        var (ws, folder) = Declared(kitDir);
+        string entry = Path.Combine(folder, KitPCellLibrary.EntryScriptName);
+
+        PCellKit Kit()
+        {
+            using var r = new PCellWorkerResolver(ws, trust: _ => PCellTrustDecision.Unknown, moduleInterpreter: _ => null);
+            return Assert.Single(r.Kits);
+        }
+
+        // As generated, with a comment of the user's own added: the kit's permission.
+        File.AppendAllText(entry, "# a note of mine\n");
+        Assert.Equal(PCellTrustStore.ResolvedDirectory(kitDir), Kit().TrustKey);
+
+        // Code added: the declaration folder.
+        File.AppendAllText(entry, "import os\n");
+        Assert.Equal(PCellTrustStore.Normalize(folder), PCellTrustStore.Normalize(Kit().TrustKey));
+
+        // Restored, but a pythonPath of the workspace's own: the declaration folder again.
+        File.WriteAllText(entry, File.ReadAllText(entry).Replace("import os\n", ""));
+        Assert.Equal(PCellTrustStore.ResolvedDirectory(kitDir), Kit().TrustKey);
+        string manifestPath = Path.Combine(folder, PCellGeneratorManifest.FileName);
+        File.WriteAllText(manifestPath, File.ReadAllText(manifestPath).Replace("\"pythonPath\": []", "\"pythonPath\": [\"lib\"]"));
+        Assert.Equal(PCellTrustStore.Normalize(folder), PCellTrustStore.Normalize(Kit().TrustKey));
+    }
+
+    /// <summary>Finding 7: an editable install is NAMED, with the folder to import, rather than skipped and
+    /// the environment called kit-less.</summary>
+    [Fact]
+    public void AnEditableKit_IsReportedWithItsSourceFolder_NotSkipped()
+    {
+        string site = Site();
+        string source = Path.Combine(_root, "src", "synth-rf-kit");
+        Directory.CreateDirectory(source);
+        string info = Path.Combine(site, "synth_rf_kit-0.4.1.dist-info");
+        Directory.CreateDirectory(info);
+        File.WriteAllLines(Path.Combine(info, "METADATA"), ["Metadata-Version: 2.1", "Name: synth-rf-kit", "Version: 0.4.1", "Requires-Dist: gdsfactory>=9", ""]);
+        File.WriteAllText(Path.Combine(info, "top_level.txt"), "synth_rf_kit\n");
+        File.WriteAllText(Path.Combine(info, "direct_url.json"),
+            JsonSerializer.Serialize(new { url = new Uri(source).AbsoluteUri, dir_info = new { editable = true } }));
+
+        var found = GdsfactoryKitDiscovery.Discover("py", FakeProbe("3.12.4", [site], []));
+
+        Assert.Empty(found.Kits);
+        var refused = Assert.Single(found.Refused);
+        Assert.Contains("editable install", refused.Reason);
+        Assert.Contains(source, refused.Reason);
+        Assert.Contains("Choose folder", refused.Reason);
+        Assert.DoesNotContain("holds no gdsfactory kit", found.Refusal);
+    }
+
+    /// <summary>Finding 9: the entry script (outside the kit) and the kit's non-script files are in the key.</summary>
+    [Fact]
+    public void TheContentKey_FollowsTheEntryScript_AndTheKitsDataFiles()
+    {
+        string kitDir = Path.Combine(Site(), "synth_rf_kit");
+        Directory.CreateDirectory(kitDir);
+        File.WriteAllText(Path.Combine(kitDir, "cells.py"), "WIDTH = 1.0\n");
+        File.WriteAllText(Path.Combine(kitDir, "fixed.gds"), "v1");
+        var (_, folder) = Declared(kitDir);
+        var manifest = PCellGeneratorManifest.TryRead(folder, out _)!;
+        string Key() => PCellGeneratorContentHash.Compute(folder, manifest, out _);
+
+        string first = Key();
+        File.AppendAllText(Path.Combine(folder, KitPCellLibrary.EntryScriptName), "\n# edited\n");
+        string second = Key();
+        Assert.NotEqual(first, second);
+
+        File.WriteAllText(Path.Combine(kitDir, "fixed.gds"), "version two");
+        Assert.NotEqual(second, Key());
+    }
+
+    /// <summary>Finding 11: the prompt states the INSTALLED version; re-importing updates the recorded one;
+    /// and the changed-version note is said once per resolver, not on every reload.</summary>
+    [Fact]
+    public void TheVersion_PromptShowsTheInstalledOne_TheNoteIsSaidOnce_AndAReimportUpdatesIt()
+    {
+        string site = Site();
+        Distribution(site, "synth-rf-kit", "0.5.0", "synth_rf_kit", ["gdsfactory"]);
+        string kitDir = Path.Combine(site, "synth_rf_kit");
+        var (ws, folder) = Declared(kitDir);   // records 0.4.1
+
+        var notes = new List<string>();
+        using (var resolver = new PCellWorkerResolver(ws, trust: _ => PCellTrustDecision.Unknown, moduleInterpreter: _ => null, note: notes.Add))
+        {
+            var kit = Assert.Single(resolver.Kits);
+            Assert.Equal(("0.5.0", "0.4.1"), (kit.ModuleVersion, kit.RecordedVersion));
+            resolver.Rescan();
+        }
+        Assert.Single(notes, n => n.Contains("was 0.4.1") && n.Contains("is 0.5.0 now"));
+
+        KitPCellLibrary.EnsureDeclaredGdsfactory(ws, new GdsfactoryKit("synth-rf-kit", "0.5.0", null, "synth_rf_kit", kitDir), out _, out _);
+        Assert.Equal("0.5.0", PCellGeneratorManifest.TryRead(folder, out _)!.ModuleVersion);
+    }
+
+    /// <summary>Finding 3: a child that never exits is killed at the deadline instead of hanging the caller.</summary>
+    [Fact]
+    public void AChildThatHangs_IsKilledAtTheDeadline()
+    {
+        if (OperatingSystem.IsWindows()) return;   // /bin/sh is the portable hang here
+        var info = new System.Diagnostics.ProcessStartInfo("/bin/sh");
+        info.ArgumentList.Add("-c");
+        info.ArgumentList.Add("echo started; sleep 30");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = BoundedProcess.Run(info, TimeSpan.FromMilliseconds(500));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"took {clock.Elapsed}");
+        Assert.True(outcome!.Value.TimedOut);
+    }
 }

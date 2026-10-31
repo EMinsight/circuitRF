@@ -90,8 +90,12 @@ public static class KitGlyphSymbol
             return null;
         }
 
-        var reader = new SvgReader(Css.Read(root));
-        reader.Walk(root, Affine.Identity, Style.Root);
+        // The root's own presentation attributes, style and stylesheet rules are inherited like any group's: a glyph
+        // stating `fill="none" stroke="…"` once on its <svg> is drawn in outline, not as solid blocks.
+        var css = Css.Read(root);
+        var rootStyle = Style.Root.Under(root, css);
+        var reader = new SvgReader(css);
+        if (!rootStyle.Hidden) reader.Walk(root, ParseTransform((string?)root.Attribute("transform")), rootStyle);
 
         var box = ViewBoxOf(root) ?? SizeBoxOf(root) ?? reader.Bounds()
                   ?? new Box(0, 0, 100, 100);
@@ -115,6 +119,10 @@ public static class KitGlyphSymbol
         var leads = new Dictionary<Edge, List<double>>();   // along-edge positions, glyph units
         foreach (var (a, b) in reader.Segments)
         {
+            // A segment lying ALONG an edge — a frame's side — is not a lead into the box: from its end on the
+            // neighbouring edge it would look like one, and pull a pin onto the frame's corner.
+            if (Enum.GetValues<Edge>().Any(e => Math.Abs(DistanceToEdge(a, e, box)) <= tol
+                                               && Math.Abs(DistanceToEdge(b, e, box)) <= tol)) continue;
             TryLead(a, b); TryLead(b, a);
         }
         void TryLead((double X, double Y) end, (double X, double Y) other)
@@ -386,6 +394,10 @@ public static class KitGlyphSymbol
         double bestCost = double.MaxValue, bestCentre = double.MaxValue;
         int tried = 0;
         foreach (var pinsChosen in Choose(n, pairs))
+        {
+            // The cap bounds BOTH loops: breaking the inner one alone still walked every outer choice, which for 40
+            // pins against 20 lead ends is ~10^11 of them.
+            if (tried >= MaxPlacementsTried) break;
             foreach (var leadsChosen in Choose(leadGrid.Count, pairs))
             {
                 if (++tried > MaxPlacementsTried) break;
@@ -400,6 +412,7 @@ public static class KitGlyphSymbol
                     best = placed; bestCost = cost; bestCentre = centre;
                 }
             }
+        }
         return best ?? (even, none);
 
         (List<double> Positions, List<double?> OnLead)? Fill(int?[] anchor)
@@ -641,12 +654,16 @@ public static class KitGlyphSymbol
     }
 
     /// <summary>What a shape inherits: whether it is filled, and how its text is set. Colours themselves are not kept.</summary>
-    private sealed record Style(string? Fill, string? Stroke, double FontSize, string Anchor, bool Hidden, double FillOpacity)
+    /// <param name="FillOpacity">The inherited <c>fill-opacity</c>: a child's own value REPLACES its parent's.</param>
+    /// <param name="Opacity">The product of every <c>opacity</c> on the way down: a group's opacity composes.</param>
+    /// <param name="FillRule">The inherited <c>fill-rule</c>, which decides whether a path's inner subpath is a hole.</param>
+    private sealed record Style(string? Fill, string? Stroke, double FontSize, string Anchor, bool Hidden,
+                                double FillOpacity, double Opacity, string FillRule)
     {
-        public static readonly Style Root = new(null, null, 16, "start", false, 1);
+        public static readonly Style Root = new(null, null, 16, "start", false, 1, 1, "nonzero");
 
         private static readonly string[] Attributes =
-            ["fill", "stroke", "font-size", "text-anchor", "display", "visibility", "fill-opacity", "opacity"];
+            ["fill", "stroke", "font-size", "text-anchor", "display", "visibility", "fill-opacity", "opacity", "fill-rule"];
 
         /// <summary>SVG's order: presentation attributes, then the stylesheet, then an inline style attribute.</summary>
         public Style Under(XElement e, Css css)
@@ -663,10 +680,8 @@ public static class KitGlyphSymbol
                 fontSize = font.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                                .Select(t => t.EndsWith("px", StringComparison.Ordinal) ? Length(t) : null)
                                .FirstOrDefault(v => v is not null);
-            double opacity = FillOpacity;
-            foreach (var key in new[] { "fill-opacity", "opacity" })
-                if (decl.TryGetValue(key, out var o) && double.TryParse(o, NumberStyles.Float, CultureInfo.InvariantCulture, out double ov))
-                    opacity *= Math.Clamp(ov, 0, 1);
+            double fillOpacity = decl.TryGetValue("fill-opacity", out var fo) && Fraction(fo) is { } f ? f : FillOpacity;
+            double opacity = Opacity * (decl.TryGetValue("opacity", out var o) && Fraction(o) is { } g ? g : 1);
 
             return new Style(
                 decl.GetValueOrDefault("fill") ?? Fill,
@@ -674,45 +689,97 @@ public static class KitGlyphSymbol
                 fontSize ?? FontSize,
                 decl.GetValueOrDefault("text-anchor") ?? Anchor,
                 Hidden || decl.GetValueOrDefault("display") == "none" || decl.GetValueOrDefault("visibility") == "hidden",
-                opacity);
+                fillOpacity,
+                opacity,
+                decl.GetValueOrDefault("fill-rule")?.ToLowerInvariant() ?? FillRule);
         }
+
+        /// <summary>An opacity, 0–1: a number or a percentage, clamped. Null when it is neither.</summary>
+        private static double? Fraction(string text)
+        {
+            text = text.Trim();
+            bool percent = text.EndsWith('%');
+            if (percent) text = text[..^1].TrimEnd();
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !double.IsFinite(v))
+                return null;
+            return Math.Clamp(percent ? v / 100 : v, 0, 1);
+        }
+
+        private double EffectiveFillOpacity => FillOpacity * Opacity;
 
         /// <summary>
         /// How strongly the inside of a closed shape is filled, 0–1 (<see cref="SymbolFill"/>): the kit's own opacity
         /// for a fill that is not none and not near-white, or when neither fill nor stroke is stated (SVG fills that).
         /// A kit shading a region at 25 % is carried as 25 %, so what is drawn over it stays visible. 0 otherwise; a
-        /// near-white fill is the glyph's background, not a shade.
+        /// near-white fill is the glyph's background, not a shade, and a gradient or pattern (<c>url(…)</c>) is not
+        /// carried — its definition is dropped and counted — so the shape is drawn as its outline rather than solid.
         /// </summary>
         public double FillStrength
         {
             get
             {
-                if (FillOpacity <= 0) return 0;
-                if (Fill is null) return Stroke is null or "none" ? FillOpacity : 0;
+                if (EffectiveFillOpacity <= 0) return 0;
+                if (Fill is null) return NoPaint(Stroke) ? EffectiveFillOpacity : 0;
                 string f = Fill.ToLowerInvariant();
-                if (f is "none" or "transparent" || IsLight(f)) return 0;
-                return FillOpacity;
+                if (NoPaint(f) || f.StartsWith("url(", StringComparison.Ordinal) || IsLight(f)) return 0;
+                return EffectiveFillOpacity;
             }
         }
 
         /// <summary>A light fill with no stroke: the glyph's background, which draws nothing a reader sees. Drawn as an
         /// outline it would frame the symbol in a box the kit never drew.</summary>
-        public bool Background => Fill is { } f && IsLight(f.ToLowerInvariant()) && Stroke is null or "none";
+        public bool Background => Fill is { } f && IsLight(f.ToLowerInvariant()) && NoPaint(Stroke);
+
+        /// <summary>
+        /// Nothing a reader would see: fully transparent, or a closed shape painted with neither a fill nor a stroke
+        /// (SVG strokes nothing unless told to) — an invisible hit or bounding rectangle. Drawn, it would become a
+        /// frame the kit never showed.
+        /// </summary>
+        public bool Invisible(bool closedShape)
+            => Opacity <= 0
+            || (closedShape && NoPaint(Stroke) && (EffectiveFillOpacity <= 0 || (Fill is { } f && NoPaint(f))));
+
+        private static bool NoPaint(string? paint) => paint is null || paint.Trim().ToLowerInvariant() is "none" or "transparent";
+
+        /// <summary>The CSS colour names light enough to be a background, as <see cref="IsLight"/> judges a number.</summary>
+        private static readonly HashSet<string> LightNames =
+        [
+            "white", "snow", "ivory", "whitesmoke", "ghostwhite", "floralwhite", "mintcream", "azure", "aliceblue",
+            "seashell", "honeydew", "lavenderblush", "oldlace", "linen", "cornsilk", "lightyellow", "beige",
+        ];
 
         private static bool IsLight(string colour)
         {
-            if (colour is "white") return true;
+            colour = colour.Trim();
+            if (LightNames.Contains(colour)) return true;
+            double r, g, b;
             if (colour.StartsWith('#'))
             {
                 string hex = colour[1..];
-                if (hex.Length == 3) hex = string.Concat(hex.Select(c => $"{c}{c}"));
-                if (hex.Length >= 6 && int.TryParse(hex[..6], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int rgb))
-                {
-                    double r = (rgb >> 16) & 255, g = (rgb >> 8) & 255, b = rgb & 255;
-                    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.85;
-                }
+                if (hex.Length is 3 or 4) hex = string.Concat(hex.Select(c => $"{c}{c}"));
+                if (hex.Length < 6 || !int.TryParse(hex[..6], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int rgb))
+                    return false;
+                (r, g, b) = ((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
             }
-            return false;
+            else if (colour.StartsWith("rgb", StringComparison.Ordinal) && colour.IndexOf('(') is > 0 and var open
+                     && colour.IndexOf(')', open) is > 0 and var close)
+            {
+                // rgb(255, 255, 255), rgb(100% 100% 100%), rgba(…, a): the three channels are what decide it.
+                var parts = colour[(open + 1)..close].Split([',', ' ', '/'], StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 3) return false;
+                var ch = new double[3];
+                for (int i = 0; i < 3; i++)
+                {
+                    string t = parts[i];
+                    bool pct = t.EndsWith('%');
+                    if (!double.TryParse(pct ? t[..^1] : t, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+                        return false;
+                    ch[i] = pct ? v * 2.55 : v;
+                }
+                (r, g, b) = (ch[0], ch[1], ch[2]);
+            }
+            else return false;
+            return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.85;
         }
     }
 
@@ -743,14 +810,17 @@ public static class KitGlyphSymbol
 
                 var st = style.Under(child, _css);
                 var cm = m.Then(ParseTransform((string?)child.Attribute("transform")));
-                if (st.Hidden || (st.Background && name is "rect" or "circle" or "ellipse" or "polygon" or "path")) continue;
+                bool closedShape = name is "rect" or "circle" or "ellipse" or "polygon" or "path";
+                if (st.Hidden || st.Invisible(closedShape) || (st.Background && closedShape)) continue;
 
                 switch (name)
                 {
                     case "g" or "a" or "switch" or "svg": Walk(child, cm, st); break;
                     case "defs":
-                        // Definitions are drawn only when something refers to them, which nothing here follows.
-                        foreach (var def in child.Elements()) Drop(def.Name.LocalName);
+                        // Definitions are drawn only when something refers to them, which nothing here follows. A
+                        // stylesheet kept in <defs> is the ordinary place for one, and Css has read it: not a loss.
+                        foreach (var def in child.Elements().Where(d => !Silent.Contains(d.Name.LocalName)))
+                            Drop(def.Name.LocalName);
                         break;
                     case "path":     PathOf(child, cm, st); break;
                     case "line":     LineOf(child, cm); break;
@@ -914,15 +984,34 @@ public static class KitGlyphSymbol
             string d = (string?)e.Attribute("d") ?? "";
             double fill = st.FillStrength;
             var t = new PathTokens(d);
-            var run = new List<(double X, double Y)>();
+            var run = new List<(double X, double Y)>();                 // the straight run being drawn, glyph space
+            var pieces = new List<List<(double X, double Y)>>();         // outline: the subpath's runs so far
+            var rings = new List<(List<(double X, double Y)> Pts, bool Closed)>();   // filled: every subpath
+            bool broken = false;   // outline: a curve split the subpath into runs, so it cannot be one closed polyline
             (double X, double Y) cur = (0, 0), start = (0, 0), lastCtrl = (0, 0);
             char lastCmd = ' ';
             char cmd = ' ';
+            bool unreadable = false;
 
-            void Flush(bool closed)
+            void EndRun()
             {
-                AddRun(run, closed, fill, leads: true);
+                if (run.Count >= 2) pieces.Add([.. run]);
                 run.Clear();
+            }
+            // A subpath ends at a moveto, a closepath or the end of the data. A CLOSED one's segments are an outline,
+            // never a lead: a frame or a body drawn edge to edge would otherwise offer its corners as lead ends.
+            void EndSubpath(bool closed)
+            {
+                if (fill > 0)
+                {
+                    if (run.Count >= 2) rings.Add(([.. run], closed));
+                    run.Clear();
+                    return;
+                }
+                EndRun();
+                foreach (var piece in pieces) AddRun(piece, closed && !broken, 0, leads: !closed);
+                pieces.Clear();
+                broken = false;
             }
             void LineTo((double X, double Y) p)
             {
@@ -941,7 +1030,8 @@ public static class KitGlyphSymbol
                 }
                 else
                 {
-                    Flush(false);
+                    EndRun();
+                    broken = true;
                     _extent.AddRange(all);
                     var c = all;
                     _items.Add(c.Length == 3
@@ -961,10 +1051,14 @@ public static class KitGlyphSymbol
 
             while (true)
             {
+                int at = t.Position;
                 if (t.TryCommand(out char c)) cmd = c;
-                else if (cmd == ' ' || !t.HasMore) break;
+                else if (cmd == ' ' || !t.HasMore) { unreadable |= cmd == ' ' && t.HasMore; break; }
                 else if (cmd is 'M') cmd = 'L';           // numbers after a moveto are linetos
                 else if (cmd is 'm') cmd = 'l';
+                // A closepath takes no numbers, so one after it is not path data. Repeating it would read nothing
+                // and loop for ever.
+                else if (cmd is 'Z' or 'z') { unreadable = true; break; }
 
                 bool rel = char.IsLower(cmd);
                 (double X, double Y) Pt()
@@ -978,14 +1072,16 @@ public static class KitGlyphSymbol
                     switch (char.ToUpperInvariant(cmd))
                     {
                         case 'M':
-                            Flush(false);
+                            EndSubpath(false);
                             cur = start = Pt();
                             break;
                         case 'L': LineTo(Pt()); break;
                         case 'H': { double x = t.Number(); LineTo((rel ? cur.X + x : x, cur.Y)); break; }
                         case 'V': { double y = t.Number(); LineTo((cur.X, rel ? cur.Y + y : y)); break; }
                         case 'Z':
-                            if (run.Count > 0) { if (cur != start) LineTo(start); Flush(true); }
+                            // The closing edge is drawn even when a curve ended the subpath and no straight run is open.
+                            if (cur != start && (run.Count > 0 || pieces.Count > 0 || broken)) LineTo(start);
+                            EndSubpath(true);
                             cur = start;
                             break;
                         case 'C':
@@ -1022,13 +1118,98 @@ public static class KitGlyphSymbol
                             foreach (var q in ArcPoints(cur, p, rx, ry, rot, large, sweep)) LineTo(q);
                             break;
                         }
-                        default: return;   // not path data: stop here, keeping what was read
+                        default: unreadable = true; break;   // not path data
                     }
                 }
-                catch (FormatException) { break; }
+                catch (FormatException) { unreadable = true; }
+                if (unreadable || t.Position == at) { unreadable = true; break; }   // nothing read: never loop on it
                 lastCmd = char.ToUpperInvariant(cmd);
             }
-            Flush(false);
+            // What was read before an unreadable token is kept; the rest of the path is counted, never silently lost.
+            EndSubpath(false);
+            if (unreadable) Drop("path (unreadable data)");
+            if (fill > 0) AddFilled(rings, fill, st.FillRule == "evenodd");
+        }
+
+        /// <summary>
+        /// A filled path's subpaths as filled polygons, with its HOLES left open. SVG fills an open subpath as if it
+        /// were closed, and a subpath inside another is a hole when the fill rule makes it one — always under
+        /// even-odd, under non-zero when it winds the other way. Each hole is keyholed into the subpath around it
+        /// (a zero-width slit), because a symbol polygon is one ring: drawn separately, a hole would be filled.
+        /// </summary>
+        private void AddFilled(List<(List<(double X, double Y)> Pts, bool Closed)> rings, double fill, bool evenOdd)
+        {
+            foreach (var (pts, closed) in rings)
+            {
+                // An open subpath's drawn segments may be a lead; its implied closing edge is not.
+                if (!closed) for (int i = 0; i + 1 < pts.Count; i++) Segments.Add((pts[i], pts[i + 1]));
+            }
+            var shapes = rings.Where(r => r.Pts.Count >= 3).Select(r => r.Pts).ToList();
+            foreach (var (pts, _) in rings.Where(r => r.Pts.Count < 3)) AddRun(pts, closed: false, 0, leads: false);
+
+            var area = shapes.Select(SignedArea).ToList();
+            var parent = new int[shapes.Count];
+            var depth = new int[shapes.Count];
+            for (int i = 0; i < shapes.Count; i++)
+            {
+                parent[i] = -1;
+                for (int j = 0; j < shapes.Count; j++)
+                {
+                    if (j == i || Math.Abs(area[j]) <= Math.Abs(area[i]) || !Inside(shapes[i][0], shapes[j])) continue;
+                    depth[i]++;
+                    if (parent[i] < 0 || Math.Abs(area[j]) < Math.Abs(area[parent[i]])) parent[i] = j;
+                }
+            }
+            bool IsHole(int i) => parent[i] >= 0 && depth[i] % 2 == 1
+                                  && (evenOdd || Math.Sign(area[i]) != Math.Sign(area[parent[i]]));
+
+            for (int i = 0; i < shapes.Count; i++)
+            {
+                if (IsHole(i)) continue;
+                var ring = shapes[i].ToList();
+                for (int h = 0; h < shapes.Count; h++)
+                    if (parent[h] == i && IsHole(h)) ring = Keyhole(ring, shapes[h], reverse: Math.Sign(area[h]) == Math.Sign(area[i]));
+                AddRun(ring, closed: true, fill, leads: false);
+            }
+        }
+
+        private static double SignedArea(List<(double X, double Y)> p)
+        {
+            double a = 0;
+            for (int i = 0, j = p.Count - 1; i < p.Count; j = i++) a += (p[j].X - p[i].X) * (p[j].Y + p[i].Y);
+            return a / 2;
+        }
+
+        private static bool Inside((double X, double Y) q, List<(double X, double Y)> p)
+        {
+            bool inside = false;
+            for (int i = 0, j = p.Count - 1; i < p.Count; j = i++)
+                if ((p[i].Y > q.Y) != (p[j].Y > q.Y)
+                    && q.X < (p[j].X - p[i].X) * (q.Y - p[i].Y) / (p[j].Y - p[i].Y) + p[i].X)
+                    inside = !inside;
+            return inside;
+        }
+
+        /// <summary><paramref name="outer"/> with <paramref name="hole"/> spliced in through a slit from the nearest
+        /// pair of vertices, the hole running against the outer so a non-zero fill leaves it empty.</summary>
+        private static List<(double X, double Y)> Keyhole(List<(double X, double Y)> outer, List<(double X, double Y)> hole, bool reverse)
+        {
+            var h = reverse ? Enumerable.Reverse(hole).ToList() : hole;
+            if (h.Count > 1 && h[0] == h[^1]) h = h.Take(h.Count - 1).ToList();
+            int bo = 0, bh = 0;
+            double best = double.MaxValue;
+            for (int i = 0; i < outer.Count; i++)
+                for (int k = 0; k < h.Count; k++)
+                {
+                    double dx = outer[i].X - h[k].X, dy = outer[i].Y - h[k].Y, dd = dx * dx + dy * dy;
+                    if (dd < best) { best = dd; bo = i; bh = k; }
+                }
+            var splice = new List<(double X, double Y)>(h.Count + 2);
+            for (int k = 0; k <= h.Count; k++) splice.Add(h[(bh + k) % h.Count]);
+            splice.Add(outer[bo]);
+            var result = outer.ToList();
+            result.InsertRange(bo + 1, splice);
+            return result;
         }
 
         private static (double X, double Y) Bezier((double X, double Y)[] p, double t)
@@ -1075,6 +1256,9 @@ public static class KitGlyphSymbol
     private sealed class PathTokens(string text)
     {
         private int _i;
+
+        /// <summary>How far the tokens have been read, so a reader can tell that a step read nothing.</summary>
+        public int Position => _i;
 
         public bool HasMore { get { Skip(); return _i < text.Length; } }
 

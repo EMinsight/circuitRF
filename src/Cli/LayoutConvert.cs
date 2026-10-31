@@ -409,12 +409,17 @@ public static class LayoutConvert
             Console.Error.WriteLine("[circuitRF] cancelled; nothing was written");
             return 130;
         }
-        // InvalidDataException: a writer refusing what its format cannot hold. It used to escape as an
-        // unhandled exception and abort the process (brief-gdf-5) — a refusal is exit 1 and a sentence.
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        // Any reader or writer failure is a refusal: exit 1 and a sentence. An InvalidDataException is a writer
+        // refusing what its format cannot hold, and it used to escape as an unhandled exception and abort the
+        // process (brief-gdf-5); so did anything else — an OverflowException from a checked coordinate cast, an
+        // argument a writer did not expect. An unexpected kind is named, so it can still be told from a refusal.
+        catch (Exception ex)
         {
-            Console.Error.WriteLine($"error: {ex.Message}");
-            JsonRun.Note(CliDiagnostics.ConvertFailed(ex.Message));
+            string why = ex is IOException or UnauthorizedAccessException or InvalidDataException
+                ? ex.Message
+                : $"{ex.GetType().Name}: {ex.Message}";
+            Console.Error.WriteLine($"error: {why}");
+            JsonRun.Note(CliDiagnostics.ConvertFailed(why));
             return 1;
         }
         finally

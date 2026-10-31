@@ -23,8 +23,9 @@ the kit runs on. circuitRF is driven only as a process, exactly as a user would 
    at the same position within 1 DBU, of the same width and outward angle.
 
 Every failure is attributed to one of: ``gdsfactory or the kit`` (it fails in gdsfactory alone too),
-``circuitRF`` (it builds in gdsfactory and fails or differs through circuitRF), or ``out of scope``
-(a decision of the series excludes it). Output: ``<out>/report.md`` and ``<out>/report.json``. Nothing is
+``circuitRF`` (it builds in gdsfactory and fails or differs through circuitRF; any pin that differs is
+circuitRF's), or ``out of scope`` (a decision of the series excludes it). A reference build whose process dies
+without a result is neither side's: it is counted as not compared. Output: ``<out>/report.md`` and ``<out>/report.json``. Nothing is
 written anywhere else. The harness names no kit: the module is an argument.
 """
 
@@ -48,6 +49,9 @@ from typing import Any
 KIT = "gdsfactory or the kit"
 CRF = "circuitRF"
 SCOPE = "out of scope"
+#: Not a verdict on either side: the harness's own reference build died (a fork-unsafe native library, say), so
+#: nothing was compared. Counted on its own, never as the kit's refusal.
+HARNESS = "unattributed (the harness)"
 
 #: Positions of one cell's sets in its ``.clay``: set k sits at x = k mm. Only identity matters — each
 #: placement is compared as its own structure — so overlap is harmless.
@@ -268,16 +272,24 @@ def main(argv: list[str]) -> int:
         elif sig[1]:
             mine, why = "required arguments", ", ".join(sig[1])
         else:
-            try:
-                gf.get_component(cell).get_polygons(by="tuple")
+            # In a forked child under the same timeout as every set: a cell that never finishes at its defaults must
+            # not stop the matrix before it has started.
+            probe = build_isolated(gf, kdb, cell, {}, os.path.join(out, "ref", f"d{len(attribution_rows) + len(offered)}"),
+                                   args.build_timeout)
+            if "crash" in probe:
+                mine, why = HARNESS, probe["crash"]
+            elif "error" in probe:
+                mine, why = ("did not finish building at its defaults" if probe.get("timeout")
+                             else "raised while being built at its defaults"), probe["error"]
+            else:
                 mine, why = None, ""
-            except Exception as exc:  # noqa: BLE001
-                mine, why = "raised while being built at its defaults", f"{type(exc).__name__}: {exc}".splitlines()[0]
         theirs = report_reasons.get(cell)
         if mine is None and theirs is None:
             offered.append((cell, sig[0]))
             continue
-        if theirs and theirs[0].startswith(BUILT_IN) and mine is None:
+        if mine == HARNESS:
+            agree, attribution = False, HARNESS
+        elif theirs and theirs[0].startswith(BUILT_IN) and mine is None:
             agree, attribution = True, SCOPE
         else:
             agree = theirs is not None and mine is not None and theirs[0] == mine
@@ -300,6 +312,9 @@ def main(argv: list[str]) -> int:
             rows.append(row)
             ref_path = os.path.join(out, "ref", f"c{ci}s{k}")
             built = build_isolated(gf, kdb, cell, delta, ref_path, args.build_timeout)
+            if "crash" in built:
+                row.update(outcome="not compared", attribution=HARNESS, detail=built["crash"][:300])
+                continue
             if "error" in built:
                 # The kit's refusal, recorded and not sent.
                 row.update(outcome="kit refused", attribution=KIT, detail=built["error"][:300])
@@ -332,8 +347,10 @@ def main(argv: list[str]) -> int:
         write_clay(ws, top, {}, [(f"../../acc{ci}", 0) for ci in by_cell])
         gds = os.path.join(out, "crf", f"{top}.gds")
         before = set(os.listdir(gen_root)) if os.path.isdir(gen_root) else set()
-        rc, so, se, secs = run(cli(args, "--python", sys.executable, "--trust-kit", kit_root,
-                                   "convert", os.path.join(ws, top, "layout", f"{top}.clay"), "-o", gds))
+        # The verb FIRST: the installed circuitRF executable hands its arguments to the command line only when the
+        # first one is a verb, and otherwise starts the application — which would wait here for ever.
+        rc, so, se, secs = run(cli(args, "convert", os.path.join(ws, top, "layout", f"{top}.clay"), "-o", gds,
+                                   "--python", sys.executable, "--trust-kit", kit_root))
         convert_s += secs
         if rc != 0:
             named = {m["name"]: m["why"] for m in UNBUILDABLE.finditer(se)}
@@ -379,6 +396,10 @@ def build_isolated(gf: Any, kdb: Any, cell: str, delta: dict, prefix: str, timeo
     ``fresh`` clears gdsfactory's cell cache first, so a second build is a second build.
     """
     result_path = prefix + ".json"
+    try:
+        os.remove(result_path)  # a result left by an earlier build must never stand in for this one's
+    except OSError:
+        pass
 
     def build() -> dict:
         try:
@@ -413,24 +434,30 @@ def build_isolated(gf: Any, kdb: Any, cell: str, delta: dict, prefix: str, timeo
         finally:
             os._exit(0)
     deadline = time.monotonic() + timeout
-    while os.waitpid(pid, os.WNOHANG) == (0, 0):
+    while True:
+        done, status = os.waitpid(pid, os.WNOHANG)
+        if done:
+            break
         if time.monotonic() > deadline:
             os.kill(pid, signal.SIGKILL)
             os.waitpid(pid, 0)
-            return {"error": f"gdsfactory did not finish building it within {timeout:g} s"}
+            return {"error": f"gdsfactory did not finish building it within {timeout:g} s", "timeout": True}
         time.sleep(0.002)
     try:
         with open(result_path, encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
-        return {"error": "gdsfactory's build process ended without a result"}
+        # The child died without writing: a crash of the build PROCESS, which says nothing about the kit — a
+        # library that is unsafe to fork dies exactly like this. Recorded apart from the kit's refusals.
+        how = f"signal {os.WTERMSIG(status)}" if os.WIFSIGNALED(status) else f"exit {os.WEXITSTATUS(status)}"
+        return {"crash": f"the reference build process ended without a result ({how})"}
 
 
 def rebuilt(gf: Any, kdb: Any, cell: str, delta: dict, prefix: str, timeout: float) -> dict:
     """The set built afresh, as flattened regions — gdsfactory's cell cache cleared first, or it would hand
     back the first build. A second build that fails counts as different."""
     again = build_isolated(gf, kdb, cell, delta, prefix, timeout, fresh=True)
-    return {} if "error" in again else regions_of_gds(kdb, prefix + ".flat.gds")
+    return {} if "error" in again or "crash" in again else regions_of_gds(kdb, prefix + ".flat.gds")
 
 
 def write_clay(ws: str, name: str, snapshots: dict, instances: list[tuple[str, int]]) -> None:
@@ -481,6 +508,10 @@ def compare_chunk(kdb: Any, gds: str, gen_root: str, chunk: list[dict], unresolv
         row["pins"] = pin_diff(u["ports"], os.path.join(gen_root, folders.get(cell.name, cell.name)))
         if within(diffs) and not row["pins"]:
             row.update(outcome="match", attribution=None)
+        elif row["pins"]:
+            # Pins come from circuitRF's reading of the ports gdsfactory reported for this very build, so a pin
+            # that differs is circuitRF's whatever the geometry did — the geometry branches below never excuse it.
+            row.update(outcome="differs", attribution=CRF)
         elif not within(diffs) and within(xor(kdb, u["flat"], ours)) and not within(xor(kdb, u["flat"], ref)):
             # circuitRF drew what gdsfactory's own flattening returns; gdsfactory's own GDS is different.
             row.update(outcome="differs", attribution=KIT,
@@ -524,6 +555,7 @@ def write_report(args: argparse.Namespace, out: str, rows: list[dict], attributi
     summary.update(
         sets=len(rows), matched=count(lambda r: r.get("outcome") == "match"),
         kitRefused=count(lambda r: r.get("outcome") == "kit refused"),
+        notCompared=count(lambda r: r.get("attribution") == HARNESS),
         failingKit=count(lambda r: r.get("outcome") not in (None, "match", "kit refused") and r.get("attribution") == KIT),
         failingCircuitRF=count(lambda r: r.get("attribution") == CRF),
         notOffered={}, notOfferedDisagreements=sum(1 for a in attribution_rows if not a["agree"]))
@@ -542,6 +574,7 @@ def write_report(args: argparse.Namespace, out: str, rows: list[dict], attributi
           f"| Matched | {s['matched']} |", f"| Refused by gdsfactory (not sent) | {s['kitRefused']} |",
           f"| Failing, gdsfactory or the kit | {s['failingKit']} |",
           f"| **Failing, circuitRF** | **{s['failingCircuitRF']}** |",
+          f"| Not compared: the reference build process crashed | {s['notCompared']} |",
           f"| Not-offered reasons disagreeing with the harness | {s['notOfferedDisagreements']} |",
           f"| Technology | {s['technology'] or '—'} ({s['technologyNotes']} notes, {s['technologyWarnings']} warnings) |",
           f"| Import (describe) | {s['importSeconds']} s |",
