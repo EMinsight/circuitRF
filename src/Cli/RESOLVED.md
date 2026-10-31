@@ -3351,3 +3351,20 @@ PDF (the first page says it was cancelled) before exiting 130. The MCP `review` 
   missing from the netlist. `CircuitSource.ReportConflicts` says each one (`run.extraction.conflict`),
   minus vendor-part refusals, which `ReportVendorParts` already says. On a real kit this surfaced 115
   sentences that had been hidden — most of them the compiled-model gap recorded in the brief.
+
+## Brief gdf-6 — `--python` per module, an archive, kits on demand (2026-10-30)
+
+- **`--python` is parsed into an immutable `GeneratedCells.PythonFlags`** per invocation, not a mutable
+  static string. Every `CliEntry.Run` replaces the flags, and tests in other classes call `Run`
+  concurrently; a test exercising the per-module table through the statics would race them. The table
+  is tested through `PythonFlags.Parse` directly.
+- **`module=interp` splits only when the text before the first `=` is a dotted identifier**: an
+  interpreter path may legitimately contain `=`.
+- **The unused-module warning is judged after the verb** (`CliEntry.Run`, after dispatch), because only
+  the run knows which modules it asked an interpreter for. A verb that never touches a gdsfactory kit
+  warns for every per-module entry, by design.
+- **`import pdk` on an archive refuses to unpack over an existing non-empty folder** — the GUI asks; a
+  headless run cannot, and the folder may hold hand edits. Re-running the same command therefore refuses
+  the second time and names the folder to import instead.
+- **`--technology` is still checked BEFORE anything is written** with `GdsfactoryKitDiscovery.FindSourceTree`
+  — the one place the CLI asks that question itself: it validates a flag, it does not route the import.

@@ -59,8 +59,9 @@ Several kits pinning the same gdsfactory can share one environment.
 
 | Attribution | When |
 |---|---|
-| gdsfactory or the kit | it fails in gdsfactory alone: a set gdsfactory refuses; a cell it cannot build at its defaults; circuitRF matching gdsfactory's in-process flattening while gdsfactory's own GDS differs from it; a cell whose two gdsfactory builds of one set differ (it draws a clock, not its parameters) |
+| gdsfactory or the kit | it fails in gdsfactory alone: a set gdsfactory refuses; a cell it cannot build at its defaults; circuitRF matching gdsfactory's in-process flattening (kept as polygon text, holes and all) while gdsfactory's own GDS differs from it — a polygon with a hole is one: GDS writes it as a keyhole whose cut is rounded onto the grid; a cell whose two gdsfactory builds of one set differ (it draws a clock, not its parameters) |
 | circuitRF | it builds in gdsfactory and fails, or differs, through circuitRF — including a not-offered reason the harness disagrees with, and any pin that differs from its port whatever the geometry did |
+| gdsfactory process state | charged to circuitRF until gdsfactory, building the same set in a child that first built every other offered cell at its defaults, reproduces it (raises, or its ports or geometry change): the difference comes from gdsfactory's one process-wide layout, not from circuitRF. The **After other cells** column of the report records that second build for every such set |
 | out of scope | a decision of the series excludes it (a cell named like a built-in) |
 | unattributed (the harness) | the harness's own reference build process died without a result, so nothing was compared |
 

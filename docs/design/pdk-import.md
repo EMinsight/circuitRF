@@ -213,6 +213,21 @@ Discovery is the only cost worth caring about, and it is exactly the decision §
 open path entirely. 20 symbols should land nearer 10 ms than 100 ms. **If it does not, something is being
 re-derived that should have been recorded; look there first, then stop and ask.**
 
+**Headless, a kit is loaded when a run first needs it** (brief-gdf-6 R-gdf6-1). A real kit is not 20
+symbols: the largest one measured costs seconds to load, and loading every referenced kit ahead of every
+headless run charged that to runs that used none of its parts. The CLI therefore installs a per-workspace
+loader on `PdkKitRegistry`; a lookup that misses (`Find`, `HasKit`, `PartsOf`, `OsdiModelsOf`,
+`VerilogASourcesOf`) asks it for that one kit, once per process — the load runs outside the registry's lock
+behind a `Lazy`, so concurrent askers share one load and a failed load stays failed. A netlist's
+`Provider=` reaches the same loader through the CLI's provider resolver. **The application keeps loading
+every kit at workspace open**, because its palette shows every kit's parts.
+
+**A kit's Verilog-A sources are part of what is held** (R-gdf6-3). The importer classifies `.va`/`.vams`
+files and reads which modules they declare (`PdkImportReport.VerilogASources`, module → file); they are
+registered with the kit's parts. A device whose card type has no compiled model and no built-in is told to
+compile the kit's source only when the kit ships one for that module, naming the file; otherwise it is told
+there is no compiled model, no source in the kit and no built-in, with no advice to compile anything.
+
 ---
 
 ## 8. Broken references, validation, and the management dialog

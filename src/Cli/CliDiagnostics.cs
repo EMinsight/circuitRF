@@ -4641,6 +4641,13 @@ internal static class CliDiagnostics
     public static Diagnostic GeneratedCellKitNotAllowed(string sentence) => Diagnostic.Create(
         "cli.generated-cell.kit-not-allowed", DiagnosticSeverity.Info, "note: {sentence}", ("sentence", sentence));
 
+    /// <summary>brief-gdf-6 R-gdf6-4 — <c>--python module=interp</c> for a module no kit in the run asked about.
+    /// A warning, never a refusal.</summary>
+    public static Diagnostic PythonModuleUnused(string module, string interpreter) => Diagnostic.Create(
+        "cli.python.module-unused", DiagnosticSeverity.Warning,
+        "warning: --python {module}={interpreter} was not used: no gdsfactory kit in this run is the module '{module}'.",
+        ("module", module), ("interpreter", interpreter));
+
     public static Diagnostic GeneratedCellNote(string note) => Diagnostic.Create(
         "cli.generated-cell.note", DiagnosticSeverity.Info, "note: {note}", ("note", note));
 

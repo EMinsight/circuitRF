@@ -8,13 +8,15 @@ using CircuitRF.Diagnostics;
 namespace CircuitRF.Cli;
 
 /// <summary>
-/// <c>circuitrf import pdk &lt;kit-dir&gt; --into &lt;workspace&gt; [--name N] [--allow-code]</c> — File ▸
+/// <c>circuitrf import pdk &lt;kit-dir | kit.zip&gt; --into &lt;workspace&gt; [--name N] [--allow-code]</c> — File ▸
 /// Import PDK with no window (brief-gdf-1 R-gdf1-4b).
 ///
 /// <para><b>It adds NO import logic.</b> <see cref="PdkWorkspaceImport.Import"/> reads the kit, installs
 /// its parts, records the <c>.cws</c> reference and declares the kit's parametric cells — the calls the
-/// GUI's own import makes, in the same order. What is here is argument parsing, the sentences, and the
-/// one decision the GUI makes in a dialog: whether the kit's code may run.</para>
+/// GUI's own import makes, in the same order — and since brief-gdf-6, the very call the GUI makes, folder
+/// routing included. An archive is unpacked by <see cref="KitArchive"/>, the code the GUI unpacks with. What
+/// is here is argument parsing, the sentences, and the one decision the GUI makes in a dialog: whether the
+/// kit's code may run.</para>
 ///
 /// <para><b>Kit code runs only with consent</b> (gdsfactory series D2). A decision recorded at the
 /// keyboard, <c>--trust-kit</c>, or <c>--allow-code</c> — which grants it for this one process and is
@@ -24,7 +26,7 @@ namespace CircuitRF.Cli;
 internal static class ImportPdk
 {
     public const string UsageText =
-        "       circuitrf import pdk <kit-folder> --into <workspace> [--name N] [--allow-code]\n" +
+        "       circuitrf import pdk <kit-folder|kit.zip> --into <workspace> [--name N] [--allow-code]\n" +
         "       circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code] [--technology]";
 
     /// <summary>
@@ -64,20 +66,18 @@ internal static class ImportPdk
 
         if (source is null) { JsonRun.Report(CliDiagnostics.ImportSourceRequired()); return Usage(); }
         JsonRun.InputPath = source;
-        if (!Directory.Exists(source))
+        bool archive = File.Exists(source) && KitArchive.IsArchive(source);
+        if (!Directory.Exists(source) && !archive)
             return File.Exists(source)
                 ? JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
-                    $"'{source}' is a file. import pdk takes the kit's folder; unpack an archive first."))
+                    $"'{source}' is a file. import pdk takes the kit's folder, or a .zip archive of one."))
                 : JsonRun.Fail(CliDiagnostics.ImportSourceNotFound(source));
         if (into is null) { JsonRun.Report(CliDiagnostics.ImportPdkIntoRequired()); return Usage(); }
 
-        // A folder holding a gdsfactory kit's SOURCE TREE takes the same road as --module (R-gdf2-1b).
-        if (GdsfactoryKitDiscovery.FindSourceTree(source) is { } tree)
-            return RunGdsfactory(tree.Module, tree, into, allowCode, technology);
-
         // A kit folder's process files are a different source with a different reader (File ▸ Import ▸
-        // Technology); --technology builds a gdsfactory kit's, which states its process as data.
-        if (technology)
+        // Technology); --technology builds a gdsfactory kit's, which states its process as data. Checked
+        // before anything is written, so a flag that cannot apply writes nothing.
+        if (technology && !archive && GdsfactoryKitDiscovery.FindSourceTree(source) is null)
             return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
                 $"--technology builds a gdsfactory kit's technology (--module, or a folder holding a gdsfactory " +
                 $"kit's source tree), and '{source}' holds none."));
@@ -91,7 +91,41 @@ internal static class ImportPdk
             return JsonRun.Fail(CliDiagnostics.ImportPdkNotAWorkspace(into));
         string cwsPath = Path.Combine(wsRoot, WorkspacePersistence.FileName);
 
+        // An archive is unpacked into the workspace and imported as the folder it became — what the GUI
+        // does (D4). Never over an existing folder: nothing here can ask, and someone may have edited it.
+        if (archive)
+        {
+            string destination = KitArchive.DestinationFor(source, wsRoot);
+            if (Directory.Exists(destination) && Directory.EnumerateFileSystemEntries(destination).Any())
+                return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
+                    $"'{Path.GetFileName(source)}' is already unpacked in this workspace, at '{destination}'. " +
+                    "Import that folder, or remove it to unpack the archive again."));
+            try { source = KitArchive.ExtractInto(Path.GetFullPath(source), wsRoot, overwrite: false); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                return JsonRun.Fail(CliDiagnostics.ImportPdkRefused($"the archive could not be unpacked: {ex.Message}"));
+            }
+            Console.WriteLine($"unpacked\t{source}");
+            JsonRun.AddOutput("kit", source);
+        }
+
         var result = PdkWorkspaceImport.Import(Path.GetFullPath(source), cwsPath, name);
+
+        // The folder decides, in the shared function, whether it is one kit or two (D2).
+        int exit = result.OnlyGdsfactory ? 0 : ReportOrdinary(result, wsRoot, cwsPath, allowCode);
+        if (result.Gdsfactory is { } tree)
+            exit = Math.Max(exit, RunGdsfactory(tree.Module, tree, into, allowCode, technology));
+        else if (technology)
+            // Only reachable for an archive, whose contents could not be looked at before it was unpacked.
+            exit = JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
+                $"--technology builds a gdsfactory kit's technology, and '{source}' holds none; no technology was built."));
+        return exit;
+    }
+
+    /// <summary>The ordinary half of an import: what <see cref="PdkWorkspaceImport.Import"/> read, installed and
+    /// recorded, said as the import report dialog says it.</summary>
+    private static int ReportOrdinary(PdkWorkspaceImport.ImportResult result, string wsRoot, string cwsPath, bool allowCode)
+    {
         var report = result.Report;
 
         // The report's own findings, each at its own level — the import report dialog's content.
@@ -109,6 +143,9 @@ internal static class ImportPdk
         if (!PdkWorkspaceImport.IsRecordable(report))
             return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
                 $"circuitRF recognised nothing it can use in '{report.RootPath}'; nothing was recorded."));
+        if (result.NameProblem is { } derived)
+            return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(PdkWorkspaceImport.DerivedNameSentence(
+                report.KitName, derived, "--name gives it one.")));
         if (result.InstallProblem is { } installProblem)
             return JsonRun.Fail(CliDiagnostics.ImportPdkRefused(
                 $"{report.KitName}: its parts could not be installed: {installProblem}"));
@@ -323,7 +360,7 @@ internal static class ImportPdk
 
     private static int Usage()
     {
-        Console.Error.WriteLine("Usage: circuitrf import pdk <kit-folder> --into <workspace> [--name N] [--allow-code]");
+        Console.Error.WriteLine("Usage: circuitrf import pdk <kit-folder|kit.zip> --into <workspace> [--name N] [--allow-code]");
         Console.Error.WriteLine("       circuitrf import pdk --module <m> --python <interp> --into <workspace> [--allow-code] [--technology]");
         return 1;
     }

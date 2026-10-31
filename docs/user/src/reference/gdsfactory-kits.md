@@ -96,7 +96,9 @@ circuitRF never runs `pip` and never installs anything into your environment.
 3. **Answer the consent prompt** (below).
 4. **Read the report.**
 
-**Kit folder…** works too, on a folder holding a gdsfactory kit's source, and takes the same steps.
+**Kit folder…** works too, on a folder holding a gdsfactory kit's source, and takes the same steps. When
+the folder is a kit's own tree that also carries its gdsfactory package, both are imported: the kit's
+symbols and models first, then the package. The first report says that the second import follows.
 
 **The interpreter is yours, not the workspace's.** It is remembered per user, by the kit's module name,
 and never written into the workspace. A colleague who opens the workspace is asked for their own once.
@@ -165,4 +167,15 @@ circuitrf import pdk --module <module> --python <interpreter> --into <workspace>
 `--allow-code` allows the kit for that one command and records nothing. Without it the kit is declared
 but not run. Every command that regenerates cells (`render`, `convert`, `check` and the rest) takes
 `--python` for the interpreter and `--trust-kit <kit directory>` for consent; on a machine where you have
-already allowed the kit, neither is needed. [The command line](cli.html) has the details.
+already allowed the kit, neither is needed.
+
+`--python <interpreter>` names one interpreter for every gdsfactory kit in the command.
+`--python <module>=<interpreter>` names it for one kit, and can be given once per kit, so a design using
+two kits installed in two environments runs from a script:
+
+```
+circuitrf convert top.clay -o top.gds --python kit_a=/envs/a/bin/python --python kit_b=/envs/b/bin/python
+```
+
+A kit's own `--python <module>=…` wins over a plain `--python`. Naming a module the command does not use
+is a warning, not an error. [The command line](cli.html) has the details.

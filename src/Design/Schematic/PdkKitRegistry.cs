@@ -73,6 +73,10 @@ public static class PdkKitRegistry
         public readonly List<string> Kits = [];
         public readonly Dictionary<string, IReadOnlyList<OsdiModel>> Osdi = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>Per kit, the Verilog-A modules it ships SOURCE for and the file declaring each
+        /// (<see cref="VerilogASourcesOf"/>).</summary>
+        public readonly Dictionary<string, IReadOnlyDictionary<string, string>> VaSources = new(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>
         /// Which of <see cref="Parts"/> circuitRF SYNTHESISED from a parametric cell's own
         /// declaration rather than read out of the kit's schematic side
@@ -93,6 +97,15 @@ public static class PdkKitRegistry
     private static readonly List<string> _scopeOrder = [];
 
     private static readonly Lock _gate = new();
+
+    /// <summary>
+    /// Per workspace, how to load ONE of its referenced kits the first time something asks for it
+    /// (<see cref="SetLoader"/>), and the loads already started — each a <see cref="Lazy{T}"/>, so a
+    /// kit is loaded at most once however many lookups race for it, and a load that failed stays
+    /// failed rather than being retried for every instance.
+    /// </summary>
+    private static readonly Dictionary<string, Func<string, bool>> _loaders = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, Dictionary<string, Lazy<bool>>> _loads = new(StringComparer.OrdinalIgnoreCase);
 
     // ── The reference form ────────────────────────────────────────────────────
 
@@ -137,9 +150,14 @@ public static class PdkKitRegistry
     /// The compiled Verilog-A artefacts found for this kit, if any. Replaced with the parts, for the
     /// same reason: a re-import must produce the kit as it is NOW.
     /// </param>
+    /// <param name="verilogASources">
+    /// The Verilog-A modules the kit ships source for, each to the file declaring it — the import
+    /// report's <c>VerilogASources</c>. Replaced with the parts.
+    /// </param>
     public static void SetKit(
         string? workspaceRoot, string kitName, IEnumerable<PdkKitPart> parts,
-        IReadOnlyList<OsdiModel>? osdiModels = null)
+        IReadOnlyList<OsdiModel>? osdiModels = null,
+        IReadOnlyDictionary<string, string>? verilogASources = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kitName);
         ArgumentNullException.ThrowIfNull(parts);
@@ -163,8 +181,89 @@ public static class PdkKitRegistry
             }
             scope.Kits.Add(kitName);
             if (osdiModels is { Count: > 0 }) scope.Osdi[kitName] = osdiModels;
+            if (verilogASources is { Count: > 0 })
+                scope.VaSources[kitName] = new Dictionary<string, string>(verilogASources, StringComparer.OrdinalIgnoreCase);
         }
     }
+
+    // ── Loading on demand (headless) ──────────────────────────────────────────
+
+    /// <summary>
+    /// Installs how <paramref name="workspaceRoot"/> loads one of its referenced kits — or, with null,
+    /// removes it and forgets which kits it already loaded. The loader is handed a kit's name and
+    /// returns whether it registered that kit; it is asked on a lookup that MISSES, for a kit not yet
+    /// asked about, so a run loads exactly the kits its design reaches (brief-gdf-6 R-gdf6-1).
+    ///
+    /// <para><b>Here, and not in the extractor,</b> because this is the one place every reader of a
+    /// kit part already asks: a top schematic's parts, a child cell's, a netlist's provider. A scan of
+    /// the design for kit references ahead of the extraction would be a second walk of the hierarchy
+    /// that had to agree with the extraction's.</para>
+    ///
+    /// <para>Headless only. The application installs none: its palette needs every kit's parts
+    /// whether a design uses them or not, so it still loads every kit at workspace open.</para>
+    /// </summary>
+    public static void SetLoader(string? workspaceRoot, Func<string, bool>? loader)
+    {
+        string scopeKey = WorkspaceRootFinder.Normalize(workspaceRoot);
+        lock (_gate)
+        {
+            _loads.Remove(scopeKey);
+            if (loader is null) _loaders.Remove(scopeKey);
+            else                _loaders[scopeKey] = loader;
+        }
+    }
+
+    /// <summary>
+    /// Asks the workspace's loader for one kit, once. The LOAD runs outside <see cref="_gate"/> — it reads
+    /// a kit off disk, which can take seconds, and every other lookup would wait on it — but which load
+    /// runs is decided under it, and the <see cref="Lazy{T}"/> makes concurrent askers share one load.
+    /// Returns whether a load ran or had already run with success.
+    /// </summary>
+    private static bool LoadOnDemand(string scopeKey, string kitName)
+    {
+        Lazy<bool> load;
+        lock (_gate)
+        {
+            if (!_loaders.TryGetValue(scopeKey, out var loader)) return false;
+            if (!_loads.TryGetValue(scopeKey, out var started))
+                _loads[scopeKey] = started = new(StringComparer.OrdinalIgnoreCase);
+            if (!started.TryGetValue(kitName, out load!))
+            {
+                started[kitName] = load = new Lazy<bool>(() =>
+                {
+                    // A loader that throws costs that kit, remembered as failed — not the lookup.
+                    try { return loader(kitName); } catch { return false; }
+                }, LazyThreadSafetyMode.ExecutionAndPublication);
+            }
+        }
+        return load.Value;
+    }
+
+    /// <summary>The kit a reference names, loaded on demand when the asker's workspace has a loader.</summary>
+    private static bool LoadOnDemandFor(string? cellRef, string? workspaceRoot)
+        => !string.IsNullOrWhiteSpace(workspaceRoot)
+           && TryParse(cellRef, out string kit, out _)
+           && LoadOnDemand(WorkspaceRootFinder.Normalize(workspaceRoot), kit);
+
+    /// <summary>
+    /// The Verilog-A modules this kit ships SOURCE for, each to the kit-relative file declaring it.
+    /// Empty for the ordinary kit. What separates "compile the kit's source" from "there is no model
+    /// for this anywhere" when a device finds neither a compiled model nor a built-in.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> VerilogASourcesOf(string? workspaceRoot, string? kitName)
+    {
+        if (string.IsNullOrWhiteSpace(kitName)) return EmptySources;
+        if (!string.IsNullOrWhiteSpace(workspaceRoot)) LoadOnDemand(WorkspaceRootFinder.Normalize(workspaceRoot), kitName);
+        lock (_gate)
+        {
+            foreach (var scope in ScopesToSearchLocked(workspaceRoot))
+                if (scope.VaSources.TryGetValue(kitName, out var hit)) return hit;
+            return EmptySources;
+        }
+    }
+
+    private static readonly IReadOnlyDictionary<string, string> EmptySources =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Replaces the parts SYNTHESISED from one kit's parametric cells, for one workspace — the
@@ -225,6 +324,7 @@ public static class PdkKitRegistry
     public static IReadOnlyList<OsdiModel> OsdiModelsOf(string? workspaceRoot, string? kitName)
     {
         if (string.IsNullOrWhiteSpace(kitName)) return [];
+        if (!string.IsNullOrWhiteSpace(workspaceRoot)) LoadOnDemand(WorkspaceRootFinder.Normalize(workspaceRoot), kitName);
         lock (_gate)
         {
             foreach (var scope in ScopesToSearchLocked(workspaceRoot))
@@ -270,7 +370,7 @@ public static class PdkKitRegistry
     /// <summary>Test-only reset. Not reachable from production code, by design (MW1 §9.6).</summary>
     internal static void ResetAllForTests()
     {
-        lock (_gate) { _scopes.Clear(); _scopeOrder.Clear(); }
+        lock (_gate) { _scopes.Clear(); _scopeOrder.Clear(); _loaders.Clear(); _loads.Clear(); }
     }
 
     /// <summary>
@@ -280,10 +380,17 @@ public static class PdkKitRegistry
     public static PdkKitPart? Find(string? cellRef, string? workspaceRoot)
     {
         if (!IsKitRef(cellRef)) return null;
+        if (FindLoaded(cellRef!, workspaceRoot) is { } hit) return hit;
+        // A miss may be a kit this workspace references and has not needed until now.
+        return LoadOnDemandFor(cellRef, workspaceRoot) ? FindLoaded(cellRef!, workspaceRoot) : null;
+    }
+
+    private static PdkKitPart? FindLoaded(string cellRef, string? workspaceRoot)
+    {
         lock (_gate)
         {
             foreach (var scope in ScopesToSearchLocked(workspaceRoot))
-                if (scope.Parts.TryGetValue(cellRef!, out var hit)) return hit;
+                if (scope.Parts.TryGetValue(cellRef, out var hit)) return hit;
             return null;
         }
     }
@@ -301,9 +408,11 @@ public static class PdkKitRegistry
         => Find(cellRef, workspaceRoot: null);
 
     /// <summary>True when this workspace has mounted this kit — the distinction a broken reference
-    /// rests on.</summary>
+    /// rests on. Loads it first when the workspace has a <see cref="SetLoader">loader</see>.</summary>
     public static bool HasKit(string? workspaceRoot, string kitName)
     {
+        if (!string.IsNullOrWhiteSpace(workspaceRoot) && !string.IsNullOrWhiteSpace(kitName))
+            LoadOnDemand(WorkspaceRootFinder.Normalize(workspaceRoot), kitName);
         lock (_gate)
         {
             foreach (var scope in ScopesToSearchLocked(workspaceRoot))
@@ -326,6 +435,8 @@ public static class PdkKitRegistry
     /// <summary>Every part of one kit this workspace has mounted, in registration order.</summary>
     public static IReadOnlyList<PdkKitPart> PartsOf(string? workspaceRoot, string kitName)
     {
+        if (!string.IsNullOrWhiteSpace(workspaceRoot) && !string.IsNullOrWhiteSpace(kitName))
+            LoadOnDemand(WorkspaceRootFinder.Normalize(workspaceRoot), kitName);
         lock (_gate)
         {
             foreach (var scope in ScopesToSearchLocked(workspaceRoot))
@@ -420,5 +531,6 @@ public static class PdkKitRegistry
         foreach (var k in stale) { scope.Parts.Remove(k); scope.Generated.Remove(k); }
         scope.Kits.RemoveAll(k => string.Equals(k, kitName, StringComparison.OrdinalIgnoreCase));
         scope.Osdi.Remove(kitName);
+        scope.VaSources.Remove(kitName);
     }
 }

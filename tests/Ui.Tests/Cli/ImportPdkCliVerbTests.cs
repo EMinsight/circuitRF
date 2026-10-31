@@ -100,19 +100,141 @@ public sealed class ImportPdkCliVerbTests : IDisposable
                          File.ReadAllBytes(Path.Combine(viaCli, folder, file)));
     }
 
-    /// <summary>The view model calls the extracted function and kept no copy of what it does.</summary>
+    /// <summary>The view model calls the ONE import function and none of its steps (brief-gdf-6 R-gdf6-2):
+    /// calling <c>Read</c>, <c>Install</c> and <c>Commit</c> itself is how the two sequences drifted apart.</summary>
     [Fact]
     public void TheViewModelKeptNoSecondCopy()
     {
         string code = StripComments(File.ReadAllText(
             Path.Combine(RepoRoot(), "src", "Ui", "ViewModels", "WorkspaceViewModel.cs")));
 
-        Assert.Contains("PdkWorkspaceImport.Read(", code, StringComparison.Ordinal);
-        Assert.Contains("PdkWorkspaceImport.Commit(", code, StringComparison.Ordinal);
+        Assert.Contains("PdkWorkspaceImport.Import(", code, StringComparison.Ordinal);
         Assert.Contains("PdkWorkspaceImport.ReadReferenced(", code, StringComparison.Ordinal);
-        foreach (string gone in new[] { "PdkImporter.Import(", "PdkPartInstaller.Install(",
+        foreach (string gone in new[] { "PdkWorkspaceImport.Read(", "PdkWorkspaceImport.Install(",
+                                        "PdkWorkspaceImport.Commit(", "FindSourceTree(",
+                                        "PdkImporter.Import(", "PdkPartInstaller.Install(",
                                         "KitPCellLibrary.EnsureDeclared(", "new CwsPdkRef" })
             Assert.DoesNotContain(gone, code, StringComparison.Ordinal);
+    }
+
+    /// <summary>The GUI's command path, driven with no window, writes the same <c>.cws</c> and the same
+    /// declaration as <c>circuitrf import pdk</c> run as a process — compared against what the GUI DOES, not
+    /// against the function it is supposed to call.</summary>
+    [Fact]
+    public void TheGuisCommandPathWritesWhatTheVerbWrites()
+    {
+        string kit = Kit();
+        string viaCli = Workspace("ws_cli2"), viaGui = Workspace("ws_gui");
+
+        var (exit, _, err) = RunCli("import", "pdk", kit, "--into", viaCli);
+        Assert.True(exit == 0, err);
+
+        var vm = new CircuitRF.Ui.ViewModels.WorkspaceViewModel
+        {
+            CurrentWorkspacePath = Path.Combine(viaGui, WorkspacePersistence.FileName),
+        };
+        var imported = vm.ImportPdkPathAsync(kit).GetAwaiter().GetResult();
+        Assert.NotNull(imported?.Result.Outcome);
+
+        Assert.Equal(RefsOf(viaCli), RefsOf(viaGui));
+        string folder = KitPCellLibrary.FolderNameFor("synthkit");
+        foreach (string file in new[] { PCellGeneratorManifest.FileName, KitPCellLibrary.EntryScriptName })
+            Assert.Equal(File.ReadAllBytes(Path.Combine(viaCli, folder, file)),
+                         File.ReadAllBytes(Path.Combine(viaGui, folder, file)));
+    }
+
+    // ── one folder, two kits; an archive (R-gdf6-2) ──────────────────────────────────────────────
+
+    /// <summary>A kit tree that also carries a gdsfactory package imports BOTH (D2): the ordinary half is
+    /// recorded — it used to be skipped with nothing said — and the gdsfactory half is attempted after it.
+    /// With no interpreter chosen that half is refused by name, which is the routine tier's evidence that it
+    /// was reached; tier B runs it.</summary>
+    [Fact]
+    public void AKitTreeHoldingAGdsfactoryPackage_ImportsBoth()
+    {
+        string kit = Kit();
+        string pkg = Path.Combine(kit, "python", "synth_gf_kit");
+        Directory.CreateDirectory(pkg);
+        File.WriteAllText(Path.Combine(pkg, "__init__.py"),
+            "import gdsfactory as gf\nfrom gdsfactory.pdk import Pdk\nPDK = Pdk(name='synth_gf_kit')\n");
+        string ws = Workspace("ws_both");
+
+        var (exit, err) = Run("import", "pdk", kit, "--into", ws);
+
+        Assert.Contains("synthkit", RefsOf(ws) ?? "", StringComparison.Ordinal);
+        Assert.Contains("holds two kits", err, StringComparison.Ordinal);
+        Assert.Contains("synth_gf_kit", err, StringComparison.Ordinal);
+        Assert.Equal(1, exit);   // the gdsfactory half: no interpreter is chosen for it on this machine
+        Assert.Contains("No Python environment is chosen", err, StringComparison.Ordinal);
+    }
+
+    /// <summary>Tier B of the same: with an interpreter that has gdsfactory, the gdsfactory half runs too, and
+    /// the workspace ends up holding both kits — the ordinary one referenced, the gdsfactory one declared.</summary>
+    [CircuitRF.Ui.Tests.Gdsfactory.GdsfactoryFact]
+    public void AKitTreeHoldingAGdsfactoryPackage_ImportsBoth_TierB()
+    {
+        // Named apart from the gdsfactory module, and without the cell package of its own, so the two kits'
+        // declarations cannot be mistaken for each other.
+        string kit = Path.Combine(_root, "twokit");
+        Directory.Move(Kit(), kit);
+        Directory.Delete(Path.Combine(kit, "libs.python"), recursive: true);
+        CopyTree(FixturePaths.Require("tests/Ui.Tests/Gdsfactory/Fixtures/synthkit"), Path.Combine(kit, "python"));
+        string ws = Workspace("ws_both_b");
+
+        var (exit, err) = Run("import", "pdk", kit, "--into", ws, "--allow-code",
+                              "--python", CircuitRF.Ui.Tests.Gdsfactory.GdsfactoryFactAttribute.Interpreter!);
+
+        Assert.True(exit == 0, err);
+        Assert.Contains("twokit", RefsOf(ws) ?? "", StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(ws, KitPCellLibrary.FolderNameFor("synthkit"), PCellGeneratorManifest.FileName)), err);
+    }
+
+    private static void CopyTree(string from, string to)
+    {
+        foreach (string dir in Directory.EnumerateDirectories(from, "*", SearchOption.AllDirectories))
+            Directory.CreateDirectory(Path.Combine(to, Path.GetRelativePath(from, dir)));
+        Directory.CreateDirectory(to);
+        foreach (string file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
+            if (!file.Contains("__pycache__", StringComparison.Ordinal))
+                File.Copy(file, Path.Combine(to, Path.GetRelativePath(from, file)), overwrite: true);
+    }
+
+    /// <summary>An archive of a kit imports from the command line through the code the GUI unpacks with,
+    /// and records what the unpacked folder records — apart from where it lives.</summary>
+    [Fact]
+    public void AnArchiveImportsAsTheFolderItHolds()
+    {
+        string kit = Kit();
+        string zip = Path.Combine(_root, "synthkit.zip");
+        System.IO.Compression.ZipFile.CreateFromDirectory(kit, zip, System.IO.Compression.CompressionLevel.Fastest,
+                                                          includeBaseDirectory: true);
+        string fromZip = Workspace("ws_zip"), fromFolder = Workspace("ws_folder");
+
+        var (exit, err) = Run("import", "pdk", zip, "--into", fromZip);
+        Assert.True(exit == 0, err);
+        Assert.Equal(0, Run("import", "pdk", kit, "--into", fromFolder).Exit);
+
+        string unpacked = Path.Combine(fromZip, KitArchive.KitsFolderName, "synthkit", "synthkit");
+        Assert.True(Directory.Exists(unpacked));
+        static string WithoutPath(string? refs) => Regex.Replace(refs ?? "", "\"Path\":\"[^\"]*\"", "");
+        Assert.Equal(WithoutPath(RefsOf(fromFolder)), WithoutPath(RefsOf(fromZip)));
+        Assert.Contains("kits/synthkit", RefsOf(fromZip), StringComparison.Ordinal);
+    }
+
+    /// <summary>A name taken from the FOLDER is checked as a given one is (R-gdf6-5), and the refusal says
+    /// how to give one.</summary>
+    [Fact]
+    public void AFolderNameThatWouldSplitItsPartReferences_IsRefused()
+    {
+        string bad = Path.Combine(_root, "syn|kit");
+        Directory.Move(Kit(), bad);
+        string ws = Workspace("ws_badfolder");
+
+        var (exit, err) = Run("import", "pdk", bad, "--into", ws);
+
+        Assert.Equal(1, exit);
+        Assert.Contains("--name", err, StringComparison.Ordinal);
+        Assert.Null(RefsOf(ws));
     }
 
     // ── what is never recorded ───────────────────────────────────────────────────────────────────
@@ -250,6 +372,17 @@ public sealed class ImportPdkCliVerbTests : IDisposable
         finally { Console.SetError(realErr); }
 
         Assert.Matches(@"(?m)^warning: .*X1.*'body'", err.ToString());
+    }
+
+    /// <summary>A per-module <c>--python</c> for a module no kit in the run uses is a warning, never a
+    /// refusal (R-gdf6-4): a script passing it for a kit it only sometimes uses must not fail.</summary>
+    [Fact]
+    public void APythonFlagForAModuleNoKitUses_IsAWarning()
+    {
+        var (exit, err) = Run("find", Workspace("ws_python"), "--python", "unused_mod=/envs/x/bin/python");
+
+        Assert.Equal(0, exit);
+        Assert.Contains("--python unused_mod=/envs/x/bin/python was not used", err, StringComparison.Ordinal);
     }
 
     // ── harness ──────────────────────────────────────────────────────────────────────────────────

@@ -316,7 +316,8 @@ public static class PdkReferenceManager
             Corners            = ToStoredCorners(outcome.CornerAxes),
         });
 
-        PdkKitRegistry.SetKit(workspaceRootDir, outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels);
+        PdkKitRegistry.SetKit(workspaceRootDir, outcome.KitName, outcome.Parts ?? [], outcome.OsdiModels,
+                              report.VerilogASources);
         return outcome;
     }
 

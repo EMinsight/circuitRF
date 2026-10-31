@@ -24,7 +24,15 @@ the kit runs on. circuitRF is driven only as a process, exactly as a user would 
 
 Every failure is attributed to one of: ``gdsfactory or the kit`` (it fails in gdsfactory alone too),
 ``circuitRF`` (it builds in gdsfactory and fails or differs through circuitRF; any pin that differs is
-circuitRF's), or ``out of scope`` (a decision of the series excludes it). A reference build whose process dies
+circuitRF's), ``gdsfactory process state`` (see below), or ``out of scope`` (a decision of the series
+excludes it).
+
+**Order dependence is a column, not a guess.** The reference is built in a clean child process; circuitRF's
+worker is one long-lived process that has built other cells first. For every set attributed to circuitRF, the
+harness builds it once more in a child that first built every other offered cell at its defaults. When that
+build alone reproduces the difference (it raises, its ports or geometry change), the set is attributed to
+``gdsfactory process state`` — gdsfactory's own process-wide layout — and counted on its own line, so a
+genuine circuitRF difference is never confused with it. A reference build whose process dies
 without a result is neither side's: it is counted as not compared. Output: ``<out>/report.md`` and ``<out>/report.json``. Nothing is
 written anywhere else. The harness names no kit: the module is an argument.
 """
@@ -49,6 +57,8 @@ from typing import Any
 KIT = "gdsfactory or the kit"
 CRF = "circuitRF"
 SCOPE = "out of scope"
+#: gdsfactory's process-wide layout: the set differs only once other cells were built in the same process.
+STATE = "gdsfactory process state"
 #: Not a verdict on either side: the harness's own reference build died (a fork-unsafe native library, say), so
 #: nothing was compared. Counted on its own, never as the kit's refusal.
 HARNESS = "unattributed (the harness)"
@@ -163,6 +173,17 @@ def regions_of_gds(kdb: Any, path: str) -> dict[tuple[int, int], Any]:
     layout = kdb.Layout()
     layout.read(path)
     return regions_of_cell(kdb, layout, layout.top_cells()[0])
+
+
+def regions_of_flat(kdb: Any, path: str) -> dict[tuple[int, int], Any]:
+    """The in-process flattening :func:`build_isolated` wrote as text, holes and all, on circuitRF's grid."""
+    regions: dict[tuple[int, int], Any] = {}
+    with open(path, encoding="utf-8") as f:
+        dbu = float(f.readline())
+        for line in f:
+            layer, datatype, text = line.rstrip("\n").split(" ", 2)
+            regions.setdefault((int(layer), int(datatype)), kdb.Region()).insert(kdb.Polygon.from_s(text))
+    return {k: on_grid(kdb, r, dbu) for k, r in regions.items()}
 
 
 def regions_of_cell(kdb: Any, layout: Any, cell: Any) -> dict[tuple[int, int], Any]:
@@ -323,7 +344,7 @@ def main(argv: list[str]) -> int:
             ports = built["ports"]
             values = {n: snapshot_value(kinds[n], delta.get(n, defaults[n])) for n in kinds}
             units.append({"row": row, "ci": ci, "k": k, "cell": cell, "values": values,
-                          "ref": ref_path + ".gds", "flat": regions_of_gds(kdb, ref_path + ".flat.gds"),
+                          "ref": ref_path + ".gds", "flat": regions_of_flat(kdb, ref_path + ".flat.txt"),
                           "ports": ports, "snap": f"c{ci}s{k}",
                           "rebuild": lambda cell=cell, delta=delta, at=ref_path + ".again": rebuilt(
                               gf, kdb, cell, delta, at, args.build_timeout)})
@@ -370,6 +391,27 @@ def main(argv: list[str]) -> int:
         unresolved = [l for l in se.splitlines() if "unresolved instance reference" in l]
         compare_chunk(kdb, gds, gen_root, chunk, unresolved)
 
+    # 4b. Order dependence, for every set still charged to circuitRF.
+    offered_names = [c for c, _ in offered]
+    by_row = {id(u["row"]): u for u in units}
+    for row in rows:
+        if row.get("attribution") != CRF or id(row) not in by_row:
+            continue
+        u = by_row[id(row)]
+        warm = build_isolated(gf, kdb, row["cell"], row["params"], os.path.join(out, "ref", u["snap"] + ".warm"),
+                              max(args.build_timeout, 900), warm=offered_names)
+        if "crash" in warm:
+            row["afterOthers"] = "not built"
+        elif "error" in warm:
+            row["afterOthers"] = "gdsfactory refuses it too"
+        elif warm["ports"] != u["ports"] or not within(xor(kdb, u["flat"], regions_of_flat(kdb, os.path.join(
+                out, "ref", u["snap"] + ".warm.flat.txt")))):
+            row["afterOthers"] = "gdsfactory's own build differs too"
+        else:
+            row["afterOthers"] = "same as alone"
+        if row["afterOthers"] in ("gdsfactory refuses it too", "gdsfactory's own build differs too"):
+            row["attribution"] = STATE
+
     # 5. The report.
     write_report(args, out, rows, attribution_rows, {
         "cellsInKit": len(cells_all), "offered": len(offered), "tested": len(chosen), "tally": tally,
@@ -385,15 +427,22 @@ def main(argv: list[str]) -> int:
 
 
 def build_isolated(gf: Any, kdb: Any, cell: str, delta: dict, prefix: str, timeout: float,
-                   fresh: bool = False) -> dict:
-    """Build one set in gdsfactory and write ``<prefix>.gds`` (gdsfactory's own GDS) and ``<prefix>.flat.gds``
+                   fresh: bool = False, warm: list[str] | None = None) -> dict:
+    """Build one set in gdsfactory and write ``<prefix>.gds`` (gdsfactory's own GDS) and ``<prefix>.flat.txt``
     (its in-process flattening), returning ``{"ms", "ports"}`` or ``{"error"}``.
+
+    **The flattening is kept as polygon text, not GDS.** GDS cannot hold a polygon with a hole: writing one
+    cuts it into a keyhole, and the cut's end point is rounded onto the grid, which moves the outline by a
+    sliver. Measured on one kit's ring-shaped cells: gdsfactory's own GDS differs from its own polygons by
+    just over the XOR tolerance, and circuitRF's export matches the polygons exactly. Written as GDS, the
+    flattening carried the same sliver and could not tell the two apart.
 
     **In a forked child, killed at ``timeout`` seconds.** A gdsfactory build can loop without end on one
     parameter value inside compiled code (measured on one kit: a ring width halved), where no Python signal
     reaches it; a set that never builds is the kit's refusal, not a reason for the matrix to stop. Forking
     after the kit is imported costs milliseconds. Where there is no fork, the build runs here, unlimited.
-    ``fresh`` clears gdsfactory's cell cache first, so a second build is a second build.
+    ``fresh`` clears gdsfactory's cell cache first, so a second build is a second build. ``warm`` names cells
+    built at their defaults first, in the same child — the state circuitRF's worker generates from.
     """
     result_path = prefix + ".json"
     try:
@@ -405,17 +454,19 @@ def build_isolated(gf: Any, kdb: Any, cell: str, delta: dict, prefix: str, timeo
         try:
             if fresh:
                 gf.clear_cache()
+            for other in warm or []:
+                try:
+                    gf.get_component(other)
+                except Exception:  # noqa: BLE001 - a cell that will not build leaves its trace or none
+                    pass
             t0 = time.perf_counter()
             comp = gf.get_component(cell, **delta)
-            layout = kdb.Layout()
-            layout.dbu = float(comp.kcl.dbu)
-            top = layout.create_cell("FLAT")
+            lines = [repr(float(comp.kcl.dbu))]
             for key, polys in comp.get_polygons(by="tuple").items():
-                shapes = top.shapes(layout.layer(int(key[0]), int(key[1])))
-                for poly in polys:
-                    shapes.insert(poly)
+                lines += [f"{int(key[0])} {int(key[1])} {poly.to_s()}" for poly in polys]
             ms = round((time.perf_counter() - t0) * 1000, 1)
-            layout.write(prefix + ".flat.gds")
+            with open(prefix + ".flat.txt", "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
             comp.write_gds(prefix + ".gds")
             ports = [{"name": str(p.name), "x": p.center[0], "y": p.center[1], "width": float(p.width),
                       "deg": float(p.orientation if p.orientation is not None else 0.0) % 360}
@@ -457,7 +508,7 @@ def rebuilt(gf: Any, kdb: Any, cell: str, delta: dict, prefix: str, timeout: flo
     """The set built afresh, as flattened regions — gdsfactory's cell cache cleared first, or it would hand
     back the first build. A second build that fails counts as different."""
     again = build_isolated(gf, kdb, cell, delta, prefix, timeout, fresh=True)
-    return {} if "error" in again or "crash" in again else regions_of_gds(kdb, prefix + ".flat.gds")
+    return {} if "error" in again or "crash" in again else regions_of_flat(kdb, prefix + ".flat.txt")
 
 
 def write_clay(ws: str, name: str, snapshots: dict, instances: list[tuple[str, int]]) -> None:
@@ -558,6 +609,7 @@ def write_report(args: argparse.Namespace, out: str, rows: list[dict], attributi
         notCompared=count(lambda r: r.get("attribution") == HARNESS),
         failingKit=count(lambda r: r.get("outcome") not in (None, "match", "kit refused") and r.get("attribution") == KIT),
         failingCircuitRF=count(lambda r: r.get("attribution") == CRF),
+        failingProcessState=count(lambda r: r.get("attribution") == STATE),
         notOffered={}, notOfferedDisagreements=sum(1 for a in attribution_rows if not a["agree"]))
     for a in attribution_rows:
         key = a["report"] or "(not in the report)"
@@ -574,6 +626,7 @@ def write_report(args: argparse.Namespace, out: str, rows: list[dict], attributi
           f"| Matched | {s['matched']} |", f"| Refused by gdsfactory (not sent) | {s['kitRefused']} |",
           f"| Failing, gdsfactory or the kit | {s['failingKit']} |",
           f"| **Failing, circuitRF** | **{s['failingCircuitRF']}** |",
+          f"| Failing only after other cells were built in one process (gdsfactory process state) | {s['failingProcessState']} |",
           f"| Not compared: the reference build process crashed | {s['notCompared']} |",
           f"| Not-offered reasons disagreeing with the harness | {s['notOfferedDisagreements']} |",
           f"| Technology | {s['technology'] or '—'} ({s['technologyNotes']} notes, {s['technologyWarnings']} warnings) |",
@@ -583,15 +636,16 @@ def write_report(args: argparse.Namespace, out: str, rows: list[dict], attributi
           "## Not offered", "", "| Cell | Import report | Harness | Agree | Attribution |", "|---|---|---|---|---|"]
     md += [f"| {a['cell']} | {a['report'] or '—'} | {a['harness'] or 'builds'} | {'yes' if a['agree'] else '**no**'} "
            f"| {a['attribution']} |" for a in attribution_rows]
-    md += ["", "## Every set that did not match", "", "| Cell | Set | Outcome | Attribution | XOR area (DBU²) | Detail |",
-           "|---|---|---|---|---|---|"]
+    md += ["", "## Every set that did not match", "",
+           "| Cell | Set | Outcome | Attribution | After other cells | XOR area (DBU²) | Detail |",
+           "|---|---|---|---|---|---|---|"]
     for r in rows:
         if r.get("outcome") == "match":
             continue
         detail = r.get("detail") or "; ".join(r.get("pins") or []) or ", ".join(
             f"{k}: {v['area']} > {v['tolerance']}" for k, v in (r.get("xor") or {}).items() if v["area"] > v["tolerance"])
         md.append(f"| {r['cell']} | {r['set']} | {r.get('outcome')} | {r.get('attribution') or '—'} "
-                  f"| {r.get('xorArea', '—')} | {detail.replace('|', '/')} |")
+                  f"| {r.get('afterOthers', '—')} | {r.get('xorArea', '—')} | {detail.replace('|', '/')} |")
     with open(os.path.join(out, "report.md"), "w", encoding="utf-8") as f:
         f.write("\n".join(md) + "\n")
 

@@ -57,7 +57,7 @@ internal static class ExplainPdk
             }
         }
 
-        string? flag = GeneratedCells.PythonOverride;
+        string? flag = GeneratedCells.Python.For(module);
         string? recorded = GdsfactoryInterpreterPreferences.Recorded(module);
         if ((flag ?? recorded) is not { } interpreter)
             return JsonRun.Fail(CliDiagnostics.ExplainPdkNoInterpreter(GdsfactoryInterpreterPreferences.NoInterpreterSentence(module)));

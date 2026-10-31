@@ -124,6 +124,17 @@ public sealed class PdkImportReport
     public PdkAsset? LayerTechnology { get; set; }
 
     /// <summary>
+    /// The Verilog-A modules the kit ships SOURCE for, each with the file declaring it — the modules a
+    /// compiler would turn into the <c>.osdi</c> artefacts the kit's model cards route to. Empty for
+    /// the ordinary kit.
+    ///
+    /// <para>Held so a device whose model type has no compiled model and no built-in can be told the
+    /// truth: "compile them" is advice only for a type the kit actually ships a source for
+    /// (brief-gdf-6 R-gdf6-3). Keyed by module name, case-insensitively, as a card names its type.</para>
+    /// </summary>
+    public Dictionary<string, string> VerilogASources { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// The corner choices this kit offers — one axis per file that declares sections, its
     /// <see cref="PdkCornerAxis.AxisId"/> being that file's own kit-relative path.
     ///

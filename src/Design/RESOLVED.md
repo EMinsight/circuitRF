@@ -25005,3 +25005,31 @@ A review of `KitGlyphSymbol` ran each suspicion through `TryBuild` before fixing
   an unknown σ is now a counted WARNING; a substrate whose card states σ = 0 no longer makes every level of
   its material a device layer. The layer-views directory is circuitRF's, made and always removed by it —
   a directory named in the process's output was deleted recursively.
+
+## Brief gdf-6: kits on demand, one Import PDK, compile advice (2026-10-30)
+
+- **A headless run loads a kit when it first needs one, at `PdkKitRegistry`, not before the extraction.**
+  `SetLoader(workspace, kit => bool)`; a lookup that misses asks it once per kit. The load runs OUTSIDE the
+  registry's lock, behind a `Lazy<bool>` (ExecutionAndPublication) chosen under it: holding the lock for a
+  multi-second kit read would stall every other lookup, and a loader that consulted the registry on another
+  thread would deadlock. A loader that throws is remembered as failed. `ResetAllForTests` also drops loaders;
+  `WorkspaceKits.Forget` drops a workspace's loader and its kits. Gate: `KitsLoadedOnDemandTests` (counts).
+- **A `.cnl` reaches a kit only through `Provider=`**, i.e. `ExternalDeviceRegistry`, never the part
+  registry: the CLI's per-workspace loader is also the provider resolver, and resolving asks
+  `PdkKitRegistry.HasKit`, which loads. A schematic's subcircuit-backed kit part extracts to a plain `define`
+  with no provider at all, so a netlist written from one names no kit.
+- **`PdkWorkspaceImport.Import` decides folder routing (D2)** and is the one call both Import PDK and
+  `import pdk` make. A gdsfactory source tree inside a folder makes it two kits only when the reader finds
+  something of an ordinary kit (`HoldsOrdinaryKit`: a part, corner axis, netlist, model, symbol, catalog or
+  network data) — documentation, artwork and `.py` files are what any Python package carries, and counting
+  them would record a zero-part kit for every gdsfactory source tree. The report gets an Info finding naming
+  the second kit, so every renderer of the report says it.
+- **A name derived from the kit's folder is checked** (`ImportResult.NameProblem`); before, only `--name`
+  was, and a folder called `a|b` recorded a kit whose every part reference split.
+- **`.va`/`.vams` are classified** (RecognizedNotSupported, "Verilog-A source"), and their modules are read
+  into `PdkImportReport.VerilogASources` (module → kit-relative file; first declaration wins in asset
+  order). The regex runs on `VerilogASourceCompiler.StripComments` text; `endmodule` cannot match because
+  there is no word boundary inside it. Carried by `SetKit(..., verilogASources)`.
+- **`KitArchive` moved to `src/Design/Schematic`**; its `kits/` constant now comes from `WorkspaceFolders`
+  directly rather than through `src/Ui`'s archive scanner. Its one exception message is a pre-existing line,
+  added to the firewall's user-facing-text allowlist with the move.

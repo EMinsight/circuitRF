@@ -766,7 +766,7 @@ internal static class ToolCatalog
                 // granting itself consent to run a kit's code is what the consent exists to stop. The
                 // operator's `serve --trust-kit` and a decision recorded at the keyboard still apply.
                 new("pdk", ["import", "pdk"],
-                    [new("path", true, "The kit's folder (an archive is unpacked first).")],
+                    [new("path", true, "The kit's folder, or a .zip of one (unpacked into the workspace's kits/ folder first).")],
                     [
                         new("into", "--into", OptKind.Path, "The workspace whose .cws references the kit."),
                         new("name", "--name", OptKind.Str,  "The name its parts are referenced by. Default: the kit folder's name."),

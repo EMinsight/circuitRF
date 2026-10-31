@@ -150,10 +150,22 @@ listed with its exception's last line and offered no further: gdsfactory's own a
 build and then fail to flatten (an API mismatch inside gdsfactory), and they are reported with that
 message rather than offered and failing on placement. Nothing is worked around.
 
+**Describing runs in a forked child** where the platform can fork (brief-gdf-6 R-gdf6-6 D5b): the child
+builds every cell and returns plain data through a pipe; the worker registers the generators and builds
+nothing until it is asked to generate. gdsfactory keeps every cell of a process in one layout, by name, so
+building the whole kit in the worker left fixed-GDS cells behind whose names a later import reused —
+skipping the kit's own add-ports step, so a standard cell came back with its geometry and no pins, and no
+cache clear restores them. Windows has no fork: there the describe stays in-process, and a fixed-GDS cell
+that shares a name with a cell another one imported first may still come back without its ports.
+
 ## 5. Generate
 
 `gf.get_component(name, **params)` with only the parameters that differ from the default, so
-gdsfactory's own cell cache stays effective. Flattened with `get_polygons(by="tuple")`; holes are kept.
+gdsfactory's own cell cache stays effective. **A cell built again with other parameters may raise "Cellname … already
+exists"** from a fixed-name helper cell an earlier build left in the layout (D5a): the named cells are
+deleted together with every cell containing them, gdsfactory's cache is cleared so nothing cached still
+points at one, the cell is built once more, and the result's diagnostics say so. A second refusal is
+gdsfactory's. Flattened with `get_polygons(by="tuple")`; holes are kept.
 Coordinates are scaled once: kit DBU × the kit's `dbu` gives µm, and `crf.dbu(µm × tech.dbu_per_micron)`
 gives circuitRF DBU — never `round()`, never `int()`.
 

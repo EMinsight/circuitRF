@@ -566,6 +566,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "cli.opt.preset-needs-schematic",
         "cli.opt.vars-not-optimized",
         "cli.opt.vars-whole-complex",
+        // brief-gdf-6 R-gdf6-4: a per-module --python no kit in the run used.
+        "cli.python.module-unused",
         "cli.run.failed",
         "cli.verb.none",
         "cli.verb.unknown",

@@ -67,6 +67,9 @@ public static class PdkFormatRegistry
 /// <summary>Classifies by file extension — the common, boring cases.</summary>
 internal sealed class ExtensionRecognizer : IPdkFormatRecognizer
 {
+    /// <summary>The classification of a Verilog-A source file, named so the importer can find them.</summary>
+    public const string VerilogASourceFormat = "Verilog-A source";
+
     public PdkAsset? Recognize(string path, Func<string> peek)
     {
         string name = path[(path.LastIndexOf('/') + 1)..];
@@ -134,6 +137,15 @@ internal sealed class ExtensionRecognizer : IPdkFormatRecognizer
                     "Built from the kit's own Verilog-A sources. circuitRF matches the modules it " +
                     "declares against the model cards this kit's devices name, and evaluates them in " +
                     "a separate process — it is never loaded into circuitRF itself."),
+
+            // A model's SOURCE: what a Verilog-A compiler turns into the .osdi above. Never compiled
+            // by the import — which modules it declares is read, so a device naming one can be told
+            // to compile it, and a device naming anything else is not sent looking for a file.
+            ".va" or ".vams" =>
+                new(path, PdkAssetKind.ModelData, PdkAssetSupport.RecognizedNotSupported,
+                    VerilogASourceFormat,
+                    "The source of a compiled model. circuitRF reads which modules it declares; a " +
+                    "Verilog-A compiler builds it into the '.osdi' a device of that type is evaluated by."),
 
             ".pdf" or ".txt" or ".md" or ".html" or ".htm" =>
                 new(path, PdkAssetKind.Documentation, PdkAssetSupport.Supported, "documentation"),

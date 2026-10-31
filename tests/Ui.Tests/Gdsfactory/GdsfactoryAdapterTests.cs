@@ -260,6 +260,40 @@ public sealed class GdsfactoryAdapterTests : IDisposable
         Assert.Equal(["/envs/rf/bin/python"], probed);
     }
 
+    /// <summary>brief-gdf-6 R-gdf6-4: <c>--python module=interp</c> names one module's interpreter, so a design
+    /// using two kits in two environments runs headlessly with each launched in its own; a bare <c>--python</c>
+    /// still applies to every module.</summary>
+    [Fact]
+    public void PythonPerModule_LaunchesEachKitInItsOwnInterpreter_AndABareOneAppliesToBoth()
+    {
+        string site = Site();
+        Distribution(site, "synth-kit-a", "1.0", "synth_kit_a", ["gdsfactory"]);
+        Distribution(site, "synth-kit-b", "1.0", "synth_kit_b", ["gdsfactory"]);
+        string ws = Path.Combine(_root, "ws2");
+        Directory.CreateDirectory(ws);
+        string Declare(string module) => KitPCellLibrary.EnsureDeclaredGdsfactory(
+            ws, new GdsfactoryKit(module.Replace('_', '-'), "1.0", null, module, Path.Combine(site, module)), out _, out _)!;
+        var folders = new Dictionary<string, string> { ["synth_kit_a"] = Declare("synth_kit_a"), ["synth_kit_b"] = Declare("synth_kit_b") };
+
+        // Each value a --python was given, parsed as the command line parses them.
+        Dictionary<string, string?> Launched(params string[] values)
+        {
+            var flags = CircuitRF.Cli.GeneratedCells.PythonFlags.Parse(values);
+            using var resolver = new PCellWorkerResolver(ws, trust: _ => PCellTrustDecision.Unknown,
+                moduleInterpreter: flags.For, runProbe: FakeProbe("3.12.4", [site], []));
+            return folders.ToDictionary(kv => kv.Key, kv =>
+                resolver.DefaultInterpreter(PCellGeneratorManifest.TryRead(kv.Value, out _)!, kv.Value)?.Command);
+        }
+
+        var own = Launched("synth_kit_a=/envs/a/bin/python", "synth_kit_b=/envs/b/bin/python");
+        Assert.Equal("/envs/a/bin/python", own["synth_kit_a"]);
+        Assert.Equal("/envs/b/bin/python", own["synth_kit_b"]);
+
+        var bare = Launched("/envs/both/bin/python", "synth_kit_b=/envs/b/bin/python");
+        Assert.Equal("/envs/both/bin/python", bare["synth_kit_a"]);
+        Assert.Equal("/envs/b/bin/python", bare["synth_kit_b"]);   // a module's own entry beats the bare one
+    }
+
     /// <summary>Finding 1: consent is for the installed directory the declaration names. An environment
     /// whose own copy of the module is elsewhere is different code, and is refused rather than run.</summary>
     [Fact]

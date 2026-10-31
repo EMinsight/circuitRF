@@ -25,19 +25,94 @@ internal static class GeneratedCells
 
     /// <summary>Names the interpreter a gdsfactory kit runs in for THIS invocation (brief-gdf-2
     /// R-gdf2-2b). Taken with <see cref="TrustFlag"/>, so every verb that rebuilds generated cells
-    /// honours it, and <c>import pdk --module</c> and <c>explain --pdk</c> read it.</summary>
+    /// honours it, and <c>import pdk --module</c> and <c>explain --pdk</c> read it.
+    ///
+    /// <para>Two forms, and the flag repeats (brief-gdf-6 R-gdf6-4): <c>--python &lt;interp&gt;</c> names
+    /// the interpreter for every module, <c>--python &lt;module&gt;=&lt;interp&gt;</c> for one, and a
+    /// module's own entry beats the bare one. <c>=</c> cannot occur in a module name, so the two cannot be
+    /// confused — which is what lets a design using two kits in two environments run on a build machine,
+    /// where nobody is at a keyboard to record a per-user choice.</para></summary>
     public const string PythonFlag = "--python";
 
-    /// <summary>What <see cref="PythonFlag"/> named, or null. Reset by every <see cref="TakeTrustFlags"/>.</summary>
-    internal static string? PythonOverride { get; private set; }
+    /// <summary>
+    /// What this invocation's <see cref="PythonFlag"/>s named: a bare interpreter, a per-module table, and
+    /// which modules were asked about. Immutable once parsed, so one invocation's table is never another's.
+    /// </summary>
+    internal sealed class PythonFlags
+    {
+        public static readonly PythonFlags None = new(null, new Dictionary<string, string>(StringComparer.Ordinal));
+
+        private readonly Dictionary<string, string> _byModule;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _asked = new(StringComparer.Ordinal);
+
+        private PythonFlags(string? bare, Dictionary<string, string> byModule) => (Bare, _byModule) = (bare, byModule);
+
+        /// <summary>What a bare <c>--python</c> named, or null. The last one given wins.</summary>
+        public string? Bare { get; }
+
+        /// <summary>Each value a <c>--python</c> was given, in order.</summary>
+        public static PythonFlags Parse(IEnumerable<string> values)
+        {
+            string? bare = null;
+            var byModule = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (string value in values)
+                if (TrySplitModule(value, out string module, out string interpreter)) byModule[module] = interpreter;
+                else bare = value;
+            return new PythonFlags(bare, byModule);
+        }
+
+        /// <summary>The module's own entry, else the bare one, else null — and the module noted as asked.</summary>
+        public string? For(string module)
+        {
+            _asked.TryAdd(module, 0);
+            return _byModule.TryGetValue(module, out string? own) ? own : Bare;
+        }
+
+        /// <summary>The per-module entries no kit asked about, by module.</summary>
+        public IEnumerable<(string Module, string Interpreter)> Unused()
+            => _byModule.Where(kv => !_asked.ContainsKey(kv.Key))
+                        .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                        .Select(kv => (kv.Key, kv.Value));
+
+        /// <summary>
+        /// <c>module=interp</c> split, when the text before the first <c>=</c> is a module name — dotted
+        /// identifiers and nothing else. Anything else is an interpreter path that happens to hold an
+        /// <c>=</c>, which a file name may.
+        /// </summary>
+        private static bool TrySplitModule(string value, out string module, out string interpreter)
+        {
+            module = interpreter = "";
+            int at = value.IndexOf('=');
+            if (at <= 0 || at == value.Length - 1) return false;
+            string head = value[..at];
+            if (!System.Text.RegularExpressions.Regex.IsMatch(head, @"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$"))
+                return false;
+            (module, interpreter) = (head, value[(at + 1)..]);
+            return true;
+        }
+    }
+
+    /// <summary>This invocation's <see cref="PythonFlag"/>s. Replaced by every <see cref="TakeTrustFlags"/>.</summary>
+    internal static PythonFlags Python { get; private set; } = PythonFlags.None;
 
     /// <summary>
-    /// The interpreter for a gdsfactory kit's module: <c>--python</c> first, then the choice this user
-    /// recorded at the keyboard — read, never written. Null when neither says, and the run refuses with
-    /// <see cref="GdsfactoryInterpreterPreferences.NoInterpreterSentence"/>.
+    /// The interpreter for a gdsfactory kit's module: its own <c>--python module=</c>, else a bare
+    /// <c>--python</c>, else the choice this user recorded at the keyboard — read, never written. Null when
+    /// none says, and the run refuses with <see cref="GdsfactoryInterpreterPreferences.NoInterpreterSentence"/>.
     /// </summary>
     internal static string? InterpreterFor(string module)
-        => PythonOverride ?? GdsfactoryInterpreterPreferences.Recorded(module);
+        => Python.For(module) ?? GdsfactoryInterpreterPreferences.Recorded(module);
+
+    /// <summary>
+    /// A warning for each <c>--python module=</c> naming a module no kit in this invocation asked about —
+    /// never a refusal: a script that passes the flag for a kit it only sometimes uses must not fail
+    /// (R-gdf6-4). Called once the verb has run.
+    /// </summary>
+    internal static void ReportUnusedPythonModules()
+    {
+        foreach (var (module, interpreter) in Python.Unused())
+            JsonRun.Report(CliDiagnostics.PythonModuleUnused(module, interpreter));
+    }
 
     /// <summary>The kit directories <c>--trust-kit</c> allowed for THIS invocation. Reset by every
     /// <see cref="TakeTrustFlags"/>, so one call never inherits another call's grant.</summary>
@@ -74,7 +149,7 @@ internal static class GeneratedCells
     public static string[] TakeTrustFlags(string[] args)
     {
         _trusted = [];
-        PythonOverride = null;
+        var python = new List<string>();
         var rest = new List<string>(args.Length);
         for (int i = 0; i < args.Length; i++)
         {
@@ -89,11 +164,12 @@ internal static class GeneratedCells
             }
             if (args[i] == PythonFlag && i + 1 < args.Length)
             {
-                PythonOverride = args[++i];
+                python.Add(args[++i]);
                 continue;
             }
             rest.Add(args[i]);
         }
+        Python = PythonFlags.Parse(python);
         if (rest.Count > 0 && rest[0] == "serve") _operatorTrusted = [.. _trusted];
         return [.. rest];
     }

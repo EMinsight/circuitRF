@@ -138,7 +138,9 @@ Python than the one you picked is listed, dimmed, with the reason.</li>
 <li><strong>Answer the consent prompt</strong> (below).</li>
 <li><strong>Read the report.</strong></li>
 </ol>
-<p><strong>Kit folder…</strong> works too, on a folder holding a gdsfactory kit's source, and takes the same steps.</p>
+<p><strong>Kit folder…</strong> works too, on a folder holding a gdsfactory kit's source, and takes the same steps. When
+the folder is a kit's own tree that also carries its gdsfactory package, both are imported: the kit's
+symbols and models first, then the package. The first report says that the second import follows.</p>
 <p><strong>The interpreter is yours, not the workspace's.</strong> It is remembered per user, by the kit's module name,
 and never written into the workspace. A colleague who opens the workspace is asked for their own once.
 The workspace records only the module and the version last seen; a different installed version is a
@@ -354,7 +356,14 @@ parameter too), so none is converted. The parameter's tooltip says so.</li>
 <p><code>--allow-code</code> allows the kit for that one command and records nothing. Without it the kit is declared
 but not run. Every command that regenerates cells (<code>render</code>, <code>convert</code>, <code>check</code> and the rest) takes
 <code>--python</code> for the interpreter and <code>--trust-kit &lt;kit directory&gt;</code> for consent; on a machine where you have
-already allowed the kit, neither is needed. <a href="cli.html">The command line</a> has the details.</p>
+already allowed the kit, neither is needed.</p>
+<p><code>--python &lt;interpreter&gt;</code> names one interpreter for every gdsfactory kit in the command.
+<code>--python &lt;module&gt;=&lt;interpreter&gt;</code> names it for one kit, and can be given once per kit, so a design using
+two kits installed in two environments runs from a script:</p>
+<pre><code>circuitrf convert top.clay -o top.gds --python kit_a=/envs/a/bin/python --python kit_b=/envs/b/bin/python
+</code></pre>
+<p>A kit's own <code>--python &lt;module&gt;=…</code> wins over a plain <code>--python</code>. Naming a module the command does not use
+is a warning, not an error. <a href="cli.html">The command line</a> has the details.</p>
 
 <nav class="page-nav">
   <a class="prev" href="pdk-authoring.html"><span class="dir">Previous</span><span class="name">PDK Authoring</span></a>

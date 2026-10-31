@@ -4477,15 +4477,33 @@ saves. Beside them: a term the file lacks, an extension the verb does not write,
 ## 34. `import pdk` — File ▸ Import PDK, headless (brief-gdf-1)
 
 ```
-circuitrf import pdk <kit-folder> --into <workspace> [--name <n>] [--allow-code] [--json]
+circuitrf import pdk <kit-folder | kit.zip> --into <workspace> [--name <n>] [--allow-code] [--json]
 ```
 
-A **noun on `import`**, and it **owns no import logic**. `PdkWorkspaceImport` in `src/Design` is the
-sequence the GUI's own import runs after its picker closes — `Read` (the importer), `Install` (the parts,
-translated in memory, against the model libraries the workspace references) and `Commit` (the `.cws`
-kit reference, and the kit's parametric-cell declaration) — and `WorkspaceViewModel` calls those three
-rather than holding a copy. A referenced kit read on a workspace OPEN goes through the same class
-(`ReadReferenced`).
+A **noun on `import`**, and it **owns no import logic**. `PdkWorkspaceImport.Import` in `src/Design` is
+File ▸ Import PDK after its picker closes — `Read` (the importer), `Install` (the parts, translated in
+memory, against the model libraries the workspace references) and `Commit` (the `.cws` kit reference, and
+the kit's parametric-cell declaration) — and since brief-gdf-6 **both callers make that one call**: the
+GUI on a worker thread with its stages on a live row (the `progress` callback), the verb with none.
+`WorkspaceViewModel` no longer calls the three steps itself; what it does after an import (the palette,
+the registry, the report dialog, the technology offer) consumes the result. A referenced kit read on a
+workspace OPEN goes through the same class (`ReadReferenced`).
+
+- **A folder is routed once, inside `Import`** (brief-gdf-6 D2). A folder holding a gdsfactory kit's
+  source tree anywhere inside it is TWO kits when the reader also finds anything of an ordinary kit in it
+  (a part, a symbol, a model, a netlist): the ordinary import runs, its report says that a second kit
+  follows and from where, and the gdsfactory import of the package runs after it (§34.1). A folder holding
+  only the package is the gdsfactory kit alone. Until brief-gdf-6 each caller decided this for itself, and
+  the ordinary half of a folder holding both was skipped with nothing said. The exit code is the worse of
+  the two halves.
+- **An archive** (`.zip`) is unpacked into `<workspace>/kits/<archive name>/` by `KitArchive` — the code
+  the GUI unpacks with, in `src/Design` since brief-gdf-6 — and imported as the folder it became. The
+  folder is the first stdout line (`unpacked<TAB><dir>`) and a `kit` output in `--json`. **Never over an
+  existing folder**: nothing headless can ask, and someone may have edited it, so that is a refusal naming
+  the folder to import instead.
+- **A name taken from the folder is checked like `--name`** (brief-gdf-6 R-gdf6-5): a folder can be called
+  anything, and a character that splits a part reference splits it however the name arrived. The refusal
+  names `--name`; in the GUI the report says so (rename the folder) and nothing is recorded.
 
 - **Stdout** is the kit's name and folder, the import's tally, the "can anything be placed" sentence, the
   corner axes it declares and the layer technology it found. **Stderr** carries every finding of the
@@ -4504,12 +4522,18 @@ rather than holding a copy. A referenced kit read on a workspace OPEN goes throu
   not be written — nothing usable was recorded. A kit with no placeable parts is recorded, as the GUI
   records it, with the warning that says why.
 
-**A schematic or netlist inside a workspace now runs against that workspace's kits.** Every `.csch`
-extraction and every `.cnl` run verb loads the kits its workspace's `.cws` references first
-(`WorkspaceKits` → `PdkWorkspaceImport.LoadReferenced`, once per workspace per process) and registers the
-device-provider resolver for them — what a workspace open does in the GUI. Before this nothing outside
-the window populated the kit registry, so a schematic holding one kit part could not be netlisted or run
-headlessly. It writes nothing. A kit that cannot be loaded is `run.kit.not-loaded`.
+**A schematic or netlist inside a workspace runs against that workspace's kits, each loaded the first
+time the run needs it** (brief-gdf-6 R-gdf6-1). `WorkspaceKits` installs a per-workspace LOADER on
+`PdkKitRegistry` — asked on a lookup that misses, for a kit not yet asked about — and a provider resolver
+on `ExternalDeviceRegistry`, which a netlist's `Provider=` asks. Each loads one referenced kit
+(`PdkWorkspaceImport.LoadReferencedKit`), at most once per process, and registers that kit's
+device-worker resolver with it. It used to load EVERY referenced kit before every run, seconds on a large
+kit added to a run that used none of its parts; it cannot be skipped by looking at the top schematic,
+because a child cell can reach a kit part and only the extraction finds out — so the decision lives at
+the registry every reader already asks. `check` and `explain` follow from the same seam. It writes
+nothing. A kit that cannot be loaded is `run.kit.not-loaded`, raised when a run needed it — a run that
+uses no kit says nothing about kits. **The application still loads every kit at workspace open**: its
+palette needs every kit's parts whether a design uses them or not.
 
 **An extraction's conflicts are said** (`run.extraction.conflict`) by `netlist` and the run verbs — the
 sentences the GUI posts after Simulate, an instance the extraction SKIPPED above all, which was otherwise
@@ -4535,6 +4559,12 @@ road. `docs/design/pcell-gdsfactory-bridge.md` is the full account.
 - **The interpreter is per user.** `--python` names it for this run; otherwise the one recorded in the
   application for that module. Neither is a refusal naming `--python`. `--python` is taken before
   dispatch (like `--trust-kit`), so every geometry verb that rebuilds a gdsfactory kit's cells honours it.
+  **Two forms, and the flag repeats** (brief-gdf-6 R-gdf6-4): `--python <interp>` for every module,
+  `--python <module>=<interp>` for one; a module's own entry beats the bare one. `=` cannot occur in a
+  module name, so the forms cannot be confused (a value whose text before `=` is not a dotted identifier is
+  an interpreter path). A per-module entry no kit in the run asked about is a warning,
+  `cli.python.module-unused`, never a refusal: a script that passes it for a kit it only sometimes uses
+  must not fail.
 - **Consent** keys on the kit's installed directory with links resolved; `--allow-code` grants it for this
   one import and is never recorded. Without it the kit is declared, not run, and the import exits 0
   saying so.
@@ -4561,6 +4591,11 @@ road. `docs/design/pcell-gdsfactory-bridge.md` is the full account.
   (`explain.pdk.interpreter` / `explain.pdk.no-interpreter` / `explain.pdk.note`).
 
 Gate: `tests/Ui.Tests/Cli/ImportPdkCliVerbTests.cs` — the verb as a process against the in-process
-`PdkWorkspaceImport.Import` (the `.cws` reference and both declaration files, byte for byte), the
-comment-stripped source scan of the view model, the consent seam (`ImportPdk.InterpreterFinder` is never
-asked for an interpreter without consent), and a placed kit part netlisted with no window.
+`PdkWorkspaceImport.Import` AND against the GUI's own command path driven with no window
+(`WorkspaceViewModel.ImportPdkPathAsync`; the `.cws` reference and both declaration files, byte for byte),
+the comment-stripped source scan proving the view model calls `Import` and none of its steps, the
+two-kit folder (routine: the ordinary half recorded and the gdsfactory half reached; tier B: both
+imported), an archive against its unpacked folder, a folder name that would split a reference, the
+consent seam (`ImportPdk.InterpreterFinder` is never asked for an interpreter without consent), and a
+placed kit part netlisted with no window. On-demand loading: `tests/Ui.Tests/Cli/KitsLoadedOnDemandTests.cs`
+(counts, never timings).

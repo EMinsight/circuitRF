@@ -18,8 +18,11 @@ namespace CircuitRF.Design.Schematic;
 /// <para>Three steps, kept separate because the application runs them on different threads and shows a
 /// progress stage between them: <see cref="Read"/> (the kit off disk), <see cref="Install"/> (its parts,
 /// translated in memory) and <see cref="Commit"/> (what the workspace records — the <c>.cws</c>
-/// reference and the kit's parametric-cell declaration). <see cref="Import"/> is the three in order.
-/// What a caller does with the result — a palette, messages, a registry — stays the caller's.</para>
+/// reference and the kit's parametric-cell declaration). <see cref="Import"/> is the three in order,
+/// and it is what BOTH callers run (brief-gdf-6 R-gdf6-2): the application on a worker thread with its
+/// stages shown through <c>progress</c>, the CLI with none. What a caller does with the result — a
+/// palette, messages, a registry, the report dialog — stays the caller's; what is written is this
+/// function's, so the two cannot write different things.</para>
 ///
 /// <para><b>Diagnostics are returned, never posted</b> (this project's rule): every sentence the GUI
 /// raises as a message is a value here.</para>
@@ -95,15 +98,61 @@ public static class PdkWorkspaceImport
     /// <param name="PCellProblem">Why the kit's cell library could not be examined, or null.</param>
     public sealed record CommitResult(string? RecordProblem, PCellDeclaration? PCells, string? PCellProblem);
 
-    /// <summary>The whole import, for a caller with no stages to show.</summary>
+    /// <summary>What <see cref="Import"/> did.</summary>
     /// <param name="Report">The importer's own findings — the import report.</param>
-    /// <param name="Outcome">The installed parts, or null when installing threw (<see cref="InstallProblem"/>).</param>
+    /// <param name="Outcome">The installed parts, or null when installing threw (<see cref="InstallProblem"/>)
+    /// or nothing was installed.</param>
     /// <param name="Commit">What the workspace recorded, or null when there was nothing to record.</param>
     public sealed record ImportResult(
         PdkImportReport Report,
         PdkPartInstaller.InstallOutcome? Outcome,
         string? InstallProblem,
-        CommitResult? Commit);
+        CommitResult? Commit)
+    {
+        /// <summary>
+        /// The gdsfactory kit SOURCE TREE the imported folder also holds, or null (D2). The caller runs
+        /// that half — choosing an interpreter and asking consent are its own — and reports it as the
+        /// second of two things imported.
+        /// </summary>
+        public GdsfactoryKit? Gdsfactory { get; init; }
+
+        /// <summary>
+        /// True when the folder held a gdsfactory source tree and nothing else of a kit's — no part, no
+        /// symbol, no model — so the ordinary import was not run and nothing was recorded for it. The
+        /// report is still the reader's own, for a caller that wants to show what was there.
+        /// </summary>
+        public bool OnlyGdsfactory { get; init; }
+
+        /// <summary>Why the kit's name, derived from its folder, cannot name a kit (R-gdf6-5), or null.
+        /// Set, nothing was installed or recorded.</summary>
+        public string? NameProblem { get; init; }
+    }
+
+    /// <summary>
+    /// The sentence for a kit name derived from its FOLDER that cannot name a kit. <paramref name="howToName"/>
+    /// is the caller's own way to give one — a flag on the command line, renaming the folder in the GUI.
+    /// </summary>
+    public static string DerivedNameSentence(string kitName, string problem, string howToName)
+        => $"The kit's name is taken from its folder, '{kitName}', and {problem} Nothing was recorded. {howToName}";
+
+    /// <summary>What the report of a folder holding two kits says: both are imported, and from where.</summary>
+    /// <remarks>The folder is the report's own heading, so it is not repeated; the package is named relative
+    /// to it, which is the part a reader can act on.</remarks>
+    public static string TwoKitsSentence(string folder, GdsfactoryKit tree)
+        => $"This folder holds two kits, and both are imported: this one, and then the gdsfactory kit " +
+           $"{tree.Display} (module '{tree.Module}') from '{Path.GetRelativePath(folder, tree.InstalledDirectory)}' inside it.";
+
+    /// <summary>
+    /// Whether a report found anything of an ordinary kit — a part, a symbol, a model, a netlist —
+    /// rather than only what any Python package carries (documentation, artwork, images). Asked only of
+    /// a folder that also holds a gdsfactory source tree, to decide whether it is one kit or two.
+    /// </summary>
+    public static bool HoldsOrdinaryKit(PdkImportReport report)
+        => report.Parts.Count > 0
+        || report.CornerAxes.Count > 0
+        || report.Assets.Any(a => a.Kind is PdkAssetKind.Netlist or PdkAssetKind.ModelData
+                                      or PdkAssetKind.SymbolArtwork or PdkAssetKind.SymbolLibrary
+                                      or PdkAssetKind.ComponentCatalog or PdkAssetKind.NetworkData);
 
     /// <summary>
     /// A referenced kit, read off disk on a workspace open. <see cref="Missing"/> means the folder is
@@ -162,19 +211,48 @@ public static class PdkWorkspaceImport
     }
 
     /// <summary>
-    /// <see cref="Read"/>, <see cref="Install"/> and <see cref="Commit"/>, in the order File ▸ Import PDK
-    /// runs them. Nothing is installed or committed for a report that is not <see cref="IsRecordable"/>.
+    /// File ▸ Import PDK and <c>circuitrf import pdk</c>, after the source is chosen: <see cref="Read"/>,
+    /// <see cref="Install"/> and <see cref="Commit"/>, in that order. Nothing is installed or committed
+    /// for a report that is not <see cref="IsRecordable"/>, nor for a kit whose name — given, or taken from
+    /// its folder — cannot name one.
+    ///
+    /// <para><b>A folder is routed here, once</b> (D2): one holding a gdsfactory kit's source tree
+    /// anywhere inside it is BOTH an ordinary kit and that gdsfactory kit when the reader finds anything of
+    /// an ordinary kit in it, and only the gdsfactory kit when it finds nothing. The ordinary half is done
+    /// here; the gdsfactory half is handed back in <see cref="ImportResult.Gdsfactory"/>. Each caller
+    /// decided this for itself until brief-gdf-6, and the ordinary half of a folder holding both was
+    /// skipped with nothing said.</para>
     /// </summary>
-    public static ImportResult Import(string kitPath, string cwsPath, string? kitName = null)
+    /// <param name="progress">Each stage's name, as it starts; every stage is indeterminate, since none
+    /// has an honest denominator until it has finished. Called on the importing thread.</param>
+    public static ImportResult Import(string kitPath, string cwsPath, string? kitName = null,
+                                      Action<string>? progress = null)
     {
+        progress?.Invoke("reading the kit");
         var report = Read(kitPath, kitName);
-        if (!IsRecordable(report)) return new ImportResult(report, null, null, null);
 
+        GdsfactoryKit? tree = Directory.Exists(kitPath) ? GdsfactoryKitDiscovery.FindSourceTree(kitPath) : null;
+        if (tree is not null && !HoldsOrdinaryKit(report))
+            return new ImportResult(report, null, null, null) { Gdsfactory = tree, OnlyGdsfactory = true };
+
+        // Said in the report itself, so whatever shows the report shows that a second kit follows.
+        if (tree is not null)
+            report.Info(TwoKitsSentence(report.RootPath, tree));
+
+        if (!IsRecordable(report)) return new ImportResult(report, null, null, null) { Gdsfactory = tree };
+
+        // A name taken from the folder is checked as a given one is (R-gdf6-5): a folder can be called
+        // anything, and the character that splits a part reference splits it however the name arrived.
+        if (kitName is null && KitNameProblem(report.KitName) is { } nameProblem)
+            return new ImportResult(report, null, null, null) { Gdsfactory = tree, NameProblem = nameProblem };
+
+        progress?.Invoke($"{report.KitName}: installing its parts");
         PdkPartInstaller.InstallOutcome outcome;
         try { outcome = Install(report, cwsPath); }
-        catch (Exception ex) { return new ImportResult(report, null, ex.Message, null); }
+        catch (Exception ex) { return new ImportResult(report, null, ex.Message, null) { Gdsfactory = tree }; }
 
-        return new ImportResult(report, outcome, null, Commit(cwsPath, report, outcome));
+        progress?.Invoke($"{report.KitName}: recording it in the workspace");
+        return new ImportResult(report, outcome, null, Commit(cwsPath, report, outcome)) { Gdsfactory = tree };
     }
 
     // ── what an import says ───────────────────────────────────────────────────────────────────────
@@ -210,7 +288,8 @@ public static class PdkWorkspaceImport
         }
 
         string reason =
-            outcome is null                       ? "the palette could not be updated"
+            outcome is null && !IsRecordable(report) ? "circuitRF recognised nothing it can use in it"
+            : outcome is null                     ? "the palette could not be updated"
             : !workspaceOpen                      ? "no workspace is open"
             : outcome.OmittedNotPlaceable > 0     ? "no part has a symbol circuitRF can read"
             : report.Parts.Count == 0             ? "the kit declares no parts"
@@ -269,24 +348,46 @@ public static class PdkWorkspaceImport
     /// headless run leaves the workspace exactly as it found it.
     /// </summary>
     public static LoadResult LoadReferenced(string workspaceRootDir)
+        => LoadReferenced(workspaceRootDir, only: null)!;
+
+    /// <summary>
+    /// ONE kit <paramref name="workspaceRootDir"/>'s <c>.cws</c> references, read and registered — the work
+    /// <see cref="LoadReferenced(string)"/> does, for one reference. Null when the workspace references no
+    /// kit of that name, which is the ordinary answer for a provider that is not a kit. What a headless run
+    /// calls the first time its design reaches the kit (brief-gdf-6 R-gdf6-1); writes nothing.
+    /// </summary>
+    public static LoadResult? LoadReferencedKit(string workspaceRootDir, string kitName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(kitName);
+        return LoadReferenced(workspaceRootDir, kitName);
+    }
+
+    private static LoadResult? LoadReferenced(string workspaceRootDir, string? only)
     {
         var manifests = new List<(string, DeviceWorkerManifest)>();
         var loaded    = new List<string>();
         var problems  = new List<string>();
 
         string cwsPath = Path.Combine(workspaceRootDir, WorkspacePersistence.FileName);
-        if (!File.Exists(cwsPath)) return new LoadResult(manifests, loaded, problems);
+        if (!File.Exists(cwsPath)) return only is null ? new LoadResult(manifests, loaded, problems) : null;
 
         List<CwsPdkRef> refs;
         try { refs = WorkspacePersistence.LoadFromFile(cwsPath).PdkRefs ?? []; }
         catch (Exception ex)
         {
-            problems.Add($"{cwsPath} could not be read, so none of its kits were loaded: {ex.Message}");
+            problems.Add(only is null
+                ? $"{cwsPath} could not be read, so none of its kits were loaded: {ex.Message}"
+                : $"{cwsPath} could not be read, so its kit '{only}' was not loaded: {ex.Message}");
             return new LoadResult(manifests, loaded, problems);
         }
 
+        var wanted = refs.Where(x => !x.IsLibraryOnly
+                                  && (only is null || string.Equals(x.Provider, only, StringComparison.OrdinalIgnoreCase)))
+                         .ToList();
+        if (only is not null && wanted.Count == 0) return null;
+
         var libraryRoots = LibraryRootsIn(workspaceRootDir, refs);
-        foreach (var r in refs.Where(x => !x.IsLibraryOnly))
+        foreach (var r in wanted)
         {
             try
             {
@@ -295,7 +396,8 @@ public static class PdkWorkspaceImport
                 if (read.Refusal is { } refusal) { problems.Add(refusal); continue; }
 
                 var outcome = read.Outcome!;
-                PdkKitRegistry.SetKit(workspaceRootDir, r.Provider, outcome.Parts ?? [], outcome.OsdiModels);
+                PdkKitRegistry.SetKit(workspaceRootDir, r.Provider, outcome.Parts ?? [], outcome.OsdiModels,
+                                      read.Report?.VerilogASources);
                 if (PdkPartInstaller.ManifestFrom(outcome.Settings, read.KitPath, r.Provider) is { } m)
                     manifests.Add((r.Provider, m));
                 loaded.Add(r.Provider);

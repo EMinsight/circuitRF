@@ -3,7 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 
-namespace CircuitRF.Ui.Schematic;
+namespace CircuitRF.Design.Schematic;
 
 /// <summary>
 /// Unpacks a kit delivered as a <c>.zip</c> into the workspace, so the rest of the import sees an
@@ -22,11 +22,14 @@ namespace CircuitRF.Ui.Schematic;
 /// <c>kits/</c> folder the archive/share path already uses for a kit it carries: a kit that lives
 /// inside the workspace travels with it, which is the whole reason someone was handed a
 /// <c>.zip</c>.</para>
+///
+/// <para>In <c>src/Design</c> since brief-gdf-6 R-gdf6-2, so <c>circuitrf import pdk</c> unpacks an archive
+/// through this same code rather than refusing one.</para>
 /// </summary>
 public static class KitArchive
 {
     /// <summary>Where an unpacked kit lands, relative to the workspace root.</summary>
-    public const string KitsFolderName = Archive.WorkspaceArchiveScanner.KitsFolder;
+    public const string KitsFolderName = Workspace.WorkspaceFolders.Kits;
 
     /// <summary>True when <paramref name="path"/> is an archive rather than a kit folder.</summary>
     public static bool IsArchive(string? path)

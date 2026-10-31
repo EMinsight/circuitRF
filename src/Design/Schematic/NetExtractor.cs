@@ -1140,7 +1140,7 @@ public static class NetExtractor
     private static void BindNativeDeviceTypes(
         Library kitLibrary, string provider, EditableComponent comp,
         IReadOnlyList<SpiceModelCard> modelCards, IReadOnlyList<OsdiModel> osdiModels,
-        List<string> conflicts)
+        IReadOnlyDictionary<string, string> vaSources, List<string> conflicts)
     {
         // The per-instance model-library override travels in the provider NAME, because that is what
         // the registry keys on — the same rule the leaf provider-backed path follows.
@@ -1164,7 +1164,7 @@ public static class NetExtractor
 
                 var routed = card is null
                     ? AsExtDevice(inst, BindByTypeName(inst, providerRef))
-                    : RouteCardDevice(inst, card, provider, modelLibrary, osdiModels, conflicts);
+                    : RouteCardDevice(inst, card, provider, modelLibrary, osdiModels, vaSources, conflicts);
 
                 if (routed is null) continue;   // reported; left as written so the failure names it
                 cell.Instances[i] = routed;
@@ -1188,24 +1188,29 @@ public static class NetExtractor
     /// <para><b>Why the built-in is second and not absent.</b> A diode, bipolar or sheet-resistor card
     /// is a device the kit's own simulator builds in; the kit ships no source for it, so sending the
     /// user to compile one sends them looking for a file that does not exist. The compile advice is
-    /// given only for a type circuitRF has no built-in for, which in this dialect can only name a
-    /// compiled module.</para>
+    /// given only for a type the kit SHIPS A SOURCE for (brief-gdf-6 R-gdf6-3) — the import read which
+    /// modules its <c>.va</c> files declare — and a type with no compiled model, no source and no
+    /// built-in is said to be exactly that.</para>
     /// </summary>
     private static Instance? RouteCardDevice(
         Instance inst, SpiceModelCard card, string provider, string? modelLibrary,
-        IReadOnlyList<OsdiModel> osdiModels, List<string> conflicts)
+        IReadOnlyList<OsdiModel> osdiModels, IReadOnlyDictionary<string, string> vaSources,
+        List<string> conflicts)
     {
         if (OsdiModelDiscovery.ImplementorOf(osdiModels, card.ModelType) is not null)
             return AsExtDevice(inst, RouteToCompiledModel(inst, card, provider, modelLibrary, osdiModels, conflicts));
 
         if (!SpiceModelCardTranslation.IsSupportedType(card.ModelType))
         {
-            conflicts.Add(
-                $"'{inst.InstanceName}' is a '{card.ModelType}' model (from the card " +
-                $"'{card.Name}'), and no compiled model implementing it was found for kit " +
-                $"'{provider}'. These are built from the kit's own Verilog-A sources with a " +
-                $"Verilog-A compiler; compile them, then add the folder holding the resulting " +
-                $"'.osdi' files in File ▸ Manage Libraries.");
+            conflicts.Add(vaSources.TryGetValue(card.ModelType, out string? source)
+                ? $"'{inst.InstanceName}' is a '{card.ModelType}' model (from the card " +
+                  $"'{card.Name}'), and no compiled model implementing it was found for kit " +
+                  $"'{provider}'. The kit ships its Verilog-A source, '{source}'; compile it with a " +
+                  $"Verilog-A compiler, then add the folder holding the resulting '.osdi' file in " +
+                  $"File ▸ Manage Libraries."
+                : $"'{inst.InstanceName}' is a '{card.ModelType}' model (from the card " +
+                  $"'{card.Name}'): there is no compiled model, no source in the kit and no built-in " +
+                  $"for '{card.ModelType}' in kit '{provider}', so nothing can simulate it.");
             return null;
         }
 
@@ -1695,6 +1700,7 @@ public static class NetExtractor
             BindNativeDeviceTypes(read.Library, ccell.ExternalProvider!, comp,
                                   read.ModelCards,
                                   PdkKitRegistry.OsdiModelsOf(WorkspaceOf(model), ccell.ExternalProvider),
+                                  PdkKitRegistry.VerilogASourcesOf(WorkspaceOf(model), ccell.ExternalProvider),
                                   conflicts);
 
         // Copy the whole file's cells, not just the one named: the definition instantiates others
@@ -1880,7 +1886,8 @@ public static class NetExtractor
                                       _ => { });
         if (!string.IsNullOrWhiteSpace(ccell.ExternalProvider))
             BindNativeDeviceTypes(built.Library, ccell.ExternalProvider!, comp, read.ModelCards,
-                                  PdkKitRegistry.OsdiModelsOf(workspaceRoot, ccell.ExternalProvider), conflicts);
+                                  PdkKitRegistry.OsdiModelsOf(workspaceRoot, ccell.ExternalProvider),
+                                  PdkKitRegistry.VerilogASourcesOf(workspaceRoot, ccell.ExternalProvider), conflicts);
         return cell;
 
         static string Quoted(string v) => v.Any(char.IsWhiteSpace) ? $"'{v}'" : v;

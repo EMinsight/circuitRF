@@ -118,6 +118,48 @@ public sealed class KitCardDeviceRoutingTests : IDisposable
         Assert.Equal("d", Value(d1, "Type"));
     }
 
+    // ── brief-gdf-6 R-gdf6-3 — compile advice only where the kit ships the source ──
+
+    private const string SyntheticTypeLibrary = """
+        .subckt dpart a b area0=2
+        Q1 a b b qsyn
+        .ends dpart
+        .model qsyn synthva_bjt
+        """;
+
+    /// <summary>The kit's Verilog-A sources, as the import reads them off disk.</summary>
+    private IReadOnlyDictionary<string, string> SourcesOnDisk()
+        => PdkWorkspaceImport.Read(_root, Kit).VerilogASources;
+
+    private string NoBuiltInSentence(bool shipSource)
+    {
+        if (shipSource)
+            Write("va/synth.va", "// a synthetic model\n`include \"disciplines.vams\"\nmodule synthva_bjt(c, b, e);\nendmodule\n");
+        var sources = SourcesOnDisk();
+        InstallSubcircuitKit(library: SyntheticTypeLibrary);
+        var installed = PdkKitRegistry.PartsOf(null, Kit);
+        PdkKitRegistry.SetKit(null, Kit, installed, verilogASources: sources);
+        return Assert.Single(Extract("DPART").Conflicts, c => c.Contains("synthva_bjt", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ATypeTheKitShipsSourceFor_IsToldToCompileThatSource()
+    {
+        string said = NoBuiltInSentence(shipSource: true);
+
+        Assert.Contains("compile it", said, StringComparison.Ordinal);
+        Assert.Contains("va/synth.va", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATypeWithNoSourceInTheKit_IsNotToldToCompileAnything()
+    {
+        string said = NoBuiltInSentence(shipSource: false);
+
+        Assert.Contains("no compiled model, no source in the kit and no built-in for 'synthva_bjt'", said, StringComparison.Ordinal);
+        Assert.DoesNotContain("Verilog-A compiler", said, StringComparison.Ordinal);   // no advice to compile anything
+    }
+
     // ── 4 — what the built-in does not carry is reported once per card ─────────
 
     [Fact]

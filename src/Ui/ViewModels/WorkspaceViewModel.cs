@@ -6219,15 +6219,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (string.IsNullOrEmpty(path)) return;
 
-        // A folder holding a gdsfactory kit's SOURCE TREE is that kit, not a kit tree to read for
-        // symbols and models (brief-gdf-2 R-gdf2-1b). Recognised structurally, by reading files.
-        if (choice == PdkImportPromptDialog.Choice.Folder
-            && CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitDiscovery.FindSourceTree(path) is { } tree)
-        {
-            await ImportGdsfactoryKitAsync(window, tree);
-            return;
-        }
-
         // An archive is UNPACKED, then imported as the folder it became. Reading it in place produced
         // a kit with no artwork, no models, no settings and a recorded location that was the .zip —
         // so the next workspace open reported the kit folder missing and every part placed from it
@@ -6238,53 +6229,98 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             if (path is null) return;
         }
 
+        if (await ImportPdkPathAsync(path) is not { } imported) return;
+        var (result, techScan) = imported;
+
+        if (!result.OnlyGdsfactory)
+        {
+            await PdkImportReportDialog.ShowAsync(window, result.Report);
+            if (result.Outcome is not null)
+                await OfferTechnologyFromKitAsync(window, result.Report, techScan);
+        }
+
+        // A folder holding a gdsfactory kit's source tree imports that kit too, after the ordinary one
+        // (brief-gdf-6 D2) — decided by PdkWorkspaceImport.Import, not here.
+        if (result.Gdsfactory is { } tree)
+            await ImportGdsfactoryKitAsync(window, tree);
+    }
+
+    /// <summary>
+    /// Import PDK for a kit folder already chosen: <see cref="PdkWorkspaceImport.Import"/> on a worker thread,
+    /// its stages on a live row — the one function <c>circuitrf import pdk</c> also calls, so what is written
+    /// is the same for both (brief-gdf-6 R-gdf6-2) — then, on this thread, what the window does with the
+    /// result: the palette, the registry, the messages. No dialog; the command shows them. Returns the result
+    /// and the kit's process data, looked for as the last stage for the offer that follows the report; null
+    /// when the import threw.
+    /// </summary>
+    internal async Task<(PdkWorkspaceImport.ImportResult Result, TechnologyScanResult? TechScan)?> ImportPdkPathAsync(string path)
+    {
+        if (CurrentWorkspacePath is not { } cws) return null;
+
         // Everything slow about an import happens between the picker closing and the report opening,
         // and until now none of it said anything: reading a real kit is hundreds of milliseconds of
         // file enumeration and netlist parsing, installing it starts one worker per compiled model,
         // and looking for process data walks the tree again. A live row is the one place a user can
         // see that the application is working rather than stuck. Indeterminate throughout — none of
-        // the three stages has an honest denominator until it has already finished.
+        // the stages has an honest denominator until it has already finished.
         var live = Messages.BeginProgress($"Import PDK — reading {Path.GetFileName(path.TrimEnd(
             Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))}…");
         live.Update("Import PDK — reading the kit…", indeterminate: true);
 
-        PdkImportReport report;
+        // Created here, on the UI thread, so each stage the worker thread reports is posted back to it.
+        IProgress<string> stages = new Progress<string>(stage => live.Update($"Import PDK — {stage}…", indeterminate: true));
+        PdkWorkspaceImport.ImportResult result;
         try
         {
-            report = await Task.Run(() => PdkWorkspaceImport.Read(path));
+            result = await Task.Run(() => PdkWorkspaceImport.Import(path, cws, progress: stages.Report));
         }
         catch (Exception ex)
         {
             live.Complete(MessageLevel.Error, $"Import PDK failed: {ex.Message}");
-            return;
+            return null;
+        }
+
+        var report = result.Report;
+        if (result.OnlyGdsfactory)
+        {
+            live.Complete(MessageLevel.Info, $"Import PDK — '{report.RootPath}' holds a gdsfactory kit and nothing else of a kit's.");
+            return (result, null);
         }
 
         ImportedPdks.Add(report);
 
-        live.Update($"Import PDK — {report.KitName}: installing its parts…", indeterminate: true);
-        var outcome = await InstallPdkIntoPaletteAsync(report);
+        // The derived name cannot name a kit: said in the report, since the report is what opens next.
+        if (result.NameProblem is { } nameProblem)
+            report.Blocker(PdkWorkspaceImport.DerivedNameSentence(report.KitName, nameProblem,
+                "Rename the kit's folder and import it again."));
+        if (result.InstallProblem is { } installProblem)
+            Messages.Warning($"Import PDK — the palette could not be updated: {installProblem}");
+
+        var outcome = result.Outcome is { } installed ? ApplyInstalledPdk(report, installed, result.Commit) : null;
 
         // Looked for BEFORE the report dialog opens, not after it closes, and that ordering is the
         // whole fix for what this felt like. The scan walks the kit again and can take a while; run
         // after the dialog it left the user looking at a dismissed report and nothing happening,
         // followed by a question arriving out of nowhere. Asked as the row's last stage, the answer
         // is already in hand when the report closes and the offer follows it immediately.
-        live.Update($"Import PDK — {report.KitName}: looking for process data…", indeterminate: true);
-        var techScan = await ScanForKitTechnologyAsync(report);
+        TechnologyScanResult? techScan = null;
+        if (outcome is not null)
+        {
+            live.Update($"Import PDK — {report.KitName}: looking for process data…", indeterminate: true);
+            techScan = await ScanForKitTechnologyAsync(report);
+        }
 
         // A count of what was and was not recognised is a TALLY, not a verdict — a vendor kit
         // routinely carries far more than circuitRF reads, so a warning here fires on a completely
         // successful import and trains the user to ignore the level. Only a genuinely failed
         // import (nothing usable, or an unreadable path) escalates.
-        var level = report.Status is PdkImportStatus.NotRecognized or PdkImportStatus.Failed
+        var level = report.Status is PdkImportStatus.NotRecognized or PdkImportStatus.Failed || result.NameProblem is not null
             ? MessageLevel.Error
             : MessageLevel.Info;
         live.Complete(level, $"Import PDK — {PdkWorkspaceImport.TallySentence(report)}");
 
         ReportPdkPlaceability(report, outcome);
-
-        await PdkImportReportDialog.ShowAsync(window, report);
-        await OfferTechnologyFromKitAsync(window, report, techScan);
+        return (result, techScan);
     }
 
     /// <summary>
@@ -7090,7 +7126,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var report  = read.Report!;
         var outcome = read.Outcome!;
 
-        PdkKitRegistry.SetKit(CurrentWorkspaceRoot, r.Provider, outcome.Parts ?? [], outcome.OsdiModels);
+        PdkKitRegistry.SetKit(CurrentWorkspaceRoot, r.Provider, outcome.Parts ?? [], outcome.OsdiModels,
+                              report.VerilogASources);
 
         // From what the install SETTLED, never from what was recorded. They differ exactly when the
         // recorded settings were absent (or stale) and had to be derived — which is the case that
@@ -7221,39 +7258,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     /// <summary>
     /// Installs a just-imported kit's parts into the Library Palette: its symbols become cells the
-    /// workspace can place, and its own browser icons become the palette tiles. The READ half runs on a
-    /// worker thread.
+    /// workspace can place, and its own browser icons become the palette tiles — the UI-thread half of an
+    /// import whose reading, installing and recording <see cref="PdkWorkspaceImport.Import"/> already did
+    /// on a worker thread.
     ///
     /// <para>Re-importing a kit REPLACES its previous entries rather than adding a second copy —
     /// keyed on kit name, which is what a user re-importing after fixing something expects.</para>
-    ///
-    /// <para>Installing is not the cheap end of an import: it reads the kit's symbols, and it starts
-    /// one worker process per compiled model to ask what each implements. On the UI thread that is a
-    /// frozen window for as long as it takes, right after a file picker closed — which is the part of
-    /// an import that felt like nothing was happening. Everything that touches registries, the
-    /// palette or the workspace's files still runs here, after the await.</para>
     /// </summary>
-    private async Task<PdkPartInstaller.InstallOutcome?> InstallPdkIntoPaletteAsync(PdkImportReport report)
-    {
-        string? cwsPath = CurrentWorkspacePath;
-
-        PdkPartInstaller.InstallOutcome outcome;
-        try
-        {
-            outcome = await Task.Run(() => PdkWorkspaceImport.Install(report, cwsPath));
-        }
-        catch (Exception ex)
-        {
-            Messages.Warning($"Import PDK — the palette could not be updated: {ex.Message}");
-            return null;
-        }
-
-        return ApplyInstalledPdk(report, outcome);
-    }
-
-    /// <summary>The UI-thread half of an install: registry, palette, and what the workspace records.</summary>
     private PdkPartInstaller.InstallOutcome? ApplyInstalledPdk(
-        PdkImportReport report, PdkPartInstaller.InstallOutcome outcome)
+        PdkImportReport report, PdkPartInstaller.InstallOutcome outcome, PdkWorkspaceImport.CommitResult? committed)
     {
         string? wsRoot = CurrentWorkspacePath is null
             ? null
@@ -7267,17 +7280,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Using the report's here would leave every reference pointing at a kit nobody registered.
         string kit = outcome.KitName;
 
-        PdkKitRegistry.SetKit(wsRoot, kit, outcome.Parts ?? [], outcome.OsdiModels);
+        PdkKitRegistry.SetKit(wsRoot, kit, outcome.Parts ?? [], outcome.OsdiModels, report.VerilogASources);
         _kitManifests.RemoveAll(k => string.Equals(k.Kit, kit, StringComparison.OrdinalIgnoreCase));
         if (PdkPartInstaller.ManifestFrom(outcome.Settings, report.RootPath, kit) is { } m)
             _kitManifests.Add((kit, m));
 
-        if (wsRoot is not null)
+        if (wsRoot is not null && committed is not null)
         {
-            // The .cws reference and the kit's layout cells, if it has any — declared here as well as
-            // on a workspace open so the kit is complete the moment it is imported. One call, the one
-            // `circuitrf import pdk` makes.
-            var committed = PdkWorkspaceImport.Commit(CurrentWorkspacePath!, report, outcome);
+            // What the import recorded — the .cws reference and the kit's layout cells, if it has any —
+            // written by PdkWorkspaceImport.Import, the call `circuitrf import pdk` makes; reported here.
             if (committed.RecordProblem is { } recordProblem)
                 Messages.Warning($"Import PDK — {PdkWorkspaceImport.RecordProblemSentence(recordProblem)}");
 

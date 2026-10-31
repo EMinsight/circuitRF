@@ -231,8 +231,31 @@ public static class PdkImporter
 
         DiscoverParts(report);
         DiscoverCorners(report);
+        DiscoverVerilogASources(report);
         Summarize(report);
         return report;
+    }
+
+    private static readonly Regex RxVaModule = new(
+        @"\b(?:macro)?module\s+([A-Za-z_][A-Za-z0-9_$]*)", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Which modules the kit's Verilog-A sources declare (<see cref="PdkImportReport.VerilogASources"/>).
+    /// Read, never compiled. The first file declaring a module keeps it, by asset order, so the answer is
+    /// the same on every machine; a file that cannot be read declares nothing.
+    /// </summary>
+    private static void DiscoverVerilogASources(PdkImportReport report)
+    {
+        foreach (var va in report.Assets.Where(a => a.FormatName == ExtensionRecognizer.VerilogASourceFormat))
+        {
+            if (ResolveAssetPath(report.RootPath, report.KitRoot, va.RelativePath) is not { } full) continue;
+            string text;
+            try { text = File.ReadAllText(full); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+
+            foreach (Match m in RxVaModule.Matches(VerilogASourceCompiler.StripComments(text)))
+                report.VerilogASources.TryAdd(m.Groups[1].Value, va.RelativePath);
+        }
     }
 
     /// <summary>

@@ -174,7 +174,10 @@ if (JsonRun.Verb is not ("em" or "convert"))
 // The verb's function, or null for a word that is not one. ONE table: IsVerb below asks the same
 // question of the same switch, so the installed executable's decision "is this a command line or a
 // document to open?" cannot drift from what Run will actually do with it (R-aut13-1).
-return JsonRun.Finish(Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : UnknownVerb(args[0]));
+int exit = Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : UnknownVerb(args[0]);
+// Judged after the verb, because only the run knows which kits' modules it asked an interpreter for.
+CircuitRF.Cli.GeneratedCells.ReportUnusedPythonModules();
+return JsonRun.Finish(exit);
     }
 
     /// <summary>

@@ -1085,6 +1085,20 @@ bool OpenGdsfactory(string step)
             }
             break;
         }
+        case "pdk-report":
+        {
+            // The ordinary Import PDK report for a folder, as File ▸ Import PDK opens it — through the one
+            // import both callers run, into a scratch workspace (brief-gdf-6 R-gdf6-2). On a folder holding
+            // a kit tree and a gdsfactory package it says that both are imported, and from where.
+            if (gdsfactoryKit is null) { Console.Error.WriteLine("--gdsfactory pdk-report needs --kit <kit folder>"); return false; }
+            string scratch = Path.Combine(Path.GetTempPath(), "crf-gdf6-report-" + Guid.NewGuid().ToString("N")[..8]);
+            var created = CircuitRF.Design.Workspace.WorkspaceCreate.Create(scratch, "ws", technologyId: null);
+            var result = CircuitRF.Design.Schematic.PdkWorkspaceImport.Import(gdsfactoryKit, created.CwsPath);
+            Console.WriteLine(CircuitRF.Design.Schematic.PdkWorkspaceImport.TallySentence(result.Report));
+            Console.WriteLine(result.Gdsfactory is { } gf ? $"gdsfactory half: {gf.Module} at {gf.InstalledDirectory}" : "no gdsfactory half");
+            _ = CircuitRF.Ui.Views.Dialogs.PdkImportReportDialog.ShowAsync(host, result.Report);
+            break;
+        }
         case "tech-overwrite":
         {
             // "Also build the kit's technology" over a .ctech of the same name (brief-gdf-3 R-gdf3-3a): the

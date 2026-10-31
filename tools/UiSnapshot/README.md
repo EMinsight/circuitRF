@@ -132,6 +132,11 @@ technology itself, build it with `circuitrf import pdk … --technology` and ope
 dotnet run --project tools/UiSnapshot --no-build -- --gdsfactory <step> --python <interp> --kit <tree> -o out.png
 ```
 
+`pdk-report` opens the ordinary Import PDK report for the folder `--kit` names, imported through
+`PdkWorkspaceImport.Import` — the call both File ▸ Import PDK and `circuitrf import pdk` make — into a scratch
+workspace. On a kit tree that also holds a gdsfactory package the report says that both are imported, and prints
+the gdsfactory half it found. `--python` is not used.
+
 `permissions` opens Settings on Security & Permissions, on a throwaway per-user state directory seeded with three
 recorded kit answers (a gdsfactory package allowed, with its interpreter; a script kit refused; a kit no longer on
 disk). `permissions-many` adds two hundred more, for the list's own scrolling and the filter. `--kit-row

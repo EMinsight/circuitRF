@@ -26,6 +26,20 @@ no pin markup and the pins are placed from the ports.
 **Nothing is worked around.** A cell gdsfactory itself cannot build is reported with gdsfactory's own
 message (a missing module is named as the error names it; a missing fixed-GDS file by its path), so
 the reader can see whose install it is.
+
+**A cell must not depend on what the worker built before it** (brief-gdf-6 R-gdf6-6). gdsfactory keeps
+every cell of a process in one layout, by name, and the worker is one long-lived process. Two things
+follow, both reproducible in a plain gdsfactory session:
+
+- *Describing runs in a forked child* where the platform can fork, so the worker generates from a
+  process that has built nothing. Building every cell at its defaults in the worker itself left
+  fixed-GDS cells behind whose names a later import reused — skipping the kit's own add-ports step, so
+  a cell came back with no pins, and no cache clear restores them. Windows cannot fork: there the
+  describe stays in-process, and a fixed-GDS cell sharing a name with one another cell imported first
+  may still come back without its ports.
+- *A cell built again with other parameters* can raise "Cellname … already exists" from a fixed-name
+  helper cell. :func:`_build` deletes the named cells (and what contains them), clears gdsfactory's
+  cache so no cached cell still points at one, and builds once more — and the result says so.
 """
 
 from __future__ import annotations
@@ -65,6 +79,10 @@ SYMBOLS_DIR = "symbols"
 
 #: A kit's own drawing, in the order a stem is looked for: circuitRF's own symbol wins over a glyph.
 _DRAWINGS = ((".csym", "symbol"), (".svg", "glyph"))
+
+#: gdsfactory's refusal to create a cell whose name its layout already holds; the group is the name, which may
+#: hold spaces (one kit's helper is named in words).
+_ALREADY_EXISTS = re.compile(r"Cellname (.+?) already exists in the layout")
 
 
 class PdkRegistration:
@@ -246,7 +264,8 @@ def _make_generator(gf: Any, cell: str, offered: list[tuple[str, str, Any]],
             if value != default:
                 kwargs[name] = value
 
-        component = gf.get_component(cell, **kwargs)
+        diagnostics: list[str] = []
+        component = _build(gf, cell, kwargs, diagnostics)
         per_micron = getattr(tech, "dbu_per_micron", None) or 1000
         kit_dbu = float(component.kcl.dbu)  # micrometres per kit database unit
 
@@ -291,7 +310,6 @@ def _make_generator(gf: Any, cell: str, offered: list[tuple[str, str, Any]],
                 scale_um(port.width),
                 float(port.orientation if port.orientation is not None else 0.0)))
 
-        diagnostics: list[str] = []
         if missing and tech.layers:
             listed = ", ".join(f"{l}/{d}" + (f" ({n})" if n else "") for (l, d), n in sorted(missing.items()))
             diagnostics.append(f"Layers the technology lacks, kept on the kit's own numbers: {listed}.")
@@ -302,6 +320,66 @@ def _make_generator(gf: Any, cell: str, offered: list[tuple[str, str, Any]],
         return crf.Result(shapes=shapes, pins=pins, diagnostics=diagnostics)
 
     return generate
+
+
+def _build(gf: Any, cell: str, kwargs: dict[str, Any], said: list[str]) -> Any:
+    """``gf.get_component(cell, **kwargs)``, built once more when gdsfactory refuses because a cell of the
+    same name is already in its layout from an earlier build in this process (R-gdf6-6 D5a). The named
+    cells are deleted with every cell containing them, and gdsfactory's cache cleared, so nothing cached
+    still points at a deleted cell. Retried once; a second refusal is gdsfactory's to report."""
+    try:
+        return gf.get_component(cell, **kwargs)
+    except ValueError as exc:
+        names = _ALREADY_EXISTS.findall(str(exc))
+        if not names:
+            raise
+    for name in names:
+        existing = gf.kcl.layout.cell(name)
+        if existing is None:
+            continue
+        # The cell and every cell containing it, one at a time: the containing ones would otherwise keep a
+        # dangling instance, and not every gdsfactory release's delete takes a "delete parents" switch.
+        for index in [*existing.caller_cells(), existing.cell_index()]:
+            if gf.kcl.layout.is_valid_cell_index(index):
+                gf.kcl.delete_cell(index)
+    gf.clear_cache()
+    component = gf.get_component(cell, **kwargs)
+    said.append(f"gdsfactory already held a cell named {_listed([repr(n) for n in names])} from an earlier build in this "
+                "worker; it was removed and the cell built again.")
+    return component
+
+
+def _in_child(work: Callable[[], Any]) -> tuple[Any, str | None]:
+    """``work()``, run in a forked child where the platform can fork, so whatever it builds stays out of this
+    process (R-gdf6-6 D5b). Returns its result and None, or None and why there is none. In-process where
+    there is no fork."""
+    if not hasattr(os, "fork"):
+        return work(), None
+
+    import pickle
+
+    read_end, write_end = os.pipe()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover - the child; its only output is the pipe
+        os.close(read_end)
+        try:
+            payload = pickle.dumps(("ok", work()))
+        except BaseException as exc:  # noqa: BLE001 - anything is the parent's to report
+            payload = pickle.dumps(("error", _last_line(exc)))
+        with os.fdopen(write_end, "wb") as out:
+            out.write(payload)
+        os._exit(0)
+
+    os.close(write_end)
+    with os.fdopen(read_end, "rb") as inp:
+        data = inp.read()  # all of it before waiting, or a large report fills the pipe and both stall
+    _, status = os.waitpid(pid, 0)
+    if not data:
+        return None, f"the process describing it ended without an answer (wait status {status})"
+    kind, value = pickle.loads(data)
+    return (value, None) if kind == "ok" else (None, value)
 
 
 def register_pdk(module_name: str, registry: Any = None) -> PdkRegistration:
@@ -345,14 +423,17 @@ def _register(module_name: str, registry: Any) -> PdkRegistration:
         return PdkRegistration([], [sentence], {"problem": sentence})
 
     kit_layers = _layer_names(pdk)
-    layer_name_set = set(kit_layers.values())
     module_file = getattr(module, "__file__", None)
     package_dir = os.path.dirname(os.path.abspath(module_file)) if module_file else None
-    listing: dict[str, set[str]] = {}
+
+    described, why = _in_child(lambda: _describe(gf, pdk, kit_layers, package_dir))
+    if described is None:
+        sentence = f"'{module_name}' could not be described: {why}"
+        return PdkRegistration([], [sentence], {"problem": sentence})
 
     ids: list[str] = []
-    problems: list[str] = []
-    not_offered: dict[str, list[list[str]]] = {}
+    problems: list[str] = list(described["problems"])
+    not_offered: dict[str, list[list[str]]] = described["notOffered"]
     params_not_offered: dict[str, list[str]] = {}
     placement_ports: dict[str, int] = {}
     models: dict[str, str] = {}
@@ -360,6 +441,62 @@ def _register(module_name: str, registry: Any) -> PdkRegistration:
     symbols: dict[str, str] = {}
     glyphs: dict[str, str] = {}
     glyph_ports: dict[str, list[dict[str, Any]]] = {}
+
+    for found in described["cells"]:
+        cell, offered, model = found["cell"], found["offered"], found["model"]
+        declarations = [_declare(n, k, d) for n, k, d in offered]
+        # A model the cell declares only in its info is still reported as the generator's model, so
+        # the palette's model step can pair it. Declared as an OUTPUT: there is no such argument to
+        # pass back, so it is shown and never sent to the cell.
+        if model is not None and not any(n == "model" for n, _, _ in offered):
+            declarations.append(crf.Parameter("model", "string", crf.NONE, model, computed=True))
+
+        try:
+            (registry or crf.default_registry).add(
+                cell, declarations, _make_generator(gf, cell, offered, kit_layers))
+        except ValueError as exc:
+            problems.append(str(exc))
+            continue
+
+        ids.append(cell)
+        declared_names[cell] = [d.name for d in declarations]
+        if found["hidden"]:
+            params_not_offered[cell] = found["hidden"]
+            problems.append(f"{cell}: {len(found['hidden'])} parameter(s) not offered: {_listed(found['hidden'])}")
+        if found["placements"]:
+            placement_ports[cell] = found["placements"]
+        if model:
+            models[cell] = model
+        if found["symbol"] is not None:
+            symbols[cell] = found["symbol"]
+        elif found["glyph"] is not None:
+            glyphs[cell] = found["glyph"]
+            glyph_ports[cell] = found["ports"]
+
+    report = {
+        "module": module_name,
+        "gdsfactoryVersion": getattr(gf, "__version__", ""),
+        "offered": ids,
+        "notOffered": not_offered,
+        "parametersNotOffered": params_not_offered,
+        "placementPorts": placement_ports,
+        "models": models,
+        "parameters": declared_names,
+        "symbols": symbols,
+        "glyphs": glyphs,
+        "ports": glyph_ports,
+    }
+    return PdkRegistration(ids, problems, report)
+
+
+def _describe(gf: Any, pdk: Any, kit_layers: dict[tuple[int, int], str], package_dir: str | None) -> dict[str, Any]:
+    """Every cell of an activated ``pdk``, read and built once at its defaults — plain data only, so it can
+    come back from a forked child (:func:`_in_child`). Registers nothing."""
+    layer_name_set = set(kit_layers.values())
+    listing: dict[str, set[str]] = {}
+    cells: list[dict[str, Any]] = []
+    problems: list[str] = []
+    not_offered: dict[str, list[list[str]]] = {}
 
     def refuse(cell: str, reason: str, detail: str) -> None:
         not_offered.setdefault(reason, []).append([cell, detail])
@@ -413,49 +550,16 @@ def _register(module_name: str, registry: Any) -> PdkRegistration:
             declared = dict(getattr(built, "info", {}) or {}).get("model")
             model = str(declared) if declared else None
 
-        declarations = [_declare(n, k, d) for n, k, d in offered]
-        # A model the cell declares only in its info is still reported as the generator's model, so
-        # the palette's model step can pair it. Declared as an OUTPUT: there is no such argument to
-        # pass back, so it is shown and never sent to the cell.
-        if model is not None and not any(n == "model" for n, _, _ in offered):
-            declarations.append(crf.Parameter("model", "string", crf.NONE, model, computed=True))
-
-        try:
-            (registry or crf.default_registry).add(
-                cell, declarations, _make_generator(gf, cell, offered, kit_layers))
-        except ValueError as exc:
-            problems.append(str(exc))
-            continue
-
-        ids.append(cell)
-        declared_names[cell] = [d.name for d in declarations]
-        if hidden:
-            params_not_offered[cell] = hidden
-            problems.append(f"{cell}: {len(hidden)} parameter(s) not offered: {_listed(hidden)}")
-        placements = sum(1 for port in built.ports if str(port.port_type) == "placement")
-        if placements:
-            placement_ports[cell] = placements
-        if model:
-            models[cell] = model
-
         drawing = _find_drawing(cell, _drawing_dirs(package_dir, _module_dir(fn)), listing)
-        if drawing is not None and drawing[0] == "symbol":
-            symbols[cell] = drawing[1]
-        elif drawing is not None:
-            glyphs[cell] = drawing[1]
-            glyph_ports[cell] = _ports_of(built)
+        cells.append({
+            "cell": cell,
+            "offered": offered,
+            "model": model,
+            "hidden": hidden,
+            "placements": sum(1 for port in built.ports if str(port.port_type) == "placement"),
+            "symbol": drawing[1] if drawing is not None and drawing[0] == "symbol" else None,
+            "glyph": drawing[1] if drawing is not None and drawing[0] != "symbol" else None,
+            "ports": _ports_of(built) if drawing is not None and drawing[0] != "symbol" else [],
+        })
 
-    report = {
-        "module": module_name,
-        "gdsfactoryVersion": getattr(gf, "__version__", ""),
-        "offered": ids,
-        "notOffered": not_offered,
-        "parametersNotOffered": params_not_offered,
-        "placementPorts": placement_ports,
-        "models": models,
-        "parameters": declared_names,
-        "symbols": symbols,
-        "glyphs": glyphs,
-        "ports": glyph_ports,
-    }
-    return PdkRegistration(ids, problems, report)
+    return {"cells": cells, "problems": problems, "notOffered": not_offered}

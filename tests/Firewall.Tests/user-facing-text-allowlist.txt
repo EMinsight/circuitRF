@@ -678,6 +678,7 @@ src/WBond/WireTableCsv.cs|The wirebond table has no header row. Expected a line 
 # deliberate plain-exception choice this file's own header describes.
 # ── Moved, not authored (2026-09-05) ────────────────────────────────────────────────
 src/Design/Schematic/BuiltInSymbols.cs|TranslateLines only supports {nameof(LinePrimitive)} (Ground glyph is line-only); got {p.GetType().Name}.
+src/Design/Schematic/KitArchive.cs|'{destination}' already holds an unpacked kit.
 src/Design/Schematic/ModelCardCellBuilder.cs|'{translation.Card.Name}' was refused; nothing to write.
 src/Design/Schematic/ModelCardCellBuilder.cs|A cell named '{cellName}' already exists here. Choose another name — importing a 
 src/Design/Schematic/ModelCardCellBuilder.cs|A refused card has no component to build a schematic from.
