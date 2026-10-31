@@ -59,6 +59,14 @@ public static class DocAnchors
          new("reference/layout-editor.html", "interchange"),
          new(Layout.MaterialsTableViewModel.HelpPage, "")];
 
+    /// <summary>
+    /// Model Composer's two data-preparation links: the Data step's guide, which opens the app note that walks the data a
+    /// model needs, and the Import Data dialog's Help, which opens the reference's preparation section.
+    /// </summary>
+    public static readonly IReadOnlyList<Link> ModelComposerLinks =
+        [new(Views.ModelComposer.StepsPanelView.DataGuidePage, ""),
+         new(Views.ModelComposer.ModelImportDialog.HelpPage, Views.ModelComposer.ModelImportDialog.HelpAnchor)];
+
     /// <summary>Pages opened whole, with no anchor.</summary>
     public static readonly IReadOnlyList<string> WholePages =
         ["index.html", "reference/components.html", "reference/nonlinear-capacitor.html",
@@ -85,6 +93,7 @@ public static class DocAnchors
         foreach (var a in PlotTypeAnchors) links.Add(new Link("reference/plot-types.html", a));
         foreach (var p in WholePages)      links.Add(new Link(p, ""));
         links.AddRange(TechEditorLinks);
+        links.AddRange(ModelComposerLinks);
 
         return links.Distinct().ToList();
     }

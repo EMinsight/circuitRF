@@ -143,6 +143,16 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
 
+                        <!-- Which data a model needs, and how to take it from another simulator's kit, is a flow rather than
+                             a field: the app note draws it, so the Data step points at it rather than restating it. -->
+                        <Button Name="DataGuideButton" Classes="tool" IsVisible="{Binding IsActive}" HorizontalAlignment="Left"
+                                ToolTip.Tip="The data a model needs, and how to sample it from another simulator's design kit">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <mi:MaterialIcon Kind="BookOpenPageVariantOutline" Width="14" Height="14"/>
+                                <TextBlock Text="Which data does a model need?" FontSize="11" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
                         <Border Classes="card" IsVisible="{Binding IsActive}">
                             <StackPanel Spacing="3">
                                 <TextBlock Classes="panelhdr" Text="Base periphery"/>

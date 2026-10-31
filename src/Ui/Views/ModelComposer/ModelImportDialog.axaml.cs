@@ -10,12 +10,16 @@ namespace CircuitRF.Ui.Views.ModelComposer;
 /// window's run.</summary>
 public partial class ModelImportDialog : Window
 {
+    /// <summary>Help: what each kind of data needs, and how to prepare it.</summary>
+    internal const string HelpPage = "reference/model-composer.html", HelpAnchor = "preparing";
+
     public ModelImportDialog() => InitializeComponent();
 
     public ModelImportDialog(ModelImportViewModel vm) : this()
     {
         DataContext = vm;
         CancelButton.Click += (_, _) => Close(null);
+        HelpButton.Click += (_, _) => DocLauncher.Open(HelpPage, HelpAnchor);
         ImportButton.Click += (_, _) =>
         {
             if (vm.Build(out string? why) is { } set) Close(set);

@@ -40,6 +40,9 @@
             <TextBlock Text="{Binding Line}" TextWrapping="Wrap" VerticalAlignment="Center"
                        Classes.warn="{Binding Refused}"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Name="HelpButton" Padding="6,3" ToolTip.Tip="What each kind of data needs, and how to prepare it">
+                    <mi:MaterialIcon Kind="HelpCircleOutline" Width="16" Height="16"/>
+                </Button>
                 <Button Name="CancelButton" Content="Cancel" MinWidth="80"/>
                 <Button Name="ImportButton" Content="Import" MinWidth="80" IsDefault="True" IsEnabled="{Binding !Refused}"/>
             </StackPanel>

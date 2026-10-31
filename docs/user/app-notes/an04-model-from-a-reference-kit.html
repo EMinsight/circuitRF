@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — AN-04 — A nonlinear FET model from a reference kit</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/app-notes/an04-model-from-a-reference-kit.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <a class="doc-kind" href="index.html">Application Note</a>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">App Notes</a> › AN-04 A model from a reference kit</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="an03-extracting-capacitance.html" title="Previous: AN-03 — Extracting capacitance"><span class="arrow">‹</span><span class="name">AN-03 — Extracting capacitance</span></a>
+    </nav>
+  </div>
+
+  <h1>AN-04 — A nonlinear FET model from a reference kit</h1>
+  <p class="lede">A transistor that already has a model in another simulator&#39;s design kit can become a ComposedFET by sampling that model and fitting what it gives. Which runs to make in the source simulator, which plane to sample at and how to get there, what each Model Composer step does with the result, and how to check the model against the kit it came from.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#when">When this note applies</a></li>
+<li><a href="#flow">The flow</a></li>
+<li><a href="#sample">What to run in the source simulator</a></li>
+<li><a href="#plane">Choosing the plane, and the negative network</a></li>
+<li><a href="#tables">Writing the tables</a></li>
+<li><a href="#composer">In Model Composer, step by step</a></li>
+<li><a href="#defaults">When the defaults are not enough</a></li>
+<li><a href="#validate">Checking the model against the kit</a></li>
+<li><a href="#direct">Writing the .cmodel directly</a></li>
+<li><a href="#cli">The same flow headless</a></li>
+<li><a href="#checklist">Checklist</a></li>
+</ol>
+</nav>
+<h2 id="when">When this note applies</h2>
+<p>A transistor often already has a good model: the one in a foundry's or a vendor's design kit, written for another
+simulator. That model can be the <strong>reference</strong> for a circuitRF model. Sample it the way a lab would measure a device,
+hand the samples to <a href="../reference/model-composer.html">Model Composer</a>, and the result is a <code>.cmodel</code> that a schematic
+places as a <a href="../reference/components.html#composedfet"><code>ComposedFET</code></a> and that DC, S-parameters, harmonic balance and
+loadpull all use.</p>
+<p>Sampled data is better than measured data in three ways, and the flow below is built around all three:</p>
+<ul>
+<li><strong>It is noise-free and as dense as you like.</strong> A grid of every 0.1 V costs seconds, not a week on a probe station.</li>
+<li><strong>It can be taken where no instrument can reach</strong>: at the core's own terminals, inside the pads, inductances and
+resistances, and with self-heating switched off.</li>
+<li><strong>It can be repeated at will</strong>, so the same benches can be run on the kit and on the fitted model and the two
+compared point for point.</li>
+</ul>
+<p>The work that takes longest is not the fit. It is deciding what to export from the source simulator and getting it
+out in a form the composer reads. Most of this note is about that.</p>
+<h2 id="flow">The flow</h2>
+<figure class="fig">
+<svg viewBox="0 0 560 290" role="img" aria-label="The flow: the reference kit is sampled into tables, Model Composer fits them into a .cmodel, and the model is validated against large-signal runs of the kit, with a refit loop back to the composer" style="width:100%;height:auto">
+  <defs>
+    <marker id="an04-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--text)"/>
+    </marker>
+  </defs>
+  <g stroke="var(--border)" stroke-width="1.4" fill="var(--surface)">
+    <rect x="10"  y="30"  width="120" height="76" rx="6"/>
+    <rect x="150" y="30"  width="120" height="76" rx="6"/>
+    <rect x="290" y="30"  width="120" height="76" rx="6" stroke="var(--accent)"/>
+    <rect x="430" y="30"  width="120" height="76" rx="6"/>
+    <rect x="290" y="196" width="260" height="70" rx="6"/>
+  </g>
+  <g fill="none" stroke="var(--text)" stroke-width="1.4">
+    <path d="M130 68 H 148" marker-end="url(#an04-arrow)"/>
+    <path d="M270 68 H 288" marker-end="url(#an04-arrow)"/>
+    <path d="M410 68 H 428" marker-end="url(#an04-arrow)"/>
+    <path d="M490 106 V 194" marker-end="url(#an04-arrow)"/>
+    <path d="M70 106 V 231 H 288" marker-end="url(#an04-arrow)"/>
+    <path d="M350 196 V 108" stroke-dasharray="5 4" marker-end="url(#an04-arrow)"/>
+  </g>
+  <g fill="var(--text)" font-family="var(--font-sans)" text-anchor="middle">
+    <text x="70"  y="58" font-size="14" font-weight="600">Reference kit</text>
+    <text x="70"  y="78" font-size="12" fill="var(--muted)">its own model,</text>
+    <text x="70"  y="94" font-size="12" fill="var(--muted)">its own simulator</text>
+    <text x="210" y="58" font-size="14" font-weight="600">Sampled tables</text>
+    <text x="210" y="78" font-size="12" fill="var(--muted)">DC I–V, Y, per T</text>
+    <text x="210" y="94" font-size="12" fill="var(--muted)">.mat</text>
+    <text x="350" y="58" font-size="14" font-weight="600">Model Composer</text>
+    <text x="350" y="78" font-size="12" fill="var(--muted)">fit and check</text>
+    <text x="350" y="94" font-size="12" fill="var(--muted)">.cmc</text>
+    <text x="490" y="58" font-size="14" font-weight="600">ComposedFET</text>
+    <text x="490" y="78" font-size="12" fill="var(--muted)">the model</text>
+    <text x="490" y="94" font-size="12" fill="var(--muted)">.cmodel</text>
+    <text x="420" y="224" font-size="14" font-weight="600">Validate and report</text>
+    <text x="420" y="244" font-size="12" fill="var(--muted)">the same benches in both simulators</text>
+    <text x="180" y="222" font-size="12" fill="var(--muted)">power sweeps, loadpull</text>
+  </g>
+  <g fill="var(--accent)" font-family="var(--font-sans)" font-size="12">
+    <text x="358" y="156">refit</text>
+  </g>
+</svg>
+<figcaption>The whole flow. Small-signal and DC samples of the kit become the model; large-signal runs of the kit
+judge it. The dashed path is the loop: a validation that disagrees sends you back to a step in the composer, not to
+the source simulator.</figcaption>
+</figure>
+<p>Two kinds of run come out of the source simulator, and they have different jobs:</p>
+<table>
+<thead>
+<tr>
+<th>Runs</th>
+<th>Become</th>
+<th>Used for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DC I–V, small-signal Y or S at every DC bias, at one or more temperatures</td>
+<td>One <code>SimulatedTables</code> data set</td>
+<td><strong>Fitting</strong> the currents and the charges</td>
+</tr>
+<tr>
+<td>Power sweeps, two-tone sweeps, loadpull</td>
+<td><code>LargeSignal</code> data sets</td>
+<td><strong>Validation</strong> only — never fitted</td>
+</tr>
+</tbody>
+</table>
+<p>Keeping the large-signal runs out of the fit is what makes them a fair test: the model has never seen them.</p>
+<h2 id="sample">What to run in the source simulator</h2>
+<p>Use one test bench per run, with the kit's transistor at the size you want as the base, and nothing else in it but
+bias and ports.</p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>Analysis</th>
+<th>Sweep</th>
+<th>What to save</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>I–V</td>
+<td>DC</td>
+<td>Vgs inside Vds, inside temperature when there are several</td>
+<td>Vgs, Vds and the gate and drain currents at every point</td>
+</tr>
+<tr>
+<td>Small-signal</td>
+<td>S-parameters at every bias of the DC sweep</td>
+<td>One low frequency for the charges (a few hundred MHz to 1 GHz); add a span only if the network is to be checked</td>
+<td>Y (or S) of the two-port, gate port 1, drain port 2, source grounded</td>
+</tr>
+<tr>
+<td>Capacitances (optional)</td>
+<td>The core's operating-point capacitances, where the simulator reports them</td>
+<td>The same bias grid</td>
+<td><code>cgs</code>, <code>cgd</code>, <code>cds</code> and optionally <code>cm</code>, or the matrix <code>C</code></td>
+</tr>
+<tr>
+<td>Large-signal (for validation)</td>
+<td>Harmonic balance: power sweep at the operating bias; loadpull at the frequencies you care about</td>
+<td>Drive up into compression</td>
+<td>The power sweep as a CSV; the loadpull as a file the composer reads (<code>.spl</code>, <code>.lpcwave</code> or a CSV)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Ranges.</strong> Sample wider than the circuit will ever go: from 2 V below pinch-off to well into forward gate conduction,
+and from 0 V (or slightly negative) to beyond the peak drain swing. A model is continued linearly past the edge of its
+data, and that continuation is not the device. Sampled points cost nothing; the
+<a href="../reference/model-composer.html#ranges">bias table</a> gives the steps.</p>
+<p><strong>Settings in the source simulator.</strong> Three matter, and each one gives a model that looks right at the operating point
+and is wrong elsewhere when it is missed:</p>
+<ul>
+<li><strong>Self-heating off</strong> for every fitting run — the kit's thermal resistance set to zero, or its thermal switch off. The
+composer fits <strong>isothermal</strong> currents, at the temperature of each run, and adds the heating itself on the Thermal
+step. Data that already contains heating would be heated twice.</li>
+<li><strong>Traps and dispersion off</strong>, unless you mean to model them. A DC sweep with them on and a small-signal analysis
+with them frozen describe two different devices.</li>
+<li><strong>Stay inside the kit's valid range.</strong> Many kit models clamp their inputs outside it, and the clamped region samples
+as flat data that the fit then reproduces faithfully.</li>
+</ul>
+<p><strong>Temperature.</strong> Run the DC and small-signal sweeps at two or more temperatures, spanning the junction temperatures
+the circuit will reach under drive (the ambient plus the heating). The model then takes <code>T</code> as an input, follows the
+run's <code>temp</code>, and self-heating becomes available.</p>
+<h2 id="plane">Choosing the plane, and the negative network</h2>
+<p>The composer always fits the <strong>core</strong>: the intrinsic gate, drain and source, inside the pads, inductances and series
+resistances. A kit device is that core wrapped in its own extrinsic network, and the samples can be taken on either
+side of it.</p>
+<figure class="fig">
+<svg viewBox="0 0 560 250" role="img" aria-label="A bench port drives a negative copy of the kit's extrinsic network, read from the core outwards, which meets the kit device at its terminal; the kit's own network then leads to the core. The two networks cancel, so the port's voltage and current are the core's." style="width:100%;height:auto">
+  <defs>
+    <marker id="an04-arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/>
+    </marker>
+  </defs>
+  <g stroke="var(--border)" stroke-width="1.4" fill="var(--surface)">
+    <rect x="70"  y="60" width="160" height="70" rx="6" stroke="var(--accent)"/>
+    <rect x="300" y="60" width="140" height="70" rx="6"/>
+    <rect x="466" y="60" width="80"  height="70" rx="6"/>
+  </g>
+  <rect x="290" y="40" width="264" height="110" rx="8" fill="none" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="6 4"/>
+  <g fill="none" stroke="var(--text)" stroke-width="1.6">
+    <circle cx="30" cy="95" r="14"/>
+    <path d="M44 95 H 70 M230 95 H 300 M440 95 H 466"/>
+  </g>
+  <g stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="3 3">
+    <path d="M265 30 V 170"/>
+    <path d="M453 30 V 170"/>
+  </g>
+  <g fill="none" stroke="var(--accent)" stroke-width="1.4">
+    <path d="M30 204 H 500" marker-end="url(#an04-arrow2)"/>
+  </g>
+  <g fill="var(--text)" font-family="var(--font-sans)" text-anchor="middle">
+    <text x="30"  y="128" font-size="12" fill="var(--muted)">port</text>
+    <text x="150" y="90"  font-size="14" font-weight="600">negative copy</text>
+    <text x="150" y="110" font-size="12" fill="var(--muted)">−Rg  −Ci  −Lg  −Cp</text>
+    <text x="370" y="90"  font-size="14" font-weight="600">kit's network</text>
+    <text x="370" y="110" font-size="12" fill="var(--muted)">Cp  Lg  Ci  Rg</text>
+    <text x="506" y="100" font-size="14" font-weight="600">core</text>
+    <text x="340" y="34"  font-size="12" fill="var(--muted)">kit device</text>
+    <text x="265" y="186" font-size="12" fill="var(--muted)">device plane</text>
+    <text x="453" y="186" font-size="12" fill="var(--muted)">intrinsic plane</text>
+    <text x="265" y="234" font-size="13" fill="var(--accent)">together an identity: the port's V and I are the core's</text>
+  </g>
+</svg>
+<figcaption>Sampling at the intrinsic plane when the kit gives no access to its internal nodes. The negative copy is
+the kit's own extrinsic network read from the core outwards, every value negated; cascaded with the real one it is the
+identity, at DC and at every frequency. One side of the gate is drawn; the drain and source are treated the same way.
+</figcaption>
+</figure>
+<table>
+<thead>
+<tr>
+<th>Plane</th>
+<th>How to sample</th>
+<th>In the composer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Intrinsic</strong> — preferred</td>
+<td>Record the core's internal node voltages, if the kit exposes them; or wrap the kit device in its negative network, as drawn</td>
+<td><code>ReferencePlane=intrinsic</code>. The network holds the kit's values, all <strong>locked</strong>; nothing is fitted to it</td>
+</tr>
+<tr>
+<td><strong>Device</strong></td>
+<td>Sample at the kit device's terminals, as it is</td>
+<td><code>ReferencePlane=device</code>, with a six-pin network holding the kit's values, locked; the composer removes it</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why intrinsic is preferred.</strong> At the intrinsic plane the points lie exactly on the grid you swept, and the network
+plays no part in the fit: it is exported with the core exactly as the kit has it. At the device plane the composer
+removes the network with a DC solve carrying the sampled currents, so the intrinsic points move off the grid and every
+<code>Table</code> constituent must re-grid them. Either way the network values come from the kit, not from a fit: a fit can only
+find values the data can tell apart, and the kit already knows them.</p>
+<p><strong>Building the negative network.</strong> Take the kit's extrinsic network from its model card or documentation and draw it
+again in the source simulator's bench, between each port and the kit device's terminal:</p>
+<ul>
+<li><strong>Read it from the core outwards.</strong> What sits next to the core in the kit sits next to the port in the copy. For a
+two-shell network — pad capacitance, inductance, inner capacitance, resistance, from the terminal in — the copy is
+<code>−R</code>, <code>−Cinner</code>, <code>−L</code>, <code>−Cpad</code>, from the port in.</li>
+<li><strong>Negate every value</strong>, the mutuals included. A source resistance and inductance that both loops share go in the
+source lead, negated, in the same place.</li>
+<li><strong>Use it in DC and small-signal analyses only.</strong> Negative elements are exact in a linear analysis and make the bench
+non-passive, so they have no place in harmonic balance or a transient. The large-signal validation runs use the kit
+device as it is.</li>
+<li><strong>At DC only the resistances matter.</strong> The <code>−R</code> cancels the kit's own drop, so the core sees exactly the port's
+voltage, and the I–V grid you sweep is the intrinsic grid.</li>
+<li><strong>A value that depends on temperature</strong> must be negated at each temperature you run.</li>
+</ul>
+<p>If the kit's network values are not published, sample at the device plane instead and let the
+<a href="../reference/model-composer.html#network">Network step</a> fit them cold-FET and multi-bias. That needs S over a
+frequency span, and the two cold biases (<code>Vds = 0 V</code>, pinched off and with the gate forward-biased).</p>
+<h2 id="tables">Writing the tables</h2>
+<p>The composer reads a simulator's tables most easily as a MATLAB <code>.mat</code> file, written by MATLAB, or by Python with
+<code>scipy.io.savemat</code>. Name the arrays as you like; the import maps them. The bias arrays are either the two axes of a
+Vgs × Vds grid, or one value per point. With several temperatures, write one value per point, with a <code>T</code> array beside
+them:</p>
+<pre><code class="language-python">import numpy as np, scipy.io as sio
+# Swept as vgs (nG,), vds (nD,) in V and T (nT,) in degC; id, ig (nG, nD, nT) in A, positive into the terminal;
+# freq (nF,) in Hz; Y (nG, nD, nT, nF, 2, 2) in S. Flattened to one value per point, in the same order:
+G, D, TT = np.meshgrid(vgs, vds, T, indexing=&quot;ij&quot;)
+sio.savemat(&quot;kit_tables.mat&quot;, {&quot;vgs&quot;: G.ravel(), &quot;vds&quot;: D.ravel(), &quot;T&quot;: TT.ravel(),
+                               &quot;id&quot;: id.ravel(), &quot;ig&quot;: ig.ravel(), &quot;freq&quot;: freq,
+                               &quot;Y&quot;: Y.reshape(-1, len(freq), 2, 2)})
+</code></pre>
+<p>At one temperature, <code>vgs</code> and <code>vds</code> can stay the grid's axes, with <code>id</code> shaped <code>(nG, nD)</code>, and <code>AmbientC</code> states the
+temperature. Every array, its unit and its shape are in
+<a href="../reference/model-composer.html#import-formats">File formats</a>. The things that go wrong:</p>
+<ul>
+<li><strong>Signs.</strong> Currents are positive <strong>into</strong> the terminal. A simulator that reports the drain current flowing out gives
+a model with negative transconductance.</li>
+<li><strong>The port order.</strong> Gate is port 1, drain port 2, source grounded.</li>
+<li><strong>The base size.</strong> Note the kit device's finger count and unit gate width: they become <code>N0</code> and <code>W0</code>, and every
+instance scales from them (<a href="../reference/model-composer.html#scaling">Periphery scaling</a>). Sample at a size from the
+middle of the range you will use.</li>
+</ul>
+<h2 id="composer">In Model Composer, step by step</h2>
+<p><strong>Tools ▸ Model Composer…</strong>, choose <strong>Active</strong>, and import the <code>.mat</code> on the <strong>Data</strong> step as <strong>Simulated tables</strong>. The
+steps then run in order; for kit data some of them have nothing to do.</p>
+<figure class="fig">
+<svg viewBox="0 0 540 250" role="img" aria-label="The ten steps of an active Model Composer document and what each does with kit data; Pads and Traps have nothing to do" style="width:100%;height:auto">
+  <defs>
+    <marker id="an04-arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="var(--text)"/>
+    </marker>
+  </defs>
+  <g stroke="var(--border)" stroke-width="1.4" fill="var(--surface)">
+    <rect x="10"  y="20" width="92" height="84" rx="6"/>
+    <rect x="116" y="20" width="92" height="84" rx="6" stroke-dasharray="5 4" fill="none"/>
+    <rect x="222" y="20" width="92" height="84" rx="6"/>
+    <rect x="328" y="20" width="92" height="84" rx="6" stroke="var(--accent)"/>
+    <rect x="434" y="20" width="92" height="84" rx="6" stroke="var(--accent)"/>
+    <rect x="10"  y="146" width="92" height="84" rx="6"/>
+    <rect x="116" y="146" width="92" height="84" rx="6" stroke-dasharray="5 4" fill="none"/>
+    <rect x="222" y="146" width="92" height="84" rx="6"/>
+    <rect x="328" y="146" width="92" height="84" rx="6"/>
+    <rect x="434" y="146" width="92" height="84" rx="6"/>
+  </g>
+  <g fill="none" stroke="var(--text)" stroke-width="1.3">
+    <path d="M102 62 H 114" marker-end="url(#an04-arrow3)"/>
+    <path d="M208 62 H 220" marker-end="url(#an04-arrow3)"/>
+    <path d="M314 62 H 326" marker-end="url(#an04-arrow3)"/>
+    <path d="M420 62 H 432" marker-end="url(#an04-arrow3)"/>
+    <path d="M480 104 V 125 H 56 V 144" marker-end="url(#an04-arrow3)"/>
+    <path d="M102 188 H 114" marker-end="url(#an04-arrow3)"/>
+    <path d="M208 188 H 220" marker-end="url(#an04-arrow3)"/>
+    <path d="M314 188 H 326" marker-end="url(#an04-arrow3)"/>
+    <path d="M420 188 H 432" marker-end="url(#an04-arrow3)"/>
+  </g>
+  <g fill="var(--text)" font-family="var(--font-sans)" text-anchor="middle">
+    <text x="56"  y="46" font-size="13" font-weight="600">Data</text>
+    <text x="56"  y="68" font-size="11" fill="var(--muted)">tables, and</text>
+    <text x="56"  y="84" font-size="11" fill="var(--muted)">large-signal</text>
+    <text x="162" y="46" font-size="13" font-weight="600" fill="var(--muted)">Pads</text>
+    <text x="162" y="68" font-size="11" fill="var(--muted)">None</text>
+    <text x="268" y="46" font-size="13" font-weight="600">Network</text>
+    <text x="268" y="68" font-size="11" fill="var(--muted)">kit's values,</text>
+    <text x="268" y="84" font-size="11" fill="var(--muted)">all locked</text>
+    <text x="374" y="46" font-size="13" font-weight="600">Current</text>
+    <text x="374" y="68" font-size="11" fill="var(--muted)">Id, Ig:</text>
+    <text x="374" y="84" font-size="11" fill="var(--muted)">ANN or Table</text>
+    <text x="480" y="46" font-size="13" font-weight="600">Charge</text>
+    <text x="480" y="68" font-size="11" fill="var(--muted)">Qg, Qd from</text>
+    <text x="480" y="84" font-size="11" fill="var(--muted)">Y or C table</text>
+    <text x="56"  y="172" font-size="13" font-weight="600">Thermal</text>
+    <text x="56"  y="194" font-size="11" fill="var(--muted)">kit's Rth, Cth,</text>
+    <text x="56"  y="210" font-size="11" fill="var(--muted)">typed</text>
+    <text x="162" y="172" font-size="13" font-weight="600" fill="var(--muted)">Traps</text>
+    <text x="162" y="194" font-size="11" fill="var(--muted)">None</text>
+    <text x="268" y="172" font-size="13" font-weight="600">Check</text>
+    <text x="268" y="194" font-size="11" fill="var(--muted)">charge</text>
+    <text x="268" y="210" font-size="11" fill="var(--muted)">conservation</text>
+    <text x="374" y="172" font-size="13" font-weight="600">Validate</text>
+    <text x="374" y="194" font-size="11" fill="var(--muted)">against the</text>
+    <text x="374" y="210" font-size="11" fill="var(--muted)">kit's runs</text>
+    <text x="480" y="172" font-size="13" font-weight="600">Export</text>
+    <text x="480" y="194" font-size="11" fill="var(--muted)">.cmodel,</text>
+    <text x="480" y="210" font-size="11" fill="var(--muted)">or .va</text>
+  </g>
+</svg>
+<figcaption>The steps of an active document, with what each does for kit data. Dashed steps have nothing to do;
+the two outlined in the accent colour are where the fitting happens and where the settings are worth a look.</figcaption>
+</figure>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>For kit data</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Data</strong></td>
+<td>Import the tables as <strong>Simulated tables</strong>: map each array, and state <code>ReferencePlane</code> and, for a single temperature, <code>AmbientC</code>. Import each large-signal run as <strong>Large signal</strong>. Set <code>N0</code> and <code>W0</code> to the sampled device's.</td>
+</tr>
+<tr>
+<td><strong>Pads</strong></td>
+<td><strong>None.</strong> A simulated device has no probe pads.</td>
+</tr>
+<tr>
+<td><strong>Network</strong></td>
+<td>Pick a stock network or open a six-pin <code>.csch</code> of the kit's own, type the kit's values, and <strong>lock every one</strong>. Set each value's scaling rule. With every value locked, the fit holds them.</td>
+</tr>
+<tr>
+<td><strong>Current</strong></td>
+<td><code>Id</code> and <code>Ig</code>. The ANN default suits most kits; see <a href="#defaults">below</a> when it does not.</td>
+</tr>
+<tr>
+<td><strong>Charge</strong></td>
+<td><code>Qg</code> and <code>Qd</code>, from Y, or from the capacitance table if that is what you saved. The default trains an ANN on the capacitances alone.</td>
+</tr>
+<tr>
+<td><strong>Thermal</strong></td>
+<td>Turn self-heating on and <strong>type</strong> the kit's <code>Rth</code> and <code>Cth</code> (or its thermal ladder), since the data was sampled isothermal. Extraction needs pulsed data that a kit does not give.</td>
+</tr>
+<tr>
+<td><strong>Traps</strong></td>
+<td><strong>None</strong>, unless the kit models them and you sampled them as the <a href="../reference/model-composer.html#trap-data">reference describes</a>.</td>
+</tr>
+<tr>
+<td><strong>Check</strong></td>
+<td><strong>Check Charge Conservation.</strong> A kit's own charges can fail it; the model's must pass.</td>
+</tr>
+<tr>
+<td><strong>Validate</strong></td>
+<td>Run all. Each large-signal set is compared at its own bench (<a href="#validate">below</a>).</td>
+</tr>
+<tr>
+<td><strong>Export</strong></td>
+<td>Writes the <code>.cmodel</code>. <strong>VA</strong> writes the same model as Verilog-A source for another simulator.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="defaults">When the defaults are not enough</h2>
+<p>The defaults are chosen for a measured device over an ordinary bias range: a two-layer network of 8 <code>tanh</code> neurons
+per constituent, and a relative weighting floored at 10 % of the largest current. A kit sampled over a wide range —
+deep pinch-off to forward conduction, several temperatures, tens of thousands of points — asks more of a fit than
+that. Look at the fit before changing anything:</p>
+<ul>
+<li><strong>The status line</strong> after a fit gives each constituent's held-out error and its training domain, e.g.
+<code>Id: ANN 2×8 · held-out 0.8 % · domain 412 pts</code>. A held-out error well above the training error means the network
+is too small or under-trained for the data.</li>
+<li><strong>The Error tab</strong> on the Current step maps model minus data over the bias plane. An error concentrated in one corner
+— subthreshold, the knee, the hot end — says which lever to pull.</li>
+<li><strong>The Gm and Gds tabs</strong> compare the data's own derivatives with the model's. Harmonic balance runs on the
+derivatives, so a current that fits in value and not in slope still drives badly.</li>
+</ul>
+<p>Then, one lever at a time:</p>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Try</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Held-out error high everywhere</td>
+<td>A larger network on the method picker (more neurons, or a third layer), more iterations, or more restarts on the step</td>
+</tr>
+<tr>
+<td>Subthreshold current poor</td>
+<td>Lower the drain-current weighting floor, <code>IdFloor</code> in the document's current settings (<a href="../reference/file-formats.html">File formats</a>), so small currents count for more</td>
+</tr>
+<tr>
+<td>The knee or the hot end poor</td>
+<td>More points there in the source simulator; a sampled grid can always be made finer</td>
+</tr>
+<tr>
+<td>Every ANN size leaves a residual</td>
+<td>A <strong>Table</strong> constituent: on dense simulated data it follows the samples by construction</td>
+</tr>
+<tr>
+<td>An equation template does not fit</td>
+<td>Expected over a wide range: the templates are for compact, few-parameter models. Use an ANN or a Table</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Table re-gridding.</strong> A <code>Table</code> constituent samples a smooth function of the points onto its grid and fits a spline
+to that. The function is an ANN trained on the points by default, or a radial-basis interpolant (<strong>RBF</strong>) through them.
+The RBF solves one dense system over every point: its memory grows with the square of the point count and its time
+with the cube. It suits a few thousand points; for the tens of thousands a dense kit sweep gives, re-grid through the
+ANN, or write the table directly (<a href="#direct">below</a>).</p>
+<h2 id="validate">Checking the model against the kit</h2>
+<p>The validation is only as fair as the benches on the two sides are equal. A difference in the bench reads as a
+difference in the model.</p>
+<ul>
+<li><strong>The same bench, both sides.</strong> The same bias, the same source and load terminations at every harmonic, the same
+frequency and drive plan, the same compression point. <strong>Show testbench</strong> on the Validate step writes each item's
+<code>.cnl</code>, and the <a href="../reference/model-composer.html#report">Model Validation Report</a> names its benches in
+<code>testbenches/</code>, so the circuitRF side is on record.</li>
+<li><strong>The same thermal state.</strong> Validate with self-heating <strong>on</strong> in both simulators, at the kit's own thermal
+resistance. The isothermal data trained the core; the validation tests the model as a designer will use it.</li>
+<li><strong>A loadpull at compression, not drive by drive.</strong> The Validate step compares each load at the same gain compression
+(3 dB by default), so a model that compresses a little earlier is not marked wrong at every drive level.</li>
+<li><strong>Loads near the edge of stability.</strong> A load at which the source simulator's drive-up does not converge, or turns
+back on itself, is a statement about that load, not about either model. Leave it out of both sides or run both at a
+source impedance that keeps the input passive.</li>
+<li><strong>Bias S at the terminals.</strong> Place the exported model and the kit device side by side in one S-parameter bench at a
+few biases. The core was fitted inside the network; this checks the two together.</li>
+</ul>
+<p>When a comparison disagrees, the dashed loop in <a href="#flow">the flow</a> goes back into the composer — a step's settings, a
+network value, <code>Rth</code> — not back to the source simulator, unless the data itself was short.</p>
+<h2 id="direct">Writing the .cmodel directly</h2>
+<p>A <code>.cmodel</code> is an open format, and every constituent the composer writes can also be written by a script:
+<a href="../reference/cmodel.html">Writing a .cmodel</a>. For gridded intrinsic tables this is a real alternative to fitting.
+A <a href="../reference/cmodel.html#table">Table constituent</a> is a tensor-product cubic spline on a grid of sites, so the
+samples themselves, on the grid they were taken on, are the table: no network to train, no re-grid. The network, the
+scaling rules and the thermal model go in the same file, and <strong>circuitrf check</strong> reads it back.</p>
+<p>The composer remains the place to <strong>check</strong> such a model. <code>circuitrf model validate kit.cmc --model kit.cmodel</code>
+compares it with a document's data exactly as the Validate step compares a fitted one, and <code>circuitrf model check-charge</code> on a <code>.cnl</code> that places it checks its charges.</p>
+<h2 id="cli">The same flow headless</h2>
+<p>Every step is a <code>circuitrf model</code> noun, the same functions the window calls (<a href="../reference/cli.html#model">Model Composer in the
+CLI</a>):</p>
+<pre><code>circuitrf model new kit.cmc --kind active --network gan-two-shell --fingers 4 --unit-width &quot;125 um&quot;
+circuitrf model import kit.cmc kit_tables.mat --as SimulatedTables --map vgs=vgs --map vds=vds --map T=T --map id=id --map ig=ig --map freq=freq --map Y=Y --condition ReferencePlane=intrinsic
+circuitrf model fit kit.cmc --step all
+circuitrf model check-charge kit.cmc
+circuitrf model validate kit.cmc
+circuitrf model export kit.cmc -o kit.cmodel
+circuitrf model export kit.cmc -o kit.va
+</code></pre>
+<p>The network's values and locks are part of the <code>.cmc</code>, which is JSON (<a href="../reference/file-formats.html">File formats</a>);
+type them in the window's Values table, or write them into the document, before <code>fit</code>.</p>
+<h2 id="checklist">Checklist</h2>
+<ul>
+<li>Self-heating <strong>off</strong> and traps <strong>off</strong> in every fitting run; the temperatures span the junction temperatures the
+circuit reaches.</li>
+<li>The I–V grid runs from below pinch-off into forward gate conduction and past the peak drain swing.</li>
+<li>Y or S at every DC bias, at a low frequency for the charges.</li>
+<li>The plane is stated: <code>intrinsic</code> through the kit's internal nodes or its negative network, or <code>device</code> with the kit's
+network in the composer.</li>
+<li>The kit's network values are typed and <strong>locked</strong>, each with its scaling rule.</li>
+<li>Currents are positive into the terminal; gate is port 1, drain port 2.</li>
+<li><code>N0</code> and <code>W0</code> are the sampled device's.</li>
+<li>The kit's <code>Rth</code> and <code>Cth</code> are typed on the Thermal step.</li>
+<li>Large-signal runs are imported as <strong>Large signal</strong>, for validation only, and both simulators run the same benches.</li>
+</ul>
+
+<nav class="page-nav">
+  <a class="prev" href="an03-extracting-capacitance.html"><span class="dir">Previous</span><span class="name">AN-03 — Extracting capacitance</span></a>
+  <span></span>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

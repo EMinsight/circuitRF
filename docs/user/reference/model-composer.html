@@ -93,6 +93,9 @@ and a gate–drain branch), and the gate and drain charges <code>Qg</code> and <
 sit inside an extrinsic network of pads, inductances and resistances. A model can add self-heating, trap states, or a
 simpler DC/RF dispersion. A <code>.cmodel</code> can also be written without the composer, from equations, a table or a network
 trained elsewhere: <a href="cmodel.html">Writing a .cmodel</a>.</p>
+<p><strong>Starting from another simulator's design kit?</strong> <a href="../app-notes/an04-model-from-a-reference-kit.html">AN-04 — A nonlinear FET model from a reference
+kit</a> walks the whole flow with block diagrams: which runs to make in
+the source simulator, the plane to sample at, what each step does with the result, and how to validate against the kit.</p>
 <h2 id="steps">The steps</h2>
 <p>An active document runs through the steps below, in order. Each step's result is stored in the <code>.cmc</code> and stamped with
 the data and network it came from. When either changes, the step is marked stale.</p>
@@ -386,6 +389,8 @@ typed. <strong>DC/RF dispersion</strong> is the simpler alternative, with one li
 read between a tenth and a half of the top frequency. The default ANNs want a few hundred points or more, and a fit
 reports when its data is thin for its network.</p>
 <h3 id="from-simulator">From another simulator</h3>
+<p><a href="../app-notes/an04-model-from-a-reference-kit.html">AN-04</a> is this section as a worked flow, with the intrinsic-plane
+sampling (the negative network) drawn out.</p>
 <table>
 <thead>
 <tr>
@@ -2154,6 +2159,10 @@ is the template's current scale (Ipk for Angelov, Beta for Curtice and Statz, Id
 temperatures, so that hot DC points and cooler pulsed points are not fitted by one law; <code>none</code> turns it off.</p>
 <p>With fewer S biases than a method needs, its entry in the picker gives the reason when you hover over it, and a fit
 with it is refused rather than run with another method.</p>
+<p>A table samples a smooth function of the points onto its grid: an ANN trained on them (the default) or a radial-basis
+interpolant through them (<strong>RBF</strong>). The RBF solves one dense system over every point, so its memory grows with the
+square of the point count and its time with the cube; it suits a few thousand points, and a dense simulated sweep
+re-grids through the ANN.</p>
 <p>Restarts, the seed and the held-out percentage belong to the step. After a fit the status strip reads, for example,
 <code>Id: ANN 2×8 · held-out 0.8 % · domain 412 pts</code>.</p>
 <h2 id="current">The Current step</h2>

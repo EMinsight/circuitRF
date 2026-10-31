@@ -8,6 +8,9 @@ namespace CircuitRF.Ui.Views.ModelComposer;
 /// <summary>The step rail and the selected step's settings. Everything it shows is the view model's.</summary>
 public partial class StepsPanelView : UserControl
 {
+    /// <summary>The app note that walks the data a model needs, from the source simulator to the composer.</summary>
+    internal const string DataGuidePage = "app-notes/an04-model-from-a-reference-kit.html";
+
     public StepsPanelView()
     {
         InitializeComponent();
@@ -17,6 +20,7 @@ public partial class StepsPanelView : UserControl
                 vm.ChooseTopologyCommand.Execute(row);
         };
         SymbolButton.Click += (_, _) => OpenSymbolMenu();
+        DataGuideButton.Click += (_, _) => DocLauncher.Open(DataGuidePage);
     }
 
     /// <summary>

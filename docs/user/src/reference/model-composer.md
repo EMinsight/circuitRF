@@ -66,6 +66,10 @@ sit inside an extrinsic network of pads, inductances and resistances. A model ca
 simpler DC/RF dispersion. A `.cmodel` can also be written without the composer, from equations, a table or a network
 trained elsewhere: [Writing a .cmodel](cmodel.html).
 
+**Starting from another simulator's design kit?** [AN-04 — A nonlinear FET model from a reference
+kit](../app-notes/an04-model-from-a-reference-kit.html) walks the whole flow with block diagrams: which runs to make in
+the source simulator, the plane to sample at, what each step does with the result, and how to validate against the kit.
+
 ## The steps {#steps}
 
 An active document runs through the steps below, in order. Each step's result is stored in the `.cmc` and stamped with
@@ -165,6 +169,9 @@ read between a tenth and a half of the top frequency. The default ANNs want a fe
 reports when its data is thin for its network.
 
 ### From another simulator {#from-simulator}
+
+[AN-04](../app-notes/an04-model-from-a-reference-kit.html) is this section as a worked flow, with the intrinsic-plane
+sampling (the negative network) drawn out.
 
 | Data | Analysis to run | What to save |
 |---|---|---|
@@ -641,6 +648,11 @@ temperatures, so that hot DC points and cooler pulsed points are not fitted by o
 
 With fewer S biases than a method needs, its entry in the picker gives the reason when you hover over it, and a fit
 with it is refused rather than run with another method.
+
+A table samples a smooth function of the points onto its grid: an ANN trained on them (the default) or a radial-basis
+interpolant through them (**RBF**). The RBF solves one dense system over every point, so its memory grows with the
+square of the point count and its time with the cube; it suits a few thousand points, and a dense simulated sweep
+re-grids through the ANN.
 
 Restarts, the seed and the held-out percentage belong to the step. After a fit the status strip reads, for example,
 `Id: ANN 2×8 · held-out 0.8 % · domain 412 pts`.
