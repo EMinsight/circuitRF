@@ -7,6 +7,7 @@ decorator is this package's problem.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import traceback
 from dataclasses import dataclass
@@ -426,17 +427,44 @@ def serve_one(registry: Registry, json_text: str) -> tuple[str, list[int]] | Non
         return _error(f"{type(exc).__name__}: {exc}\n{detail}"), []
 
 
+_wire_out: BinaryIO | None = None
+
+
+def claim_stdout() -> BinaryIO:
+    """Take the process's stdout for the wire, and send everything else written there to stderr.
+
+    **stdout is the wire and must carry nothing else**, but a worker runs code nobody here wrote: a
+    kit's cell that ``print()``s — gdsfactory's own components do — landed in the middle of a frame and
+    desynchronised the stream, which circuitRF reported as an implausible frame nowhere near the print.
+    So the wire is a duplicate of file descriptor 1, and descriptor 1 itself now points at stderr: a
+    ``print()``, and a C extension writing to its own stdout, both land where circuitRF surfaces them.
+
+    Idempotent. A library that runs kit code before :func:`run` (``gdsfactory_bridge.register_pdk``
+    builds every cell while describing) calls it first, so nothing is printed onto the wire early.
+    """
+    global _wire_out
+    if _wire_out is None:
+        sys.stdout.flush()
+        try:
+            wire = os.dup(1)
+            os.dup2(2, 1)
+            _wire_out = os.fdopen(wire, "wb")
+        except (OSError, ValueError):
+            # No real descriptor to move (an embedded interpreter): the old behaviour, unguarded.
+            _wire_out = sys.stdout.buffer
+    return _wire_out
+
+
 def run(registry: Registry | None = None,
         stdin: BinaryIO | None = None, stdout: BinaryIO | None = None) -> None:
     """Serve requests until ``shutdown`` or end of stream.
 
-    **stdout is the wire and must carry nothing else.** A stray ``print()`` in a generator lands in
-    the middle of a frame and desynchronises the stream — which presents as circuitRF reporting a
-    malformed reply, nowhere near the print. Write to ``sys.stderr`` instead; circuitRF surfaces it.
+    **stdout is the wire.** :func:`claim_stdout` keeps it that way when no stream is passed in: anything
+    else written to stdout lands on stderr, which circuitRF surfaces.
     """
     registry = registry or default_registry
     inp = stdin if stdin is not None else sys.stdin.buffer
-    out = stdout if stdout is not None else sys.stdout.buffer
+    out = stdout if stdout is not None else claim_stdout()
 
     # The same two pipes, lent to :mod:`circuitrf_pcell.services` so a generator can ask circuitRF
     # for work mid-generate. There is no second connection: a service call happens strictly inside

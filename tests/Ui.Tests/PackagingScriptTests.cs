@@ -1411,6 +1411,44 @@ public class PackagingScriptTests
     }
 
     /// <summary>
+    /// <b>No publish tree carries a Python environment</b> (brief-gdf-5 R-gdf5-3, gdsfactory series D10).
+    /// circuitRF runs the user's own interpreter; shipping gdsfactory, a kit or its GPL layout-engine
+    /// dependency would put that licence on our side. The rule is CliSmoke's sixth check — compiled here
+    /// from the same file, <c>tools/CliSmoke/BundledPython.cs</c> — so every tree every packaging script
+    /// smoke-tests (the test above) is held by it. It names no package: an installed one always leaves a
+    /// <c>site-packages</c> or <c>*.dist-info</c> directory or a <c>.whl</c> behind. On macOS the tree is
+    /// the whole <c>.app</c>, not just <c>Contents/MacOS</c>, where the executable sits.
+    /// </summary>
+    [Fact]
+    public void NoPublishTree_CarriesAPythonEnvironment()
+    {
+        string root = Directory.CreateTempSubdirectory("crf-bundled-python-").FullName;
+        try
+        {
+            string app = Path.Combine(root, "circuitRF.app");
+            string macos = Path.Combine(app, "Contents", "MacOS");
+            Directory.CreateDirectory(macos);
+            File.WriteAllText(Path.Combine(macos, "circuitRF"), "");
+            Directory.CreateDirectory(Path.Combine(macos, "pcell-python", "gdsfactory_bridge"));   // ours: allowed
+            Directory.CreateDirectory(Path.Combine(app, "Contents", "Resources", "py", "lib", "site-packages", "x"));
+            Directory.CreateDirectory(Path.Combine(macos, "vendor", "somekit-1.0.dist-info"));
+            File.WriteAllText(Path.Combine(macos, "somekit-1.0-py3-none-any.whl"), "");
+
+            Assert.Equal(app, CliSmoke.BundledPython.TreeOf(Path.Combine(macos, "circuitRF")));
+            Assert.Equal(new[]
+            {
+                Path.Combine("Contents", "MacOS", "somekit-1.0-py3-none-any.whl"),
+                Path.Combine("Contents", "MacOS", "vendor", "somekit-1.0.dist-info"),
+                Path.Combine("Contents", "Resources", "py", "lib", "site-packages"),
+            }.Order(StringComparer.Ordinal), CliSmoke.BundledPython.Find(app));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+
+        // And the smoke check runs it, on the tree around the executable it was given.
+        Assert.Contains("BundledPython.Find(tree)", File.ReadAllText(RepoFile("tools", "CliSmoke", "Program.cs")), StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// <b>Opening a document by double-click is untouched by the executable becoming the CLI.</b>
     /// Every Windows open verb targets the .EXE — never circuitRF.com, which is console-subsystem and
     /// would flash a console window on every double-click — and the Linux desktop entry still hands

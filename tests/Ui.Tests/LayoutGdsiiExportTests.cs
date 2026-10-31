@@ -182,6 +182,37 @@ public class LayoutGdsiiExportTests : IDisposable
         Assert.Empty(plan.UnresolvedInstanceReferences);
     }
 
+    /// <summary>brief-gdf-5: a headless run's generated cells are followed. <c>convert</c> rebuilds a placed
+    /// generated cell whose name moved on under its new name and REDIRECTS the old one; a read-only
+    /// workspace's rebuilt cell exists only in memory. The writer used to ask the disk alone and export
+    /// both placements as unresolved — a file with the kit cells missing, exit 0.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Analyze_FollowsTheRunsGeneratedCells_RedirectedOrHeldInMemory(bool heldInMemory)
+    {
+        var rect = new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 };
+        var topDir = CreateCell("TOP", v => { });
+        var topLayoutDir = CellFolder.SubFolderPath(topDir, ViewType.Layout);
+        string stale = Path.Combine(_dir, "GEN_old");
+        var topView = LayoutPersistence.LoadFromFile(Path.Combine(topLayoutDir, "TOP.clay"));
+        topView.Instances.Add(new LayoutInstance { CellRef = Path.GetRelativePath(topLayoutDir, stale), Mag = 1.0 });
+        LayoutPersistence.SaveToFile(Path.Combine(topLayoutDir, "TOP.clay"), topView);
+
+        string current = Path.Combine(_dir, "GEN_new");
+        if (heldInMemory) GeneratedCellOverlay.Put(current, new LayoutView { DbuPerMicron = 1000, Shapes = { rect } }, new CcellFile());
+        else CreateCell("GEN_new", v => v.Shapes.Add(rect));
+        GeneratedCellOverlay.Redirect(stale, current);
+        try
+        {
+            var plan = GdsiiExport.Analyze(topDir, null, 1000);
+            Assert.Empty(plan.UnresolvedInstanceReferences);
+            Assert.Equal(2, plan.Structures.Count);
+            Assert.Contains("GEN_new", plan.StructureNameByCellName.Keys);
+        }
+        finally { GeneratedCellOverlay.Remove([stale, current]); }
+    }
+
     [Fact]
     public void HasNothingToReport_PlainGeometry_IsTrue()
     {

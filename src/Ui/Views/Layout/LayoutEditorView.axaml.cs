@@ -1959,6 +1959,9 @@ public partial class LayoutEditorView : UserControl
             // native writer's diagnostics are the plan's, which the dialog already showed.
             if (route.UsesGdstk())
                 foreach (var d in summary.Diagnostics) vm.ReportWarning($"{title}: {d}");
+            if (summary.PolygonsSplit > 0)
+                vm.ReportWarning($"{title}: {summary.PolygonsSplit} polygon(s) over {GdsiiPolygonSplit.MaxPoints + 1} points were " +
+                              "written as several abutting polygons covering the same area — one GDSII element holds no more.");
         }
         catch (Exception ex)
         {

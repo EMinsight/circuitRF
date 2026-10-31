@@ -25,10 +25,10 @@ public partial class PCellTrustDialog : Window
 {
     public PCellTrustDialog() => InitializeComponent();
 
-    public static async Task<bool?> ShowAsync(Window? owner, IReadOnlyList<PCellKit> kits)
+    /// <summary>The prompt for <paramref name="kits"/>, not shown — what <see cref="ShowAsync"/> shows,
+    /// and what the user guide's figure of it lifts (brief-gdf-5).</summary>
+    internal static PCellTrustDialog Build(IReadOnlyList<PCellKit> kits)
     {
-        if (kits.Count == 0) return null;
-
         var dlg = new PCellTrustDialog();
         dlg.KitList.ItemsSource = kits;
         if (kits.Count > 1)
@@ -37,6 +37,14 @@ public partial class PCellTrustDialog : Window
         // sentence says plainly what allowing it means (brief-gdf-2 R-gdf2-2a).
         if (kits.All(k => k.IsGdsfactory))
             dlg.BodyText.Text = "Running this kit runs its Python code with your user account.";
+        return dlg;
+    }
+
+    public static async Task<bool?> ShowAsync(Window? owner, IReadOnlyList<PCellKit> kits)
+    {
+        if (kits.Count == 0) return null;
+
+        var dlg = Build(kits);
 
         // $parent[Window] resolves to null on macOS for menu- and key-binding-sourced calls, and this
         // one is raised from a workspace open rather than from a control at all — find the shell.

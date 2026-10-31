@@ -251,7 +251,7 @@ public static class StreamLowering
     /// <summary>Bridges each hole ring into the outer ring via a zero-width slit (nearest-point
     /// bridge), producing one self-touching contour — exactly what every GDSII writer does, since the
     /// format cannot express a hole any other way.</summary>
-    private static long[] Keyhole(long[] outer, List<long[]> holes)
+    internal static long[] Keyhole(long[] outer, List<long[]> holes)
     {
         var combined = new List<long>(outer);
         foreach (var hole in holes)

@@ -171,6 +171,24 @@ public sealed class PCellWorkerHostTests : IDisposable
         Assert.Contains(_reports, r => r.Contains("both called 'MLIN'", StringComparison.Ordinal));
     }
 
+    [PythonFact]
+    public void TwoKitsOfferingOneId_AGdsfactoryKitsCellWins_WhereverItsDirectorySorts()
+    {
+        // A kit imported both as its own tree and as its gdsfactory package offers many cells under one name in
+        // both; the package's is preferred (owner, 2026-10-30). Named so directory order would pick the other.
+        KitWithExample("a-tree");
+        string gf = KitWithExample("z-gf");
+        string manifest = Path.Combine(gf, PCellGeneratorManifest.FileName);
+        File.WriteAllText(manifest, File.ReadAllText(manifest).Replace("\"schemaVersion\": 1,", "\"schemaVersion\": 1, \"module\": \"zkit\","));
+
+        _resolver = NewResolver();
+        Assert.NotNull(_resolver.Resolve("MLIN"));
+
+        Assert.Equal("z-gf", _resolver.KitNameByGeneratorId["MLIN"]);
+        Assert.Contains(_reports, r => r.Contains("both called 'MLIN'", StringComparison.Ordinal)
+                                       && r.Contains("a gdsfactory kit's cell is preferred", StringComparison.Ordinal));
+    }
+
     // ── The registry seam, and what it buys ───────────────────────────────────
 
     /// <summary>

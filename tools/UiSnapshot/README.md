@@ -120,7 +120,12 @@ Default size 1100x1400.
 question asked when the kit's `.ctech` already exists, against a copy with one layer recoloured and one
 conductivity changed, so its list of colliding items is real), `cell` (with `--clay`) and `symbols` (brief-gdf-4:
 the kit's own glyphs made into symbols in a fresh workspace, the kit's palette heading beside a schematic with one
-of each placed; every pin prints). `report` also lists those symbols. To look at the built
+of each placed; every pin prints). `report` also lists those symbols. `palette` (brief-gdf-5, with `--workspace <dir>`, optional
+`--category <heading>` and `--cell <query>`) composes the workspace's kit section of the Library palette as a
+workspace open does — every referenced kit's parts, every kit generator with its declared model, the parts made from
+a kit's own drawings, then `KitPaletteMerge` — prints per kit how many tiles carry a symbol and artwork, a symbol
+only, or artwork only, and draws the palette; with `--cell` naming a part that has a symbol, that part is also placed
+on a schematic beside it (several, comma-separated, are placed in a row on their own). Every kit is allowed to run. To look at the built
 technology itself, build it with `circuitrf import pdk … --technology` and open the `.ctech` with `--ctech`:
 
 ```

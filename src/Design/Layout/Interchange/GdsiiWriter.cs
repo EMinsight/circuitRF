@@ -32,7 +32,11 @@ public sealed record GdsiiExportSummary(
     /// <summary>brief-gdsii-native-fixes.md D7: one sentence per placeholder layer — the negative
     /// number a DXF or board import gives a layer the technology had no number for — saying which free
     /// GDSII layer number it was written as. Also in <see cref="Diagnostics"/>.</summary>
-    IReadOnlyList<string>? LayersRenumbered = null);
+    IReadOnlyList<string>? LayersRenumbered = null,
+    /// <summary>brief-gdf-5: polygons with more points than one GDSII element holds, written as several
+    /// abutting polygons covering exactly the same area (<see cref="GdsiiPolygonSplit"/>). The native
+    /// writer's count; a gdstk route leaves it 0.</summary>
+    int PolygonsSplit = 0);
 
 public static class GdsiiWriter
 {
@@ -62,7 +66,10 @@ public static class GdsiiWriter
             {
                 switch (element)
                 {
-                    case StreamPolygon p: WriteBoundary(w, p); break;
+                    case StreamPolygon p:
+                        // More points than one element holds: abutting pieces, the same area (brief-gdf-5).
+                        foreach (var ring in GdsiiPolygonSplit.Split(p.Xy)) WriteBoundary(w, p with { Xy = ring });
+                        break;
                     case StreamPath path: WritePath(w, path); break;
                     case StreamLabel label: WriteText(w, label); break;
                 }
@@ -78,7 +85,8 @@ public static class GdsiiWriter
 
         return new GdsiiExportSummary(
             library.CurvedShapesFlattened, library.HolesKeyholed, library.BitmapsSkipped, library.Diagnostics,
-            library.LabelRecordsWritten, library.ViaPadsSkipped, library.LayersRenumbered);
+            library.LabelRecordsWritten, library.ViaPadsSkipped, library.LayersRenumbered,
+            GdsiiPolygonSplit.CountOver(library));
     }
 
     // ── Elements ───────────────────────────────────────────────────────────────

@@ -5,6 +5,44 @@ layer map, and (in some kits) a stack and material cards. circuitRF runs its cel
 PCell worker road a `cni` cell library already takes. This page is how, and why each choice was made.
 Series: `docs/sonnet-briefs/brief-gdf-0-overview.md`; this page covers brief 2.
 
+## 0. What a kit holds, and where each part lands
+
+| A gdsfactory `Pdk` holds | circuitRF counterpart |
+|---|---|
+| `cells`: name → function returning polygons on `(layer, datatype)` plus ports (name, centre, width, outward degrees, layer, type) | a PCell generator; every port but a `placement` one is a `Pin(name, x, y, layer, width, outward_deg)` (§5) |
+| `layers`: name → `(layer, datatype)` | `LayerKey`, and the name a generated shape falls back to (§5) |
+| `layer_views`: colours, visibility, written as a layer-properties file | the layer table `LayerPropertiesReader` reads (§6a) |
+| `layer_stack`: per patterned layer, thickness, `zmin`, material name | the `.ctech` stackup, through `ProcessTechnologyBuilder` (§6a) |
+| material cards (some kits): conductivity, permittivity | `StackupLayer.SigmaSm` / `Epsr`, and the technology's materials (§6a) |
+| circuit models (S-parameter functions) | not used — circuitRF's engine is the simulator |
+
+Lengths are µm floats; parameters are plain function arguments with no declared dimension.
+
+## 0a. The decisions, and why
+
+- **D2 — consent is unchanged, and nothing runs before it.** Kits are listed by reading METADATA files;
+  only the interpreter's own version is asked (that runs the interpreter, not the kit). Consent keys on the
+  installed directory with links resolved, so another environment asks again. A headless run honours a
+  recorded decision or a one-run `--allow-code`/`--trust-kit`, and never records one. *Why:* a kit is
+  somebody else's Python; a list that ran it to describe it would run it before the user agreed to.
+- **D3 — floats pass through exactly, in the kit's units.** Every float is a `real`; the adapter scales
+  only the geometry that comes back. *Why:* not every float is a length — an inductance of 3.33e-11 read as
+  one rounds to 0 DBU — and "every float is a length, with an override list" is silently wrong on every
+  non-length nobody listed. *Cost:* no drag handles, and the editor says "kit units (µm for dimensions)".
+- **D4 — the interpreter is per user, never in the workspace.** The workspace records the module and the
+  version last seen; a different version is a NOTE. *Why:* a workspace travels, and a path from another
+  machine is at best wrong and at worst someone else's environment.
+- **D5 — circuitRF installs nothing.** It states the requirement (≥ 3.12 and the kit's own
+  `Requires-Python`) and refuses an interpreter that misses it, naming the version. *Why:* an application
+  running `pip` in a user's environment changes it in ways nobody asked for.
+- **D6 — the proprietary companion package is never needed.** Only gdsfactory and the kit are imported; a
+  missing module is reported by the name its error gives. *Why:* measured — the kits that list it build
+  every cell without it.
+- **D7 — no new pairing rule.** A generator reports its declared model (the `model` default, else
+  `info["model"]`) and `KitPaletteMerge`'s existing steps decide; a refused pairing is reported with the
+  parameters that did not cover. *Why:* a layout cell and a symbol naming the same quantity differently is
+  a mapping problem with no structural answer; guessing pairs the wrong device silently.
+
 ## 1. The road — one process kind, one wire, one consent
 
 `KitPCellLibrary.EnsureDeclaredGdsfactory` writes into the workspace exactly what a `cni` library
@@ -107,6 +145,11 @@ gdsfactory's own cell cache stays effective. Flattened with `get_polygons(by="tu
 Coordinates are scaled once: kit DBU × the kit's `dbu` gives µm, and `crf.dbu(µm × tech.dbu_per_micron)`
 gives circuitRF DBU — never `round()`, never `int()`.
 
+**A cell that prints is harmless.** stdout is the wire, and gdsfactory's own components `print()`; the
+worker's `run()` claims it (`circuitrf_pcell.claim_stdout`: the wire is a duplicate of descriptor 1, and
+descriptor 1 points at stderr), and `register_pdk` redirects Python-level output while it describes. Before
+brief 5 one such print desynchronised the stream and the cell was refused.
+
 Layers map by `(layer, datatype)` to the technology's layer, else by the kit's layer name; **a layer the
 technology lacks is kept on the kit's own number and reported once per generate**. **Every port is a
 pin, whatever its `port_type`, except `placement`** — port type is gdsfactory's routing vocabulary, and
@@ -124,6 +167,11 @@ After consent the kit is described once more by `python -m gdsfactory_bridge.rep
 grouped by reason; parameters not offered (count, list on expand); pins dropped as `placement`; and every
 model pairing `KitPaletteMerge` made, and every one it refused with the parameters that did not cover
 (`KitPaletteMerge.ExplainModelPairings`, report only).
+
+**Two kits offering one cell name: the gdsfactory kit's wins** (owner, 2026-10-30). A kit imported both as its
+own tree and as its gdsfactory package offers many cells under one name in both (22 on the open 130 nm BiCMOS
+kit); `PCellWorkerResolver` starts gdsfactory kits first, so the package's cell is the one drawn, and each
+collision is still named. Between two kits of one kind the first found wins, as before.
 
 **A cell named like a circuitRF built-in is not offered.** Built-ins resolve first, case-insensitively,
 so the kit's cell of that name is unreachable; the report says so under its own reason. gdsfactory's
@@ -215,6 +263,15 @@ of a cell is another matter: the drawing is the kit's, and circuitRF adds only w
 - **No parameters, and no model.** The parameters are the generator's, as for every synthesised part. A
   symbol makes a cell placeable and visible to Update Layout from Schematic and LVS; it gives the cell no
   circuit behaviour — an EM run's SnP does that. The report says so beside the list.
+
+## 6c. Export
+
+A placed gdsfactory cell is an ordinary generated cell, so GDSII export is circuitRF's and needs no Python.
+Two things the acceptance matrix found had to hold for that to be true (`src/Design/RESOLVED.md`, brief-gdf-5):
+the hierarchical writers follow a headless run's generated-cell redirects (a cell whose snapshot no longer
+hashes to today's name — every placed kit cell after a gdsfactory upgrade — used to export as nothing), and
+a polygon over 8191 points is written as abutting pieces covering exactly the same area
+(`GdsiiPolygonSplit`; one GDSII element holds no more).
 
 ## 7. Tests
 

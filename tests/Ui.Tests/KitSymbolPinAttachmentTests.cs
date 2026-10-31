@@ -109,7 +109,9 @@ public sealed class KitSymbolPinAttachmentTests
         // Measured on a real open kit, 26 of 374 pins sit on the INTERIOR of a shape — the base of a
         // filled arrow, a point inside a body box — so there is no vertex to carry along. Those get a
         // lead drawn from where the snap put them back to where the drawing has them.
-        var pins = new[] { new KitSymbolPin("A", -7, 0), new KitSymbolPin("BULK", 7, 0) };
+        // BULK at 4, A at −7: at this scale they sit 0.86 and 0.495 of a step off the grid, so no shift of the
+        // pins as a set lands both — BULK stays displaced from its drawing whichever way they snap.
+        var pins = new[] { new KitSymbolPin("A", -7, 0), new KitSymbolPin("BULK", 4, 0) };
         var body = new KitSymbolShape[]
         {
             new KitSymbolLine(-7, 0, -3, 0),                 // a lead for A only
@@ -123,6 +125,47 @@ public sealed class KitSymbolPinAttachmentTests
         Assert.Contains(sym.Primitives.OfType<LinePrimitive>(), l =>
             (Math.Abs(l.X1 - bulk.LocalX) < 1e-6 && Math.Abs(l.Y1 - bulk.LocalY) < 1e-6) ||
             (Math.Abs(l.X2 - bulk.LocalX) < 1e-6 && Math.Abs(l.Y2 - bulk.LocalY) < 1e-6));
+    }
+
+    [Fact]
+    public void AFetsDrainAndSourceLeads_StayVerticalWhenTheSnapMovesTheirPinsSideways_AndTheArrowKeepsItsShape()
+    {
+        // Reported 2026-10-30: every kit-tree FET drew its drain and source running diagonally to their stubs.
+        // The leads are vertical and the snap moved their pins sideways; carrying only the pin's own vertex
+        // tilted them, and carrying the stub's end instead collapsed the source arrow whose tip sits on it.
+        // The drawing is shifted whole instead — the kit's own FET, in its own units:
+        var pins = new[]
+        {
+            new KitSymbolPin("D", 20, -30), new KitSymbolPin("G", -20, 0), new KitSymbolPin("S", 20, 30),
+        };
+        var body = new KitSymbolShape[]
+        {
+            new KitSymbolLine(7.5, -22.5, 7.5, 22.5),    // channel
+            new KitSymbolLine(-20, 0, 2.5, 0),           // gate lead
+            new KitSymbolLine(20, -30, 20, -17.5),       // drain lead
+            new KitSymbolLine(20, 17.5, 20, 30),         // source lead
+            new KitSymbolLine(7.5, -17.5, 20, -17.5),    // drain stub
+            new KitSymbolLine(7.5, 17.5, 20, 17.5),      // source stub
+            new KitSymbolPath([15, 20, 20, 17.5, 15, 15], Closed: true, Filled: true),   // source arrow, tip on the stub's end
+        };
+
+        var sym = KitTemplateSymbol.BuildFromDrawing(pins, body, scale: 6.6)!;   // 20 * 6.6 = 132: a third of a step out
+
+        var lines = sym.Primitives.OfType<LinePrimitive>().ToList();
+        Assert.All(lines, l => Assert.True(Math.Abs(l.X1 - l.X2) < 1e-9 || Math.Abs(l.Y1 - l.Y2) < 1e-9,
+                                           $"({l.X1},{l.Y1})-({l.X2},{l.Y2}) is diagonal"));
+        foreach (string name in new[] { "D", "S" })
+        {
+            var pin = sym.Pins.Single(p => p.Name == name);
+            Assert.Equal(0.0, Math.IEEERemainder(pin.LocalX, P), 1e-6);
+            Assert.Contains(lines, l => Math.Abs(l.X1 - pin.LocalX) < 1e-6 && Math.Abs(l.Y1 - pin.LocalY) < 1e-6
+                                        || Math.Abs(l.X2 - pin.LocalX) < 1e-6 && Math.Abs(l.Y2 - pin.LocalY) < 1e-6);
+        }
+        // The arrow is the kit's, scaled: 5 units long and 5 tall, its tip on the source stub's end.
+        var arrow = sym.Primitives.OfType<PolygonPrimitive>().Single().Points;
+        Assert.Equal(5 * 6.6, arrow.Max(p => p[0]) - arrow.Min(p => p[0]), 1e-6);
+        Assert.Equal(5 * 6.6, arrow.Max(p => p[1]) - arrow.Min(p => p[1]), 1e-6);
+        Assert.Contains(lines, l => Math.Abs(l.Y1 - l.Y2) < 1e-9 && Math.Abs(Math.Max(l.X1, l.X2) - arrow.Max(p => p[0])) < 1e-6);
     }
 
     [Fact]

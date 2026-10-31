@@ -409,7 +409,9 @@ public static class LayoutConvert
             Console.Error.WriteLine("[circuitRF] cancelled; nothing was written");
             return 130;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        // InvalidDataException: a writer refusing what its format cannot hold. It used to escape as an
+        // unhandled exception and abort the process (brief-gdf-5) — a refusal is exit 1 and a sentence.
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             Console.Error.WriteLine($"error: {ex.Message}");
             JsonRun.Note(CliDiagnostics.ConvertFailed(ex.Message));
@@ -1154,6 +1156,8 @@ public static class LayoutConvert
                 Note(plan.HolesKeyholed, "hole", "keyholed");
                 Note(plan.BitmapsSkipped, "bitmap", $"skipped — {format} carries no raster");
                 Note(plan.ViaPadsSkipped, "via", "exported as a barrel with no landing pad");
+                Note(summary.PolygonsSplit, "polygon",
+                     $"over {GdsiiPolygonSplit.MaxPoints + 1} points written as several abutting polygons — one GDSII element holds no more");
                 foreach (var r in plan.LayerRenumberings.Concat(plan.SideNotes))
                 {
                     Console.Error.WriteLine($"note: {r}");

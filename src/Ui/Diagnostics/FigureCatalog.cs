@@ -161,6 +161,16 @@ public static class FigureCatalog
           + "it. The kit is invented - real kits are licensed and none is in this repository - but "
           + "the report and the dialog rendering it are the application's own."),
 
+        new("gdsfactory-trust", DocGdsfactoryFixtures.TrustPrompt, 470, 285,
+            WindowFrame.Titled("Generated Artwork"),
+            "The consent prompt for a gdsfactory kit: the package, its version, where it is installed and the "
+          + "interpreter that would run it. Nothing of the kit runs until it is allowed. The kit is invented."),
+
+        new("gdsfactory-import-report", DocGdsfactoryFixtures.ImportReport, 600, 640,
+            WindowFrame.Titled("Import PDK - acmerf-gf 0.4.1"),
+            "The report a gdsfactory kit's import ends with: the cells it offers, those it does not and why, "
+          + "and the offer to build the kit's technology. The kit is invented; the report is the application's own."),
+
         new("symbol-editor", DocFixtures.SymbolEditor, 1100, 700,
             WindowFrame.Titled("circuitRF — Symbol editor"),
             "The symbol editor, showing the SDD's variadic body and its pins."),

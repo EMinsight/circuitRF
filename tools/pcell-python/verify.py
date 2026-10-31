@@ -405,6 +405,37 @@ finally:
     if proc.poll() is None:
         proc.kill()
 
+print("\na generator that prints, over a pipe")
+# brief-gdf-5: kit code prints (gdsfactory's own components do). stdout is the wire, so run() claims it
+# and points descriptor 1 at stderr — a print() and a C-level write both land there, never in a frame.
+_printing = r"""
+import os, sys
+import circuitrf_pcell as crf
+def g(params, tech):
+    print("noise from python " * 20)
+    os.write(1, b"noise from a descriptor write\n")
+    return crf.Result(shapes=[crf.Rect(crf.Layer(1, 0), 0, 0, 10, 10)])
+crf.default_registry.add("PRINTS", [], g)
+crf.run()
+"""
+proc = subprocess.Popen([sys.executable, "-c", _printing], cwd=str(Path(__file__).resolve().parent),
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+try:
+    write_frame(proc.stdin, json.dumps({"op": "describe", "wireVersion": WIRE_VERSION}))
+    read_frame(proc.stdout)
+    write_frame(proc.stdin, json.dumps({"op": "generate", "generatorId": "PRINTS", "parameters": {}, "layers": {}}))
+    text, payload = read_frame(proc.stdout)
+    check(json.loads(text).get("ok", True) is not False and payload == [0, 0, 10, 10],
+          "the reply after a print() and a descriptor write is intact")
+    write_frame(proc.stdin, json.dumps({"op": "shutdown"}))
+    check(proc.wait(timeout=10) == 0, "and the worker shuts down cleanly")
+    _err = proc.stderr.read().decode()
+    check("noise from python" in _err and "noise from a descriptor write" in _err,
+          "both prints arrive on stderr, where circuitRF surfaces them")
+finally:
+    if proc.poll() is None:
+        proc.kill()
+
 print("\ngdsfactory_bridge without gdsfactory installed")
 # Self-contained: gdsfactory is HIDDEN in the child even on a machine that has it, so this checks the
 # missing case wherever it runs. The bridge must import, and register_pdk must answer with the one

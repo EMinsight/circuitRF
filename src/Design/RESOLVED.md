@@ -24862,3 +24862,69 @@ has the rules; what was learned getting them right on the five measured kits:
   a stack in `__init__.py` pushed it past that and the kit stopped being found; its process lives in
   `synthkit/process.py` for that reason. A real kit whose `__init__.py` constructs its `Pdk` further down
   would not be found as a source tree either — not changed here; reported.
+
+## The acceptance matrix: what was circuitRF's (brief-gdf-5, 2026-10-30)
+
+`tools/GdsfactoryAcceptance/run.py` drives every cell of a kit through `circuitrf import pdk` and `circuitrf convert`
+and compares the GDSII with gdsfactory's own, per layer. Four failures were circuitRF's; each is fixed at its source.
+
+- **`convert` exported a stale-named generated cell as nothing, and exited 0.** `GeneratedCellsRun` rebuilds a
+  placed cell whose generator or technology moved on under its NEW folder name and redirects the old one in
+  `GeneratedCellOverlay` (a headless run edits no layout). `CellLayoutResolver` follows the redirect; the
+  hierarchical writers did not — `InterchangeHierarchy.Collect` asked `Directory.Exists` of the old name, found
+  nothing, and wrote the placement as an unresolved reference: one warning line, a GDSII with every kit cell
+  missing. Any snapshot that does not hash to today's name takes this path — a gdsfactory upgrade changes the
+  cache key of every placed kit cell at once. `InterchangeHierarchy.ResolveTarget`/`LoadPrimary` follow the
+  overlay (redirect, and a read-only workspace's cell held only in memory); `PcbExport` had the same walk and
+  uses them too.
+- **A kit cell that `print()`s desynchronised the worker.** stdout is the wire, and gdsfactory's own components
+  print; the bytes landed where a frame header was expected ("implausible frame … out of step"), and the cell
+  was refused. `circuitrf_pcell.claim_stdout()` (called by `run()`) makes the wire a duplicate of descriptor 1
+  and points descriptor 1 at stderr, so a `print()` and a C extension's write both land where circuitRF
+  surfaces them. `register_pdk` redirects Python-level output while it describes, which is before `run()`;
+  it does NOT move descriptors itself, because it is also called outside a worker (`verify.py`).
+- **A polygon over 8191 points could not be written, and `convert` aborted.** A GDSII XY record's length field
+  is 16 bits. A fine-pitched spiral inductor exceeds it; `GdsiiRecordWriter` threw `InvalidDataException`,
+  which `convert`'s catch did not name, so the process died (SIGABRT). `GdsiiPolygonSplit` cuts such a polygon
+  across its longer side, recursively, until every piece (holes keyholed) fits — pieces share edges exactly,
+  and the matrix confirms the union matches gdsfactory's own GDS. The count is `GdsiiExportSummary.PolygonsSplit`
+  (not in the plan: the plan is shared with the OASIS route, which has no such limit). `convert` now turns
+  any writer refusal into exit 1 and a sentence.
+- **Not circuitRF's, and worth knowing:** a cell that draws the current date and time builds differently every
+  second, so no second implementation can match it; the harness detects it by building the same set twice in
+  gdsfactory. A set gdsfactory refuses (a bend radius below its cross-section's minimum, an off-grid port
+  width) is the kit's refusal and is never sent.
+
+## Kit-tree FETs drew their drain and source leads diagonally (2026-10-30)
+
+Owner-reported on the open kits' FET symbols (from each kit's own tree, `KitTemplateSymbol.BuildFromDrawing`). The
+kits' files draw every lead horizontal or vertical — checked over every FET symbol of three kits. A kit's scale is
+continuous (median pin span onto circuitRF's 400), so pins land off the connection grid and are snapped; `PinFollow`
+carried only the vertex ON the pin, so a pin snapped ACROSS its lead (a FET's vertical drain and source, moved
+sideways) tilted the lead from the snapped pin to the stub's unmoved end.
+
+- **Carrying the lead and stub instead was built and dropped.** It kept the lead vertical, but the source arrow's tip
+  sits on the stub's end; carrying it a third of a grid step collapsed the arrow onto its own base, and the n-type
+  FETs lost their arrows. A rule that reshapes a drawing to meet its pins fails on whatever shares the vertex next.
+- **Shifting the drawing alone (pins unchanged) fixed two kits and broke the third.** With the drawing aligned to
+  the drain column, the whole rounding error landed on the gate lead: pins rounded ONE AT A TIME pull a symmetric
+  pair inward together (gate and drain at ±1.5 steps came out at ±1), and on a compact kit that step was the gate
+  lead's whole length.
+- **What shipped: pins snap as a set, the drawing moves with them.** `RigidShift` picks one shift per axis for all
+  of a symbol's pins, judged against the drawing as `BodyPlacement` will align it (to the pins whose leads run
+  across that axis): an across-lead pin that disagrees tilts its lead (×3), a pin moved toward its own lead's far
+  end shortens it (×3, and losing more than 60 % of the lead is never chosen), moved away only lengthens it (×1).
+  "Inward" judged from the middle of the pins' extent failed on four-terminal FETs (the bulk pin moved the middle);
+  it is judged per pin, along its own lead. Every FET sampled from three kits (28) draws straight leads, intact
+  arrows and visible gate leads; resistors, capacitors and diodes are unchanged. **It moves pins**, so
+  `DsnSymbolReader.TranslationVersion` is 5: a workspace that recorded 4 is told to re-import the kit rather than
+  loading moved pins. Left as is: a BJT's very short substrate stub is not drawn on two kits (its pin is).
+
+## Two kits offering one cell name: the gdsfactory kit's wins (2026-10-30)
+
+Owner decision. A kit imported both as its own tree (with Python layout cells) and as its gdsfactory package offers
+many cells under one name in both — 22 on the open 130 nm BiCMOS kit — and `PCellWorkerResolver` took whichever kit
+DIRECTORY it found first. It now starts gdsfactory kits first (stable order within each kind), so the package's cell
+is drawn; the collision is still reported, saying why. Measured consequence on that kit: two of the tree's parts that
+took artwork from the tree's own same-named cells no longer pair, because the package's cell takes different
+parameters (23 parts with symbol and artwork, was 25).

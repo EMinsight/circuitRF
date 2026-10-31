@@ -58,7 +58,7 @@ internal static class InterchangeHierarchy
             // item 5/R-fix-4: the root uses the caller's live view; every other cell resolves from disk.
             var view = string.Equals(dir, rootAbs, StringComparison.OrdinalIgnoreCase) && rootView is not null
                 ? rootView
-                : loadPrimary(dir);
+                : LoadPrimary(dir, loadPrimary);
             node = new Node(dir, PlacementSide.Top, view);
             tops[dir] = node;
             topOrder.Add(node);
@@ -99,8 +99,7 @@ internal static class InterchangeHierarchy
             var layoutDir = node.LayoutDir;
             foreach (var inst in node.View.Instances)
             {
-                if (Workspace.ExternalCellRef.ResolveCellDir(inst.CellRef, layoutDir) is not { } targetDir
-                    || !Directory.Exists(targetDir))
+                if (ResolveTarget(inst.CellRef, layoutDir) is not { } targetDir)
                 {
                     node.Targets.Add(null);
                     continue;
@@ -111,6 +110,29 @@ internal static class InterchangeHierarchy
 
         return new Walk(topOrder, variantOrder, notes.Distinct().ToList());
     }
+
+    /// <summary>
+    /// The cell folder a placement names, as THIS run resolves it — or null when it names nothing.
+    ///
+    /// <para><b>A headless run's generated cells are followed here</b> (brief-gdf-5). <c>convert</c>
+    /// rebuilds a placed generated cell before exporting, and a cell whose generator or technology moved
+    /// on rebuilds under a new folder name; the run redirects the old name in
+    /// <see cref="GeneratedCellOverlay"/> rather than editing the layout. A writer that asked the disk
+    /// alone found the old folder absent, wrote the placement as unresolved and exited 0 — a GDSII with
+    /// every kit cell missing and one warning to say so. A read-only workspace's rebuilt cell exists only
+    /// in the overlay, so a held view counts as present too.</para>
+    /// </summary>
+    internal static string? ResolveTarget(string? cellRef, string layoutDir)
+    {
+        if (Workspace.ExternalCellRef.ResolveCellDir(cellRef, layoutDir) is not { } dir) return null;
+        dir = GeneratedCellOverlay.Follow(Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir)));
+        return GeneratedCellOverlay.TryGetView(dir, out _) || Directory.Exists(dir) ? dir : null;
+    }
+
+    /// <summary>A cell's primary layout: the run's in-memory copy when it holds one, else
+    /// <paramref name="loadFromDisk"/>'s.</summary>
+    internal static LayoutView LoadPrimary(string cellDir, Func<string, LayoutView> loadFromDisk)
+        => GeneratedCellOverlay.TryGetView(cellDir, out var held) ? held : loadFromDisk(cellDir);
 
     /// <summary><paramref name="baseName"/> + <c>_B</c>, made unique against every name already given out
     /// with the same <c>_2</c>, <c>_3</c> suffixing the naming classes use for a collision.</summary>

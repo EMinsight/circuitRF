@@ -133,7 +133,7 @@ string? imageScalePoints = null;
 int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 string? archive = null, manageLibraries = null, addVendorLibrary = null;
-string? gdsfactory = null, gdsfactoryPython = null, gdsfactoryKit = null, gdsfactoryCell = null;
+string? gdsfactory = null, gdsfactoryPython = null, gdsfactoryKit = null, gdsfactoryCell = null, gdsfactoryWorkspace = null;
 string? csym = null, csymPick = null;
 bool dark = false;
 var layerToggles = new List<(string Name, bool Hide)>();
@@ -201,6 +201,7 @@ for (int i = 0; i < args.Length; i++)
         case "--python" when i + 1 < args.Length: gdsfactoryPython = args[++i]; break;
         case "--kit" when i + 1 < args.Length: gdsfactoryKit = Path.GetFullPath(args[++i]); break;
         case "--cell" when i + 1 < args.Length: gdsfactoryCell = args[++i]; break;
+        case "--workspace" when i + 1 < args.Length: gdsfactoryWorkspace = Path.GetFullPath(args[++i]); break;
         case "--size" when i + 1 < args.Length:
             var wh = args[++i].Split('x');
             width = double.Parse(wh[0]); height = double.Parse(wh[1]);
@@ -1195,8 +1196,114 @@ bool OpenGdsfactory(string step)
             doc.RequestZoomToFit();
             break;
         }
+        case "palette":
+        {
+            // brief-gdf-5: a workspace's kit section of the Library palette as a workspace open composes it — every
+            // referenced kit's own parts, then its generators (gdsfactory or otherwise) with their declared models and
+            // parameters, the parts synthesised from a kit's own drawings, then KitPaletteMerge — and the tiles counted:
+            // symbol and artwork, symbol only, layout only. Every kit is allowed to run, as a user who said Allow.
+            if (gdsfactoryWorkspace is null) { Console.Error.WriteLine("--gdsfactory palette needs --workspace <dir>"); return false; }
+            string ws = gdsfactoryWorkspace;
+            var refs = CircuitRF.Design.Workspace.WorkspacePersistence.LoadFromFile(Path.Combine(ws, ".cws")).PdkRefs ?? [];
+            var roots = CircuitRF.Ui.Schematic.PdkReferenceManager.LibraryRootsIn(ws, refs);
+            var parts = new List<PaletteItem>();
+            foreach (var r in refs.Where(x => !x.IsLibraryOnly))
+            {
+                var read = PdkWorkspaceImport.ReadReferenced(r, ws, roots);
+                if (read.Outcome is not { } outcome) { Console.WriteLine($"{r.Provider}: not loaded: {read.Refusal ?? "missing"}"); continue; }
+                PdkKitRegistry.SetKit(ws, r.Provider, outcome.Parts ?? [], outcome.OsdiModels);
+                parts.AddRange(outcome.Items);
+            }
+
+            var resolver = new CircuitRF.Design.Layout.PCells.Wire.PCellWorkerResolver(ws,
+                report: m => Console.WriteLine($"[pcell] {m}"),
+                trust: _ => CircuitRF.Design.Layout.PCells.Wire.PCellTrustDecision.Allowed,
+                moduleInterpreter: _ => python);
+            CircuitRF.Design.Layout.PCells.PCellRegistry.AddResolver(resolver);
+            var builtIn = new HashSet<string>(CircuitRF.Design.Layout.PCells.PCellRegistry.KnownGeneratorIds, StringComparer.OrdinalIgnoreCase);
+            var kits = resolver.KitNameByGeneratorId.Where(kv => !builtIn.Contains(kv.Key))
+                                                     .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+            var models = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var names = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+            var synthesised = new List<PaletteItem>();
+            var mounted = new Dictionary<string, List<PdkKitPart>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (gid, kitName) in kits)
+            {
+                if (resolver.DeclaredDefaults(gid) is { } d)
+                {
+                    names[gid] = [.. d.Keys];
+                    if (d.FirstOrDefault(kv => string.Equals(kv.Key, "model", StringComparison.OrdinalIgnoreCase)) is { Key: not null } hit
+                        && hit.Value.ToString() is { Length: > 0 } raw)
+                        models[gid] = (raw.IndexOf(':') is var colon and >= 0 ? raw[(colon + 1)..] : raw).Trim();
+                }
+                if (PCellKitSchematicParts.TryBuild(kitName, gid, resolver.KitDirectoryByGeneratorId.GetValueOrDefault(gid),
+                                                    resolver.DeclaredParameters(gid), out _) is { } part)
+                {
+                    (mounted.TryGetValue(kitName, out var list) ? list : mounted[kitName] = []).Add(part);
+                    synthesised.Add(PCellKitSchematicParts.PaletteItemFor(kitName, part));
+                }
+            }
+            foreach (var (kitName, list) in mounted) PdkKitRegistry.SetPCellParts(ws, kitName, list);
+            foreach (var g in kits.GroupBy(kv => kv.Value)) Console.WriteLine($"generators {g.Key}: {g.Count()}");
+            var claimed = parts.Where(i => i.Pdk is not null).Select(i => (i.Pdk!.KitName, i.Pdk.PartId)).ToHashSet();
+            IReadOnlyList<PaletteItem> withSymbols = [.. parts, .. synthesised.Where(i => !claimed.Contains((i.Pdk!.KitName, i.Pdk.PartId)))];
+            var composed = CircuitRF.Ui.Schematic.KitPaletteMerge.Compose(withSymbols, kits, models, names);
+
+            // A layout-only tile carries a PdkPartRef too (named after its generator), so "has a symbol" is "was
+            // one of the parts that went in", never "has a Pdk".
+            var symbolled = withSymbols.Where(i => i.Pdk is not null).Select(i => (i.Pdk!.KitName, i.Pdk.PartId)).ToHashSet();
+            bool HasSymbol(PaletteItem i) => i.Pdk is { } r && symbolled.Contains((r.KitName, r.PartId));
+            foreach (var group in composed.GroupBy(i => i.Pdk?.KitName ?? "?"))
+                Console.WriteLine($"palette {group.Key}: {group.Count(i => HasSymbol(i) && i.PCellGeneratorId is not null)} symbol and artwork, " +
+                                  $"{group.Count(i => HasSymbol(i) && i.PCellGeneratorId is null)} symbol only, " +
+                                  $"{group.Count(i => !HasSymbol(i) && i.PCellGeneratorId is not null)} layout only");
+
+            var tool = new PaletteTool();
+            tool.SetPlacementService(new CircuitRF.Ui.Schematic.PlacementService());
+            tool.SetPdkParts(composed);
+            if (paletteCategory is not null)
+                tool.SelectedCategory = tool.Categories.FirstOrDefault(c => c.DisplayName == paletteCategory) ?? tool.SelectedCategory;
+            if (gdsfactoryCell is not null) tool.SearchQuery = gdsfactoryCell;
+            Console.WriteLine($"palette headings: {string.Join(", ", tool.Categories.Select(c => c.DisplayName))}");
+            // --cell naming parts with symbols (comma-separated): each placed on a schematic through the placement path,
+            // so its symbol can be looked at at full size — beside the palette for one, in a row on their own for several.
+            var toPlace = (gdsfactoryCell ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(n => composed.FirstOrDefault(i => HasSymbol(i) && string.Equals(i.Pdk!.PartId, n, StringComparison.OrdinalIgnoreCase)))
+                .Where(i => i is not null).Select(i => i!.Pdk!).ToList();
+            if (toPlace.Count > 0)
+            {
+                string schDir = Path.Combine(ws, "palette-snapshot");
+                Directory.CreateDirectory(schDir);
+                var model = new SchematicEditModel { SchematicDirectory = schDir };
+                var vm = new SchematicViewModel(model, messageSink: new ConsoleSink());
+                foreach (var part in toPlace)
+                    if (PdkKitRegistry.Find(PdkKitRegistry.RefFor(part.KitName, part.PartId), ws) is { } kp)
+                        Console.WriteLine($"pins {part.PartId}: {string.Join(" ", kp.Symbol.Pins.Select(p => $"{p.Name}({p.LocalX:0.##},{p.LocalY:0.##})"))}");
+                for (int k = 0; k < toPlace.Count; k++)
+                    Await(vm.CommitCellPlacementAsync(PdkKitRegistry.RefFor(toPlace[k].KitName, toPlace[k].PartId), k * 600, 0, SymbolRotation.R0));
+                vm.Selection.Clear();
+                var doc = new CircuitRF.Ui.Schematic.SchematicDocument("palette", vm, Path.Combine(schDir, "palette.csch"));
+                var view = new CircuitRF.Ui.Views.Content.SchematicView { DataContext = doc };
+                if (toPlace.Count == 1)
+                {
+                    var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("320,*") };
+                    grid.Children.Add(new CircuitRF.Ui.Views.Palette.PaletteToolView { DataContext = tool });
+                    Grid.SetColumn(view, 1);
+                    grid.Children.Add(view);
+                    host.Content = grid;
+                }
+                else host.Content = view;
+                host.Width = sizeGiven ? width : 1100; host.Height = sizeGiven ? height : 560;
+                Pump();
+                doc.RequestZoomToFit();
+                break;
+            }
+            host.Content = new CircuitRF.Ui.Views.Palette.PaletteToolView { DataContext = tool };
+            host.Width = sizeGiven ? width : 320; host.Height = sizeGiven ? height : 720;
+            break;
+        }
         default:
-            Console.Error.WriteLine($"--gdsfactory: unknown step '{step}' (prompt, pick, interpreter, trust, report, report-open, tech-overwrite, cell, symbols)");
+            Console.Error.WriteLine($"--gdsfactory: unknown step '{step}' (prompt, pick, interpreter, trust, report, report-open, tech-overwrite, cell, symbols, palette)");
             return false;
     }
     Pump();

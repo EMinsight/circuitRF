@@ -163,3 +163,53 @@ note.
 - **The answer to the owner's palette question**, combining brief 1's symbol counts with this brief's
   layout tiles, per kit: parts with a symbol and artwork, parts with a symbol only, and layout-only
   tiles.
+
+---
+
+## Completion note (2026-10-30)
+
+**Built.** `tools/GdsfactoryAcceptance/run.py` + `README.md` (kit-agnostic; each reference set built in a forked
+child killed at `--build-timeout`, because one kit cell loops forever inside compiled code on one halved parameter);
+CliSmoke check 6, "no Python ships" (`tools/CliSmoke/BundledPython.cs`, compiled into `PackagingScriptTests` too);
+the user page `docs/user/src/reference/gdsfactory-kits.md` (nav entry, "Two kinds of open kit" in
+`pdk-integration.md`), figures `gdsfactory-trust` / `gdsfactory-import-report` in `FigureCatalog`; design doc §0/§0a
+(mapping table, D2–D7 with reasons) and §6c; UiSnapshot `--gdsfactory palette --workspace [--cell a,b]`.
+
+**§2, by process** (Python 3.12; nothing written in the repo; the kit→module map is in the session scratchpad only):
+
+| Kit | Cells / offered | Sets | Matched | gdsfactory refused | Failing: kit / circuitRF | Not offered (all agree) | Technology (notes, warnings) | Import | Generate p50/p95 |
+|---|---|---|---|---|---|---|---|---|---|
+| A 130 nm SiGe BiCMOS | 147 / 145 | 437 | 403 | 34 | 0 / **0** | 2 required args | 8 cond, 7 via, 13 filled (26, 2) | 6.9 s | 5 / 108 ms |
+| B superconducting RF | 75 / 70 | 483 | 95 | 44 | 0 / **344 — one event, open** | 3 raised, 1 req, 1 built-in | 2, 1, 3 (15, 9) | 5.6 s | — |
+| C 130 nm CMOS | 767 / 764 | 1004 | 998 | 6 | 0 / **0** | 3 required args | 6, 5, 9 (18, 8) | 13.4 s | 4 / 37 ms |
+| D 180 nm CMOS | 490 / 21 | 146 | 137 | 9 | 0 / **0** | 469 raised (= gdsfactory's own) | 6, 5, 8 (19, 8) | 3.2 s | 5 / 37 ms |
+| E generic | 325 / 314 | 2399 | 2329 | 66 | 4 (draws the clock) / **0** | 4 req, 5 raised, 2 built-in | 3, 2, 4 (20, 4) | 5.2 s | 4 / 106 ms |
+
+**Kit B is not closed.** 341 of its 344 are one event: the kit's worker dies partway through a `convert` (≈50 min,
+memory climbing), circuitRF does not restart a dead worker, and every later cell of that run fails "pipe is broken".
+The other 3 are a GDSII coordinate refusal. Next: find the set that kills the worker (log `convert`'s stderr per
+chunk), make the harness count a worker death once, and decide whether the resolver should restart a dead worker.
+
+**Brief 3 §5 EM gates (A inductor, B CPW): not run** — tier C, owner-run, and kit A's measured reference is still to
+be located in the kit's tree.
+
+**circuitRF defects found and fixed** (`src/Design/RESOLVED.md`): export writers ignored a run's generated-cell
+redirects (a stale-named kit cell exported as nothing, exit 0); a cell that prints desynchronised the worker
+(`claim_stdout`); a >8191-point polygon aborted `convert` (`GdsiiPolygonSplit` — the generic spiral now matches 9/9);
+`convert` now refuses on any writer exception. Also, at the owner's request: **a gdsfactory kit's cell wins a name
+collision** with another kit; and **kit-tree symbols snap their pins as a set** with the drawing moved to match, so
+FET leads are straight (TranslationVersion 5 — existing workspaces re-import their kits).
+
+**Palette, per kit** (kit's own tree + gdsfactory package in one workspace): A — 23 symbol+artwork, 20 symbol only,
+126 + 9 layout-only (22 same-name cells, the package's used); C — 0 / 628 / 764 (the parameter-interface rule refuses
+every pair, D7); D — 4 / 69 / 17; B — 37 symbol (from the kit's glyphs) + artwork / 0 / 33; E — 0 / 0 / 314.
+
+**Pictures looked at:** the two doc figures, light and dark (`gdsfactory-trust`, `gdsfactory-import-report` — resized
+after the first look); each kit's palette (A tree and package headings, B, C, D); the FET/control before-and-after
+sets on A, C, D through three iterations of the symbol fix.
+
+**Tests run** (only touched classes): LayoutGdsiiExportTests, GdsiiPolygonSplitTests, GdsiiExportByteIdentityTests,
+PackagingScriptTests.NoPublishTree…, KitSymbol*/KitTemplateSymbol/KitDrawnSymbol/KitPaletteWiring/PdkReferenceManager/
+WorkspaceArchive/ImportPdkCliVerb/PCellWorkerHost/ConvertCliVerb/DialogOwnerVisibility/GdsfactoryAdapter — pass;
+gated GdsfactoryKitTests.TheGenericKit 313/313; `verify.py` both interpreters; Firewall 79/79.
+**DocsFactoryTests.EveryCapturedFigureExists… fails until DocGen writes the two new figures** (owner's, end of series).

@@ -549,8 +549,12 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
             if (_byGeneratorId is not null) return _byGeneratorId;
 
             var map = new Dictionary<string, PCellWorkerProvider>(StringComparer.Ordinal);
+            var fromGdsfactory = new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (var (dir, manifest) in _manifests)
+            // gdsfactory kits first (owner, 2026-10-30): a kit imported both as its own tree and as its
+            // gdsfactory package offers many cells under one name in both, and the package's is the one wanted.
+            // OrderBy is stable, so kits of one kind keep their order among themselves.
+            foreach (var (dir, manifest) in _manifests.OrderBy(m => m.Manifest.IsGdsfactory ? 0 : 1))
             {
                 // CONSENT IS CHECKED BEFORE ANYTHING IS LAUNCHED, and this — not the prompt — is what
                 // actually enforces it: a prompt that never appeared (headless, a dialog that failed,
@@ -611,13 +615,16 @@ public sealed class PCellWorkerResolver : IPCellGeneratorResolver, IDisposable
                             // cannot: two workspaces may hold kits of one name, and a name is not
                             // a path.
                             _kitDirectoryByGeneratorId[id] = dir;
+                            if (manifest.IsGdsfactory) fromGdsfactory.Add(id);
                         }
                         else
-                            // Two kits offering one id: neither is obviously right, so the first wins
-                            // and the collision is named. Silently preferring either would make which
-                            // cell you get depend on directory order.
+                            // Two kits offering one id: a gdsfactory kit's wins over any other kind (the
+                            // order above); between two of one kind the first found does. Either way the
+                            // collision is named, never resolved in silence.
                             _report?.Invoke($"Two PCell generators are both called '{id}'; the one in " +
-                                            $"'{map[id].Origin}' is used and '{provider.Origin}' is not.");
+                                            $"'{map[id].Origin}' is used" +
+                                            (fromGdsfactory.Contains(id) && !manifest.IsGdsfactory ? " (a gdsfactory kit's cell is preferred)" : "") +
+                                            $" and '{provider.Origin}' is not.");
                 }
                 catch (PCellWireException ex)
                 {

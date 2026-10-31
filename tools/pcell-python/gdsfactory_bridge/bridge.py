@@ -30,6 +30,7 @@ the reader can see whose install it is.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import inspect
 import os
@@ -292,6 +293,13 @@ def register_pdk(module_name: str, registry: Any = None) -> PdkRegistration:
     **A cell that cannot be offered is skipped and reported, never fatal** — one broken cell must not
     cost a designer every other cell in the kit.
     """
+    # Describing builds every cell, before the worker's run() has claimed stdout for the wire
+    # (crf.claim_stdout), and a cell that prints must not print onto it.
+    with contextlib.redirect_stdout(sys.stderr):
+        return _register(module_name, registry)
+
+
+def _register(module_name: str, registry: Any) -> PdkRegistration:
     try:
         import gdsfactory as gf
         from gdsfactory.pdk import Pdk

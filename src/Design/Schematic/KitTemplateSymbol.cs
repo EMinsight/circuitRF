@@ -71,23 +71,24 @@ internal static class KitTemplateSymbol
         if (pins is null || pins.Count == 0) return null;
         if (!double.IsFinite(scale) || scale <= 0) scale = ChooseScaleFor(pins, body);
 
-        var placed = PlacePins(pins, scale, flipY: false, snapPins);      // drawing is already y-down
+        var placed = PlacePins(pins, scale, flipY: false, snapPins, LeadsOf(pins, body));   // drawing is already y-down
 
         // Where each pin WOULD have been without the connection-grid snap, keyed by the file's own
         // untouched coordinates so the match is exact rather than a tolerance. See PinFollow below.
         var follow = new Dictionary<(double X, double Y), (double X, double Y)>(pins.Count);
         for (int i = 0; i < pins.Count; i++)
             follow[(pins[i].X, pins[i].Y)] = (placed[i].LocalX, placed[i].LocalY);
+        var at = BodyPlacement(pins, placed, body, scale);
 
         var attached = new HashSet<(double X, double Y)>();
         var tiers = StrokeTiers(body);
         var drawn = new List<SymbolPrimitive>();
         foreach (var shape in body ?? [])
-            if (Convert(shape, scale, follow, attached, tiers(shape.Width)) is { } prim) drawn.Add(prim);
+            if (Convert(shape, at, follow, attached, tiers(shape.Width)) is { } prim) drawn.Add(prim);
 
         if (drawn.Count == 0) return new Symbol(BoxBodyFor(placed), placed);
 
-        drawn.AddRange(StubsForDetachedPins(pins, placed, scale, attached));
+        drawn.AddRange(StubsForDetachedPins(pins, placed, at, attached));
         return new Symbol(drawn, placed);
     }
 
@@ -107,14 +108,14 @@ internal static class KitTemplateSymbol
     /// overlaps the metal it belongs to, and a stub shorter than the marker is only clutter.</para>
     /// </summary>
     private static IEnumerable<SymbolPrimitive> StubsForDetachedPins(
-        IReadOnlyList<KitSymbolPin> pins, List<SymbolPin> placed, double scale,
+        IReadOnlyList<KitSymbolPin> pins, List<SymbolPin> placed, BodyAt at,
         HashSet<(double X, double Y)> attached)
     {
         for (int i = 0; i < pins.Count; i++)
         {
             if (attached.Contains((pins[i].X, pins[i].Y))) continue;
 
-            double ux = pins[i].X * scale, uy = pins[i].Y * scale;
+            double ux = at.X(pins[i].X), uy = at.Y(pins[i].Y);
             double dx = placed[i].LocalX - ux, dy = placed[i].LocalY - uy;
             if (dx * dx + dy * dy < StubThreshold * StubThreshold) continue;
 
@@ -143,14 +144,83 @@ internal static class KitTemplateSymbol
     /// that either misses it or catches a neighbouring vertex that was never on the pin.</para>
     /// </summary>
     private static (double X, double Y) PinFollow(
-        double x, double y, double scale,
+        double x, double y, BodyAt at,
         IReadOnlyDictionary<(double X, double Y), (double X, double Y)> follow,
         HashSet<(double X, double Y)> attached)
     {
-        if (!follow.TryGetValue((x, y), out var snapped)) return (x * scale, y * scale);
+        if (!follow.TryGetValue((x, y), out var snapped)) return (at.X(x), at.Y(y));
         attached.Add((x, y));
         return snapped;
     }
+
+    /// <summary>Where the drawing goes: the kit's coordinates scaled, then moved by one offset for the whole
+    /// body (<see cref="BodyPlacement"/>).</summary>
+    private readonly record struct BodyAt(double Scale, double Ox, double Oy)
+    {
+        public double X(double x) => x * Scale + Ox;
+        public double Y(double y) => y * Scale + Oy;
+    }
+
+    /// <summary>
+    /// The scale, and an offset for the WHOLE drawing that keeps the kit's straight leads straight when the
+    /// connection-grid snap moves their pins.
+    ///
+    /// <para><b>What it fixes.</b> A pin moved ALONG its lead only lengthens the lead a little, and
+    /// <see cref="PinFollow"/> carries the lead's end along with it. A pin moved ACROSS its lead tilts it:
+    /// a FET's drain and source leads are vertical, and with a kit's continuous scale the snap moves both
+    /// pins sideways by up to half a grid step, so every kit-tree FET drew its drain and source running
+    /// diagonally to their stubs. Moving the lead or the stub instead fails on the next shape — the source
+    /// arrow's tip sits on the stub's end, and carrying it collapses the arrow.</para>
+    ///
+    /// <para><b>The rule.</b> Shift the drawing, never reshape it: x by the snap's x displacement shared by
+    /// the pins that end a VERTICAL segment, y by the y displacement shared by the pins that end a
+    /// HORIZONTAL segment — the most common value of each, so a kit drawn on its own grid (every pin column
+    /// the same distance off the connection grid) is placed exactly. The pins stay where <see cref="RigidShift"/>
+    /// snapped them; only the artwork moves. Without a straight lead on an axis the drawing follows the pins'
+    /// shared shift.</para>
+    /// </summary>
+    private static BodyAt BodyPlacement(
+        IReadOnlyList<KitSymbolPin> pins, List<SymbolPin> placed, IReadOnlyList<KitSymbolShape>? body, double scale)
+    {
+        var vertical = new HashSet<(double X, double Y)>();     // ends of vertical segments
+        var horizontal = new HashSet<(double X, double Y)>();   // ends of horizontal segments
+        void Segment((double X, double Y) a, (double X, double Y) b)
+        {
+            if (a.X == b.X && a.Y != b.Y) { vertical.Add(a); vertical.Add(b); }
+            else if (a.Y == b.Y && a.X != b.X) { horizontal.Add(a); horizontal.Add(b); }
+        }
+        foreach (var shape in body ?? [])
+        {
+            if (shape is KitSymbolLine l) Segment((l.X1, l.Y1), (l.X2, l.Y2));
+            else if (shape is KitSymbolPath { Closed: false } p)
+                for (int i = 0; i + 3 < p.Xy.Count; i += 2) Segment((p.Xy[i], p.Xy[i + 1]), (p.Xy[i + 2], p.Xy[i + 3]));
+        }
+
+        var dxs = new List<double>();
+        var dys = new List<double>();
+        var allX = new List<double>();
+        var allY = new List<double>();
+        for (int i = 0; i < pins.Count; i++)
+        {
+            var key = (pins[i].X, pins[i].Y);
+            double dx = placed[i].LocalX - pins[i].X * scale, dy = placed[i].LocalY - pins[i].Y * scale;
+            if (vertical.Contains(key)) dxs.Add(dx);
+            if (horizontal.Contains(key)) dys.Add(dy);
+            allX.Add(dx);
+            allY.Add(dy);
+        }
+        // With no straight lead on an axis, the pins' own shared shift (RigidShift's, to within rounding):
+        // the drawing goes where its pins went.
+        return new BodyAt(scale, MostCommon(dxs.Count > 0 ? dxs : allX), MostCommon(dys.Count > 0 ? dys : allY));
+    }
+
+    /// <summary>The value occurring most often (to a hair), ties to the one nearest zero; 0 for none.</summary>
+    private static double MostCommon(List<double> values) =>
+        values.Count == 0
+            ? 0
+            : values.GroupBy(v => Math.Round(v, 6))
+                    .OrderByDescending(g => g.Count()).ThenBy(g => Math.Abs(g.Key))
+                    .First().Key;
 
     // ── shared placement ──────────────────────────────────────────────────────
 
@@ -335,15 +405,20 @@ internal static class KitTemplateSymbol
         };
     }
 
-    private static List<SymbolPin> PlacePins(IReadOnlyList<KitSymbolPin> pins, double scale, bool flipY, bool snap = true)
+    private static List<SymbolPin> PlacePins(IReadOnlyList<KitSymbolPin> pins, double scale, bool flipY, bool snap = true,
+                                             IReadOnlyList<PinLead>? leads = null)
     {
+        double Y(KitSymbolPin p) => flipY ? -p.Y * scale : p.Y * scale;
+        double tx = snap && leads is not null ? RigidShift(pins.Select(p => p.X * scale).ToList(), leads.Select(l => l.OnX).ToList(), scale) : 0;
+        double ty = snap && leads is not null ? RigidShift(pins.Select(Y).ToList(), leads.Select(l => l.OnY).ToList(), scale) : 0;
+
         var placed = new List<SymbolPin>(pins.Count);
         for (int i = 0; i < pins.Count; i++)
         {
-            double y = flipY ? -pins[i].Y * scale : pins[i].Y * scale;
+            double y = Y(pins[i]);
             placed.Add(new SymbolPin(
-                snap ? DsnSymbolReader.SnapToPinGrid(pins[i].X * scale) : pins[i].X * scale,
-                snap ? DsnSymbolReader.SnapToPinGrid(y) : y,
+                snap ? DsnSymbolReader.SnapToPinGrid(pins[i].X * scale + tx) : pins[i].X * scale,
+                snap ? DsnSymbolReader.SnapToPinGrid(y + ty) : y,
                 i + 1,
                 string.IsNullOrWhiteSpace(pins[i].Name) ? (i + 1).ToString() : pins[i].Name)
             {
@@ -359,6 +434,100 @@ internal static class KitTemplateSymbol
         }
         return placed;
     }
+
+    /// <summary>How a pin's own lead lies against one axis: across it (<see cref="Across"/> — a drain lead
+    /// against x), along it toward the drawing (<see cref="Inward"/> −1 or +1, <see cref="Length"/> in the kit's
+    /// units — a gate lead against x), or neither (no lead, or a diagonal one).</summary>
+    private readonly record struct AxisLead(bool Across, int Inward, double Length = 0);
+
+    /// <summary>A pin's lead against each axis.</summary>
+    private readonly record struct PinLead(AxisLead OnX, AxisLead OnY);
+
+    /// <summary>Each pin's lead: the first straight segment the drawing ends on the pin.</summary>
+    private static List<PinLead> LeadsOf(IReadOnlyList<KitSymbolPin> pins, IReadOnlyList<KitSymbolShape>? body)
+    {
+        var segments = new List<((double X, double Y) A, (double X, double Y) B)>();
+        foreach (var shape in body ?? [])
+        {
+            if (shape is KitSymbolLine l) segments.Add(((l.X1, l.Y1), (l.X2, l.Y2)));
+            else if (shape is KitSymbolPath { Closed: false } p)
+                for (int i = 0; i + 3 < p.Xy.Count; i += 2) segments.Add(((p.Xy[i], p.Xy[i + 1]), (p.Xy[i + 2], p.Xy[i + 3])));
+        }
+        var leads = new List<PinLead>(pins.Count);
+        foreach (var pin in pins)
+        {
+            var at = (pin.X, pin.Y);
+            var lead = new PinLead(default, default);
+            foreach (var (a, b) in segments)
+            {
+                if (a != at && b != at) continue;
+                var w = a == at ? b : a;
+                if (w.X == at.X && w.Y != at.Y) { lead = new(new AxisLead(true, 0), new AxisLead(false, Math.Sign(w.Y - at.Y), Math.Abs(w.Y - at.Y))); break; }
+                if (w.Y == at.Y && w.X != at.X) { lead = new(new AxisLead(false, Math.Sign(w.X - at.X), Math.Abs(w.X - at.X)), new AxisLead(true, 0)); break; }
+            }
+            leads.Add(lead);
+        }
+        return leads;
+    }
+
+    /// <summary>
+    /// One shift for all of a symbol's pins on one axis — the pins snap as a SET, not one at a time — chosen
+    /// so that against the drawing (aligned by <see cref="BodyPlacement"/>) no lead tilts and none is shortened.
+    ///
+    /// <para><b>Why.</b> Rounding each pin to its own nearest grid line pulls a symmetric pair inward (or
+    /// outward) together: a FET whose gate and drain fall at −1.5 and +1.5 grid steps came out at −1 and +1,
+    /// a whole step narrower than its drawing. With the drawing aligned to the drain column, that step came
+    /// out of the gate lead, which on a compact kit was no longer than the step — the gate all but vanished.</para>
+    ///
+    /// <para><b>The cost of a shift.</b> The drawing goes where the pins whose leads run ACROSS this axis went
+    /// (their most common rounding); every pin is then judged by its rounding relative to that. An across-lead
+    /// pin that disagrees tilts its lead: three times the distance. A pin whose lead runs ALONG the axis that
+    /// moves toward the lead's far end shortens it, possibly to nothing: three times; away, it only lengthens
+    /// it: once — unless it loses more than <see cref="LeadKept"/> of its length, which is never chosen while
+    /// anything else is possible. A pin with no straight lead: once. Least total rounding alone picked the inward
+    /// step on a kit whose gate-to-drain span was 1.6 steps, and its gate pin landed on the gate plate.</para>
+    ///
+    /// <para>The candidates put each pin on each of its two neighbouring grid lines; the cheapest wins, ties to
+    /// the smallest shift, so a symbol already on the grid is not moved.</para>
+    /// </summary>
+    private static double RigidShift(List<double> values, List<AxisLead> leads, double scale)
+    {
+        if (values.Count == 0) return 0;
+        double Cost(double t)
+        {
+            var r = values.Select(x => DsnSymbolReader.SnapToPinGrid(x + t) - (x + t)).ToList();
+            var across = r.Where((_, i) => leads[i].Across).ToList();
+            double anchor = MostCommon(across.Count > 0 ? across : r);
+            double cost = 0;
+            for (int i = 0; i < r.Count; i++)
+            {
+                double rho = r[i] - anchor;
+                bool shortens = rho * leads[i].Inward > 0;
+                cost += Math.Abs(rho) * (leads[i].Across || shortens ? InwardCost : 1);
+                // A lead shortened to a stub is gone: a BJT's substrate lead is shorter than a grid step.
+                if (shortens && Math.Abs(rho) > LeadKept * leads[i].Length * scale) cost += VanishedLeadCost;
+            }
+            return cost;
+        }
+        double best = 0, bestCost = Cost(0);
+        foreach (double x in values)
+            foreach (double line in new[] { Math.Floor(x / DsnSymbolReader.PinGrid), Math.Ceiling(x / DsnSymbolReader.PinGrid) })
+            {
+                double t = line * DsnSymbolReader.PinGrid - x;
+                double c = Cost(t);
+                if (c < bestCost - 1e-9 || (Math.Abs(c - bestCost) <= 1e-9 && Math.Abs(t) < Math.Abs(best)))
+                    (best, bestCost) = (t, c);
+            }
+        return best;
+    }
+
+    /// <summary>How much worse a tilted or shortened lead is than a lengthened one (<see cref="RigidShift"/>).</summary>
+    private const double InwardCost = 3.0;
+
+    /// <summary>The share of a lead's length it may lose before it counts as gone, and what gone costs —
+    /// more than any amount of rounding can, so no other choice is ever traded for it.</summary>
+    private const double LeadKept = 0.6;
+    private const double VanishedLeadCost = 1e6;
 
     /// <summary>
     /// circuitRF's own body for a part that supplied no artwork: the pins' bounding box drawn in one
@@ -413,7 +582,7 @@ internal static class KitTemplateSymbol
     /// reconnect it — a pin on one of those is left to <see cref="StubsForDetachedPins"/>.
     /// </remarks>
     private static SymbolPrimitive? Convert(
-        KitSymbolShape shape, double s,
+        KitSymbolShape shape, BodyAt s,
         IReadOnlyDictionary<(double X, double Y), (double X, double Y)> follow,
         HashSet<(double X, double Y)> attached,
         SymbolStrokeTier tier) => shape switch
@@ -425,10 +594,10 @@ internal static class KitTemplateSymbol
             ColorRole  = SymbolColorRole.SymbolLine,
             StrokeTier = tier,
             Filled     = r.Filled,
-            Cx = (r.X1 + r.X2) / 2 * s,
-            Cy = (r.Y1 + r.Y2) / 2 * s,
-            W  = Math.Abs(r.X2 - r.X1) * s,
-            H  = Math.Abs(r.Y2 - r.Y1) * s,
+            Cx = s.X((r.X1 + r.X2) / 2),
+            Cy = s.Y((r.Y1 + r.Y2) / 2),
+            W  = Math.Abs(r.X2 - r.X1) * s.Scale,
+            H  = Math.Abs(r.Y2 - r.Y1) * s.Scale,
         },
 
         KitSymbolPath { Closed: true } p => new PolygonPrimitive
@@ -454,9 +623,9 @@ internal static class KitTemplateSymbol
         {
             ColorRole  = SymbolColorRole.SymbolLine,
             StrokeTier = tier,
-            Cx = a.Cx * s,
-            Cy = a.Cy * s,
-            R  = a.Radius * s,
+            Cx = s.X(a.Cx),
+            Cy = s.Y(a.Cy),
+            R  = a.Radius * s.Scale,
             StartDeg = -a.StartDeg,
             SweepDeg = -a.SweepDeg,
         },
@@ -465,7 +634,7 @@ internal static class KitTemplateSymbol
     };
 
     private static LinePrimitive LineWithPinFollow(
-        KitSymbolLine l, double s,
+        KitSymbolLine l, BodyAt s,
         IReadOnlyDictionary<(double X, double Y), (double X, double Y)> follow,
         HashSet<(double X, double Y)> attached,
         SymbolStrokeTier tier)
@@ -476,7 +645,7 @@ internal static class KitTemplateSymbol
     }
 
     private static List<double[]> ScalePoints(
-        IReadOnlyList<double> xy, double s,
+        IReadOnlyList<double> xy, BodyAt s,
         IReadOnlyDictionary<(double X, double Y), (double X, double Y)> follow,
         HashSet<(double X, double Y)> attached)
     {

@@ -61,12 +61,12 @@ public static class PcbExport
 
         foreach (var inst in view.Instances)
         {
-            if (Workspace.ExternalCellRef.ResolveCellDir(inst.CellRef, layoutDir) is not { } targetDir)
+            // Through the run's generated-cell overlay, as the hierarchical writers resolve (brief-gdf-5).
+            if (InterchangeHierarchy.ResolveTarget(inst.CellRef, layoutDir) is not { } targetDir)
             { unresolved++; continue; }
-            if (!Directory.Exists(targetDir)) { unresolved++; continue; }
 
             LayoutView cellView;
-            try { cellView = LoadPrimaryLayout(targetDir); }
+            try { cellView = InterchangeHierarchy.LoadPrimary(targetDir, LoadPrimaryLayout); }
             catch { unresolved++; continue; }
 
             if (cellView.Pins.Count == 0)

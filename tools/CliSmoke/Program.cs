@@ -13,7 +13,7 @@
 //  APPIMAGE_EXTRACT_AND_RUN=1 so no FUSE is needed; checks 4-5 look for the workers in the image's
 //  own files, unpacked by its runtime's --appimage-extract.
 //
-//  Five checks, all required; exit 0 only when all five pass:
+//  Six checks, all required; exit 0 only when all six pass:
 //    1. `--version` prints exactly <expected-version> (the VERSION file) and exits 0.
 //    2. `reference --json` exits 0 and its stdout parses as JSON.
 //    3. `serve --root <tmp>` answers `initialize` with a result carrying serverInfo, answers
@@ -30,6 +30,9 @@
 //       gdstk-kernel/gdstk-worker[.exe] answers `--version` with that gdstk version (the recipe's),
 //       answers `{"op":"selftest"}` with "ok":true and "oas_valid":true, and exits 0 on `shutdown`.
 //       --no-gdstk <why> reports and passes; neither skips and says so.
+//    6. NO PYTHON SHIPS (brief-gdf-5 R-gdf5-3, gdsfactory series D10): the tree around <executable>
+//       -- the whole .app on macOS -- holds no site-packages directory, no *.dist-info directory and
+//       no *.whl. circuitRF runs the user's own interpreter; BundledPython.cs is the rule.
 // ================================================================
 
 using System.Collections.Concurrent;
@@ -152,11 +155,28 @@ else if (noGdstkWhy is not null)
 else
     Console.WriteLine("skip  gdstk worker  -> not asked (no --gdstk or --no-gdstk)");
 
+// ── 6. no Python environment ships (gdsfactory series D10) ───────────────────
+if (isAppImage)
+    Console.WriteLine("skip  bundled Python  -> an AppImage is built from a publish tree this check already passed");
+else
+{
+    string tree = CliSmoke.BundledPython.TreeOf(exe);
+    var bundled = CliSmoke.BundledPython.Find(tree);
+    if (bundled.Count == 0)
+        Console.WriteLine("ok    bundled Python  -> no site-packages, *.dist-info or *.whl in the tree");
+    else
+    {
+        Console.Error.WriteLine($"FAIL  bundled Python: circuitRF runs the user's own interpreter and ships none, but {tree} holds:");
+        foreach (string p in bundled) Console.Error.WriteLine($"        {p}");
+        failures++;
+    }
+}
+
 if (unpacked is not null) try { Directory.Delete(unpacked, recursive: true); } catch { /* best effort */ }
 
 Console.WriteLine(failures == 0
     ? "PASS  the command line in this publish tree answers."
-    : $"FAIL  {failures} of 5 checks failed; this tree must not be packaged.");
+    : $"FAIL  {failures} of 6 checks failed; this tree must not be packaged.");
 return failures == 0 ? 0 : 1;
 
 // ─────────────────────────────────────────────────────────────────────────────

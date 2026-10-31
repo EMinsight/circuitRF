@@ -124,7 +124,12 @@ public static class DsnSymbolReader
     /// were incommensurable and every kit part came out smaller than the built-in beside it by however
     /// far its artwork reached past its terminals. Correcting it changes the scale, and a scale change
     /// moves pins.</para>
-    public const int TranslationVersion = 4;
+    /// <para><b>5</b> — a drawn symbol's pins snap to the connection grid as a SET (one shared shift, then
+    /// rounding) instead of each to its own nearest grid line, and the drawing moves with them so straight
+    /// leads stay straight (<c>KitTemplateSymbol.RigidShift</c>, <c>BodyPlacement</c>). One at a time, a
+    /// FET's gate and drain both rounded inward, a whole step narrower than the kit drew it, and its drain
+    /// and source leads were drawn diagonally. Moves pins.</para>
+    public const int TranslationVersion = 5;
 
     /// <summary>
     /// Target band for the symbol's larger dimension, in local units. A power-of-ten scale is
