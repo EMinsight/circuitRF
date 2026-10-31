@@ -4551,6 +4551,11 @@ road. `docs/design/pcell-gdsfactory-bridge.md` is the full account.
   consent like everything else that runs the kit — asked for without consent it exits 1 having written
   nothing. Without the flag nothing is written. On a kit folder that holds no gdsfactory source tree it
   is a refusal: that folder's process files are File ▸ Import ▸ Technology's.
+- **The kit's own drawings** (brief-gdf-4) become `<module>-pcells/symbols/<cell>.csym` once the kit has
+  been described — `KitGlyphSymbol.Install`, the step Import PDK runs — a kit `.csym` copied, an SVG glyph
+  built with its pins placed from the cell's ports. stdout gets the tally line; each written file is a
+  `symbol` output; what a glyph could not carry (a dropped construct, a pin not on a lead) follows on
+  stderr, and so does the note that a symbol gives the cell no circuit model. An existing `.csym` is kept.
 - **`explain --pdk`** reads the declaration and the installed version from files and reports which
   interpreter resolves and whether it came from `--python` or the user's preference
   (`explain.pdk.interpreter` / `explain.pdk.no-interpreter` / `explain.pdk.note`).

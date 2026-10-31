@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- A synthetic glyph carrying what cannot be drawn: a filter, and a background in a light fill. -->
+  <defs><filter id="soft"><feGaussianBlur stdDeviation="1"/></filter></defs>
+  <rect x="0" y="0" width="100" height="100" fill="#ffffff"/>
+  <line x1="0" y1="50" x2="30" y2="50" stroke="black"/>
+  <path d="M30 30 L70 30 L70 70 L30 70 Z" fill="none" stroke="black" filter="url(#soft)"/>
+  <path d="M38 62 Q50 20 62 62" fill="none" stroke="black"/>
+</svg>

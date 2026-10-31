@@ -18,6 +18,9 @@ namespace CircuitRF.Ui.Views.Dialogs;
 /// parameters that did not cover. Every section is shown even when empty, so the reader sees that a
 /// count of nothing was checked rather than left out.
 ///
+/// <para>When the kit ships its own drawings of its cells, a section lists the schematic symbols made from them
+/// (brief-gdf-4) and says what a symbol does not give: a circuit model.</para>
+///
 /// <para>When the kit states a layer stack, the footer offers <b>"Also build the kit's technology"</b>,
 /// checked (brief-gdf-3 R-gdf3-3a). The dialog closes with that choice; what it builds and where it
 /// writes is the caller's.</para>
@@ -32,7 +35,8 @@ public static class GdsfactoryImportReportDialog
 
     public static Window Build(
         GdsfactoryKit kit, GdsfactoryImportReport? report, string? problem,
-        IReadOnlyList<KitPaletteMerge.ModelPairing> pairings, bool allowed, TechnologyOffer? technology = null)
+        IReadOnlyList<KitPaletteMerge.ModelPairing> pairings, bool allowed, TechnologyOffer? technology = null,
+        KitGlyphSymbol.InstallResult? symbols = null)
     {
         var dialog = new Window
         {
@@ -89,6 +93,10 @@ public static class GdsfactoryImportReportDialog
                         ? $"{u.Part} — more than one cell fits"
                         : $"{u.Part} — the cell does not take {string.Join(", ", u.Missing)}"))),
                 note: "A refused pair keeps a layout-only tile; the part keeps its symbol."));
+
+            body.Children.Add(Section($"Schematic symbols from the kit's drawings ({symbols?.Count ?? 0})",
+                symbols is null ? [] : SymbolLines(symbols),
+                note: KitGlyphSymbol.NoModelNote));
         }
 
         // The offer sits in the footer, outside the scrolled report, so it is on screen however long the
@@ -129,8 +137,25 @@ public static class GdsfactoryImportReportDialog
     /// <summary>Shows the report; true when the reader left "Also build the kit's technology" checked.</summary>
     public static Task<bool> ShowAsync(Window owner, GdsfactoryKit kit, GdsfactoryImportReport? report, string? problem,
                                        IReadOnlyList<KitPaletteMerge.ModelPairing> pairings, bool allowed,
-                                       TechnologyOffer? technology = null)
-        => Build(kit, report, problem, pairings, allowed, technology).ShowDialog<bool>(owner);
+                                       TechnologyOffer? technology = null, KitGlyphSymbol.InstallResult? symbols = null)
+        => Build(kit, report, problem, pairings, allowed, technology, symbols).ShowDialog<bool>(owner);
+
+    /// <summary>One line per cell: where its symbol came from, then what the conversion could not carry.</summary>
+    private static IEnumerable<string> SymbolLines(KitGlyphSymbol.InstallResult symbols)
+    {
+        var cells = symbols.Built.Keys.Concat(symbols.Copied.Keys).Concat(symbols.Kept)
+                           .Concat(symbols.Lines.Select(l => l.Cell)).Distinct().Order(StringComparer.Ordinal);
+        foreach (string cell in cells)
+        {
+            string source = symbols.Built.ContainsKey(cell) ? "built from its glyph"
+                          : symbols.Copied.ContainsKey(cell) ? "the kit's own .csym"
+                          : symbols.Kept.Contains(cell) ? "already in the workspace, kept"
+                          : "not made";
+            yield return $"{cell} — {source}";
+            foreach (var line in symbols.Lines.Where(l => l.Cell == cell))
+                yield return $"    {line.Text}";
+        }
+    }
 
     private static Control Section(string header, IEnumerable<string> lines, string? note = null)
     {

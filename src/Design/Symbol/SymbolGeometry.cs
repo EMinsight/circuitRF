@@ -162,7 +162,7 @@ public static class SymbolGeometry
             case RectPrimitive r:
             {
                 double hw = r.W * 0.5, hh = r.H * 0.5;
-                return r.Filled
+                return r.Filled || r.Tint > 0
                     ? InsideExpandedRect(lx, ly, r.Cx, r.Cy, hw, hh, tol)
                     : NearRectEdge(lx, ly, r.Cx, r.Cy, hw, hh, tol);
             }
@@ -170,7 +170,7 @@ public static class SymbolGeometry
             case RoundedRectPrimitive rr:
             {
                 double hw = rr.W * 0.5, hh = rr.H * 0.5;
-                return rr.Filled
+                return rr.Filled || rr.Tint > 0
                     ? InsideExpandedRect(lx, ly, rr.Cx, rr.Cy, hw, hh, tol)
                     : NearRectEdge(lx, ly, rr.Cx, rr.Cy, hw, hh, tol);
             }
@@ -178,7 +178,7 @@ public static class SymbolGeometry
             case CirclePrimitive c:
             {
                 double dist = Math.Sqrt((lx - c.Cx) * (lx - c.Cx) + (ly - c.Cy) * (ly - c.Cy));
-                return c.Filled ? dist <= c.R + tol : Math.Abs(dist - c.R) <= tol;
+                return c.Filled || c.Tint > 0 ? dist <= c.R + tol : Math.Abs(dist - c.R) <= tol;
             }
 
             case EllipsePrimitive e:
@@ -189,7 +189,7 @@ public static class SymbolGeometry
                 double fox = e.Rx + tol, foy = e.Ry + tol;
                 double fOuter = (dx / fox) * (dx / fox) + (dy / foy) * (dy / foy);
                 if (fOuter > 1.0) return false; // outside outer boundary
-                if (e.Filled) return true;
+                if (e.Filled || e.Tint > 0) return true;
                 // Unfilled: also require point is outside the shrunk inner ellipse.
                 double rix = Math.Max(e.Rx - tol, 0.0), riy = Math.Max(e.Ry - tol, 0.0);
                 if (rix <= 0 || riy <= 0) return true; // ellipse thinner than 2*tol → whole interior hits
@@ -207,7 +207,7 @@ public static class SymbolGeometry
             case PolygonPrimitive pg:
             {
                 var pts = pg.Points;
-                if (pg.Filled && pts.Count >= 3 && PointInPolygon(lx, ly, pts)) return true;
+                if ((pg.Filled || pg.Tint > 0) && pts.Count >= 3 && PointInPolygon(lx, ly, pts)) return true;
                 for (int i = 0; i < pts.Count; i++)
                 {
                     int j = (i + 1) % pts.Count;
@@ -545,22 +545,22 @@ public static class SymbolGeometry
             { ColorRole = pl.ColorRole, StrokeTier = pl.StrokeTier,
               Points = pl.Points.Select(p => new double[] { p[0], p[1] }).ToList() },
         RectPrimitive r => new RectPrimitive
-            { ColorRole = r.ColorRole, StrokeTier = r.StrokeTier, Filled = r.Filled,
+            { ColorRole = r.ColorRole, StrokeTier = r.StrokeTier, Filled = r.Filled, Tint = r.Tint,
               Cx = r.Cx, Cy = r.Cy, W = r.W, H = r.H },
         RoundedRectPrimitive rr => new RoundedRectPrimitive
-            { ColorRole = rr.ColorRole, StrokeTier = rr.StrokeTier, Filled = rr.Filled,
+            { ColorRole = rr.ColorRole, StrokeTier = rr.StrokeTier, Filled = rr.Filled, Tint = rr.Tint,
               Cx = rr.Cx, Cy = rr.Cy, W = rr.W, H = rr.H, Radius = rr.Radius },
         CirclePrimitive c => new CirclePrimitive
-            { ColorRole = c.ColorRole, StrokeTier = c.StrokeTier, Filled = c.Filled,
+            { ColorRole = c.ColorRole, StrokeTier = c.StrokeTier, Filled = c.Filled, Tint = c.Tint,
               Cx = c.Cx, Cy = c.Cy, R = c.R },
         EllipsePrimitive e => new EllipsePrimitive
-            { ColorRole = e.ColorRole, StrokeTier = e.StrokeTier, Filled = e.Filled,
+            { ColorRole = e.ColorRole, StrokeTier = e.StrokeTier, Filled = e.Filled, Tint = e.Tint,
               Cx = e.Cx, Cy = e.Cy, Rx = e.Rx, Ry = e.Ry },
         ArcPrimitive a => new ArcPrimitive
             { ColorRole = a.ColorRole, StrokeTier = a.StrokeTier,
               Cx = a.Cx, Cy = a.Cy, R = a.R, StartDeg = a.StartDeg, SweepDeg = a.SweepDeg },
         PolygonPrimitive pg => new PolygonPrimitive
-            { ColorRole = pg.ColorRole, StrokeTier = pg.StrokeTier, Filled = pg.Filled,
+            { ColorRole = pg.ColorRole, StrokeTier = pg.StrokeTier, Filled = pg.Filled, Tint = pg.Tint,
               Points = pg.Points.Select(p => new double[] { p[0], p[1] }).ToList() },
         QuadCurvePrimitive qc => new QuadCurvePrimitive
             { ColorRole = qc.ColorRole, StrokeTier = qc.StrokeTier,
@@ -575,7 +575,7 @@ public static class SymbolGeometry
               Cx = s.Cx, Cy = s.Cy, Amp = s.Amp, Cycles = s.Cycles, Length = s.Length,
               PtsPerCycle = s.PtsPerCycle, Axis = s.Axis },
         ExponentialTaperPrimitive et => new ExponentialTaperPrimitive
-            { ColorRole = et.ColorRole, StrokeTier = et.StrokeTier, Filled = et.Filled,
+            { ColorRole = et.ColorRole, StrokeTier = et.StrokeTier, Filled = et.Filled, Tint = et.Tint,
               Cx = et.Cx, Cy = et.Cy, W1 = et.W1, W2 = et.W2, L = et.L,
               NumPts = et.NumPts, Axis = et.Axis },
         TextPrimitive t => new TextPrimitive

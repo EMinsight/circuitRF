@@ -17,6 +17,12 @@ geometry gdsfactory returns is what gets scaled, once, with :func:`circuitrf_pce
 routing vocabulary — a coplanar line's ports may be typed ``optical`` — not a statement about
 connectivity. ``placement`` ports are alignment marks; they are counted, not drawn as pins.
 
+**A kit's own drawing of a cell is found by name, never guessed.** A kit may ship a ``.csym`` (circuitRF's
+own symbol) or an SVG glyph whose file stem is the cell's name, in a ``symbols/`` directory of the package
+or beside the cell's module. The ``.csym`` wins over a glyph of the same stem. The report names the file;
+circuitRF builds the symbol (brief-gdf-4). A glyph cell's ports go in the report too, because a glyph has
+no pin markup and the pins are placed from the ports.
+
 **Nothing is worked around.** A cell gdsfactory itself cannot build is reported with gdsfactory's own
 message (a missing module is named as the error names it; a missing fixed-GDS file by its path), so
 the reader can see whose install it is.
@@ -26,6 +32,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import os
 import sys
 import traceback
 from typing import Any, Callable
@@ -50,6 +57,12 @@ NO_SIGNATURE = "no readable signature"
 
 #: How many names a "parameters not offered" problem lists before it says "…".
 _LISTED = 6
+
+#: The package directory a kit keeps its drawings in, when it does not keep them beside the cell's module.
+SYMBOLS_DIR = "symbols"
+
+#: A kit's own drawing, in the order a stem is looked for: circuitRF's own symbol wins over a glyph.
+_DRAWINGS = ((".csym", "symbol"), (".svg", "glyph"))
 
 
 class PdkRegistration:
@@ -98,6 +111,68 @@ def _layer_names(pdk: Any) -> dict[tuple[int, int], str]:
     except Exception:  # noqa: BLE001 - a kit with no layer table still has cells
         pass
     return names
+
+
+def _module_dir(fn: Any) -> str | None:
+    """The directory of the module a cell function is defined in, or None when it cannot be told.
+
+    A kit's cells are often ``functools.partial`` objects or decorated functions; both are unwrapped first.
+    """
+    target = fn
+    for _ in range(8):
+        inner = getattr(target, "func", None)
+        if inner is None:
+            break
+        target = inner
+    try:
+        target = inspect.unwrap(target)
+        path = inspect.getsourcefile(target) or inspect.getfile(target)
+    except (TypeError, OSError):
+        return None
+    return os.path.dirname(os.path.abspath(path)) if path else None
+
+
+def _drawing_dirs(package_dir: str | None, module_dir: str | None) -> list[str]:
+    """Where a cell's drawing may be: the package's ``symbols/``, then the module's ``symbols/`` and the module's own
+    directory. Nothing further — the further out it looks, the more likely a file matches by accident."""
+    dirs: list[str] = []
+    for d in (os.path.join(package_dir, SYMBOLS_DIR) if package_dir else None,
+              os.path.join(module_dir, SYMBOLS_DIR) if module_dir else None,
+              module_dir):
+        if d and d not in dirs and os.path.isdir(d):
+            dirs.append(d)
+    return dirs
+
+
+def _find_drawing(cell: str, dirs: list[str], listing: dict[str, set[str]]) -> tuple[str, str] | None:
+    """``(kind, path)`` of the kit's own drawing of ``cell`` — kind ``symbol`` or ``glyph`` — or None.
+
+    The file STEM is compared with the cell name exactly, against the directory's own listing: on a
+    case-insensitive file system ``isfile`` would answer for ``Cell.svg`` when the cell is ``cell``.
+    """
+    for ext, kind in _DRAWINGS:
+        for d in dirs:
+            if d not in listing:
+                try:
+                    listing[d] = set(os.listdir(d))
+                except OSError:
+                    listing[d] = set()
+            if cell + ext in listing[d]:
+                return kind, os.path.join(d, cell + ext)
+    return None
+
+
+def _ports_of(component: Any) -> list[dict[str, Any]]:
+    """Every port but ``placement`` ones, in µm and degrees, in the component's own order — what a glyph's pins
+    are placed from."""
+    ports = []
+    for port in component.ports:
+        if str(port.port_type) == "placement":
+            continue
+        x, y = port.center
+        ports.append({"name": str(port.name), "x": float(x), "y": float(y),
+                      "orientation": float(port.orientation if port.orientation is not None else 0.0)})
+    return ports
 
 
 def _kind_of(default: Any) -> str | None:
@@ -242,6 +317,9 @@ def register_pdk(module_name: str, registry: Any = None) -> PdkRegistration:
 
     kit_layers = _layer_names(pdk)
     layer_name_set = set(kit_layers.values())
+    module_file = getattr(module, "__file__", None)
+    package_dir = os.path.dirname(os.path.abspath(module_file)) if module_file else None
+    listing: dict[str, set[str]] = {}
 
     ids: list[str] = []
     problems: list[str] = []
@@ -250,6 +328,9 @@ def register_pdk(module_name: str, registry: Any = None) -> PdkRegistration:
     placement_ports: dict[str, int] = {}
     models: dict[str, str] = {}
     declared_names: dict[str, list[str]] = {}
+    symbols: dict[str, str] = {}
+    glyphs: dict[str, str] = {}
+    glyph_ports: dict[str, list[dict[str, Any]]] = {}
 
     def refuse(cell: str, reason: str, detail: str) -> None:
         not_offered.setdefault(reason, []).append([cell, detail])
@@ -327,6 +408,13 @@ def register_pdk(module_name: str, registry: Any = None) -> PdkRegistration:
         if model:
             models[cell] = model
 
+        drawing = _find_drawing(cell, _drawing_dirs(package_dir, _module_dir(fn)), listing)
+        if drawing is not None and drawing[0] == "symbol":
+            symbols[cell] = drawing[1]
+        elif drawing is not None:
+            glyphs[cell] = drawing[1]
+            glyph_ports[cell] = _ports_of(built)
+
     report = {
         "module": module_name,
         "gdsfactoryVersion": getattr(gf, "__version__", ""),
@@ -336,5 +424,8 @@ def register_pdk(module_name: str, registry: Any = None) -> PdkRegistration:
         "placementPorts": placement_ports,
         "models": models,
         "parameters": declared_names,
+        "symbols": symbols,
+        "glyphs": glyphs,
+        "ports": glyph_ports,
     }
     return PdkRegistration(ids, problems, report)

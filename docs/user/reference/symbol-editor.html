@@ -81,10 +81,21 @@ connection-grid square):</p>
       <tr><td>Bitmap</td><td>a reference image to trace over (lowest Z, editable opacity, lockable; not grid-snapped)</td></tr>
     </tbody>
   </table>
-<p>Each drawable primitive carries a <strong>stroke width</strong>, a <strong>fill flag</strong>, and a <strong>color role</strong> — never
+<p>Each drawable primitive carries a <strong>stroke width</strong>, a <strong>fill</strong>, and a <strong>color role</strong> — never
 a literal RGB. Symbols draw in theme roles (<em>symbol-line</em>, <em>symbol-text</em>), so they stay correct in
 light and dark mode automatically. There is no color picker; stroke width and font size/style are
 editable, color is not.</p>
+<p>A closed shape (rectangle, rounded rectangle, circle, ellipse, polygon, taper) has a <strong>Fill</strong> from
+0 % to 100 %, set with the slider or typed in the box beside it. 0 % draws the outline alone and
+100 % fills the shape solid. Anything in between draws the outline over a fill of the line colour
+at that strength, so a region reads as shaded without hiding what is drawn over it.</p>
+<ul>
+<li><strong>Dragging</strong> the slider shows the change as you drag, and the whole drag is one undo step.</li>
+<li><strong>Typing</strong> takes a number from 0 to 100, with or without <code>%</code>, and a decimal point or comma
+(<code>12.5</code>, <code>12,5 %</code>). Press Enter or leave the box to apply it, or Escape to put the value back.
+Anything else is refused with the reason under the box, and the shape keeps its fill.</li>
+</ul>
+<p>Clicking inside a shape with any fill selects it; an unfilled shape is selected by its outline.</p>
 <h2 id="pins">Pins &amp; ports</h2>
 <p>A <strong>pin</strong> is a placed marker mapped to one of the cell's ports. The editor shows the cell's ports
 as the set you can map; you place a pin and assign it a port.</p>

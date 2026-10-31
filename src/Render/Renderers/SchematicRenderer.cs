@@ -681,208 +681,216 @@ public static class SchematicRenderer
                 : (float)Math.Max(1.0, zoom * (info.tier == SymbolStrokeTier.Thick ? 5.0
                                              : info.tier == SymbolStrokeTier.Normal ? 3.0 : 1.5));
 
-            using var paint = new SKPaint
+            // A partly filled shape is two passes: the fill at its strength, then the outline over it (SymbolFill).
+            // A solid one stays one fill pass, as it always was. A ghost draws outlines only.
+            double fillStrength = SymbolFill.Of(prim);
+            bool tinted = overridePaint is null && !info.filled && fillStrength > 0;
+            for (int pass = tinted ? 0 : 1; pass < 2; pass++)
             {
-                IsAntialias = true,
-                Style       = info.filled ? SKPaintStyle.Fill : SKPaintStyle.Stroke,
-                Color       = color,
-                StrokeWidth = sw,
-                StrokeJoin  = SymbolStrokeJoinStyle,
-                StrokeCap   = SymbolStrokeCapStyle,
-            };
-            if (overridePaint?.PathEffect is { } pe) paint.PathEffect = pe;
-
-            switch (prim)
-            {
-                case LinePrimitive l:
+                bool tintPass = pass == 0;
+                using var paint = new SKPaint
                 {
-                    var (ax, ay) = LP(l.X1, l.Y1);
-                    var (bx, by) = LP(l.X2, l.Y2);
-                    canvas.DrawLine(ax, ay, bx, by, paint);
-                    break;
-                }
+                    IsAntialias = true,
+                    Style       = info.filled || tintPass ? SKPaintStyle.Fill : SKPaintStyle.Stroke,
+                    Color       = tintPass ? color.WithAlpha((byte)Math.Round(255 * fillStrength)) : color,
+                    StrokeWidth = sw,
+                    StrokeJoin  = SymbolStrokeJoinStyle,
+                    StrokeCap   = SymbolStrokeCapStyle,
+                };
+                if (overridePaint?.PathEffect is { } pe) paint.PathEffect = pe;
 
-                case PolylinePrimitive pl:
+                switch (prim)
                 {
-                    if (pl.Points.Count < 2) break;
-                    using var path = new SKPath();
-                    var (px0, py0) = LP(pl.Points[0][0], pl.Points[0][1]);
-                    path.MoveTo(px0, py0);
-                    for (int i = 1; i < pl.Points.Count; i++)
+                    case LinePrimitive l:
                     {
-                        var (px, py) = LP(pl.Points[i][0], pl.Points[i][1]);
-                        path.LineTo(px, py);
+                        var (ax, ay) = LP(l.X1, l.Y1);
+                        var (bx, by) = LP(l.X2, l.Y2);
+                        canvas.DrawLine(ax, ay, bx, by, paint);
+                        break;
                     }
-                    canvas.DrawPath(path, paint);
-                    break;
-                }
 
-                case RectPrimitive r:
-                {
-                    // Transform all 4 corners and draw as a closed polygon path.
-                    double hw = r.W * 0.5, hh = r.H * 0.5;
-                    DrawQuadPath(canvas, paint,
-                        LP(r.Cx - hw, r.Cy - hh), LP(r.Cx + hw, r.Cy - hh),
-                        LP(r.Cx + hw, r.Cy + hh), LP(r.Cx - hw, r.Cy + hh));
-                    break;
-                }
-
-                case RoundedRectPrimitive rr:
-                {
-                    // Approximated as a plain rect when rotated; only R0 gets corner rounding.
-                    double hw = rr.W * 0.5, hh = rr.H * 0.5;
-                    if (rotation == SymbolRotation.R0 && !mirrorX)
+                    case PolylinePrimitive pl:
                     {
-                        var (x0, y0) = LP(rr.Cx - hw, rr.Cy - hh);
-                        var (x1, y1) = LP(rr.Cx + hw, rr.Cy + hh);
-                        float rx = (float)(rr.Radius * zoom);
-                        canvas.DrawRoundRectDashSafe(new SKRoundRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0), rx), paint);
+                        if (pl.Points.Count < 2) break;
+                        using var path = new SKPath();
+                        var (px0, py0) = LP(pl.Points[0][0], pl.Points[0][1]);
+                        path.MoveTo(px0, py0);
+                        for (int i = 1; i < pl.Points.Count; i++)
+                        {
+                            var (px, py) = LP(pl.Points[i][0], pl.Points[i][1]);
+                            path.LineTo(px, py);
+                        }
+                        canvas.DrawPath(path, paint);
+                        break;
                     }
-                    else
+
+                    case RectPrimitive r:
                     {
+                        // Transform all 4 corners and draw as a closed polygon path.
+                        double hw = r.W * 0.5, hh = r.H * 0.5;
                         DrawQuadPath(canvas, paint,
-                            LP(rr.Cx - hw, rr.Cy - hh), LP(rr.Cx + hw, rr.Cy - hh),
-                            LP(rr.Cx + hw, rr.Cy + hh), LP(rr.Cx - hw, rr.Cy + hh));
+                            LP(r.Cx - hw, r.Cy - hh), LP(r.Cx + hw, r.Cy - hh),
+                            LP(r.Cx + hw, r.Cy + hh), LP(r.Cx - hw, r.Cy + hh));
+                        break;
                     }
-                    break;
-                }
 
-                case CirclePrimitive c:
-                {
-                    var (pcx, pcy) = LP(c.Cx, c.Cy);
-                    float pr = (float)(c.R * zoom);
-                    if (info.filled)
-                        canvas.DrawCircleDashSafe(pcx, pcy, pr, paint);
-                    else
-                        canvas.DrawCircleDashSafe(pcx, pcy, pr, paint);
-                    break;
-                }
-
-                case EllipsePrimitive e:
-                {
-                    var (pcx, pcy) = LP(e.Cx, e.Cy);
-                    float prx = (float)(e.Rx * zoom);
-                    float pry = (float)(e.Ry * zoom);
-                    canvas.DrawOvalDashSafe(pcx, pcy, prx, pry, paint);
-                    break;
-                }
-
-                case ArcPrimitive a:
-                {
-                    var (pcx, pcy) = LP(a.Cx, a.Cy);
-                    float pr = (float)(a.R * zoom);
-                    var oval = SKRect.Create(pcx - pr, pcy - pr, pr * 2, pr * 2);
-                    double startWorld = mirrorX
-                        ? (180.0 - a.StartDeg + rotDeg)
-                        : (a.StartDeg + rotDeg);
-                    double sweepWorld = mirrorX ? -a.SweepDeg : a.SweepDeg;
-                    canvas.DrawArc(oval, (float)startWorld, (float)sweepWorld, useCenter: false, paint);
-                    break;
-                }
-
-                case PolygonPrimitive pg:
-                {
-                    if (pg.Points.Count < 2) break;
-                    using var path = new SKPath();
-                    var (px0, py0) = LP(pg.Points[0][0], pg.Points[0][1]);
-                    path.MoveTo(px0, py0);
-                    for (int i = 1; i < pg.Points.Count; i++)
+                    case RoundedRectPrimitive rr:
                     {
-                        var (px, py) = LP(pg.Points[i][0], pg.Points[i][1]);
-                        path.LineTo(px, py);
-                    }
-                    path.Close();
-                    canvas.DrawPath(path, paint);
-                    break;
-                }
-
-                case QuadCurvePrimitive qc:
-                {
-                    var (px0, py0) = LP(qc.P0X,   qc.P0Y);
-                    var (pcx, pcy) = LP(qc.CtrlX, qc.CtrlY);
-                    var (px2, py2) = LP(qc.P2X,   qc.P2Y);
-                    using var path = new SKPath();
-                    path.MoveTo(px0, py0);
-                    path.QuadTo(pcx, pcy, px2, py2);
-                    canvas.DrawPath(path, paint);
-                    break;
-                }
-
-                case CubicCurvePrimitive cc:
-                {
-                    var (px0, py0) = LP(cc.P0X, cc.P0Y);
-                    var (pc1x, pc1y) = LP(cc.C1X, cc.C1Y);
-                    var (pc2x, pc2y) = LP(cc.C2X, cc.C2Y);
-                    var (px3, py3) = LP(cc.P3X, cc.P3Y);
-                    using var path = new SKPath();
-                    path.MoveTo(px0, py0);
-                    path.CubicTo(pc1x, pc1y, pc2x, pc2y, px3, py3);
-                    canvas.DrawPath(path, paint);
-                    break;
-                }
-
-                case SinePrimitive s:
-                {
-                    int N = Math.Max((int)Math.Ceiling(s.Cycles * Math.Max(s.PtsPerCycle, 1)), 2);
-                    using var path = new SKPath();
-                    for (int k = 0; k <= N; k++)
-                    {
-                        double t = (double)k / N;
-                        double lx, ly;
-                        if (s.Axis == SineAxis.Horizontal)
+                        // Approximated as a plain rect when rotated; only R0 gets corner rounding.
+                        double hw = rr.W * 0.5, hh = rr.H * 0.5;
+                        if (rotation == SymbolRotation.R0 && !mirrorX)
                         {
-                            lx = s.Cx + (t - 0.5) * s.Length;
-                            ly = s.Cy + s.Amp * Math.Sin(2 * Math.PI * s.Cycles * t);
+                            var (x0, y0) = LP(rr.Cx - hw, rr.Cy - hh);
+                            var (x1, y1) = LP(rr.Cx + hw, rr.Cy + hh);
+                            float rx = (float)(rr.Radius * zoom);
+                            canvas.DrawRoundRectDashSafe(new SKRoundRect(SKRect.Create(x0, y0, x1 - x0, y1 - y0), rx), paint);
                         }
                         else
                         {
-                            ly = s.Cy + (t - 0.5) * s.Length;
-                            lx = s.Cx + s.Amp * Math.Sin(2 * Math.PI * s.Cycles * t);
+                            DrawQuadPath(canvas, paint,
+                                LP(rr.Cx - hw, rr.Cy - hh), LP(rr.Cx + hw, rr.Cy - hh),
+                                LP(rr.Cx + hw, rr.Cy + hh), LP(rr.Cx - hw, rr.Cy + hh));
                         }
-                        var (px, py) = LP(lx, ly);
-                        if (k == 0) path.MoveTo(px, py); else path.LineTo(px, py);
+                        break;
                     }
-                    canvas.DrawPath(path, paint);
-                    break;
-                }
 
-                case ExponentialTaperPrimitive et:
-                {
-                    if (et.L <= 0) break;
-                    int N = Math.Max(et.NumPts, 2);
-                    double wRatio = (et.W1 > 0 && et.W2 > 0) ? et.W2 / et.W1 : 1.0;
-                    using var path = new SKPath();
-                    // Top outline (t: 0→1)
-                    for (int k = 0; k <= N; k++)
+                    case CirclePrimitive c:
                     {
-                        double t = (double)k / N;
-                        double w = et.W1 * Math.Pow(wRatio, t);
-                        double lx, ly;
-                        if (et.Axis == SineAxis.Horizontal)
-                        { lx = et.Cx + (t - 0.5) * et.L;  ly = et.Cy - w * 0.5; }
+                        var (pcx, pcy) = LP(c.Cx, c.Cy);
+                        float pr = (float)(c.R * zoom);
+                        if (info.filled)
+                            canvas.DrawCircleDashSafe(pcx, pcy, pr, paint);
                         else
-                        { ly = et.Cy + (t - 0.5) * et.L;  lx = et.Cx - w * 0.5; }
-                        var (px, py) = LP(lx, ly);
-                        if (k == 0) path.MoveTo(px, py); else path.LineTo(px, py);
+                            canvas.DrawCircleDashSafe(pcx, pcy, pr, paint);
+                        break;
                     }
-                    // Bottom outline (t: 1→0)
-                    for (int k = N; k >= 0; k--)
-                    {
-                        double t = (double)k / N;
-                        double w = et.W1 * Math.Pow(wRatio, t);
-                        double lx, ly;
-                        if (et.Axis == SineAxis.Horizontal)
-                        { lx = et.Cx + (t - 0.5) * et.L;  ly = et.Cy + w * 0.5; }
-                        else
-                        { ly = et.Cy + (t - 0.5) * et.L;  lx = et.Cx + w * 0.5; }
-                        var (px, py) = LP(lx, ly);
-                        path.LineTo(px, py);
-                    }
-                    path.Close();
-                    canvas.DrawPath(path, paint);
-                    break;
-                }
 
+                    case EllipsePrimitive e:
+                    {
+                        var (pcx, pcy) = LP(e.Cx, e.Cy);
+                        float prx = (float)(e.Rx * zoom);
+                        float pry = (float)(e.Ry * zoom);
+                        canvas.DrawOvalDashSafe(pcx, pcy, prx, pry, paint);
+                        break;
+                    }
+
+                    case ArcPrimitive a:
+                    {
+                        var (pcx, pcy) = LP(a.Cx, a.Cy);
+                        float pr = (float)(a.R * zoom);
+                        var oval = SKRect.Create(pcx - pr, pcy - pr, pr * 2, pr * 2);
+                        double startWorld = mirrorX
+                            ? (180.0 - a.StartDeg + rotDeg)
+                            : (a.StartDeg + rotDeg);
+                        double sweepWorld = mirrorX ? -a.SweepDeg : a.SweepDeg;
+                        canvas.DrawArc(oval, (float)startWorld, (float)sweepWorld, useCenter: false, paint);
+                        break;
+                    }
+
+                    case PolygonPrimitive pg:
+                    {
+                        if (pg.Points.Count < 2) break;
+                        using var path = new SKPath();
+                        var (px0, py0) = LP(pg.Points[0][0], pg.Points[0][1]);
+                        path.MoveTo(px0, py0);
+                        for (int i = 1; i < pg.Points.Count; i++)
+                        {
+                            var (px, py) = LP(pg.Points[i][0], pg.Points[i][1]);
+                            path.LineTo(px, py);
+                        }
+                        path.Close();
+                        canvas.DrawPath(path, paint);
+                        break;
+                    }
+
+                    case QuadCurvePrimitive qc:
+                    {
+                        var (px0, py0) = LP(qc.P0X,   qc.P0Y);
+                        var (pcx, pcy) = LP(qc.CtrlX, qc.CtrlY);
+                        var (px2, py2) = LP(qc.P2X,   qc.P2Y);
+                        using var path = new SKPath();
+                        path.MoveTo(px0, py0);
+                        path.QuadTo(pcx, pcy, px2, py2);
+                        canvas.DrawPath(path, paint);
+                        break;
+                    }
+
+                    case CubicCurvePrimitive cc:
+                    {
+                        var (px0, py0) = LP(cc.P0X, cc.P0Y);
+                        var (pc1x, pc1y) = LP(cc.C1X, cc.C1Y);
+                        var (pc2x, pc2y) = LP(cc.C2X, cc.C2Y);
+                        var (px3, py3) = LP(cc.P3X, cc.P3Y);
+                        using var path = new SKPath();
+                        path.MoveTo(px0, py0);
+                        path.CubicTo(pc1x, pc1y, pc2x, pc2y, px3, py3);
+                        canvas.DrawPath(path, paint);
+                        break;
+                    }
+
+                    case SinePrimitive s:
+                    {
+                        int N = Math.Max((int)Math.Ceiling(s.Cycles * Math.Max(s.PtsPerCycle, 1)), 2);
+                        using var path = new SKPath();
+                        for (int k = 0; k <= N; k++)
+                        {
+                            double t = (double)k / N;
+                            double lx, ly;
+                            if (s.Axis == SineAxis.Horizontal)
+                            {
+                                lx = s.Cx + (t - 0.5) * s.Length;
+                                ly = s.Cy + s.Amp * Math.Sin(2 * Math.PI * s.Cycles * t);
+                            }
+                            else
+                            {
+                                ly = s.Cy + (t - 0.5) * s.Length;
+                                lx = s.Cx + s.Amp * Math.Sin(2 * Math.PI * s.Cycles * t);
+                            }
+                            var (px, py) = LP(lx, ly);
+                            if (k == 0) path.MoveTo(px, py); else path.LineTo(px, py);
+                        }
+                        canvas.DrawPath(path, paint);
+                        break;
+                    }
+
+                    case ExponentialTaperPrimitive et:
+                    {
+                        if (et.L <= 0) break;
+                        int N = Math.Max(et.NumPts, 2);
+                        double wRatio = (et.W1 > 0 && et.W2 > 0) ? et.W2 / et.W1 : 1.0;
+                        using var path = new SKPath();
+                        // Top outline (t: 0→1)
+                        for (int k = 0; k <= N; k++)
+                        {
+                            double t = (double)k / N;
+                            double w = et.W1 * Math.Pow(wRatio, t);
+                            double lx, ly;
+                            if (et.Axis == SineAxis.Horizontal)
+                            { lx = et.Cx + (t - 0.5) * et.L;  ly = et.Cy - w * 0.5; }
+                            else
+                            { ly = et.Cy + (t - 0.5) * et.L;  lx = et.Cx - w * 0.5; }
+                            var (px, py) = LP(lx, ly);
+                            if (k == 0) path.MoveTo(px, py); else path.LineTo(px, py);
+                        }
+                        // Bottom outline (t: 1→0)
+                        for (int k = N; k >= 0; k--)
+                        {
+                            double t = (double)k / N;
+                            double w = et.W1 * Math.Pow(wRatio, t);
+                            double lx, ly;
+                            if (et.Axis == SineAxis.Horizontal)
+                            { lx = et.Cx + (t - 0.5) * et.L;  ly = et.Cy + w * 0.5; }
+                            else
+                            { ly = et.Cy + (t - 0.5) * et.L;  lx = et.Cx + w * 0.5; }
+                            var (px, py) = LP(lx, ly);
+                            path.LineTo(px, py);
+                        }
+                        path.Close();
+                        canvas.DrawPath(path, paint);
+                        break;
+                    }
+
+                }
             }
         }
     }

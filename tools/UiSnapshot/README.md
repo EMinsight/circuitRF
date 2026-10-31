@@ -118,7 +118,9 @@ Default size 1100x1400.
 `tests/Ui.Tests/Gdsfactory/Fixtures/synthkit`): `prompt`, `pick`, `interpreter`, `trust`, `report` (with the
 "Also build the kit's technology" footer when the kit states a stack), `report-open`, `tech-overwrite` (the merge
 question asked when the kit's `.ctech` already exists, against a copy with one layer recoloured and one
-conductivity changed, so its list of colliding items is real) and `cell` (with `--clay`). To look at the built
+conductivity changed, so its list of colliding items is real), `cell` (with `--clay`) and `symbols` (brief-gdf-4:
+the kit's own glyphs made into symbols in a fresh workspace, the kit's palette heading beside a schematic with one
+of each placed; every pin prints). `report` also lists those symbols. To look at the built
 technology itself, build it with `circuitrf import pdk … --technology` and open the `.ctech` with `--ctech`:
 
 ```
@@ -216,6 +218,18 @@ the scale, the armed tool and the canvas prompt. `--type`, `--button`, `--click`
 `--strip-geometry` checks that the layout tool strip never moves: it reads the bounds of every tool, the legend and the
 options slot with nothing armed, each tool armed by a click, a hand via selected and Other… chosen, prints them, and
 exits 1 if any differ.
+
+## The symbol editor
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --csym <file.csym> [--pick x,y] [--dark] -o out.png [steps]
+```
+
+The symbol editor beside its Properties inspector. `--pick x,y` (symbol coordinates) clicks there through the
+editor's own pointer handling, so whatever a user's click would select is selected; without it, the centre of the
+first partly filled shape is clicked. After every step the Fill box, the slider and the selected shape's stored fill
+print, with the refusal when a typed fill was refused (`--type FillText=abc --key Enter`). `--dark` renders in the dark theme
+here and in every mode that opens through this section's and the vendor-library section's views.
 
 ## Vendor libraries
 

@@ -57,10 +57,22 @@ connection-grid square):
     </tbody>
   </table>
 
-Each drawable primitive carries a **stroke width**, a **fill flag**, and a **color role** — never
+Each drawable primitive carries a **stroke width**, a **fill**, and a **color role** — never
 a literal RGB. Symbols draw in theme roles (*symbol-line*, *symbol-text*), so they stay correct in
 light and dark mode automatically. There is no color picker; stroke width and font size/style are
 editable, color is not.
+
+A closed shape (rectangle, rounded rectangle, circle, ellipse, polygon, taper) has a **Fill** from
+0 % to 100 %, set with the slider or typed in the box beside it. 0 % draws the outline alone and
+100 % fills the shape solid. Anything in between draws the outline over a fill of the line colour
+at that strength, so a region reads as shaded without hiding what is drawn over it.
+
+- **Dragging** the slider shows the change as you drag, and the whole drag is one undo step.
+- **Typing** takes a number from 0 to 100, with or without `%`, and a decimal point or comma
+  (`12.5`, `12,5 %`). Press Enter or leave the box to apply it, or Escape to put the value back.
+  Anything else is refused with the reason under the box, and the shape keeps its fill.
+
+Clicking inside a shape with any fill selects it; an unfilled shape is selected by its outline.
 
 ## Pins & ports {#pins}
 

@@ -181,6 +181,41 @@ File ▸ Import ▸ Technology asks (the two share `WriteImportedTechnologyAsync
 only when the workspace has none (`KitTechnologyInstall`). `circuitrf import pdk … --technology` is the
 headless form (`docs/design/cli.md` §34.1).
 
+## 6b. Symbols from a kit's own drawings (brief-gdf-4)
+
+circuitRF draws no symbol on a kit's behalf (`PCellKitSchematicParts`). A kit that ships its **own** drawing
+of a cell is another matter: the drawing is the kit's, and circuitRF adds only where the pins go.
+
+- **Found by name.** `register_pdk` looks, per offered cell, for a file whose stem IS the cell's name in the
+  package's `symbols/` directory, the cell module's `symbols/` directory, or beside the cell's module —
+  compared against the directory listing, so a case-insensitive file system cannot answer for a different
+  spelling. A `.csym` wins over an `.svg` of the same stem. The report carries `symbols` (cell → `.csym`),
+  `glyphs` (cell → `.svg`) and, for a glyph cell, `ports` (its non-`placement` ports at the default build:
+  name, µm, outward degrees).
+- **Installed at import, as files.** `KitGlyphSymbol.Install` (`src/Design/Schematic`) writes
+  `symbols/<cell>.csym` beside the kit's declaration — copied from the kit's `.csym`, else built from the
+  glyph — which is exactly where `PCellKitSchematicParts.FindSymbolFile` looks, so the palette rebuild that
+  follows an import mounts them with no other change. An existing file is never overwritten (it may be one
+  somebody edited); the report says it was kept. Import PDK and `circuitrf import pdk` both call it.
+- **The glyph.** Lines, polylines, polygons, rects, circles, ellipses, paths (curves kept as curves; arcs,
+  and every curve of a FILLED outline, flattened) and text become `.csym` primitives, through `g`
+  transforms. The box is the `viewBox` (else width/height, else what is drawn), scaled uniformly onto the
+  connection grid and centred. No colour is carried and the kit's `@media` (dark-mode) rules are not read,
+  but its plain class and element rules ARE, for what is filled and how text is set — a kit may say
+  `fill:none` only through a class. A fill keeps the kit's own opacity as the shape's fill strength
+  (`SymbolFill`: 0 the outline alone, 1 solid, between the outline over the symbol colour at that
+  strength), so a kit shading a region at 25 % stays 25 %; a near-white fill with no stroke is the
+  glyph's background and is not drawn. Anything else — a filter, an image, a `use`, a gradient — is
+  dropped and **counted** in the report.
+- **The pins.** Outward 180° → left edge, 0° → right, 90° → top, 270° → bottom. On an edge the pins keep the
+  ports' order across it and are spread evenly on the grid; a lead line ending on that edge takes the
+  pin, and among the order-keeping assignments the one that moves the pins least wins, ties to the most
+  centred. More ports than lead ends puts the rest on the grid and the report says which. A pin is never
+  dropped. Where the glyph's edge or lead end is not on the grid, the lead is carried out to the pin.
+- **No parameters, and no model.** The parameters are the generator's, as for every synthesised part. A
+  symbol makes a cell placeable and visible to Update Layout from Schematic and LVS; it gives the cell no
+  circuit behaviour — an EM run's SnP does that. The report says so beside the list.
+
 ## 7. Tests
 
 - Tier A (default gate): `tests/Ui.Tests/Gdsfactory/GdsfactoryAdapterTests.cs` — discovery from synthetic
@@ -192,6 +227,10 @@ headless form (`docs/design/cli.md` §34.1).
   `Fixtures/compare_gds.py`, through gdsfactory's own layout-engine dependency. Normalised: a difference that vanishes when shrunk by one DBU is
   rounding, not a shape (gdsfactory's own flattening and its own GDS of a ring differ by exactly such
   slivers).
+- Symbols from glyphs (brief-gdf-4), Tier A: `tests/Ui.Tests/Gdsfactory/KitGlyphSymbolTests.cs` — pins on a
+  two-lead glyph's lead ends, four ports on an edge with two lead ends, a dropped and counted `<filter>`,
+  class rules deciding the fill while dark-mode rules do not, and the bridge's own lookup preferring a `.csym` (plain Python, no gdsfactory). The synthetic kit ships
+  `symbols/` glyphs and one `.csym` for the UiSnapshot `--gdsfactory symbols` picture.
 - `tools/pcell-python/verify.py` checks the bridge imports, and answers, with gdsfactory hidden — `report`
   and `technology` both.
 - The technology (brief-gdf-3): Tier A `tests/Ui.Tests/Layout/TechImport/GdsfactoryStackConverterTests.cs`

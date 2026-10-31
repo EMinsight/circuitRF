@@ -6,6 +6,13 @@
              x:Class="CircuitRF.Ui.Views.Properties.SymbolPrimitiveInspectorView"
              x:DataType="vm:SymbolPrimitiveInspectorViewModel">
 
+    <UserControl.Styles>
+        <!-- A refused fill: the box keeps what was typed, outlined, beside the reason. -->
+        <Style Selector="TextBox.invalid">
+            <Setter Property="BorderBrush" Value="#C8463A"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid RowDefinitions="*">
 
         <!-- Empty state -->
@@ -351,11 +358,28 @@
                     </Grid>
                 </StackPanel>
 
-                <!-- ── Filled (checkbox) ─────────────────────────────────────────────── -->
-                <CheckBox IsVisible="{Binding ShowFilled}"
-                          Content="Filled"
-                          IsChecked="{Binding FieldFilled, Mode=TwoWay}"
-                          FontSize="11" Padding="0,2"/>
+                <!-- ── Fill: one strength, 0 % the outline alone … 100 % solid (SymbolFill). The slider previews while
+                     it is dragged and is one undo step on release; the box takes a typed percentage on Enter or on
+                     leaving it, Escape puts it back. The line under the row is always there, empty unless the typed
+                     value was refused, so a refusal never moves the rows below it. -->
+                <StackPanel IsVisible="{Binding ShowFill}" Spacing="0">
+                    <Grid ColumnDefinitions="56,*,64" ColumnSpacing="6">
+                        <TextBlock Grid.Column="0" Text="Fill" VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                        <Slider x:Name="FillSlider" Grid.Column="1" Minimum="0" Maximum="100"
+                                SmallChange="1" LargeChange="10"
+                                Value="{Binding FieldFillSlider}" VerticalAlignment="Center"
+                                ToolTip.Tip="0 % draws the outline alone, 100 % fills it solid. In between, the outline is drawn over a fill of the line colour at that strength."/>
+                        <TextBox x:Name="FillText" Grid.Column="2" Text="{Binding FieldFillText}"
+                                 Classes.invalid="{Binding FillInvalid}"
+                                 FontSize="11" Padding="4,2" VerticalAlignment="Center" HorizontalContentAlignment="Right"
+                                 KeyDown="OnFillTextKey" LostFocus="OnFillTextLostFocus"
+                                 ToolTip.Tip="A percentage from 0 to 100. Enter applies it, Escape puts the value back."/>
+                    </Grid>
+                    <TextBlock Text="{Binding FillError}" FontSize="11" Foreground="#C8463A"
+                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Height="15" Margin="62,0,0,0"
+                               ToolTip.Tip="{Binding FillError}"/>
+                </StackPanel>
 
                 <!-- ── Stroke tier (ComboBox) ────────────────────────────────────────── -->
                 <Grid IsVisible="{Binding ShowStrokeTier}" ColumnDefinitions="56,*">

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- A synthetic glyph: a tinted strip with a lead to each side. No pin markup, as a kit's glyphs have none. -->
+  <style>.tint { fill: #222; fill-opacity: .25 } @media (prefers-color-scheme: dark) { .ink { stroke: #eee; } }</style>
+  <line class="ink" x1="0" y1="50" x2="20" y2="50" stroke="#222" stroke-width="2"/>
+  <rect class="ink tint" x="20" y="40" width="60" height="20" stroke="#222" stroke-width="2"/>
+  <line class="ink" x1="80" y1="50" x2="100" y2="50" stroke="#222" stroke-width="2"/>
+  <text x="50" y="35" font-size="12" text-anchor="middle">strip</text>
+</svg>

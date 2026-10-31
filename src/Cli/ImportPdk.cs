@@ -251,6 +251,18 @@ internal static class ImportPdk
                 Say(DiagnosticSeverity.Info, $"{cell}: {names.Count} parameter(s) not offered: {string.Join(", ", names)}");
             foreach (var (cell, n) in report.PlacementPorts.OrderBy(kv => kv.Key, StringComparer.Ordinal))
                 Say(DiagnosticSeverity.Info, $"{cell}: {n} placement port(s) not made pins");
+
+            // The kit's own drawings, made into the symbols the palette mounts — the install Import PDK runs.
+            if (report.Problem is null && report.Symbols.Count + report.Glyphs.Count > 0)
+            {
+                var symbols = KitGlyphSymbol.Install(folder, report);
+                Console.WriteLine(symbols.Tally());
+                foreach (var path in symbols.Built.Values.Concat(symbols.Copied.Values).Order(StringComparer.Ordinal))
+                    JsonRun.AddOutput("symbol", path);
+                foreach (var (cell, text, warning) in symbols.Lines)
+                    Say(warning ? DiagnosticSeverity.Warning : DiagnosticSeverity.Info, $"{cell}: {text}");
+                Say(DiagnosticSeverity.Info, KitGlyphSymbol.NoModelNote);
+            }
         }
 
         return technology ? BuildTechnology(interpreter, kit, wsRoot) : 0;

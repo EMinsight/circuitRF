@@ -1,0 +1,11 @@
+{
+  "FormatVersion": 6,
+  "GridSize": 100,
+  "PortCount": 1,
+  "Primitives": [
+    { "$type": "Rect", "ColorRole": "SymbolLine", "StrokeTier": "Normal", "Filled": false, "Cx": 0, "Cy": 0, "W": 200, "H": 200 },
+    { "$type": "Line", "ColorRole": "SymbolLine", "StrokeTier": "Normal", "X1": -200, "Y1": 0, "X2": -100, "Y2": 0 },
+    { "$type": "Text", "Content": "PAD", "AnchorX": 0, "AnchorY": 0, "FontSize": 40, "Align": "Center", "VAlign": "Middle", "ColorRole": "SymbolText" }
+  ],
+  "Pins": [ { "LocalX": -200, "LocalY": 0, "PortIndex": 0, "Name": "e1" } ]
+}

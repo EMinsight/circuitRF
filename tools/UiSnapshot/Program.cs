@@ -134,6 +134,8 @@ int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
 string? archive = null, manageLibraries = null, addVendorLibrary = null;
 string? gdsfactory = null, gdsfactoryPython = null, gdsfactoryKit = null, gdsfactoryCell = null;
+string? csym = null, csymPick = null;
+bool dark = false;
 var layerToggles = new List<(string Name, bool Hide)>();
 bool standalone = false;
 var signal = new List<string>();
@@ -183,6 +185,9 @@ for (int i = 0; i < args.Length; i++)
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
         case "--palette" when i + 1 < args.Length: palette = Path.GetFullPath(args[++i]); break;
+        case "--csym" when i + 1 < args.Length: csym = Path.GetFullPath(args[++i]); break;
+        case "--pick" when i + 1 < args.Length: csymPick = args[++i]; break;
+        case "--dark": dark = true; break;
         case "--category" when i + 1 < args.Length: paletteCategory = args[++i]; break;
         case "--search" when i + 1 < args.Length: paletteSearch = args[++i]; break;
         case "--schematic" when i + 1 < args.Length: schematic = Path.GetFullPath(args[++i]); break;
@@ -215,7 +220,7 @@ if (reviewPanel is not null && output is not null)
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).WithInterFont().SetupWithoutStarting();
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
-bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null;
+bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null || csym is not null;
 if ((cdd is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
@@ -249,6 +254,9 @@ OptimizerTool? optimizerTool = null;
 LayoutCanvas? layoutCanvas = null;
 LayoutEditorViewModel? layoutVm = null;
 TechEditorViewModel? techVm = null;
+SymbolPrimitiveInspectorViewModel? csymInspector = null;
+CircuitRF.Design.Symbol.SymbolPrimitive? csymPicked = null;
+if (dark && Application.Current is { } app) app.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
 if (vendorMode)
 {
     host = VendorView();
@@ -699,6 +707,10 @@ foreach (var (kind, arg) in steps)
     if (parameterEditor is { IsVendorPart: true } pev)
         Console.WriteLine($"{kind} {arg}: vendor part tuned {pev.IsVendorPartTuned}, optimized {pev.IsVendorPartOptimized}");
     if (techVm is not null) PrintTech($"{kind} {arg}");
+    if (csymInspector is not null)
+        Console.WriteLine($"{kind} {arg}: fill box '{csymInspector.FieldFillText}', slider {csymInspector.FieldFillSlider:0.#}, "
+                        + $"stored {(csymPicked is null ? "-" : (CircuitRF.Design.Symbol.SymbolFill.Of(csymPicked) * 100).ToString("0.#"))} %"
+                        + (csymInspector.FillInvalid ? $", refused: {csymInspector.FillError}" : ""));
     if (paletteTool is not null)
         Console.WriteLine($"{kind} {arg}: focus {host.FocusManager?.GetFocusedElement()?.GetType().Name ?? "none"}; armed "
                         + (paletteTool.VendorRows.FirstOrDefault(r => r.IsArmed)?.Part ?? "none")
@@ -915,6 +927,45 @@ Window VendorView()
         window.Opened += (_, _) => Dispatcher.UIThread.Post(doc.RequestZoomToFit);
         return window;
     }
+    if (csym is not null)
+    {
+        // The symbol editor beside its Properties inspector, as the shell docks them, with one shape selected by a
+        // click through the editor's own pointer handling: --pick x,y in symbol coordinates, else the centre of the
+        // first tinted shape (whose inside is part of it), else nothing selected.
+        var symbol = CircuitRF.Design.Symbol.SymbolPersistence.LoadFromFile(csym);
+        var editable = CircuitRF.Ui.Schematic.EditableSymbol.FromSymbol(symbol);
+        var vm = new SymbolEditorViewModel(editable);
+        (double X, double Y)? pick = null;
+        if (csymPick is { } p)
+        {
+            var xy = p.Split(',').Select(v => double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            pick = (xy[0], xy[1]);
+        }
+        else if (symbol.Primitives.FirstOrDefault(p => CircuitRF.Design.Symbol.SymbolFill.Of(p) is > 0 and < 1) is { } tinted)
+        {
+            var (x0, y0, x1, y1) = CircuitRF.Design.Symbol.SymbolGeometry.BboxOf(tinted);
+            pick = ((x0 + x1) / 2, (y0 + y1) / 2);
+        }
+        if (pick is { } at)
+        {
+            vm.OnPointerPressed(at.X, at.Y, KeyModifiers.None);
+            vm.OnPointerReleased(at.X, at.Y);
+        }
+        var inspector = csymInspector = new SymbolPrimitiveInspectorViewModel();
+        inspector.SetContext(vm);
+        if (vm.Overlay.SelectedIndices.Count == 1) csymPicked = editable.Primitives[vm.Overlay.SelectedIndices.First()];
+        Console.WriteLine($"selected: {(pick is null ? "nothing" : $"at {pick}")}; fill row {inspector.ShowFill}: {inspector.FieldFillText}");
+        var doc = new CircuitRF.Ui.Schematic.SymbolEditorDocument(Path.GetFileNameWithoutExtension(csym), vm);
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,300") };
+        grid.Children.Add(new CircuitRF.Ui.Views.Content.SymbolEditorView { DataContext = doc });
+        var props = new CircuitRF.Ui.Views.Properties.SymbolPrimitiveInspectorView { DataContext = inspector };
+        Grid.SetColumn(props, 1);
+        grid.Children.Add(props);
+        var window = new Window { Width = sizeGiven ? width : 1100, Height = sizeGiven ? height : 640, Content = grid };
+        window.Opened += (_, _) => Dispatcher.UIThread.Post(() =>
+            window.GetVisualDescendants().OfType<CircuitRF.Ui.Controls.SymbolEditorCanvas>().FirstOrDefault()?.ZoomToFit());
+        return window;
+    }
     if (archive is not null)
     {
         var dialog = new CircuitRF.Ui.Views.Dialogs.ArchiveWorkspaceDialog(CircuitRF.Ui.Archive.WorkspaceArchiveScanner.Scan(archive), new ConsoleSink());
@@ -991,7 +1042,11 @@ bool OpenGdsfactory(string step)
             var offer = stack is { Stack.Count: > 0 }
                 ? new CircuitRF.Ui.Views.Dialogs.GdsfactoryImportReportDialog.TechnologyOffer(stack.Stack.Count, stack.Materials.Count, tree.Module + ".ctech")
                 : null;
-            var dialog = CircuitRF.Ui.Views.Dialogs.GdsfactoryImportReportDialog.Build(tree, report, null, pairings, allowed: true, offer);
+            // The kit's drawings made into symbols, as Import PDK makes them, into a scratch kit folder (brief-gdf-4).
+            string symbolFolder = Path.Combine(Path.GetTempPath(), "crf-gdf4-report-" + Guid.NewGuid().ToString("N")[..8]);
+            var symbols = CircuitRF.Design.Schematic.KitGlyphSymbol.Install(symbolFolder, report);
+            Console.WriteLine(symbols.Tally());
+            var dialog = CircuitRF.Ui.Views.Dialogs.GdsfactoryImportReportDialog.Build(tree, report, null, pairings, allowed: true, offer, symbols);
             // report: as it first opens, every section collapsed; report-open: every section but the
             // long list of offered cells expanded, so the rest is on screen.
             if (step == "report-open")
@@ -1078,8 +1133,70 @@ bool OpenGdsfactory(string step)
                 ToolTip.SetIsOpen(label, true);
             break;
         }
+        case "symbols":
+        {
+            // brief-gdf-4: the kit's own drawings made into symbols as Import PDK makes them — the real bridge
+            // report, KitGlyphSymbol.Install into a fresh workspace's kit folder — then mounted as the workspace
+            // mounts them, each placed on a schematic through the placement path, beside the palette tiles.
+            if (tree is null) { Console.Error.WriteLine("--gdsfactory symbols needs --kit <source tree>"); return false; }
+            var report = CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.ReadReport(python, tree, out var problem);
+            if (report is null) { Console.Error.WriteLine($"no report: {problem}"); return false; }
+            string parent = Path.Combine(Path.GetTempPath(), "crf-gdf4-" + Guid.NewGuid().ToString("N")[..8]);
+            Directory.CreateDirectory(parent);
+            string ws = CircuitRF.Design.Workspace.WorkspaceCreate.Create(parent, "glyphs", null).WorkspaceDir;
+            string folder = CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.Declare(ws, tree, out var declareProblem, out _)
+                            ?? throw new InvalidOperationException(declareProblem);
+            var installed = CircuitRF.Design.Schematic.KitGlyphSymbol.Install(folder, report);
+            Console.WriteLine(installed.Tally());
+            foreach (var (cell, text, warning) in installed.Lines) Console.WriteLine($"{(warning ? "warning" : "note")}: {cell}: {text}");
+
+            string kitName = Path.GetFileName(folder);
+            var parts = new List<CircuitRF.Design.Schematic.PdkKitPart>();
+            var tiles = new List<CircuitRF.Design.Schematic.PaletteItem>();
+            foreach (string cell in report.Offered)
+                if (CircuitRF.Design.Schematic.PCellKitSchematicParts.TryBuild(kitName, cell, folder, null, out var partProblem) is { } part)
+                {
+                    parts.Add(part);
+                    tiles.Add(CircuitRF.Design.Schematic.PCellKitSchematicParts.PaletteItemFor(kitName, part));
+                    foreach (var pin in part.Symbol.Pins) Console.WriteLine($"{cell}: pin {pin.Name} at ({pin.LocalX}, {pin.LocalY}) {pin.NameAlign}");
+                }
+                else if (partProblem is not null) Console.WriteLine($"{cell}: {partProblem}");
+            CircuitRF.Design.Schematic.PdkKitRegistry.SetPCellParts(ws, kitName, parts);
+            var composed = CircuitRF.Ui.Schematic.KitPaletteMerge.Compose(tiles, report.Offered.ToDictionary(c => c, _ => kitName));
+
+            var tool = new PaletteTool();
+            tool.SetPlacementService(new CircuitRF.Ui.Schematic.PlacementService());
+            tool.SetPdkParts(composed);
+            // The kit's own heading, where a user browsing the kit finds its tiles.
+            tool.SelectedCategory = tool.Categories.FirstOrDefault(c => c.DisplayName == kitName) ?? tool.SelectedCategory;
+            if (gdsfactoryCell is not null) tool.SearchQuery = gdsfactoryCell;
+            Console.WriteLine($"palette: {string.Join(", ", tool.Categories.Select(c => c.DisplayName))}");
+
+            string schDir = Path.Combine(ws, "glyphs");
+            Directory.CreateDirectory(schDir);
+            var model = new SchematicEditModel { SchematicDirectory = schDir };
+            var vm = new SchematicViewModel(model, messageSink: new ConsoleSink());
+            double x = 0;
+            foreach (var part in parts)
+            {
+                Await(vm.CommitCellPlacementAsync(CircuitRF.Design.Schematic.PdkKitRegistry.RefFor(kitName, part.PartId), x, 0, SymbolRotation.R0));
+                x += 800;
+            }
+            vm.Selection.Clear();
+            var doc = new CircuitRF.Ui.Schematic.SchematicDocument("glyphs", vm, Path.Combine(schDir, "glyphs.csch"));
+            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("300,*") };
+            grid.Children.Add(new CircuitRF.Ui.Views.Palette.PaletteToolView { DataContext = tool });
+            var view = new CircuitRF.Ui.Views.Content.SchematicView { DataContext = doc };
+            Grid.SetColumn(view, 1);
+            grid.Children.Add(view);
+            host.Content = grid;
+            host.Width = sizeGiven ? width : 1200; host.Height = sizeGiven ? height : 560;
+            Pump();
+            doc.RequestZoomToFit();
+            break;
+        }
         default:
-            Console.Error.WriteLine($"--gdsfactory: unknown step '{step}' (prompt, pick, interpreter, trust, report, report-open, tech-overwrite, cell)");
+            Console.Error.WriteLine($"--gdsfactory: unknown step '{step}' (prompt, pick, interpreter, trust, report, report-open, tech-overwrite, cell, symbols)");
             return false;
     }
     Pump();

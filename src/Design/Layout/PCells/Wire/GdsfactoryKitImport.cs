@@ -33,6 +33,15 @@ public sealed class GdsfactoryImportReport
     /// <summary>Cell → every parameter it declares, which is what the palette's pairing reads.</summary>
     public Dictionary<string, List<string>> Parameters { get; set; } = [];
 
+    /// <summary>Cell → the kit's own <c>.csym</c> for it, found by file stem (brief-gdf-4 R-gdf4-1). Wins over a glyph.</summary>
+    public Dictionary<string, string> Symbols { get; set; } = [];
+
+    /// <summary>Cell → the kit's own SVG glyph for it, found by file stem, when it ships no <c>.csym</c> of that stem.</summary>
+    public Dictionary<string, string> Glyphs { get; set; } = [];
+
+    /// <summary>Glyph cell → its ports at the default build, <c>placement</c> excluded: what the pins are placed from.</summary>
+    public Dictionary<string, List<GdsfactoryPort>> Ports { get; set; } = [];
+
     public List<string> Problems { get; set; } = [];
 
     public int CellsNotOffered => NotOffered.Values.Sum(v => v.Count);
@@ -76,6 +85,15 @@ public sealed class GdsfactoryImportReport
         }
         catch (JsonException) { return null; }
     }
+}
+
+/// <summary>One port of a gdsfactory cell as the report states it: µm, and the outward orientation in degrees.</summary>
+public sealed class GdsfactoryPort
+{
+    public string Name { get; set; } = "";
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Orientation { get; set; }
 }
 
 /// <summary>

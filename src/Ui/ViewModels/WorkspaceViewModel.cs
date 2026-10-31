@@ -6298,13 +6298,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // The interpreter is this USER's choice for this module, recorded where the trust decisions are.
         CircuitRF.Ui.Layout.PCells.GdsfactoryInterpreterChoices.Record(kit.Module, interpreter);
 
-        if (CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.Declare(wsRoot, kit, out string? problem, out _) is null)
+        if (CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.Declare(wsRoot, kit, out string? problem, out _) is not { } kitFolder)
         {
             Messages.Error($"Import PDK — {kit.Display} could not be declared in this workspace: {problem}");
             return;
         }
 
         CircuitRF.Design.Layout.PCells.Wire.GdsfactoryImportReport? report = null;
+        KitGlyphSymbol.InstallResult? symbols = null;
         string? reportProblem = null;
         GdsfactoryStackDocument? stack = null;
         ProcessLayerTable? layerTable = null;
@@ -6315,6 +6316,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             report = await Task.Run(() => CircuitRF.Design.Layout.PCells.Wire.GdsfactoryKitImport.ReadReport(interpreter, kit, out reportProblem));
             live.Complete(report is { Problem: null } ? MessageLevel.Info : MessageLevel.Warning,
                           $"Import PDK — {kit.Display}: {report?.Tally() ?? reportProblem}");
+
+            // The kit's own drawings become symbols/<cell>.csym beside its declaration (brief-gdf-4), BEFORE the
+            // reload below, which is what mounts them on the palette.
+            if (report is { Problem: null } && report.Symbols.Count + report.Glyphs.Count > 0)
+            {
+                symbols = KitGlyphSymbol.Install(kitFolder, report);
+                foreach (var (cell, text, warning) in symbols.Lines)
+                    if (warning) Messages.Warning($"Import PDK — {cell}: {text}");
+                    else Messages.Info($"Import PDK — {cell}: {text}");
+            }
 
             // The kit's process, read under the same consent — reading it runs the kit too (brief-gdf-3
             // R-gdf3-1a). Read now so the report can offer to build it; built only if the offer is kept.
@@ -6338,7 +6349,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? new GdsfactoryImportReportDialog.TechnologyOffer(stack.Stack.Count, stack.Materials.Count,
                 Path.GetFileName(KitTechnologyInstall.PathFor(wsRoot, kit.Module)))
             : null;
-        bool build = await GdsfactoryImportReportDialog.ShowAsync(window, kit, report, reportProblem, pairings, allowed, offer);
+        bool build = await GdsfactoryImportReportDialog.ShowAsync(window, kit, report, reportProblem, pairings, allowed, offer, symbols);
         if (build && offer is not null) await BuildKitTechnologyAsync(window, kit.Module, stack!, layerTable, wsRoot);
     }
 

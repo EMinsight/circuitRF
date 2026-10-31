@@ -54,7 +54,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
     [ObservableProperty] private bool _showExpTaperFields;
     [ObservableProperty] private bool _showQuadCurve;
     [ObservableProperty] private bool _showCubicCurve;
-    [ObservableProperty] private bool _showFilled;
+    [ObservableProperty] private bool _showFill;
     [ObservableProperty] private bool _showStrokeTier;
     [ObservableProperty] private bool _showBitmapFields;
 
@@ -218,24 +218,83 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         _vm.Execute(new SetSymbolPrimitiveFieldCommand<int>(_vm.EditableSymbol, "NumPts", oldValue, clamped, v => et.NumPts = v));
     }
 
-    // ── Filled checkbox (Rect, RoundedRect, Circle, Ellipse, Polygon) ─────────
+    // ── Fill (Rect, RoundedRect, Circle, Ellipse, Polygon, Taper): one strength, 0 % outline … 100 % solid ─────
 
-    [ObservableProperty] private bool _fieldFilled;
+    /// <summary>The slider, 0–100. Moving it previews on the canvas and writes nothing to the undo history;
+    /// <see cref="CommitFillSlider"/> makes the whole drag ONE undo step.</summary>
+    [ObservableProperty] private double _fieldFillSlider;
 
-    partial void OnFieldFilledChanged(bool oldValue, bool newValue)
+    /// <summary>The box beside the slider, committed by <see cref="CommitFillText"/> (Enter, or leaving the box).</summary>
+    [ObservableProperty] private string _fieldFillText = "";
+
+    /// <summary>Why the last typed fill was refused; empty when it was not. The value is left as it was.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(FillInvalid))]
+    private string _fillError = "";
+
+    public bool FillInvalid => FillError.Length > 0;
+
+    /// <summary>The strength before the drag in progress, 0–1; null when no drag is.</summary>
+    private double? _fillDragStart;
+
+    partial void OnFieldFillSliderChanged(double value)
     {
-        if (_isRefreshing || _prim is null || _vm is null || oldValue == newValue) return;
-        Action<bool>? apply = _prim switch {
-            RectPrimitive             p => v => p.Filled = v,
-            RoundedRectPrimitive      p => v => p.Filled = v,
-            CirclePrimitive           p => v => p.Filled = v,
-            EllipsePrimitive          p => v => p.Filled = v,
-            PolygonPrimitive          p => v => p.Filled = v,
-            ExponentialTaperPrimitive p => v => p.Filled = v,
-            _ => null,
-        };
-        if (apply is not null)
-            _vm.Execute(new SetSymbolPrimitiveFieldCommand<bool>(_vm.EditableSymbol, "Filled", oldValue, newValue, apply));
+        if (_isRefreshing || _prim is not { } prim || _vm is not { IsEditable: true } vm || !SymbolFill.Accepts(prim)) return;
+        double f = Math.Clamp(Math.Round(value), 0, 100) / 100;
+        _fillDragStart ??= SymbolFill.Of(prim);
+        SymbolFill.Set(prim, f);
+        FillError = "";
+        DisplayFill(f, keepText: false);
+        vm.EditableSymbol.NotifyChanged();
+    }
+
+    /// <summary>The slider's release (and a key on it): the drag's net change as one undo step.</summary>
+    public void CommitFillSlider()
+    {
+        if (_fillDragStart is not { } before || _prim is not { } prim || _vm is not { } vm) return;
+        _fillDragStart = null;
+        double after = SymbolFill.Of(prim);
+        if (Math.Abs(after - before) < SymbolFill.Resolution / 2) return;
+        vm.Execute(new SetSymbolPrimitiveFieldCommand<double>(vm.EditableSymbol, "Fill", before, after, v => SymbolFill.Set(prim, v)));
+    }
+
+    /// <summary>The box: a percentage from 0 to 100 (<see cref="SymbolFill.TryParsePercent"/>), or the reason it is
+    /// not, with the value left unchanged and the typed text left in place to correct.</summary>
+    public void CommitFillText()
+    {
+        if (_prim is not { } prim || _vm is not { IsEditable: true } vm || !SymbolFill.Accepts(prim)) return;
+        if (!SymbolFill.TryParsePercent(FieldFillText, out double percent, out string? problem))
+        {
+            FillError = problem ?? "";
+            return;
+        }
+        FillError = "";
+        double before = SymbolFill.Of(prim), after = percent / 100;
+        DisplayFill(after, keepText: false);
+        if (Math.Abs(after - before) < SymbolFill.Resolution / 2) return;
+        vm.Execute(new SetSymbolPrimitiveFieldCommand<double>(vm.EditableSymbol, "Fill", before, after, v => SymbolFill.Set(prim, v)));
+    }
+
+    /// <summary>Escape in the box: back to the shape's own value, and no complaint.</summary>
+    public void RevertFillText()
+    {
+        FillError = "";
+        if (_prim is { } prim) DisplayFill(SymbolFill.Of(prim), keepText: false);
+    }
+
+    /// <summary>Puts a strength (0–1) in the slider and the box. <paramref name="keepText"/> leaves a refused entry
+    /// in the box, so a canvas refresh does not wipe what the user is in the middle of correcting.</summary>
+    private void DisplayFill(double fraction, bool keepText)
+    {
+        bool was = _isRefreshing;
+        _isRefreshing = true;
+        try
+        {
+            FieldFillSlider = fraction * 100;
+            if (!(keepText && FillInvalid))
+                FieldFillText = (fraction * 100).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " %";
+        }
+        finally { _isRefreshing = was; }
     }
 
     // ── Bitmap: Opacity ───────────────────────────────────────────────────────
@@ -653,7 +712,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
             case RectPrimitive r:
                 ShowCxCy = true; FieldCx = r.Cx; FieldCy = r.Cy;
                 ShowWH = true; FieldW = r.W; FieldH = r.H;
-                ShowFilled = true; FieldFilled = r.Filled;
+                ShowFill = true; if (switching) FillError = ""; DisplayFill(SymbolFill.Of(r), keepText: !switching);
                 ShowStrokeTier = true; StrokeTier = r.StrokeTier;
                 break;
 
@@ -661,21 +720,21 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
                 ShowCxCy = true; FieldCx = rr.Cx; FieldCy = rr.Cy;
                 ShowWH = true; FieldW = rr.W; FieldH = rr.H;
                 ShowCornerRadius = true; FieldCornerRadius = rr.Radius;
-                ShowFilled = true; FieldFilled = rr.Filled;
+                ShowFill = true; if (switching) FillError = ""; DisplayFill(SymbolFill.Of(rr), keepText: !switching);
                 ShowStrokeTier = true; StrokeTier = rr.StrokeTier;
                 break;
 
             case CirclePrimitive c:
                 ShowCxCy = true; FieldCx = c.Cx; FieldCy = c.Cy;
                 ShowRadius = true; FieldRadius = c.R;
-                ShowFilled = true; FieldFilled = c.Filled;
+                ShowFill = true; if (switching) FillError = ""; DisplayFill(SymbolFill.Of(c), keepText: !switching);
                 ShowStrokeTier = true; StrokeTier = c.StrokeTier;
                 break;
 
             case EllipsePrimitive e:
                 ShowCxCy = true; FieldCx = e.Cx; FieldCy = e.Cy;
                 ShowRxRy = true; FieldRx = e.Rx; FieldRy = e.Ry;
-                ShowFilled = true; FieldFilled = e.Filled;
+                ShowFill = true; if (switching) FillError = ""; DisplayFill(SymbolFill.Of(e), keepText: !switching);
                 ShowStrokeTier = true; StrokeTier = e.StrokeTier;
                 break;
 
@@ -687,7 +746,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
                 break;
 
             case PolygonPrimitive pg:
-                ShowFilled = true; FieldFilled = pg.Filled;
+                ShowFill = true; if (switching) FillError = ""; DisplayFill(SymbolFill.Of(pg), keepText: !switching);
                 ShowStrokeTier = true; StrokeTier = pg.StrokeTier;
                 ShowPolylineCoords = true;
                 RefreshPolylineCoords(pg.Points, switching);
@@ -723,7 +782,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
                 ShowExpTaperFields = true;
                 FieldW1 = et.W1; FieldW2 = et.W2; FieldExpL = et.L; FieldNumPts = et.NumPts;
                 FieldAxis = et.Axis;
-                ShowFilled = true; FieldFilled = et.Filled;
+                ShowFill = true; if (switching) FillError = ""; DisplayFill(SymbolFill.Of(et), keepText: !switching);
                 ShowStrokeTier = true; StrokeTier = et.StrokeTier;
                 break;
 
@@ -762,7 +821,7 @@ public sealed partial class SymbolPrimitiveInspectorViewModel : ObservableObject
         ShowExpTaperFields = false;
         ShowQuadCurve      = false;
         ShowCubicCurve     = false;
-        ShowFilled         = false;
+        ShowFill           = false;
         ShowStrokeTier     = false;
         IsTextPrimitive    = false;
         ShowPolylineCoords = false;

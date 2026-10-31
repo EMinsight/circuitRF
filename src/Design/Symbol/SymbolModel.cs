@@ -80,6 +80,101 @@ public enum SwitchState { Off = 0, On = 1 }
 /// </summary>
 public enum SwitchThrow { None = 0, T1 = 1, T2 = 2 }
 
+// ── Fill ──────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// <b>How strongly a closed shape is filled</b>, 0–1, always in the shape's own colour role: 0 is the outline alone,
+/// 1 is solid (<c>Filled</c>), and anything between is the outline over a fill of the line colour at that
+/// opacity, so a region reads as shaded without hiding what is drawn over it. The colour is still the theme's,
+/// so dark mode needs nothing.
+///
+/// <para><b>Stored as two fields so no existing file changes.</b> Solid stays the <c>Filled</c> flag every
+/// <c>.csym</c> already carries; a strength strictly between 0 and 1 is <c>Tint</c>, written only when set (the
+/// shape <see cref="CsymPin.NameAlign"/> already uses). A symbol with no partial fill re-serialises byte for byte
+/// and needs no format-version bump, and a build that predates <c>Tint</c> draws such a shape as its outline.
+/// <see cref="Set"/> never writes both; a file that has both (by hand) is solid.</para>
+/// </summary>
+public static class SymbolFill
+{
+    /// <summary>The finest step a fill is held at: a tenth of a percent.</summary>
+    public const double Resolution = 0.001;
+
+    /// <summary>Whether <paramref name="prim"/> has a fill at all — the closed shapes.</summary>
+    public static bool Accepts(SymbolPrimitive prim) => prim is RectPrimitive or RoundedRectPrimitive or CirclePrimitive
+        or EllipsePrimitive or PolygonPrimitive or ExponentialTaperPrimitive;
+
+    /// <summary>The fill strength of <paramref name="prim"/>, 0–1: 1 when solid, 0 for a shape with no fill.</summary>
+    public static double Of(SymbolPrimitive prim)
+    {
+        var (filled, tint) = prim switch
+        {
+            RectPrimitive r              => (r.Filled,  r.Tint),
+            RoundedRectPrimitive rr      => (rr.Filled, rr.Tint),
+            CirclePrimitive c            => (c.Filled,  c.Tint),
+            EllipsePrimitive e           => (e.Filled,  e.Tint),
+            PolygonPrimitive pg          => (pg.Filled, pg.Tint),
+            ExponentialTaperPrimitive et => (et.Filled, et.Tint),
+            _                            => (false, 0.0),
+        };
+        if (filled) return 1;
+        return double.IsFinite(tint) ? Math.Clamp(tint, 0, 1) : 0;
+    }
+
+    /// <summary>Sets <paramref name="prim"/>'s fill strength: solid at 1, none at 0, a tint between, rounded to
+    /// <see cref="Resolution"/>. Nothing happens to a shape that has no fill.</summary>
+    public static void Set(SymbolPrimitive prim, double fraction)
+    {
+        double f = double.IsFinite(fraction) ? Math.Round(Math.Clamp(fraction, 0, 1) / Resolution) * Resolution : 0;
+        bool filled = f >= 1;
+        double tint = filled || f <= 0 ? 0 : f;
+        switch (prim)
+        {
+            case RectPrimitive r:              r.Filled  = filled; r.Tint  = tint; break;
+            case RoundedRectPrimitive rr:      rr.Filled = filled; rr.Tint = tint; break;
+            case CirclePrimitive c:            c.Filled  = filled; c.Tint  = tint; break;
+            case EllipsePrimitive e:           e.Filled  = filled; e.Tint  = tint; break;
+            case PolygonPrimitive pg:          pg.Filled = filled; pg.Tint = tint; break;
+            case ExponentialTaperPrimitive et: et.Filled = filled; et.Tint = tint; break;
+        }
+    }
+
+    /// <summary>
+    /// Reads a typed fill percentage. Accepted: a number from 0 to 100, with or without a trailing <c>%</c>,
+    /// surrounding spaces, and a decimal point or a decimal comma (<c>25</c>, <c>25 %</c>, <c>12.5</c>,
+    /// <c>12,5</c>). Refused, with <paramref name="problem"/> saying why: anything that is not such a number —
+    /// <c>NaN</c> and <c>Infinity</c>, which .NET would otherwise parse, thousands separators, exponents — and
+    /// anything outside 0–100. The reasons are short enough for the one line the inspector reserves under the box.
+    /// The result is rounded to <see cref="Resolution"/>.
+    /// </summary>
+    public static bool TryParsePercent(string? text, out double percent, out string? problem)
+    {
+        percent = 0;
+        problem = null;
+        string t = (text ?? "").Trim();
+        if (t.EndsWith('%')) t = t[..^1].TrimEnd();
+        if (t.Length == 0)
+        {
+            problem = "Type 0 to 100 %.";
+            return false;
+        }
+        // One decimal separator, either spelling; nothing else that is not a digit or a leading sign.
+        if (t.Count(c => c is '.' or ',') > 1 || !t.Select((c, i) => char.IsAsciiDigit(c) || c is '.' or ',' || (i == 0 && c is '-' or '+')).All(ok => ok)
+            || !t.Any(char.IsAsciiDigit))
+        {
+            problem = "Not a number. Type 0 to 100 %.";
+            return false;
+        }
+        double v = double.Parse(t.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture);
+        if (v < 0 || v > 100)
+        {
+            problem = $"{t.Replace(',', '.')} % is outside 0 to 100 %.";
+            return false;
+        }
+        percent = Math.Round(v / (Resolution * 100)) * Resolution * 100;
+        return true;
+    }
+}
+
 // ── Primitive base ────────────────────────────────────────────────────────────
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "$type")]
@@ -135,6 +230,9 @@ public sealed class RectPrimitive : SymbolPrimitive
     public SymbolColorRole  ColorRole  { get; set; }
     public SymbolStrokeTier StrokeTier { get; set; }
     public bool Filled { get; set; }
+    /// <summary>A fill strength below solid, 0–1 — see <see cref="SymbolFill"/>. Ignored while <see cref="Filled"/> is set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Tint { get; set; }
     /// <summary>Center x, y.</summary>
     public double Cx { get; set; }
     public double Cy { get; set; }
@@ -149,6 +247,9 @@ public sealed class RoundedRectPrimitive : SymbolPrimitive
     public SymbolColorRole  ColorRole  { get; set; }
     public SymbolStrokeTier StrokeTier { get; set; }
     public bool Filled { get; set; }
+    /// <summary>A fill strength below solid, 0–1 — see <see cref="SymbolFill"/>. Ignored while <see cref="Filled"/> is set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Tint { get; set; }
     public double Cx     { get; set; }
     public double Cy     { get; set; }
     public double W      { get; set; }
@@ -163,6 +264,9 @@ public sealed class CirclePrimitive : SymbolPrimitive
     public SymbolColorRole  ColorRole  { get; set; }
     public SymbolStrokeTier StrokeTier { get; set; }
     public bool Filled { get; set; }
+    /// <summary>A fill strength below solid, 0–1 — see <see cref="SymbolFill"/>. Ignored while <see cref="Filled"/> is set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Tint { get; set; }
     public double Cx { get; set; }
     public double Cy { get; set; }
     public double R  { get; set; }
@@ -175,6 +279,9 @@ public sealed class EllipsePrimitive : SymbolPrimitive
     public SymbolColorRole  ColorRole  { get; set; }
     public SymbolStrokeTier StrokeTier { get; set; }
     public bool Filled { get; set; }
+    /// <summary>A fill strength below solid, 0–1 — see <see cref="SymbolFill"/>. Ignored while <see cref="Filled"/> is set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Tint { get; set; }
     public double Cx { get; set; }
     public double Cy { get; set; }
     public double Rx { get; set; }
@@ -203,6 +310,9 @@ public sealed class PolygonPrimitive : SymbolPrimitive
     public SymbolColorRole  ColorRole  { get; set; }
     public SymbolStrokeTier StrokeTier { get; set; }
     public bool Filled { get; set; }
+    /// <summary>A fill strength below solid, 0–1 — see <see cref="SymbolFill"/>. Ignored while <see cref="Filled"/> is set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Tint { get; set; }
     /// <summary>Vertex list as [x, y] pairs.</summary>
     public List<double[]>   Points     { get; set; } = [];
 }
@@ -268,6 +378,9 @@ public sealed class ExponentialTaperPrimitive : SymbolPrimitive
     public SymbolColorRole  ColorRole  { get; set; }
     public SymbolStrokeTier StrokeTier { get; set; }
     public bool   Filled   { get; set; }
+    /// <summary>A fill strength below solid, 0–1 — see <see cref="SymbolFill"/>. Ignored while <see cref="Filled"/> is set.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public double Tint { get; set; }
     /// <summary>Center of the taper in local coords.</summary>
     public double Cx       { get; set; }
     public double Cy       { get; set; }
