@@ -256,6 +256,9 @@ public static partial class Em3dRunService
             return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource,
                 tooBig + $" The mesh is kept in {runDir}, so a run started anyway reuses it."));
         if (cpu && memory.ProcessCap is { } chosen && chosen < processes) (processes, processNote) = (chosen, null);
+        // brief-dfr32-3 R-dfr32-3-2 (owner decision D1 b) — what the saved fields will weigh, beside the memory figure, before Palace.
+        if (meshed.Tetrahedra is { } meshTets && PalaceFieldFiles.EstimateNote(problem, settings, meshTets, runDir) is { } fieldsNote)
+            log.Notes.Add(fieldsNote);
         TakeIterativeIfChosen();
         if (processNote is not null) log.Notes.Add(processNote);
         var tracker = new PalaceStageTracker(settings.AdaptiveMaxIterations, settings.SweepAdaptiveTol, control,
@@ -424,6 +427,8 @@ public static partial class Em3dRunService
         log.Notes.Add($"Palace solved {s.FrequenciesHz.Length} frequencies on {Count(facts.FinalElements)} elements " +
                       $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
+        // brief-dfr32-4 R-dfr32-4-2 — each driven port's lost power at the band's ends, outliers flagged.
+        if (Em3dPortLoss.Line(s.FrequenciesHz, s.S, [.. ports.Select(p => p.Number)]) is { } lossLine) log.Notes.Add(lossLine);
 
         // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
         var data = BuildDataSet(s, ports, facts);
@@ -456,7 +461,7 @@ public static partial class Em3dRunService
         }
 
         // R-em3d21-5a — the one line that says what the run cost, the last thing the run says.
-        log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed, FieldFilesBytes(post)));
+        log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed, FieldFilesBytes(post), Path.Combine(post, PalaceConfigWriter.FieldDirectory)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "Palace " + palace.DescribeVersion(),
                        NotConverged: PalaceNotConverged(tracker));
     }
@@ -540,7 +545,7 @@ public static partial class Em3dRunService
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post)));
+        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post), Path.Combine(post, PalaceConfigWriter.FieldDirectory)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
                        NotConverged: PalaceNotConverged(tracker));
     }
@@ -665,7 +670,7 @@ public static partial class Em3dRunService
                       $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
 
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post)));
+        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post), Path.Combine(post, PalaceConfigWriter.FieldDirectory)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
                        NotConverged: PalaceNotConverged(tracker));
     }
@@ -1079,7 +1084,8 @@ public static partial class Em3dRunService
 
     /// <summary>R-em3d21-5a — "Palace done in 2 min 27 s · peak memory 7.4 GB · …", every figure the
     /// parser read from Palace's log, and a field Palace did not print left out rather than guessed.</summary>
-    public static string CompletionSummary(PalaceRunSummary s, PalaceQuality quality, TimeSpan wall, long? fieldBytes = null)
+    public static string CompletionSummary(PalaceRunSummary s, PalaceQuality quality, TimeSpan wall, long? fieldBytes = null,
+                                           string? fieldDir = null)
     {
         var parts = new List<string> { $"Palace done in {Duration(wall)}" };
         if (s.PeakMemoryBytes is { } m) parts.Add($"peak memory {MachineMemory.Format(m)} (Palace's own)");
@@ -1092,7 +1098,8 @@ public static partial class Em3dRunService
         if (s.SweepSamples is { } n) parts.Add($"adaptive sweep built from {n} full solve{(n == 1 ? "" : "s")}");
         parts.Add($"preset {quality}");
         // R-em3d29-1d — what the saved fields cost on disk, so a user saving twenty frequencies sees it.
-        if (fieldBytes is > 0 and var f) parts.Add($"field files {MachineMemory.Format(f)}");
+        // brief-dfr32-3 R-dfr32-3-2 — and where they are, so large files left after a run have an answer on screen.
+        if (fieldBytes is > 0 and var f) parts.Add($"field files {MachineMemory.Format(f)}" + (fieldDir is null ? "" : $" in {fieldDir}"));
         if (!s.LogRecognised) parts.Add("Palace's log format was not recognised, so some figures are missing");
         return string.Join(" · ", parts) + ".";
     }

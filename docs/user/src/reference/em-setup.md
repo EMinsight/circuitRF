@@ -55,7 +55,7 @@ Either way the file lands in the workspace's `em/` folder, where the project tre
 workspace-scoped — there is no scratch EM setup.
 
 **The defaults are meant to be run, not configured.** A fresh setup arrives at 50 Ω on every port, a
-1–20 GHz 101-point linear sweep, `Auto` analysis, and mesh settings that are the engine's own. On a
+0.5–8 GHz linear sweep in 50 MHz steps, `Auto` analysis, and mesh settings that are the engine's own. On a
 small structure the only thing you have to supply is which layout.
 
 ## The header: name, output file, layout {#header}
@@ -156,7 +156,7 @@ linear or log. Each field takes a coefficient and a unit from the combo beside i
 resolved value underneath — so `1` + `GHz` reads back as `1 GHz` and there is no ambiguity about what was
 entered. See [Units](units.html) for what the text boxes accept.
 
-Default: **1 to 20 GHz, 101 points, linear.**
+Default for a new setup: **0.5 to 8 GHz in 50 MHz steps (151 points), linear.**
 
 **A frequency plan.** **+ Segment** adds a row, and the run solves every row's frequencies together, sorted, each
 once. A row's **Single** button makes it one frequency rather than a sweep, which is what a new row starts as. So a
@@ -1327,7 +1327,8 @@ table and the panel shows it after a run. Palace's own files stay in the run fol
 A Palace run also saves the solved **fields**, which the 3D view's field plots draw on a clip plane, on
 surfaces or on chosen faces. **Save fields at (GHz)** in the setup panel's Palace section — `SaveFieldsGHz`
 in the `.cem` — says which frequencies. Its box shows the sweep's centre as its placeholder when it is
-blank, and takes a comma list (`2, 6, 10`) or `none`. A field plot's *Other frequency…* adds one to it. A
+blank, and takes a comma list (`2, 6, 10`) or `none`. Untick the check box beside it to save no fields
+(it writes `none`); tick it again to get the frequencies back. A field plot's *Other frequency…* adds one to it. A
 run saves only these frequencies, so a plot can show only these: a 2–18 GHz sweep left blank saves its
 centre, 10 GHz, and nothing else. openEMS and EMerge have the same box, for their own fields.
 
@@ -1350,7 +1351,19 @@ centre, 10 GHz, and nothing else. openEMS and EMerge have the same box, for thei
 per saved frequency per driven port** (127 MB inside the volume, 9.8 MB on the surfaces), plus 33 MB
 once for Palace's error map. Palace runs one excitation per port, so a two-port setup saving twenty
 frequencies writes about **5.5 GB**. The size grows with the mesh, so a larger model or more refinement
-passes costs more. When a run finishes, its summary line states what its field files took.
+passes costs more.
+
+**A driven run says what its fields will take before Palace starts.** Once Gmsh has made the mesh, beside
+the memory check, the run states the estimated size of the fields it will save: the measurement above,
+scaled by the mesh's tetrahedra, times the save frequencies and the driven ports. A setup that names its
+frequencies is estimated from its own list. Adaptive refinement can make the final figure larger. When the
+run finishes, its summary line states what the field files took and the folder they are in,
+`results/<setup>.palace/postpro/paraview`.
+
+**Delete Saved Fields** removes them once a run is done with. It is on a solved setup's menu: the card in a
+3D view's setup list, and the `.c3d`'s or `.cem`'s row in the Project Tree. It moves the run folder's field
+folders to the Trash, says how much it freed, and keeps the mesh, the Touchstone and the `.npy`. The setup's
+field plots then show nothing and say why. Run the setup again to save its fields again.
 
 ### Palace on a GPU {#palace-gpu}
 

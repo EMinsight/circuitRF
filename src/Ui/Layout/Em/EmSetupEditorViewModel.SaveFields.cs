@@ -14,6 +14,56 @@ public sealed partial class EmSetupEditorViewModel
     [ObservableProperty] private string _palaceSaveFieldsText = "";
     [ObservableProperty] private string _openEmsSaveFieldsText = "";
 
+    // "Save fields" check boxes beside each box: unticked writes `none` (`[]`), ticked restores what the box held before.
+    // Saying no to fields was possible only by knowing to type `none`, and a multi-port run's fields are hundreds of MB.
+    [ObservableProperty] private bool _palaceSaveFields = true;
+    [ObservableProperty] private bool _openEmsSaveFields = true;
+    [ObservableProperty] private bool _emergeSaveFields = true;
+    private string _palaceFieldsBeforeOff = "", _openEmsFieldsBeforeOff = "", _emergeFieldsBeforeOff = "";
+
+    partial void OnPalaceSaveFieldsChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        PalaceSaveFieldsText = Toggled(value, PalaceSaveFieldsText, ref _palaceFieldsBeforeOff);
+        CommitPalaceField("Palace.SaveFieldsGHz");
+    }
+
+    partial void OnOpenEmsSaveFieldsChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        OpenEmsSaveFieldsText = Toggled(value, OpenEmsSaveFieldsText, ref _openEmsFieldsBeforeOff);
+        CommitOpenEmsField("OpenEms.SaveFieldsGHz");
+    }
+
+    partial void OnEmergeSaveFieldsChanged(bool value)
+    {
+        if (_suppressCommit) return;
+        EmergeSaveFieldsText = Toggled(value, EmergeSaveFieldsText, ref _emergeFieldsBeforeOff);
+        CommitEmergeField("Emerge.SaveFieldsGHz");
+    }
+
+    /// <summary>The box's text after its check box changes: <c>none</c> when off, the remembered list (or blank) when on.</summary>
+    private static string Toggled(bool on, string current, ref string beforeOff)
+    {
+        if (on) return IsNone(beforeOff) ? "" : beforeOff;
+        if (!IsNone(current)) beforeOff = current;
+        return "none";
+    }
+
+    private static bool IsNone(string text) => string.Equals(text.Trim(), "none", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether a list saves any field: only <c>[]</c> says no (PalaceConfigWriter.SavesFields' rule).</summary>
+    private static bool SavesAny(IReadOnlyList<double>? list) => list is not { Count: 0 };
+
+    /// <summary>Sets a check box from a committed list without committing again (typing <c>none</c> unticks it).</summary>
+    private void ShowSaving(Action set)
+    {
+        bool was = _suppressCommit;
+        _suppressCommit = true;
+        set();
+        _suppressCommit = was;
+    }
+
     /// <summary>What a blank box saves: the sweep's centre, GHz.</summary>
     public string SaveFieldsPlaceholder => PalaceConfigWriter.SweepCentreGHz(Working) is { } c ? G(c) : "the sweep's centre";
 
@@ -23,6 +73,11 @@ public sealed partial class EmSetupEditorViewModel
         "sweep's centre; none saves no field. A frequency must lie inside the sweep. Fields are large: measured on the bond-wire " +
         "example (146,769 tetrahedra, element order 2) one saved frequency took 137 MB per driven port, so a two-port setup saving " +
         "twenty frequencies writes about 5.5 GB; the size grows with the mesh.";
+
+    /// <summary>The check box's tooltip.</summary>
+    public const string SaveFieldsCheckTip =
+        "Untick to save no fields: the run writes S-parameters only, and the 3D view has no field plots for it. Fields are large " +
+        "(about 137 MB per frequency per driven port on a 147,000-tetrahedron mesh). Tick it again to restore the frequencies.";
 
     /// <summary>A list as the box shows it: blank for none named, <c>none</c> for <c>[]</c>.</summary>
     private static string SaveFieldsText(IReadOnlyList<double>? list)

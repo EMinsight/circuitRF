@@ -154,6 +154,15 @@ as you left it. A layout opened without a workspace keeps them until circuitRF c
 **Drawing tools:** Select · Rect · RoundedRect · Circle · Polygon · Curve · Path · Label · Port ·
 Instance-place · Array · Ruler.
 
+<a id="ports"></a>**Ports.** A port is drawn as a bar across the conductor edge it sits on, an arrow arriving at the
+bar in the direction current enters, and its name. The bar is as wide as the port's 3D sheet will be: the
+conductor end, or on an edge longer than 4 × the height to its return, twice that height centred on the port
+(see [How wide a lumped port's sheet is](em-3d.html#port-width)). The port's **Width** in the Properties panel
+sets it; blank is that rule, which the field's grey text shows. The name is drawn at a fixed size on screen,
+beside the arrow on its outer side, at every zoom. Where two names would overlap, the later port's name moves
+further out along its own direction until it is clear, with a thin line back to its port when it has moved more
+than its own height. The label's stored height is unchanged and is still what a GDSII or DXF export writes.
+
 Curves, circles and rounded rectangles are **first-class primitives** — they are stored as curves, not
 as pre-flattened polygons — and are flattened on demand, always with an explicit tolerance prompt, and
 automatically on GDSII export.
@@ -1294,6 +1303,15 @@ layer's map.
 
 A layer cleared under the **whole** trace is not a fault; it is noted, with the deeper layer that
 became the reference.
+
+**A trace into its own via's clearance hole** is not a broken return either. Every trace that changes
+layer crosses the hole each plane has round the via it ends on, past the reach of **Skip near vias**
+when the hole is generous. When the nearest layer above or below is missing only from the trace's end
+to the edge of that hole, the stretch is an **Info** note &mdash; *via clearance at the start,
+853.8 µm* &mdash; outlined on the map in grey with no number, and left out of the trace's result and
+its numbers. It is still a finding when it runs more than **0.1 mm** past the hole's radius (the trace
+is over a slot, not just the hole), when it does not reach the trace's end (a gap mid-trace), or when
+the via there is not on that trace. The report's *How it was measured* says the same.
 
 <a id="impedance-pads"></a>**A round pad hanging off a trace** &mdash; a test point, joined straight to the trace's end, or
 through a via at its end or on a stub too short to be a trace of its own &mdash; is read as the shunt it puts on the

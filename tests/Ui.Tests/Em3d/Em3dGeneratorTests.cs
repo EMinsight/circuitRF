@@ -92,6 +92,24 @@ public sealed class Em3dGeneratorTests
         Assert.Equal(35 * Um, result.Problem.Boundary.Min.Z, 15);
     }
 
+    /// <summary>brief-dfr32-1 — the content a .cem's box is padded round is the generator's, not its solids' bounds: the
+    /// substrate slab is built out TO the box, so measuring from it read every stated lateral face as "setup: 0 mm" in
+    /// explain, and made the box's own size the structure's extent.</summary>
+    [Fact]
+    public void ContentBounds_OfACemProblem_IsWhatTheBoxWasPaddedRound_NotTheSlabThatReachesIt()
+    {
+        var (setup, source) = Microstrip();
+        setup.AirBox = new EmAirBox(XMin: new EmAirBoxFace(1500, null), YMax: new EmAirBoxFace(700, null));
+        var p = Em3dGenerator.Generate(setup, source, source.Technology!).Problem!;
+        var line = Em3dProblem.Bounds(p.Solids.Single(s => s.Role == Em3dRole.Conductor).Primitive);
+        Assert.Equal(p.Boundary.Min.X, Em3dProblem.Bounds(p.Solids.Single(s => s.Role == Em3dRole.Dielectric).Primitive).X0, 12);
+
+        var (lo, hi) = Em3dGenerator.ContentBounds(p);
+        Assert.Equal(1500 * Um, lo.X - p.Boundary.Min.X, 9);
+        Assert.Equal(700 * Um, p.Boundary.Max.Y - hi.Y, 9);
+        Assert.Equal(line.X0, lo.X, 12);
+    }
+
     /// <summary>brief-dfr28-3 R-dfr28-3-3 — the thru's port 1 is a sheet on its line's end at x = 0, the content's edge: a
     /// zero-padded absorbing xmin face would hold it, so that face is padded out by the sheet's longer side and a Note says
     /// so; a PMC face there is refused by name; the default padding keeps the port clear and says nothing.</summary>

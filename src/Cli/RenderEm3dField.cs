@@ -485,7 +485,7 @@ internal static class RenderEm3dField
     private static string Missing(FieldPlotRequest request, FieldDiscovery found, Em3dProblem? problem)
         => found.Items.Count == 0 && found.Why is { } unreadable
             ? "The fields could not be read: " + unreadable
-            : FieldPlotResolver.PlotProblem(request, found.Items, found.Ran, problem) ?? "The run holds no solution this plot can show.";
+            : FieldPlotResolver.PlotProblem(request, found.Items, found.Ran, problem, found.FieldsDeleted) ?? "The run holds no solution this plot can show.";
 
     /// <summary>A step that no longer offers the plot's quantity (the second half of R-em3d83-5), or null.</summary>
     private static string? QuantityProblem(FieldSolutionItem item, FieldPlotRequest request)

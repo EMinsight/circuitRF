@@ -472,6 +472,12 @@ public static class TraceImpedanceReportDocument
                           "on it is not checked, because a plane is normally cleared round a via; every such stretch is " +
                           "named in its trace's notes, for an EM run to verify."
                         : "") +
+                    " Where the nearest layer is missing only from a trace's end to the edge of the clearance hole round " +
+                    "the via that trace ends on — no further than the hole's radius plus " +
+                    $"{report.Len(TraceImpedanceAnalysis.ViaClearanceSlackMicrons * report.DbuPerMicron)} — the hole is the " +
+                    "via's design, not a broken return: it is an Info note, outlined on the map without a number, and left " +
+                    "out of the trace's result. Missing further than that is a slot, and missing away from the end a gap; " +
+                    "both are still findings." +
                     " The solve is lossless and frequency-independent: a review of the geometry, not a replacement for an EM run.";
                 _y = Paragraph(method, x0, _y + 1, leftW, _small, Muted, 1.35f, Bottom);
             }
@@ -676,6 +682,24 @@ public static class TraceImpedanceReportDocument
                     C.DrawPath(path, span);
                 }
             }
+
+            // A via clearance at a trace's end (brief-dfr32-5 R-dfr32-5-2) is Info, not a finding: its stretch is
+            // outlined hollow, solid and grey, with no marker and no number, so the map and the findings agree.
+            foreach (var trace in layer.Traces)
+                foreach (var cl in trace.ViaClearances)
+                {
+                    var a = P(cl.X0, cl.Y0); var b = P(cl.X1, cl.Y1);
+                    using var hollow = Stroke(AcceptedMark, 0.8f);
+                    // Just outside a finding's outline, so one beside it over the same stretch stays readable.
+                    float half = (float)Math.Max(trace.Stations.FirstOrDefault()?.Width * s ?? 2, 2) / 2 + 3.6f;
+                    double len = Math.Max(1e-6, Math.Sqrt(Math.Pow(b.X - a.X, 2) + Math.Pow(b.Y - a.Y, 2)));
+                    if (len < 1) { C.DrawCircle(a, half + 1, hollow); continue; }
+                    float nx = (float)(-(b.Y - a.Y) / len * half), ny = (float)((b.X - a.X) / len * half);
+                    using var path = new SKPath();
+                    path.MoveTo(a.X + nx, a.Y + ny); path.LineTo(b.X + nx, b.Y + ny);
+                    path.LineTo(b.X - nx, b.Y - ny); path.LineTo(a.X - nx, a.Y - ny); path.Close();
+                    C.DrawPath(path, hollow);
+                }
 
             // Finding markers: the number in a disc BESIDE the trace with a leader to the finding — never on
             // it, where the disc hid the copper it was about (round-10 report). Every station stroke is an
@@ -1016,6 +1040,14 @@ public static class TraceImpedanceReportDocument
                 float top = y;
                 Check(new SKPoint(r.Left + 5, top + 5.5f), 4.5f);
                 y = Paragraph("grey, checked: an accepted finding — listed, with its reason, under Accepted findings",
+                              r.Left + 16, top - 1.5f, r.Width - 16, _small, Muted, 1.35f) + 6;
+            }
+            if (layer.Traces.Any(t => t.ViaClearances.Count > 0))
+            {
+                float top = y;
+                using (var hollow = Stroke(AcceptedMark, 0.8f))
+                    C.DrawRect(r.Left, top + 2.5f, 12, 6, hollow);
+                y = Paragraph("outlined grey, no number: a plane cleared round the via a trace ends on — Info, not a finding",
                               r.Left + 16, top - 1.5f, r.Width - 16, _small, Muted, 1.35f) + 6;
             }
             if (IsSummary)

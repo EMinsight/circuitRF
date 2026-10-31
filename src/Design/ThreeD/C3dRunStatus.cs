@@ -73,7 +73,9 @@ public static class C3dRunStatus
         {
             Directory.CreateDirectory(runDirectory);
             Write(runDirectory, new C3dRunStatusRecord(C3dRunState.Running, started, null, null, Environment.ProcessId));
-            foreach (string kept in new[] { C3dRunDocument.PathIn(runDirectory), C3dRunDocument.InputsPathIn(runDirectory) })
+            // brief-dfr32-3 — and Delete Saved Fields' note: this run's fields are its own.
+            foreach (string kept in new[] { C3dRunDocument.PathIn(runDirectory), C3dRunDocument.InputsPathIn(runDirectory),
+                                            Em3d.PalaceFieldFiles.MarkerIn(runDirectory) })
                 if (File.Exists(kept)) File.Delete(kept);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }

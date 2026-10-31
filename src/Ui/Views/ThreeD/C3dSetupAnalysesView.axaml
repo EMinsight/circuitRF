@@ -92,13 +92,16 @@
                         <Border Padding="4,3" Background="Transparent">
                             <!-- Every item names and acts on THIS card: a right-click does not move the selection. -->
                             <Border.ContextMenu>
-                                <ContextMenu>
+                                <ContextMenu Opening="OnCardMenuOpening">
                                     <MenuItem Header="{Binding RunLabel}" Click="OnMenuRun"/>
                                     <MenuItem Header="Make Active" Click="OnMenuMakeActive"/>
                                     <MenuItem Header="Edit…" Click="OnMenuEdit"/>
                                     <MenuItem Header="Copy Solver Notes" Click="OnMenuCopyNotes" IsVisible="{Binding HasFidelity}"/>
                                     <MenuItem Header="Rename…" Click="OnMenuRename" IsEnabled="{Binding !IsExternal}"/>
                                     <MenuItem Header="Duplicate" Click="OnMenuDuplicate" IsEnabled="{Binding !IsExternal}"/>
+                                    <!-- brief-dfr32-3 R-dfr32-3-2 — shown while the setup's run folder holds saved fields. -->
+                                    <MenuItem Header="Delete Saved Fields" Click="OnMenuDeleteSavedFields" IsVisible="{Binding HasSavedFields}"
+                                              ToolTip.Tip="Move this setup's saved field files to the Trash. The mesh, the Touchstone and the results are kept; its field plots stay empty until it is run again."/>
                                     <Separator/>
                                     <MenuItem Header="{Binding RemoveLabel}" Click="OnMenuRemove" IsEnabled="{Binding !IsExternal}"/>
                                 </ContextMenu>

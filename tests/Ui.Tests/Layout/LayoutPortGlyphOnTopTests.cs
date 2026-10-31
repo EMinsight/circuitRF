@@ -174,74 +174,36 @@ public class LayoutPortGlyphOnTopTests
     }
 
     /// <summary>
-    /// The name is on top: no marker stroke crosses the glyphs, so the interior of a letter the arrow
-    /// runs through stays the colour of what is BEHIND the port, not the marker's.
+    /// The name is never crossed by its own marker.
     ///
-    /// <para>The probe is the counterfactual "name only" frame — the same port with its marker
-    /// suppressed by giving it no conductor to resolve against, which is the documented way a port
-    /// draws its text and nothing else. Wherever that frame says a letter is drawn, the full frame
-    /// has to agree pixel for pixel: the marker may not have added anything inside the glyphs.</para>
+    /// <para><b>UPDATED (brief-dfr32-2 R-dfr32-2-4).</b> This compared the name's pixels in a name-only frame with the
+    /// full frame, because the name was centred on the anchor — exactly where an edge port's arrow arrives — and only
+    /// the knock-out kept the shaft out of the letters. The name is now drawn beside the mark on its outward side, at a
+    /// fixed screen size, so the two no longer share pixels by construction; the claim is the placement's geometry
+    /// (the name's box and the mark's do not meet) plus the name actually being painted there in the port's tint.</para>
     /// </summary>
     [Fact]
     public void TheNameIsNeverCrossedByItsOwnMarker()
     {
-        // The same name at the same anchor, with NO marker: no conductor under it and no stated
-        // direction, which is the one combination LayoutPortDirection.Resolve answers with null. (A
-        // STATED direction is still drawn on no conductor, at a stand-in width — so dropping the
-        // polygon alone is not enough, and this test's first draft measured a marker it believed was
-        // absent.)
-        var nameOnly = new LayoutView { DbuPerMicron = Dbu, DisplayUnit = LayoutUnit.Um };
-        nameOnly.Shapes.Add(new LabelShape
-        {
-            Layer = Lower, X = 0, Y = 5_000, Text = "P1", Height = 1_200,
-            IsPort = true, PortDirection = null, PortLayer = Lower,
-        });
-
-        var blank = new LayoutView { DbuPerMicron = Dbu, DisplayUnit = LayoutUnit.Um };
-
-        var textOnly = RenderView(nameOnly, LayoutRenderTheme.Light);
-        var textPixels = GlyphPixels(textOnly, RenderView(blank, LayoutRenderTheme.Light));
-        Assert.NotEmpty(textPixels);
+        var port = Port();
+        var shapes = new List<LayoutShape> { Trace(), port };
+        var lookup = LayoutPortDirection.LookupFor(shapes);
+        var name = LayoutRenderer.PlacePortNames([(1, port)], lookup, Vp.Zoom, Tech(), Dbu).Single();
+        var hint = LayoutPortDirection.Resolve(lookup, port)!.Value;
+        var mark = LayoutPortDirection.MarkerBbox(port, CircuitRF.Design.Layout.Em3d.EdgePortSheet.Bar(hint, port, Tech(), Dbu),
+                                                  atAnchor: false, padding: 0);
+        Assert.False(name.Box.Intersects(mark), $"name {name.Box} meets its mark {mark}");
 
         var full = Render(true, withCover: false, LayoutRenderTheme.Light);
-        var noPort = Render(false, withCover: false, LayoutRenderTheme.Light);
-
         var tint = LayoutRenderer.TintForContrast(
             new SKColor(LowerRgb.R, LowerRgb.G, LowerRgb.B), LayoutRenderTheme.Light.Background,
             LayoutRenderer.PortMarkerContrastTintAmount);
-
-        // Solid interior pixels of the letters, in the frame where the letters are all there is.
-        int checkedPixels = 0;
-        foreach (var (x, y) in textPixels)
-        {
-            if (!Same(At(textOnly, x, y), tint)) continue;  // an antialiased edge pixel
-            checkedPixels++;
-
-            var a = At(full, x, y);
-            Assert.True(Same(a, tint),
-                $"({x},{y}) is inside a letter but the full frame drew {a} there");
-        }
-
-        Assert.True(checkedPixels > 50, $"only {checkedPixels} solid letter pixels were checked");
-
-        // …and the marker's business end really does land inside the name, or the assertion above is
-        // vacuous. It is structural rather than incidental: the arrow arrives AT the reference plane
-        // and the name is centred on the anchor, which for an edge port on the end it names is the
-        // same point. Asserted as geometry so it cannot quietly stop being true.
-        int tipX = (int)Math.Round(Vp.WorldToScreenX(0));
-        int tipY = (int)Math.Round(Vp.WorldToScreenY(5_000));
-        int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
-        foreach (var (x, y) in textPixels)
-        {
-            minX = Math.Min(minX, x); maxX = Math.Max(maxX, x);
-            minY = Math.Min(minY, y); maxY = Math.Max(maxY, y);
-        }
-        Assert.InRange(tipX, minX, maxX);
-        Assert.InRange(tipY, minY, maxY);
-
-        // The marker is drawn at all — the frame with the port differs from the one without by more
-        // than the name alone.
-        Assert.True(GlyphPixels(full, noPort).Count > textPixels.Count,
-                    "the port drew no marker, so nothing could have crossed the name");
+        int x0 = (int)Math.Floor(Vp.WorldToScreenX(name.Box.MinX)), x1 = (int)Math.Ceiling(Vp.WorldToScreenX(name.Box.MaxX));
+        int y0 = (int)Math.Floor(Vp.WorldToScreenY(name.Box.MaxY)), y1 = (int)Math.Ceiling(Vp.WorldToScreenY(name.Box.MinY));
+        int inked = 0;
+        for (int y = y0; y <= y1; y++)
+            for (int x = x0; x <= x1; x++)
+                if (Same(At(full, x, y), tint)) inked++;
+        Assert.True(inked > 20, $"only {inked} pixels of the name's box carry the port's tint");
     }
 }

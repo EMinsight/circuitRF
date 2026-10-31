@@ -237,6 +237,44 @@ public class SnpStampTests
         Assert.Equal(2, snpEc.Nodes.Length);
     }
 
+    /// <summary>
+    /// Designer round 32 — a part measured in SERIES (S11 + S21 = 1, the usual supplier capacitor file) has a singular
+    /// I − S, so its Z stamp was rounding noise; where a sweep point fell exactly on a file sample it was garbage (a 3.9 pF
+    /// part read |S11|² + |S21|² = 3.86). Such a block is stamped as its S, and reproduces the ideal series capacitor at a
+    /// file sample and between samples alike.
+    /// </summary>
+    [Fact]
+    public void SeriesMeasuredFile_OnAndBetweenItsOwnSamples_IsTheSeriesElement()
+    {
+        const double C = 3.9e-12, Z0 = 50;
+        static Complex S21Of(double hz) => 2 * Z0 / (new Complex(0, -1 / (2 * Math.PI * hz * C)) + 2 * Z0);
+        string path = Path.Combine(Path.GetTempPath(), $"crf-series-{Guid.NewGuid():N}.s2p");
+        var lines = new List<string> { "# Hz S RI R 50" };
+        for (int k = 0; k < 401; k++)
+        {
+            double hz = 1e8 + k * 21e6;
+            Complex s21 = S21Of(hz), s11 = 1 - s21;
+            string R(Complex z) => FormattableString.Invariant($"{z.Real:R} {z.Imaginary:R}");
+            lines.Add(FormattableString.Invariant($"{hz:R} {R(s11)} {R(s21)} {R(s21)} {R(s11)}"));
+        }
+        File.WriteAllLines(path, lines);
+        try
+        {
+            var (lib, tb) = new CircuitRF.Core.Netlist.CnlReader().Read($@"
+Port:P1 n1 0 Num=1 Z=50 Ohm
+Port:P2 n2 0 Num=2 Z=50 Ohm
+SnP:X1 n1 n2 NumPorts=2 File=""{path}""
+analysis SP type=sparam start=6e8 stop=7e8 npts=5
+");
+            double[] grid = [625e6, 637.5e6];                   // 625 MHz is the file's 26th sample; 637.5 MHz lies between
+            var s = SParameterEngine.Run(new Elaborator(lib).Elaborate(tb), grid)["S"];
+            for (int k = 0; k < grid.Length; k++)
+                Assert.True(((Complex)s[k, 1, 0] - S21Of(grid[k])).Magnitude < 1e-6,
+                            $"{grid[k] / 1e6} MHz: S21 {(Complex)s[k, 1, 0]} against {S21Of(grid[k])}");
+        }
+        finally { File.Delete(path); }
+    }
+
     // ── Helper ────────────────────────────────────────────────────────────────
 
     private static ElaboratedComponent MakeEc(ComponentModel model, int[] nodes, int refNode)

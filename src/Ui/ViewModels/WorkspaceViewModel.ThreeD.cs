@@ -236,6 +236,11 @@ public partial class WorkspaceViewModel
             w.Changed += OnChange;
             w.Created += OnChange;
             w.Renamed += (s, e) => OnChange(s, e);
+            // Designer round 32 — a watcher over a workspace a solver is writing field files into (and one on a synced cloud
+            // folder) can overflow and drop the very save it exists to report; the scene then stayed on the old layout until the
+            // .c3d was reopened. A bigger buffer makes that rarer, and an overflow re-checks every file the scene was built from.
+            w.InternalBufferSize = 64 * 1024;
+            w.Error += (_, _) => Dispatcher.UIThread.Post(doc.ViewModel.RecheckInputs);
             w.EnableRaisingEvents = true;
             _c3dWatchers[doc] = w;
         }

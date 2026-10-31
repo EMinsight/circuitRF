@@ -60,7 +60,7 @@ public sealed class FieldTests(ITestOutputHelper output)
     }
 
     /// <summary>A config with every output line brief 29 adds removed: OutputFormats, a Point sample that
-    /// only saves fields, and an eigenmode's or static solve's Save.</summary>
+    /// only saves fields with Driven's Save list naming it, and an eigenmode's or static solve's Save.</summary>
     private static string StripOutput(string json)
     {
         var node = System.Text.Json.Nodes.JsonNode.Parse(json)!;
@@ -68,8 +68,13 @@ public sealed class FieldTests(ITestOutputHelper output)
         var solver = node["Solver"]!.AsObject();
         foreach (string k in new[] { "Eigenmode", "Electrostatic", "Magnetostatic" })
             if (solver[k] is System.Text.Json.Nodes.JsonObject o) o.Remove("Save");
-        if (solver["Driven"]?["Samples"] is System.Text.Json.Nodes.JsonArray samples)
-            foreach (var s in samples.Where(s => s?["SaveStep"] is not null).ToList()) samples.Remove(s);
+        if (solver["Driven"] is System.Text.Json.Nodes.JsonObject driven && driven["Save"] is not null)
+        {
+            // The save frequencies' own Point sample is the last one; Driven's "Save" names them (round 32).
+            driven.Remove("Save");
+            var samples = (System.Text.Json.Nodes.JsonArray)driven["Samples"]!;
+            samples.RemoveAt(samples.Count - 1);
+        }
         return node.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 
@@ -112,6 +117,21 @@ public sealed class FieldTests(ITestOutputHelper output)
         var kept = Em3dRunService.WithoutSaveOnlyRows(s, [9e9, 10e9, 11e9, 12e9]);
         Assert.Equal([9e9, 10e9, 11e9, 12e9], kept.FrequenciesHz);
         Assert.Equal(3.0, kept.S[2][0, 0].Real);
+    }
+
+    /// <summary>Designer round 32: a 0.4-5 GHz, 101-point sweep's centre (2.7) is also its own linear sample,
+    /// which Palace computes as 2.6999999999999997, merges with the save sample, and then could not find by
+    /// exact match under SaveStep — the run aborted. Driven's "Save" list is snapped to the merged sample.</summary>
+    [Fact]
+    public void SaveFrequency_OnASweepPoint_IsNamedInDrivenSave_NotBySaveStep()
+    {
+        var (problem, settings) = PalaceBackendTests.LowerableFor("via");
+        problem = problem with { Frequency = new Em3dFrequency(0.4e9, 5e9, 101, Em3dSweepKind.Linear) };
+        var low = GmshGeoWriter.Write(problem, settings);
+        string json = PalaceConfigWriter.Write(problem, low.Groups, settings).Json;
+        Assert.DoesNotContain("SaveStep", json);
+        var driven = System.Text.Json.Nodes.JsonNode.Parse(json)!["Solver"]!["Driven"]!;
+        Assert.Equal(2.7, driven["Save"]!.AsArray().Single()!.GetValue<double>(), 12);
     }
 
     // ── 2. the reader on the fixture ────────────────────────────────────────────────────────────

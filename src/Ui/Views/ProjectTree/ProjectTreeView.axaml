@@ -539,6 +539,14 @@
                                             <MenuItem.Icon><mi:MaterialIcon Kind="ChartLine" Width="14" Height="14"/></MenuItem.Icon>
                                         </MenuItem>
 
+                                        <!-- brief-dfr32-3 R-dfr32-3-2 — a solved 3D view's or EM setup's saved fields, to the Trash. -->
+                                        <MenuItem Header="Delete Saved Fields"
+                                                  Command="{Binding DeleteSavedFieldsCommand}"
+                                                  IsVisible="{Binding HasSavedFields}"
+                                                  ToolTip.Tip="Move the field files this design's runs saved for the 3D view's field plots to the Trash. The mesh, the Touchstone and the results are kept.">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="DeleteSweepOutline" Width="14" Height="14"/></MenuItem.Icon>
+                                        </MenuItem>
+
                                         <!-- Known File actions -->
                                         <MenuItem Header="Open External…"
                                                   Command="{Binding OpenExternalCommand}"

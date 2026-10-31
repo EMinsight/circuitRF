@@ -644,6 +644,37 @@ public sealed class HierarchyGateTests : IDisposable
         Assert.Equal(30e-6, grown.Max.X - grown.Min.X, 1e-12);
     }
 
+    /// <summary>Designer round 32 — a placed layout saved while the file watcher said nothing (an overflow, a synced
+    /// folder): re-checking the files the scene was built from, as activating the tab does, elaborates it again.</summary>
+    [Fact]
+    public void RecheckInputs_APlacedLayoutChangedUnseen_IsElaboratedAgain()
+    {
+        string ws = Workspace();
+        LayoutCell(ws, "Die");
+        var vm = Open(C3dCell(ws, "Pkg", new C3dDocument
+        {
+            Instances = [new C3dInstance { Name = "U1", CellRef = "../../Die", View = C3dInstanceView.Layout }],
+        }));
+        int before = vm.Elaboration!.Solids.Count;
+
+        string clay = Path.Combine(ws, "Die", "layout", "Die.clay");
+        var view = LayoutPersistence.LoadFromFile(clay);
+        view.Shapes.Add(new RectShape { Layer = new LayerKey(1, 0), X1 = 300 * Um, Y1 = 0, X2 = 400 * Um, Y2 = 50 * Um });
+        LayoutPersistence.SaveToFile(clay, view);
+        File.SetLastWriteTimeUtc(clay, DateTime.UtcNow.AddMinutes(1));
+
+        long requested = vm.Viewer.Source.Requested;
+        vm.RecheckInputs();
+        Assert.True(SpinWait.SpinUntil(() =>
+        {
+            while (_posted.TryDequeue(out var a)) a();
+            return vm.Viewer.Source.Requested > requested;
+        }, TimeSpan.FromSeconds(10)), "no rebuild was asked for");
+        Settle(vm);
+        Assert.Equal(2, vm.ChildrenElaborated);
+        Assert.True(vm.Elaboration!.Solids.Count > before);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A 20 × 20 array of <paramref name="cell"/>'s view, 400 µm apart.</summary>

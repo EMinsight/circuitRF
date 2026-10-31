@@ -53,6 +53,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private readonly object _elaborating = new();
     private readonly Scene3DTessellationCache _tessellations = new();
     private readonly ConcurrentDictionary<long, C3dElaboration> _elaborations = new();
+    private readonly ConcurrentDictionary<long, (string Own, string Stamp)> _readStamps = new();
+    private (string Own, string Stamp)? _adoptedReadStamp;
     private readonly Func<string?> _workspaceCws;
     private (double X, double Y, double Z)? _origin;
     private bool _preferenceDirty;
@@ -245,6 +247,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             Interlocked.Increment(ref _elaborations_);
             var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell, PadsOptional = true });
             _elaborations[generation] = e;
+            _readStamps[generation] = (inputs.Path, ReadStamp(e.FilesRead, inputs.Path));
             _frameKeys[generation] = inputs.Path;
             // brief-em3d-84 — the origin rule `render --field` places its slice by (FieldPlotResolver.SceneOrigin).
             var extent = e.DisplayExtent() ?? FieldPlotResolver.EmptyExtent;
@@ -347,6 +350,8 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         long gen = Viewer.Scene.Generation;
         CarryCameraAcrossOrigin(gen);
         if (_elaborations.TryGetValue(gen, out var e)) Elaboration = e;
+        if (_readStamps.TryGetValue(gen, out var read)) _adoptedReadStamp = read;
+        foreach (long old in _readStamps.Keys.Where(k => k <= gen).ToList()) _readStamps.TryRemove(old, out _);
         AdoptBuilt(gen);                           // brief-em3d-108 — what a display-only reload re-assembles
         AdoptRecords(gen);
         ApplySnapGrid();
@@ -1053,6 +1058,25 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.Invalidate();
         ScheduleSolveStatus();      // brief-em3d-98 R-em3d98-6 — a placed layout, technology or library saved: re-check
     }
+
+    /// <summary>
+    /// Designer round 32 — elaborate again when a file the shown scene was built from (a placed .clay, its technology, a
+    /// material library) has changed since. The workspace's file watcher is what normally says so, but a watcher can drop
+    /// events (a synced cloud folder, a run writing hundreds of field files under the same tree), and the scene then stayed
+    /// on the old layout until the .c3d was closed and opened again. Called when the tab is activated and when the watcher
+    /// reports an error; costs one stamp per file read.
+    /// </summary>
+    public void RecheckInputs()
+    {
+        if (Elaboration is not { } e || _adoptedReadStamp is not { } then) return;
+        if (ReadStamp(e.FilesRead, then.Own) != then.Stamp) OnChildChanged();
+    }
+
+    /// <summary>The stamps of the files an elaboration read, the document's own file left out (its changes reach it as
+    /// <see cref="OnFileChangedOnDisk"/>, and its text comes from the editor, not the disk).</summary>
+    private static string ReadStamp(IReadOnlyList<string> files, string own)
+        => string.Join("|", files.Where(f => !string.Equals(f, Path.GetFullPath(own), StringComparison.OrdinalIgnoreCase))
+                                 .Select(f => f + "=" + (Stamp(f) ?? "-")));
 
     /// <summary>Reads the file again, dropping the history (it described a document that is gone).</summary>
     public string? Reload()

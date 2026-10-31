@@ -523,7 +523,7 @@ public sealed partial class C3dEditorViewModel
         var request = PlotRequest(p, resolveScene: false);
         if (!p.Hidden && Viewer.FieldLayers.FirstOrDefault(l => l.Name == p.Name) is { Problem: { } now }) return now;
         var found = Discovered(request);
-        if (FieldPlotResolver.PlotProblem(request, found.Items, found.Ran, Viewer.Scene.Problem) is { } why) return why;
+        if (FieldPlotResolver.PlotProblem(request, found.Items, found.Ran, Viewer.Scene.Problem, found.FieldsDeleted) is { } why) return why;
         if (p.Faces.Count > 0 && p.On == C3dFieldPlotOn.Faces && p.Faces.FirstOrDefault(f => SceneFace(f) is null) is { } gone && Viewer.Scene.Objects.Length > 0)
             return $"The face '{gone.Face}' is no longer in the model.";
         return null;

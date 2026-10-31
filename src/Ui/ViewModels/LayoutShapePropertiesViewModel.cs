@@ -185,6 +185,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "LabelText":    CommitLabelText(text); break;
             case "LabelHeight":  CommitLabelHeightText(text); break;
             case "LabelPenWidth": CommitLabelPenWidthText(text); break;
+            case "PortWidth":    CommitPortWidthText(text); break;
             case "LabelX":       CommitLabelXText(text); break;
             case "LabelY":       CommitLabelYText(text); break;
             case "FlattenTol":   CommitFlattenTolText(text); break;
@@ -241,6 +242,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "PathWidth":    PathWidthError = null; break;
             case "LabelHeight":  LabelHeightError = null; break;
             case "LabelPenWidth": LabelPenWidthError = null; break;
+            case "PortWidth":    PortWidthError = null; break;
             case "LabelX":       LabelXError = null; break;
             case "LabelY":       LabelYError = null; break;
             case "FlattenTol":   FlattenTolError = null; break;
@@ -905,27 +907,60 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     }
 
     /// <summary>
-    /// The port's EXCITATION width — how far the port cut spans across the conductor — shown
-    /// read-only beside the editable text size, because the owner's own question ("is Height the
-    /// text font size, or the width of the port's excitation?") had no answer on screen.
+    /// <b>brief-dfr32-2 R-dfr32-2-2 — the width a port STATES for its 3D sheet</b> (<see cref="LabelShape.PortWidth"/>),
+    /// blank when it states none; the watermark (<see cref="PortWidthText"/>) is the width the sheet takes then, from the
+    /// rule the run and the canvas's bar share (<c>EdgePortSheet</c>).
     ///
-    /// <para><b>It is not editable, and that is the engine's decision rather than a missing
-    /// field.</b> <c>PlanarPort</c> D2: the port cut IS the outermost rooftop row of the feed, so it
-    /// spans the whole conductor end by construction. To change a port's width in the full-wave
-    /// solver you change the WIDTH OF THE METAL it sits on — there is no separate knob, deliberately,
-    /// for the same reason there is no de-embedding distance: it would offer a way to get a different
-    /// answer for the same structure.</para>
+    /// <para>Until round 32 this row was a read-only readout of the conductor end, for the planar kernel's reason:
+    /// its port cut is the outermost rooftop row of the feed, so it spans the whole end by construction, and that is
+    /// still so. A 3D lumped sheet is a separate object of its own width, and a port on the edge of a pour wants a sheet
+    /// much narrower than the edge.</para>
     /// </summary>
+    [ObservableProperty] private string _portWidthStatedText = "";
+    [ObservableProperty] private string? _portWidthError;
+    public bool HasPortWidthError => PortWidthError is not null;
+
+    /// <summary>The width the port's 3D sheet takes with nothing stated, as the field's watermark.</summary>
     [ObservableProperty] private string _portWidthText = "";
 
     private void RefreshPortWidth(System.Collections.Generic.List<LabelShape> labels)
     {
-        if (labels.Count != 1 || _vm is null) { PortWidthText = labels.Count > 1 ? "(multiple)" : ""; return; }
+        if (_vm is null) return;
+        SetTextIfNotFocused("PortWidth", FormatSharedDbu(labels.Select(l => l.PortWidth)),
+                            () => PortWidthStatedText, v => PortWidthStatedText = v);
+        if (labels.Count != 1) { PortWidthText = "(multiple)"; return; }
 
         var lookup = LayoutConductorLookup.LookupFor(_vm.Model, _vm.DrawTechnology, _vm.InstanceBaseDir);
-        PortWidthText = LayoutPortDirection.Resolve(lookup, labels[0]) is { } hint
-            ? LayoutUnits.Format(hint.WidthDbu, _vm.Model.DisplayUnit, _vm.Model.DbuPerMicron) + " " + LayoutUnits.Suffix(_vm.Model.DisplayUnit)
-            : "(not on a conductor)";
+        var unit = _vm.Model.DisplayUnit;
+        int dpm = _vm.Model.DbuPerMicron;
+        if (LayoutPortDirection.Resolve(lookup, labels[0]) is not { } hint) { PortWidthText = "(not on a conductor)"; return; }
+        var port = new LabelShape
+        {
+            Layer = labels[0].Layer, PortLayer = labels[0].PortLayer, X = labels[0].X, Y = labels[0].Y, IsPort = true,
+        };
+        var sheet = CircuitRF.Design.Layout.Em3d.EdgePortSheet.Bar(hint, port, _vm.DrawTechnology, dpm);
+        string Len(long dbu) => LayoutUnits.Format(dbu, unit, dpm) + " " + LayoutUnits.Suffix(unit);
+        PortWidthText = sheet.WidthDbu == hint.WidthDbu
+            ? $"{Len(hint.WidthDbu)} (the edge)"
+            : $"{Len(sheet.WidthDbu)} (2 × H, of a {Len(hint.WidthDbu)} edge)";
+    }
+
+    /// <summary>A blank width returns every selected port to the rule (<c>EdgePortSheet.Span</c>).</summary>
+    public void CommitPortWidthText(string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        long? width = null;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var dbu))
+            { PortWidthError = "Invalid value"; return; }
+            if (dbu <= 0) { PortWidthError = "Width must be greater than 0"; return; }
+            width = dbu;
+        }
+        PortWidthError = null;
+        ApplyToEach<long?>("Port width", s => ((LabelShape)s).PortWidth, (s, v) => ((LabelShape)s).PortWidth = v, width,
+                           s => s is LabelShape { IsPort: true });
+        RefreshFromVm();
     }
 
     /// <summary>RP-2b — the reference combo and the return-point readout, for the current
@@ -2841,7 +2876,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         IsRulerContext = false;
         ShowRoundedRect = ShowCircle = ShowVia = ShowPath = ShowLabel = ShowFlattenTol = ShowRectSize = ShowVertexList = ShowBitmap = ShowPortDirection = false;
         ShowPortReturn = false;
-        PortWidthText = PortReturnText = "";
+        PortWidthText = PortWidthStatedText = PortReturnText = "";
         OnPropertyChanged(nameof(LabelHeightCaption));
         OnPropertyChanged(nameof(ShowLabelPenWidth));
         ShowPCellParameterList = false;

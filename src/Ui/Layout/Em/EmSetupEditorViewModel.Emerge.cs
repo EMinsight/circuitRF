@@ -123,7 +123,11 @@ public sealed partial class EmSetupEditorViewModel
                       v => section.AdaptiveMesh = v);
                 break;
             case "Emerge.SaveFieldsGHz":                // brief-emi-7 — Palace's box and rules (EmSetupEditorViewModel.SaveFields.cs)
-                if (TryParseSaveFields(EmergeSaveFieldsText, out var saves, out error)) section.SaveFieldsGHz = saves;
+                if (TryParseSaveFields(EmergeSaveFieldsText, out var saves, out error))
+                {
+                    section.SaveFieldsGHz = saves;
+                    ShowSaving(() => EmergeSaveFields = SavesAny(saves));
+                }
                 break;
             default:
                 return;
@@ -155,6 +159,7 @@ public sealed partial class EmSetupEditorViewModel
         EmergeMaxSamplesText            = e?.MaxSamples?.ToString(CultureInfo.InvariantCulture) ?? "";
         EmergeAdaptiveMeshText          = e?.AdaptiveMesh?.ToString(CultureInfo.InvariantCulture) ?? "";
         EmergeSaveFieldsText            = SaveFieldsText(e?.SaveFieldsGHz);
+        EmergeSaveFields                = SavesAny(e?.SaveFieldsGHz);
         EmergeFieldError = null;
     }
 }

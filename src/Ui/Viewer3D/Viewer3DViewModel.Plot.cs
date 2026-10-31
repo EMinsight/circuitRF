@@ -233,7 +233,7 @@ public sealed partial class Viewer3DViewModel
             MirrorFocused();
         }
         UpdateShowField();
-        SetProblem(layer, driveProblem ?? (item is null ? FieldPlotResolver.PlotProblem(p, read.Items, read.Ran, Scene.Problem) : null));
+        SetProblem(layer, driveProblem ?? (item is null ? FieldPlotResolver.PlotProblem(p, read.Items, read.Ran, Scene.Problem, read.FieldsDeleted) : null));
         if (item is null)
         {
             ClearFieldGeometry(layer);

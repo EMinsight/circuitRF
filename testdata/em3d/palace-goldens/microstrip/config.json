@@ -104,9 +104,11 @@
           "Type": "Point",
           "Freq": [
             5.5
-          ],
-          "SaveStep": 1
+          ]
         }
+      ],
+      "Save": [
+        5.5
       ],
       "AdaptiveTol": 0.0001
     },

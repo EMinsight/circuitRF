@@ -131,6 +131,25 @@ public sealed class EditorRound1TreeTests : IDisposable
         Assert.Equal(10, EmSetupPersistence.FromEmbedded(vm.Document.Setups[0]).AirBox!.XMin!.PaddingPercent);
     }
 
+    /// <summary>brief-dfr32-1 R-dfr32-1-4 — each face row reads its padding as a length, in the unit it reads in, beside its
+    /// share of the extent: 20 % of this board's 100 µm z extent is "20 µm, 20 %", and a default face says both as well.</summary>
+    [Fact]
+    public void AFacesPadding_ReadsAsALengthBesideItsPercentage()
+    {
+        var vm = Open(Doc(new EmSetup
+        {
+            Name = "S1", Solver3D = Em3dSolverId.Palace, AirBox = new EmAirBox(ZMax: new EmAirBoxFace(null, null, 20)),
+        }));
+        vm.TreeGrouping = C3dTreeGrouping.Primitive;
+        vm.SelectedTreeItem = vm.Tree.Single(g => g.Header == "Boxes").Items[0];
+
+        Assert.Equal("20 µm, 20 %", vm.Properties.AirBoxFaces.Single(f => f.Face == "zmax").Padding);
+        double pad = -vm.ShownAirBox!.Min.X;
+        Assert.StartsWith($"{CircuitRF.Render.Em3dSectionScene.FormatLength(pad)}, " +
+                          $"{(pad / 1000e-6 * 100).ToString("G4", CultureInfo.InvariantCulture)} % (default: ",
+                          vm.Properties.AirBoxFaces.Single(f => f.Face == "xmin").Padding);
+    }
+
     [Fact]
     public void PaddingPercent_RoundTripsTheCem_RefusesBothSpellings_AndAFlatAxisTakesTheDefaultWithANote()
     {

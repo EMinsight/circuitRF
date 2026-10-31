@@ -442,8 +442,10 @@ public class LayoutPortDirectionTests
         Assert.True(leftOfPlane > 40,
             $"the arrow should approach the plane from outside the metal; only {leftOfPlane} pixels differ there");
 
-        // …and something is still drawn on the metal side, because the label's own glyph is there.
-        Assert.True(rightOfPlane > 0, "the label should still paint on the conductor side");
+        // …and nothing lands on the metal side. UPDATED (brief-dfr32-2 R-dfr32-2-4): this asserted the label's glyph
+        // painted there, when the name was centred on the anchor. The name is drawn beside the arrow on its OUTWARD
+        // side now, so the metal past the bar is left clear.
+        Assert.True(rightOfPlane == 0, $"nothing of the port should paint on the conductor side; {rightOfPlane} pixels do");
     }
 
     [Fact]

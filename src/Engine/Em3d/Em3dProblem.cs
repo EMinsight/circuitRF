@@ -649,6 +649,11 @@ public sealed record Em3dProblem(
     /// every problem before static solves existed asks.</summary>
     public Em3dProblemType Type { get; init; } = Em3dProblemType.Driven;
 
+    /// <summary>brief-dfr32-1 — the content extent the air box was padded round, when the problem's builder knows it better than
+    /// its solids say: a <c>.cem</c>'s dielectric slabs are built out TO the box, so their bounds are the box's. Null — every other
+    /// problem — means the solids' and sheets' own bounds. Nothing lowers it.</summary>
+    public (Point3 Lo, Point3 Hi)? PaddedContent { get; init; }
+
     /// <summary>A static problem's terminals, in index order (terminal k is index k + 1).</summary>
     public IReadOnlyList<Em3dTerminal> Terminals { get; init; } = [];
 

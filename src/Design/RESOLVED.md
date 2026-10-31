@@ -25033,3 +25033,236 @@ A review of `KitGlyphSymbol` ran each suspicion through `TryBuild` before fixing
 - **`KitArchive` moved to `src/Design/Schematic`**; its `kits/` constant now comes from `WorkspaceFolders`
   directly rather than through `src/Ui`'s archive scanner. Its one exception message is a pre-existing line,
   added to the firewall's user-facing-text allowlist with the move.
+
+## Designer round 32 — Palace "Save frequency … not found in sample frequencies" (2026-10-30)
+
+- **Palace 0.18.1 merges driven samples within 1e-9 GHz and keeps the lower one, then matched `SaveStep` saves by
+  exact equality** (`configfile.cpp`, `DrivenSolverData`). The default save frequency is the sweep's centre; on a
+  0.4–5 GHz, 101-point linear sweep that is also sample 50, which Palace computes as `0.4 + 0.5·4.6 =
+  2.6999999999999997` while ours is `2.7`. The save-only Point sample merged into the linear one, and the run
+  aborted before solving. Any odd-point sweep whose centre rounds differently on the two sides does the same.
+- **Fix: name save frequencies in Driven's `"Save"` list** (schema: an array of numbers), which Palace snaps to the
+  merged sample with `FindNearestValue` inside the same tolerance. The Point sample stays, because a `Save` entry
+  must be an explicitly sampled frequency. Verified with the installed binary's `--dry-run`: the old shape fails with
+  the field report's exact message, and the new one gets past config parsing (to the missing mesh, as the committed
+  golden does). Gate: `FieldTests.SaveFrequency_OnASweepPoint_IsNamedInDrivenSave_NotBySaveStep`.
+
+## DFR32-4 — power lost through a plane pair the solve region cuts: R-1 is a No-go (2026-10-30)
+
+**The motivating case** (a private four-layer board, described in general terms): a 6-port Draft Palace solve of an
+output filter, solve region cut round the filter with 20 % air on every face, read |S21| −1.07 dB at 868 MHz against
+−0.78 dB on the bench, almost none of it mismatch. Per driven port, 1 − Σᵢ|Sᵢⱼ|² was 7–35 % on the three ports reached through vias onto an
+inner stripline between two ground planes, and 0.1–0.6 % on the three top-layer-only ports, nearly flat from 0.5 to
+3 GHz. The leading explanation was a parallel-plate wave launched by the signal via, leaving through the absorbing
+lateral faces where the region cuts both planes.
+
+**The check** — a synthetic coupon on the shipped 4-layer FR-4 technology (`pcb-4layer_FR-4_62mil_1oz`, unchanged): a
+380 µm top microstrip, a through via (0.3 mm drill, 0.5 mm antipads in both planes) down to a 300 µm Inner 2 stripline
+6 mm long between the Inner 1 and Bottom ground planes (both drawn 30 × 16 mm), a via back up, ports on the top line's
+ends at x = ±5 mm. Every face's padding and boundary stated: 1 mm lateral, 1 mm below, 2 mm above, z faces absorbing.
+Draft, no adaptive sweep (`SweepAdaptiveTol` 0), no saved fields, 0.5 and 3 GHz, 4 ranks; 8–40 s per run. Loss is the
+same for both ports (reciprocal, symmetric coupon).
+
+| case | region / boundary | 0.5 GHz | 3 GHz | mesh |
+|---|---|---|---|---|
+| a | planes cut 1 mm from the vias (y ±1 mm), lateral faces absorbing | 0.95 % | 7.8 % | 26k tets |
+| b | as a, lateral faces PEC | 0.87 % | 4.6 % | 26k |
+| c | as a, a ring of six ground through-vias (r 0.8 mm) round each signal via | 1.10 % | 4.0 % | 54k |
+| d | planes cut 4 mm from the vias (y ±4 mm), absorbing | 1.02 % | 6.0 % | 30k |
+| e | no vias: ports on the Inner 2 line's ends, sheets 1.07 mm tall to Inner 1; region as a, absorbing | 0.81 % | 7.7 % | 20k |
+| f | as e, lateral faces PEC | 0.67 % | 4.0 % | 20k |
+| g | as e, sheets 0.2 mm to Bottom instead | 1.07 % | 4.1 % | 16k |
+
+FR-4 at tanδ 0.02 over ~10 mm of line accounts for about 0.45 % at 0.5 GHz and 2.6 % at 3 GHz; copper adds the rest
+of the ~1 % and ~4 %.
+
+**Verdict: No-go.** At 0.5 GHz every case loses about 1 %: cutting both planes 1 mm from the via at an absorbing face
+adds under 0.1 percentage point (a against b). At 3 GHz absorbing cut faces add about 3 points (a, e against b, f),
+a loss that grows with frequency — not the motivating board's flat 7–35 % already present at 0.5 GHz. The leading
+explanation does not reproduce, so neither the pre-run note nor the conducting default (R-dfr32-4-3, D1) was built,
+and nothing was tuned. The two diagnostic cases (e–g) also clear a tall port sheet across the plane pair. Where the
+board's loss comes from stays open; what distinguishes it from the coupon — six ports and their parts' pads, the
+board's own plane shapes and stitching, its real padding — is where to look next, on the designer's own files.
+
+**Built regardless (R-dfr32-4-2, second half):** a driven Palace run's summary states each port's 1 − Σᵢ|Sᵢⱼ|² at the
+band's lowest and highest frequency, and flags a port losing more than 3× the median port and more than 1 %
+(`Em3dPortLoss`, called after "Palace solved N frequencies"). The floor keeps near-lossless ports from flagging each
+other. With half of six ports bad, as on the motivating board, the median sits between the groups, so only the worst
+ones flag — the per-port numbers themselves are the finding. Gate: `PortLossLineTests` (synthetic S, no solver).
+
+## DFR32-5 — Trace Impedance: a trace into its own via's clearance hole is not a broken return (2026-10-30)
+
+- **What failed:** a stripline into a via whose planes carry a clearance hole wider than the via land plus
+  *Skip near vias* (400 µm) had the rest of the hole reported as a broken return — FAIL — on both planes. The skip
+  is a fixed reach from the land; a generous antipad outruns it.
+- **The rule (`TraceImpedanceAnalysis.Assemble`, `Clearances`):** per side, walk inward from each end while the
+  nearest layer is missing (a cut that is not the nearest layer's, or an uncut station inside the via transition).
+  The stretch is an Info line (`TraceRun.ViaClearances`, and the same sentence in `Notes`) and is excused only when
+  (1) it starts at the trace's end, (2) the next station is covered again (the hole's edge), (3) a via the trace runs
+  onto (`LayerWork.TransitionVias`) sits within its land plus the trace's width of that end, (4) the missing plane's
+  copper does not contain the via centre, and (5) the stretch is no longer than the hole's radius — the via centre
+  to the plane's nearest edge — plus `ViaClearanceSlackMicrons` (100 µm). A slot running on from the hole fails (5);
+  a mid-trace gap fails (1).
+- **Trap: the excuse is per SIDE for return findings.** A first cut used one mask for both sides, so a round hole
+  in the lower plane silently shortened a real slot finding in the upper plane over the same stretch (it reported
+  1.49 mm of a 1.92 mm slot). `excusedBelow`/`excusedAbove` now feed each side's broken/partial/step findings;
+  their union (`excused`) feeds Z0, no-reference and unsolved findings and the trace's numbers, since the cleared
+  stretch's Z0 is the via's design too.
+- **Map (R-dfr32-5-2):** the stretch is outlined in grey, solid, no marker and no number, 1.4 pt outside where a
+  finding's dashed outline would sit so the two stay apart on one stretch; the legend names it when a layer has one.
+- Gate: `TraceImpedanceViaClearanceTests` (round hole passes with two Info lines; slot fails over its whole length;
+  mid-trace gap fails).
+
+## DFR32-3 — what a run's saved fields weigh, and dropping them (2026-10-30)
+
+- **Owner decision D1 (b):** the default is unchanged (`PalaceConfigWriter.SavesFields`, the sweep's centre), so no
+  golden moved. Once Gmsh has made the mesh, beside the after-mesh memory check, a driven run notes the fields'
+  estimated size. `PalaceFieldFiles.EstimateBytes` is the bond-wire measurement (137 MB per frequency per driven
+  port at 146,769 tetrahedra) scaled by tetrahedra × save frequencies × ports. A stated `SaveFieldsGHz` list is
+  counted by its own length, and `[]` notes nothing. Eigenmode and static runs are not estimated, because the
+  measurement does not cover them. The completion summary's `field files …` clause now names the folder.
+- **Delete Saved Fields:** `PalaceFieldFiles.Delete` moves `postpro/paraview` and any adaptive pass's leftover field
+  folders through a caller-supplied trash function, and keeps the mesh, the CSVs, the Touchstone and the `.npy`. It
+  writes `fields-deleted.txt` in the run folder, so `FieldPlotResolver.Discover` can tell "deleted" from "never
+  saved". `C3dRunStatus.Begin` removes that note when the next run starts. Gate: `SavedFieldsTests`.
+
+## DFR32-2 — an edge port's 3D sheet: bounded on a long edge, flush on a curved one (2026-10-30)
+
+- **The rule, once (`Layout/Em3d/EdgePortSheet.cs`).** `Span(lo, hi, at, H, stated)`: a stated `LabelShape.PortWidth`
+  wins; otherwise an edge longer than 4 × H gets a sheet 2 × H wide, centred on the port's point; either is clipped to
+  the edge. Owner decision D1 (a). `PortWidth` is additive and nullable (DBU, omitted when null), so a `.clay` without
+  it round-trips byte for byte. The file key is `PortWidth`, as every other port field is `Port…`; the Properties row
+  is captioned **Width**, and the run's note names that row.
+- **The generator walks the return twice when it bounds.** H is the sheet's own height (signal face to return face),
+  which only the return walk knows, so the first pass walks over the whole edge; a bounded or stated width walks it
+  again over the sheet actually built, so the return and the hair-short-plane tolerance (a tenth of the width) are
+  judged where the sheet is. A wave port is never bounded: its region is sized from the line on the box face.
+- **The bar the layout draws is `EdgePortSheet.Bar`**, the same `Span` over the editor's own conductor end, with H
+  from the stack (`HeightToReturnDbu`: the dielectric to the nearer ground-reference conductor above or below, any
+  conductor when none is flagged). That is the run's H wherever the return is a plane; a return walked to a farther
+  plane through an opening would differ, and the run's note is then the authority. The `.c3d` creation path
+  (`C3dHierarchy.TranslatePorts`) bakes `Em3dGenerator`'s ports, so a new `.c3d` gets the bounded sheet with no code
+  of its own. The planar kernel's port is unchanged: its cut is the feed's outermost rooftop row, the whole end.
+- **A port on a curved edge (R-dfr32-2-3).** Measured on synthetic geometry (two-layer RO4350B, 20 mil, undrawn
+  bottom-copper ground as the PEC floor; air box 1000 µm on the four sides and the top, all absorbing, floor on the
+  plane; Palace Draft; 1–3 GHz): a 64-vertex round pad 1 mm across with a 0.2 mm × 3 mm trace off it, one port.
+
+  | Port | Tetrahedra | Smallest tet edge |
+  |---|---|---|
+  | trace's straight end | 7,004 | 20.65 µm |
+  | arc, 250 µm off the pad's axis, as drawn | 3,998 | **0.0073 µm** |
+  | same, pad cut flat at the sheet (clipping only) | 3,831 | **0.000017 µm** |
+  | same, cut flat and the face snapped to the sheet | 3,777 | 7.995 µm |
+  | arc, 60 µm off the axis, as drawn | 10,299 | 0.0396 µm |
+  | same, cut flat and snapped | 10,274 | 10.96 µm |
+
+  **The count did not blow up on this geometry** (ratio 0.54 and 1.47 to the straight case, inside the brief's 1.5×
+  either way), so the 10–100× memory estimate seen in the field is not reproduced here. What the mesh does show is a
+  sliver: the sheet's width is read just inside the end, where an arc is a few nanometres wider than on the sheet's
+  plane, so the sheet's corner and the metal's corner sit nanometres apart and Gmsh makes a 7–40 nm edge there.
+  Clipping alone made it worse (Clipper's 0.1 nm grid puts the cut's corner a hair off the plane). `FlushTo` cuts the
+  metal outside the plane across the sheet, puts every vertex within 10⁻⁴ × the sheet width of the plane ON it, and
+  the sheet takes the cut face's own extent, so the two end together; the smallest edge is then micrometres. Not
+  applied to a sheet moved in to where its return begins (the line runs on past it by design), to a wave port, or
+  when cutting would split the metal. Gate: `PortSheetWidthTests` (the counter and the smallest edge, `[GmshFact]`).
+
+## DFR32-1 — the default air box: R-1 measured, and it is a No-go (2026-10-30)
+
+**The default was not changed.** The brief asks for the smallest multiple of H (the dielectric height from the top conductor
+to the lowest ground-reference conductor) that keeps |ΔS| ≤ 0.01 across 0.5–8 GHz against today's default box, on
+three structures, and says to stop and report if no multiple does. None does. `Em3dGenerator.DefaultPadding` is as it
+was. R-2 (the new default) and R-3 (the too-close warning)
+were not started.
+
+**Set-up.** The geometry is synthetic. Every face's padding and boundary were stated in the `.cem`: lateral and top
+faces were absorbing, and the floor was PEC where the generator puts one. circuitRF wrote and meshed every problem
+through its own lowering and Gmsh. Palace 0.18.1 was then run directly in that run folder on 2 processes (3 at order
+2). On a shared, loaded 10-core machine the default 10 ranks took 7 min for a solve that took 9 s on 2. The answers
+were identical (|ΔS| 1e-13). |ΔS| is the largest complex difference over all four entries and all 151 points (50 MHz
+steps). "Elements" is Palace's tetrahedron count, and "peak" is its own total high-water mark.
+
+- **ms**: a 420 µm × 6 mm line on 200 µm of εr 3.66, with the undrawn plane as the PEC floor. H = 200 µm. The
+  reference is 6 mm on every face, which is today's default: the largest extent, less than λ/8 at 0.5 GHz.
+- **via**: the shipped via-through-a-plane example, with its lines cut to 2.5 mm and a drawn 5 × 3 mm plane (so no
+  floor, and the bottom face is padded). H = 200 µm. The reference is 5 mm.
+- **cpl**: a two-pole edge-coupled filter on the ms laminate: three 7.4 mm coupled sections, 420 µm lines, gaps
+  120/350/120 µm. Its passband is 5.30–5.94 GHz at −3 dB, with a peak |S21| of 0.873. The reference is 24.2 mm.
+
+**The run-to-run difference decides what can be measured.** Each structure was also solved in a box larger than the
+reference. That change should not move the answer, so whatever it moves is the remeshing.
+
+| structure | larger box | its \|ΔS\| against the reference |
+|---|---|---|
+| ms, Draft (order 1) | 9 mm | **0.013** |
+| ms, order 2 (Draft otherwise, sweep tol 1e-5) | 9 mm | 0.0023 |
+| via, Draft | 7 mm | 0.0032 |
+| cpl, Draft | 30 mm | **0.151** (S22 at 5.30 GHz) |
+
+At Draft, the microstrip and the filter differ from themselves by more than 0.01. So the microstrip was measured
+again at order 2. The filter's difference is a ±30 MHz shift of its passband edges with the mesh. On a skirt that
+steep, that alone is 0.15. The sweep's tolerance is not the cause: tightening 1e-3 to 1e-5 on the same mesh moved
+|ΔS| by 1e-7. Order 2 on the filter is more than 9 minutes a run here (stopped at 9 min), which is beyond what
+this round may spend without the owner's say-so.
+
+**|ΔS|max against the reference** (worst entry, at 8 GHz unless noted; elements; Palace peak):
+
+| face | 3H | 5H | 10H | 20H |
+|---|---|---|---|---|
+| ms top, order 2 | 0.035 (12,616; 1.1 G) | 0.013 (13,271; 1.1 G) | **0.0024** (14,238; 1.2 G) | 0.0033 (15,102; 1.2 G) |
+| ms lateral, order 2 | 0.053 (9,441; 0.87 G) | 0.020 (10,874; 0.89 G) | **0.0068** (12,725; 0.99 G) | 0.0019 (14,360; 1.2 G) |
+| ms top, Draft | 0.043 | 0.015 | 0.0038 | 0.0079 |
+| ms lateral, Draft | 0.064 | 0.026 | 0.013 | 0.0046 |
+| via top, Draft | 0.017 (26,979; 0.68 G) | **0.0052** (27,732; 0.75 G) | 0.0023 | 0.0027 |
+| via bottom, Draft | 0.016 (27,068; 0.73 G) | **0.0052** (27,852; 0.78 G) | 0.0032 | 0.0024 |
+| via lateral, Draft | **0.0036** (21,482; 0.54 G) | 0.0044 | 0.0042 (7.25 GHz) | 0.0056 |
+| cpl top, Draft | 0.66 (31,447; 0.88 G) | 0.32 | 0.079 | 0.049 (38,440; 1.0 G) |
+| cpl lateral, Draft | 0.21 (19,791; 0.55 G) | 0.13 | 0.089 | 0.063 (27,800; 0.69 G) |
+
+The references were ms 15,435 elements (1.2 G at order 2, 0.44 G at Draft), via 29,611 (0.78 G) and cpl 45,989
+(1.2 G). The cpl differences are at 5.30–5.85 GHz, on the passband edges. Every row above 10H on the filter is
+inside its 0.15 run-to-run difference.
+
+**The filter still shows a real boundary effect, read in a measure an edge shift does not move: its peak passband
+|S21|.** Reference 0.8734. Larger box 0.8703 (−0.0032).
+
+| cpl | 3H | 5H | 10H | 20H |
+|---|---|---|---|---|
+| top | −0.160 | −0.087 | −0.033 | −0.0067 |
+| lateral | −0.107 | −0.060 | −0.038 | **−0.0104** |
+
+It shrinks steadily as the padding grows, and it is loss: an absorbing face near a resonator takes power from it.
+At 10H the filter's passband reads 0.3 dB worse (−1.51 dB against −1.18 dB). Lines and the via are satisfied by about
+10H on the top and lateral faces and 5H below. A resonant structure on the same laminate needs about 20H on the top
+and more than 20H laterally.
+
+**What the owner has to decide** (not decided here, per the brief):
+- whether the criterion should be read at Draft at all, since Draft's own remeshing difference is 0.013 on a plain line
+  and 0.15 on a filter;
+- whether a default of 20H top and lateral (5H to 10H below), capped at today's value, is acceptable. It misses 0.01
+  by 0.0004 on the filter's lateral faces, and its band-wide |ΔS| on the filter cannot be measured at Draft;
+- or whether the default should stay as it is and R-3's warning ship alone, for a stated face closer than about 10H
+  (R-4's length readout has shipped; see below). On the designer's 0.27 mm board, 20H would be 4 mm of padding against
+  today's 17.5 mm.
+
+**Found on the way, and fixed after the No-go.** `explain` on a `.cem` 3D setup printed `setup: 0 mm` for every
+lateral face whose padding was stated (`ExplainEm3d`, the `Face` helper). It measured each face's distance from
+`Em3dGenerator.ContentBounds(p)`, which took the bounds of every solid, and the generator builds a `.cem`'s dielectric
+slabs out TO the air box. The box itself was right. The same bounds gave `DefaultPadding`'s largest extent in
+`explain`'s default basis and in the Palace memory check's half-padding remedy, so both used the box's own size as the
+structure's extent. Now the generator records what it padded round on the problem (`Em3dProblem.PaddedContent`, init
+only, read by nothing that lowers), and `ContentBounds` returns that when it is set. A `.c3d` problem leaves it null and
+is measured as before. A drawn substrate there is real content, so excluding slabs by shape would have been wrong.
+Test: `Em3dGeneratorTests.ContentBounds_OfACemProblem_IsWhatTheBoxWasPaddedRound_NotTheSlabThatReachesIt`.
+
+**R-4 was done after the No-go, on the owner's say-so (R-2 and R-3 were not).** Each face row in a 3D view's
+Properties panel now gives its padding as a length, in the unit it reads in, beside its share of the content's extent:
+*47 µm, 20 %* on a 235 µm-thick board, *8 mm, 3404 % (default: …)*, *1 mm, 12.5 % (stated)*. The row used to give
+the length in the document's display unit, plus a percentage only when the face stated one. The length comes from
+`C3dEditorViewModel.AirBoxPaddingM`, the distance `AirBoxPaddingText` already measured, and `Em3dSectionScene.FormatLength`
+formats it. What `PaddingPercent` means in the file is unchanged. A default's long basis used to squeeze the boundary
+picker to nothing. The picker now keeps a 120-pixel column and the readout wraps beside it (seen in a UiSnapshot
+render). Test: `EditorRound1TreeTests.AFacesPadding_ReadsAsALengthBesideItsPercentage`.
+
+**Reproduction.** The scripts that wrote the three structures and every `.cem` (each face stated), ran them and built
+the tables are outside the repo. They used only circuitRF's CLI (`em`) and Palace's own `port-S.csv`. Measured on the
+reference machine (10 cores, 16 GB) while other runs shared it, so the times above are not benchmarks.

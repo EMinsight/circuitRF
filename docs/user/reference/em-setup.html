@@ -324,7 +324,7 @@ looking at.</li>
 <p>Either way the file lands in the workspace's <code>em/</code> folder, where the project tree lists it. Setups are
 workspace-scoped — there is no scratch EM setup.</p>
 <p><strong>The defaults are meant to be run, not configured.</strong> A fresh setup arrives at 50 Ω on every port, a
-1–20 GHz 101-point linear sweep, <code>Auto</code> analysis, and mesh settings that are the engine's own. On a
+0.5–8 GHz linear sweep in 50 MHz steps, <code>Auto</code> analysis, and mesh settings that are the engine's own. On a
 small structure the only thing you have to supply is which layout.</p>
 <h2 id="header">The header: name, output file, layout</h2>
 <p><strong>Name</strong> — the setup's display name, taken from the file stem. It is also what names the written result,
@@ -839,7 +839,7 @@ conductor a uniform cross-section is about, the other picks a set of levels for 
 linear or log. Each field takes a coefficient and a unit from the combo beside it, and prints the
 resolved value underneath — so <code>1</code> + <code>GHz</code> reads back as <code>1 GHz</code> and there is no ambiguity about what was
 entered. See <a href="units.html">Units</a> for what the text boxes accept.</p>
-<p>Default: <strong>1 to 20 GHz, 101 points, linear.</strong></p>
+<p>Default for a new setup: <strong>0.5 to 8 GHz in 50 MHz steps (151 points), linear.</strong></p>
 <p><strong>A frequency plan.</strong> <strong>+ Segment</strong> adds a row, and the run solves every row's frequencies together, sorted, each
 once. A row's <strong>Single</strong> button makes it one frequency rather than a sweep, which is what a new row starts as. So a
 coarse broadband sweep, a finer sweep around the centre and a spot frequency are three rows, and an optimization
@@ -2191,7 +2191,8 @@ table and the panel shows it after a run. Palace's own files stay in the run fol
 <p>A Palace run also saves the solved <strong>fields</strong>, which the 3D view's field plots draw on a clip plane, on
 surfaces or on chosen faces. <strong>Save fields at (GHz)</strong> in the setup panel's Palace section — <code>SaveFieldsGHz</code>
 in the <code>.cem</code> — says which frequencies. Its box shows the sweep's centre as its placeholder when it is
-blank, and takes a comma list (<code>2, 6, 10</code>) or <code>none</code>. A field plot's <em>Other frequency…</em> adds one to it. A
+blank, and takes a comma list (<code>2, 6, 10</code>) or <code>none</code>. Untick the check box beside it to save no fields
+(it writes <code>none</code>); tick it again to get the frequencies back. A field plot's <em>Other frequency…</em> adds one to it. A
 run saves only these frequencies, so a plot can show only these: a 2–18 GHz sweep left blank saves its
 centre, 10 GHz, and nothing else. openEMS and EMerge have the same box, for their own fields.</p>
 <pre><code>&quot;Palace&quot;: { &quot;SaveFieldsGHz&quot;: [2.4, 5.8] }
@@ -2212,7 +2213,17 @@ unless <code>SaveFieldsGHz</code> is <code>[]</code> (their fields are not per f
 per saved frequency per driven port</strong> (127 MB inside the volume, 9.8 MB on the surfaces), plus 33 MB
 once for Palace's error map. Palace runs one excitation per port, so a two-port setup saving twenty
 frequencies writes about <strong>5.5 GB</strong>. The size grows with the mesh, so a larger model or more refinement
-passes costs more. When a run finishes, its summary line states what its field files took.</p>
+passes costs more.</p>
+<p><strong>A driven run says what its fields will take before Palace starts.</strong> Once Gmsh has made the mesh, beside
+the memory check, the run states the estimated size of the fields it will save: the measurement above,
+scaled by the mesh's tetrahedra, times the save frequencies and the driven ports. A setup that names its
+frequencies is estimated from its own list. Adaptive refinement can make the final figure larger. When the
+run finishes, its summary line states what the field files took and the folder they are in,
+<code>results/&lt;setup&gt;.palace/postpro/paraview</code>.</p>
+<p><strong>Delete Saved Fields</strong> removes them once a run is done with. It is on a solved setup's menu: the card in a
+3D view's setup list, and the <code>.c3d</code>'s or <code>.cem</code>'s row in the Project Tree. It moves the run folder's field
+folders to the Trash, says how much it freed, and keeps the mesh, the Touchstone and the <code>.npy</code>. The setup's
+field plots then show nothing and say why. Run the setup again to save its fields again.</p>
 <h3 id="palace-gpu">Palace on a GPU</h3>
 <p>Palace can solve on a GPU, and on several at once, when it was compiled with GPU support. <strong>Device</strong>, under
 <em>Cores</em> in the setup panel, chooses <strong>CPU</strong> or <strong>GPU</strong> for a setup that runs Palace. Like <em>Cores</em>, it is a setting

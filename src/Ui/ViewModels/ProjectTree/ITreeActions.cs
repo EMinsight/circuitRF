@@ -87,6 +87,13 @@ public interface ITreeActions
     /// <summary>Open in S-Parameter Viewer on a Touchstone file: its plots and what it states, in the viewer's window.</summary>
     void OpenInSParameterViewer(ProjectTreeNodeViewModel node) { }
 
+    /// <summary>brief-dfr32-3 — whether a <c>.c3d</c>'s or <c>.cem</c>'s runs hold saved fields now.</summary>
+    bool HasSavedFields(ProjectTreeNodeViewModel node) => false;
+
+    /// <summary>brief-dfr32-3 R-dfr32-3-2 — Delete Saved Fields on a <c>.c3d</c> or <c>.cem</c> row: every setup's saved field
+    /// files to the Trash, the mesh, the Touchstone and the results kept.</summary>
+    void DeleteSavedFields(ProjectTreeNodeViewModel node) { }
+
     /// <summary>
     /// Build a NEW cell around one SPICE <c>.model</c> card in this file — the native circuitRF
     /// component carrying the card's parameters, its pins already wired, and an editable copy of

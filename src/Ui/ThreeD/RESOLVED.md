@@ -406,3 +406,36 @@ why, and the rest of the layout and its other wires are drawn. A `.wBond` that c
 artwork drawn without wires. A run is unchanged and still refuses. `C3dElaboration.UnresolvedWhy` carries the reason
 for each instance that is still not drawn: "invalid wBond geometry" when the layout has nothing else to draw, and
 "cannot be drawn in 3D" for any other refusal. The label says "not found" only when the cell really did not resolve.
+
+## Designer round 32 — a `.c3d` stayed on the old layout after the layout was saved (2026-10-30)
+
+- **The workspace's `FileSystemWatcher` was the only cue** that a placed `.clay` (or its technology, or a material
+  library) had changed: the elaborator reads children from disk, keyed by stamp, and re-elaborates only when told.
+  The watcher covers the whole workspace with the default 8 KB buffer and had no `Error` handler, so an overflow
+  (a Palace run writing hundreds of field files under `results/`, a synced cloud folder) dropped the save silently.
+  The field report needed closing and reopening the `.c3d`, sometimes more than once.
+- **Fix:** `C3dEditorViewModel` keeps the stamps of each adopted elaboration's `FilesRead` (the document's own file
+  left out) and `RecheckInputs()` re-elaborates when any differ. The workspace calls it when the `.c3d`'s tab is
+  activated and on the watcher's `Error`. The buffer is 64 KB. Gate:
+  `HierarchyGateTests.RecheckInputs_APlacedLayoutChangedUnseen_IsElaboratedAgain`.
+
+## DFR32-3 — an air-box padding typed in Properties did not show; Delete Saved Fields (2026-10-30)
+
+- **Reproduced headlessly (R-dfr32-3-1), on the panel's own calls.** One face, all six one after another, six fast
+  commits while a rebuild was in flight, and a commit from the setup's panel after a padding edit all reached the
+  document and the drawn box (`AirBoxEditShowsTests`). What dropped the edit: Enter on one face starts a rebuild, the
+  next face is typed while it is in flight, and when that scene is adopted `OnSceneAdopted` → `Properties.Reload()`
+  → `LoadAirBox` writes every percentage box back from the document. The text being typed was replaced by the old
+  default percentage, so its Enter compared that against `_padLoaded`, found it unchanged and stated nothing. On a
+  large board, where a rebuild takes seconds, that is the next face being typed almost every time.
+- **Fix:** `C3dPropertiesViewModel.Reload` keeps any padding box whose text differs from what was loaded into it
+  (typed, not committed) across a reload that is still the air box. Gate:
+  `AirBoxEditShowsTests.TypingTheNextFace_WhileThePreviousEditsSceneIsAdopted_IsNotWipedByTheReload` (fails before).
+- **Not verified in a live window:** `Load()` sets `IsAirBox` false and back to true, which hides the padding grid for
+  an instant. If Avalonia takes focus off a box hidden that way, the box keeps its text now but loses the caret, and a
+  click out of it commits.
+- **Delete Saved Fields (R-dfr32-3-2)** is on a setup card's menu (shown while the run folder holds fields, read as
+  the menu opens) and on a `.c3d`'s or `.cem`'s Project Tree row. The work is `PalaceFieldFiles.Delete` in
+  `src/Design`. The 3D view passes `C3dEditorViewModel.MoveToTrash` (the system Trash; a test seam), then
+  `RunFinished()` reads every plot's run again. A plot of that run then says the fields were deleted, through
+  `FieldDiscovery.FieldsDeleted` → `PlotProblem(..., fieldsDeleted)`. Gate: `SavedFieldsTests`.

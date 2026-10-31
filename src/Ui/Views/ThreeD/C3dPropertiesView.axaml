@@ -314,12 +314,14 @@
                 <ItemsControl ItemsSource="{Binding AirBoxFaces}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="t3:C3dAirBoxFaceRow">
-                            <Grid ColumnDefinitions="44,*,Auto" Margin="0,1">
+                            <!-- brief-dfr32-1 R-dfr32-1-4 — the boundary picker keeps its width; a long padding readout
+                                 (a default's basis) wraps beside it rather than squeezing it to nothing. -->
+                            <Grid ColumnDefinitions="44,120,*" Margin="0,1">
                                 <TextBlock Grid.Column="0" Text="{Binding Face}" VerticalAlignment="Center"/>
                                 <ComboBox Grid.Column="1" ItemsSource="{x:Static t3:C3dPropertiesViewModel.BoundaryKinds}"
                                           SelectedItem="{Binding Kind}" HorizontalAlignment="Stretch" FontSize="11"/>
                                 <SelectableTextBlock Grid.Column="2" Text="{Binding Padding}" FontSize="11" Opacity="0.8"
-                                                     VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                                     TextWrapping="Wrap" VerticalAlignment="Center" Margin="6,0,0,0"/>
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
@@ -492,8 +494,16 @@
                                        ToolTip.Tip="Seconds per cycle on screen — a display choice, the same for every drawn plot; the frequency is the legend's"/>
                         <TextBlock Text="s / cycle" VerticalAlignment="Center" Opacity="0.7" FontSize="11"/>
                     </StackPanel>
-                    <SelectableTextBlock Text="{Binding Viewer.FieldText}" FontSize="11" Opacity="0.8" TextWrapping="Wrap"
-                                         IsVisible="{Binding Viewer.FieldText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    <!-- Hidden while the plot's problem shows above: the view copies that problem into FieldText for its status
+                         line, and the panel said it twice. -->
+                    <SelectableTextBlock Text="{Binding Viewer.FieldText}" FontSize="11" Opacity="0.8" TextWrapping="Wrap">
+                        <SelectableTextBlock.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="Viewer.FieldText" Converter="{x:Static StringConverters.IsNotNullOrEmpty}"/>
+                                <Binding Path="PlotProblem" Converter="{x:Static StringConverters.IsNullOrEmpty}"/>
+                            </MultiBinding>
+                        </SelectableTextBlock.IsVisible>
+                    </SelectableTextBlock>
                 </StackPanel>
             </StackPanel>
 

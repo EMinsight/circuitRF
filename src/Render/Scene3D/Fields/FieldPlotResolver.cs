@@ -81,6 +81,9 @@ public sealed record FieldDiscovery(IReadOnlyList<FieldRun> Runs, IReadOnlyList<
     /// <summary>The run directory <paramref name="item"/> was read from.</summary>
     public string? DirectoryOf(FieldSolutionItem item)
         => string.Equals(item.Run.Solver, "openEMS", StringComparison.OrdinalIgnoreCase) ? OpenEmsDir : PalaceDir;
+
+    /// <summary>brief-dfr32-3 — the Palace run's saved fields were deleted (Delete Saved Fields) and it has not run since.</summary>
+    public bool FieldsDeleted { get; init; }
 }
 
 public static class FieldPlotResolver
@@ -201,12 +204,15 @@ public static class FieldPlotResolver
 
     /// <summary>
     /// R-em3d83-5 — the sentence a plot whose run lacks its solution carries: no run yet, or what the run DID save beside what
-    /// the plot asks for. Null when <paramref name="saved"/> holds it.
+    /// the plot asks for. Null when <paramref name="saved"/> holds it. <paramref name="fieldsDeleted"/> (brief-dfr32-3): the run's
+    /// saved fields were deleted since it ran (<see cref="FieldDiscovery.FieldsDeleted"/>), which is why it holds none.
     /// </summary>
-    public static string? PlotProblem(FieldPlotRequest p, IReadOnlyList<FieldSolutionItem> saved, bool ran, Em3dProblem? problem)
+    public static string? PlotProblem(FieldPlotRequest p, IReadOnlyList<FieldSolutionItem> saved, bool ran, Em3dProblem? problem,
+                                      bool fieldsDeleted = false)
     {
         if (p.SetupProblem is { } why) return why;
         var mine = saved.Where(i => p.Solver is null || string.Equals(i.Run.Solver, p.Solver, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (mine.Count == 0 && ran && fieldsDeleted) return FieldsDeletedSentence(p.SetupName);
         if (mine.Count == 0)
             return ran ? $"The run of setup {p.SetupName} saved no fields — set Save fields at in its setup and Simulate again."
                        : $"No finished run of setup {p.SetupName} yet — Simulate to draw this plot.";
@@ -236,6 +242,10 @@ public static class FieldPlotResolver
             return $"The run has {keys.Count} sweep point{(keys.Count == 1 ? "" : "s")}; this plot shows point {k0}. Pick a saved point.";
         return null;
     }
+
+    /// <summary>brief-dfr32-3 — why a plot of a run whose saved fields were deleted draws nothing.</summary>
+    public static string FieldsDeletedSentence(string? setupName)
+        => $"The saved fields of setup {setupName} were deleted (Delete Saved Fields) — Simulate it again to draw this plot.";
 
     // ── before the run (brief-dfr31-3 R-dfr31-3-4) ──────────────────────────────────────────
 
@@ -328,7 +338,7 @@ public static class FieldPlotResolver
         bool Finished(string? d) => d is not null && Directory.Exists(d)
                                     && C3dRunStatus.Read(d) is not { State: C3dRunState.Failed or C3dRunState.Cancelled };
         bool ran = Finished(dir) || Finished(openEmsDir);
-        return new FieldDiscovery(runs, items, table, groups, why, ran, dir, openEmsDir);
+        return new FieldDiscovery(runs, items, table, groups, why, ran, dir, openEmsDir) { FieldsDeleted = PalaceFieldFiles.WereDeleted(dir) };
     }
 
     /// <summary>The thermal run's table, read when the fields are.</summary>

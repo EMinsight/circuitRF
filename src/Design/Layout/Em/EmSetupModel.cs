@@ -423,9 +423,18 @@ public sealed class EmSetup
     {
         Name                         = name,
         LayoutRef                    = layoutRef,
+        Frequency                    = NewSetupFrequency(),
         ConductorThicknessCorrection = true,
         RobustMeshing                = true,
     };
+
+    /// <summary>
+    /// Designer round 32 — the sweep a NEW setup starts with: 0.5 to 8 GHz in 50 MHz steps. The ISM, cellular and
+    /// short-range bands a board is usually simulated for sit inside it, where a 1-20 GHz default spent most of its points
+    /// (and most of a 3D mesh's size, which follows the top frequency) above them. Only new setups take it; the model's own
+    /// default stays 1-20 GHz, which is what a .cem written without a Frequency block has always meant.
+    /// </summary>
+    public static FrequencySpec NewSetupFrequency() => new("0.5", "8", "0.05", SweepKind.Linear, "GHz", "GHz", "GHz");
 
     /// <summary>
     /// <b>LFE — what a planar EDGE port's source returns through.</b> <c>Ground</c> (the default) is

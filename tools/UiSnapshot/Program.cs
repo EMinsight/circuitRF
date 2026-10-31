@@ -124,6 +124,9 @@ string? reviewPanel = null;
 bool reviewRun = false;
 string? place = null;
 string? cdd = null, output = null, view = "canvas", results = null, fc = "2", iq = null, tuning = null, clay = null, cem = null;
+// brief-dfr32-3 — a .c3d's setup cards beside its Properties panel: --delete-fields runs a card's Delete Saved Fields (into a
+// scratch folder, never the Trash) and --c3d-row selects an Object Tree row (a field plot) for the panel.
+string? c3dSetups = null, c3dDeleteFields = null, c3dRow = null;
 string? optimizer = null;
 string? ctech = null;
 bool optimize = false;
@@ -186,6 +189,9 @@ for (int i = 0; i < args.Length; i++)
         case "--place" when i + 1 < args.Length: place = args[++i]; break;
         case "--lock" when i + 1 < args.Length: layerToggles.Add((args[++i], false)); break;
         case "--fc" when i + 1 < args.Length: fc = args[++i]; break;
+        case "--c3d-setups" when i + 1 < args.Length: c3dSetups = Path.GetFullPath(args[++i]); break;
+        case "--delete-fields" when i + 1 < args.Length: c3dDeleteFields = args[++i]; break;
+        case "--c3d-row" when i + 1 < args.Length: c3dRow = args[++i]; break;
         case "--palette" when i + 1 < args.Length: palette = Path.GetFullPath(args[++i]); break;
         case "--csym" when i + 1 < args.Length: csym = Path.GetFullPath(args[++i]); break;
         case "--pick" when i + 1 < args.Length: csymPick = args[++i]; break;
@@ -225,7 +231,7 @@ if (reviewPanel is not null && output is not null)
     return ShowReviewPanel(reviewPanel, output, sizeGiven ? width : 420, sizeGiven ? height : 760);
 }
 bool vendorMode = palette is not null || schematic is not null || archive is not null || manageLibraries is not null || addVendorLibrary is not null || gdsfactory is not null || csym is not null;
-if ((cdd is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
+if ((cdd is null && c3dSetups is null && signal.Count == 0 && snp is null && !standalone && tuning is null && optimizer is null && clay is null && cem is null && ctech is null && cmc is null && image is null && !vendorMode) || output is null || view is not ("canvas" or "inspector" or "display"))
 {
     Console.Error.WriteLine("usage: UiSnapshot <file.cdd> -o <out.png> [--view canvas|inspector|display] [--plot n] [--size WxH] "
                           + "[--results <dir>] [--click x,y] [--drag x0,y0:x1,y1] [--key <Key>] [--shot <png>] ...\n"
@@ -269,6 +275,51 @@ if (vendorMode)
     if (manageLibraries is not null) OpenManageLibraries(manageLibraries);
     if (addVendorLibrary is not null) OpenAddVendorLibrary(addVendorLibrary);
     if (gdsfactory is not null && !OpenGdsfactory(gdsfactory)) return 2;
+}
+else if (c3dSetups is not null)
+{
+    // The 3D view's setup list (the Analyses panel's cards) and its Properties panel on one editor view model, results read
+    // from the workspace's results/ folder as WorkspaceViewModel.EmResultsRoot gives them.
+    string? c3dCws = CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(c3dSetups));
+    var c3dVm = new CircuitRF.Ui.ThreeD.C3dEditorViewModel(c3dSetups, CircuitRF.Design.ThreeD.C3dPersistence.LoadFromFile(c3dSetups),
+        CircuitRF.Ui.Viewer3D.Viewer3DBackends.Create, () => c3dCws, a => Dispatcher.UIThread.Post(a))
+    {
+        ResultsRootProvider = c3dCws is null ? null : () => Path.Combine(Path.GetDirectoryName(c3dCws)!, "results"),
+        PostMessage = (text, warning) => Console.WriteLine($"{(warning ? "warning" : "info")}: {text}"),
+    };
+    c3dVm.RestoreActiveSetup(null);
+    c3dVm.Viewer.Resized(400, 300);
+    c3dVm.Viewer.Session.EnsureBackend();
+    c3dVm.Start();
+    var c3dWait = System.Diagnostics.Stopwatch.StartNew();
+    while (c3dVm.AdoptedGeneration != c3dVm.Viewer.Source.Requested && c3dWait.Elapsed < TimeSpan.FromMinutes(1)) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+    c3dVm.RunFinished();
+    foreach (var card in c3dVm.SetupItems)
+        Console.WriteLine($"setup {card.Name}: run folder {c3dVm.SavedFieldsRunDirectory(card.Name) ?? "none"}, saved fields {(c3dVm.HasSavedFields(card.Name) ? "yes" : "no")}");
+    if (c3dDeleteFields is not null)
+    {
+        string scratch = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output!))!, "trash");
+        c3dVm.MoveToTrash = d => { Directory.CreateDirectory(scratch); Directory.Move(d, Path.Combine(scratch, Guid.NewGuid().ToString("N"))); return null; };
+        Console.WriteLine(c3dVm.DeleteSavedFields(c3dDeleteFields)?.Sentence ?? c3dVm.StatusMessage);
+    }
+    if (c3dRow is not null)
+    {
+        static IEnumerable<CircuitRF.Ui.ThreeD.C3dTreeItem> Walk(CircuitRF.Ui.ThreeD.C3dTreeItem t) => t.Children.SelectMany(Walk).Prepend(t);
+        c3dVm.SelectedTreeItem = c3dVm.Tree.SelectMany(g => g.Items).SelectMany(Walk).FirstOrDefault(t => t.Name == c3dRow)
+                                 ?? throw new InvalidOperationException($"--c3d-row: no tree row named '{c3dRow}'");
+    }
+    for (int k = 0; k < 100; k++) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(10); }
+    c3dVm.Properties.Reload();
+    var c3dPanel = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*") };
+    var cards = new CircuitRF.Ui.Views.ThreeD.C3dSetupAnalysesView { DataContext = c3dVm };
+    var props = new CircuitRF.Ui.Views.ThreeD.C3dPropertiesView { DataContext = c3dVm.Properties };
+    Grid.SetColumn(props, 1);
+    c3dPanel.Children.Add(cards);
+    c3dPanel.Children.Add(props);
+    host = new Window { Width = sizeGiven ? width : 900, Height = sizeGiven ? height : 700, Content = c3dPanel };
+    host.Show();
+    Pump();
+    if (c3dVm.FieldPlot(c3dRow ?? "") is { } shownPlot) Console.WriteLine($"plot {shownPlot.Name}: {c3dVm.FieldPlotProblem(shownPlot) ?? "draws"}");
 }
 else if (clay is not null)
 {

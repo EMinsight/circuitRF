@@ -325,13 +325,14 @@ public sealed partial class Viewer3DViewModel
             read = old!;
             read.Table = table ?? read.Table;
             read.Ran = found.Ran;
+            read.FieldsDeleted = found.FieldsDeleted;
             read.Why = why;
         }
         else
         {
             if (old is not null) ForgetSteps(old.Items);
             ForgetSteps(found.Items);
-            read = new FieldRead(dirs) { Runs = runs, Items = found.Items, Groups = groups, Table = table, Ran = found.Ran, Why = why, Dir = dir };
+            read = new FieldRead(dirs) { Runs = runs, Items = found.Items, Groups = groups, Table = table, Ran = found.Ran, FieldsDeleted = found.FieldsDeleted, Why = why, Dir = dir };
             _reads[dirs] = read;
         }
         var readers = _layers.Where(l => !l.Disposed && DirsOf(l) == dirs).ToList();
@@ -372,7 +373,8 @@ public sealed partial class Viewer3DViewModel
             {
                 ShowField = false;
                 ClearFieldGeometry(layer);
-                SetText(layer, why is null ? "" : "The fields could not be read: " + why);
+                SetText(layer, why is not null ? "The fields could not be read: " + why
+                             : read.FieldsDeleted ?FieldPlotResolver.FieldsDeletedSentence(FieldSetupOf(layer)?.Name) : "");
             }
             else if (ShowField) EnsureFieldLoaded(layer);
         }

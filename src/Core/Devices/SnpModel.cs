@@ -203,7 +203,14 @@ public sealed class SnpModel : ComponentModel
         // brief-emdc-2 — a block with no Z (an ideal open, S = I: a 3D EM result's 0 Hz row through a DC block) is stamped as
         // its S, the wave definition IdealSBlockModel stamps, which has no singular case. Only then: every block that HAS a Z
         // stamps exactly as before.
-        if (!AllFinite(zMat))
+        //
+        // Designer round 32 — and so is a block whose Z is merely enormous. A part measured in SERIES (the usual form of a
+        // supplier's capacitor or inductor file: S11 + S21 = 1) has no impedance matrix, since I − S is singular for every
+        // series element. Its converted Z was rounding noise of order 1e17 Ω: usually solvable by luck, and wherever a sweep
+        // point fell exactly on one of the file's own samples, garbage — a 3.9 pF part read |S11|² + |S21|² = 3.86, so a
+        // filter built from it showed +1 dB of gain at single frequencies. Above 1e6·Z0 the S stamp is used; it is exact for
+        // any S, so the threshold only decides which of two correct forms a well-conditioned block keeps.
+        if (!AllFinite(zMat) || MaxMagnitude(zMat) > IllConditionedZOverZ0 * snp.Z0.Magnitude)
         {
             var nodes = new int[2 * n];
             var sArr  = new Complex[n, n];
@@ -238,6 +245,19 @@ public sealed class SnpModel : ComponentModel
             for (int j = 0; j < n; j++)
                 mna.AddBranchConstraint(branches[k], branches[j], -zMat[k, j]);
         }
+    }
+
+    /// <summary>Designer round 32 — the |Z|/|Z0| above which a block is stamped as its S rather than its Z: an (I − S) that
+    /// close to singular (a series-measured part, an open) makes the Z stamp rounding noise.</summary>
+    internal const double IllConditionedZOverZ0 = 1e6;
+
+    private static double MaxMagnitude(NumFlat.Mat<Complex> m)
+    {
+        double max = 0;
+        for (int i = 0; i < m.RowCount; i++)
+            for (int j = 0; j < m.ColCount; j++)
+                max = Math.Max(max, m[i, j].Magnitude);
+        return max;
     }
 
     private static bool AllFinite(NumFlat.Mat<Complex> m)

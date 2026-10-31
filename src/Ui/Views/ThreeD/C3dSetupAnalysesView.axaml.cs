@@ -57,6 +57,14 @@ public partial class C3dSetupAnalysesView : UserControl
         if (Select(sender) is not null) Vm!.DuplicateSetup();
     }
 
+    /// <summary>brief-dfr32-3 — whether the card offers Delete Saved Fields, read from its run folder as the menu opens.</summary>
+    private void OnCardMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e) => Vm?.RefreshSavedFields();
+
+    private void OnMenuDeleteSavedFields(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is C3dSetupItem { IsExternal: false } item) Vm?.DeleteSavedFields(item.Name);
+    }
+
     private void OnMenuRemove(object? sender, RoutedEventArgs e)
     {
         if (Select(sender) is not null) Vm!.RemoveSetup();

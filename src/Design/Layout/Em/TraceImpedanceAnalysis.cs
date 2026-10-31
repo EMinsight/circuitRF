@@ -168,6 +168,18 @@ public sealed record TraceIssue(
     public double? S11Db { get; init; }
 }
 
+/// <summary>
+/// A stretch at a trace's end where the nearest plane above or below is cleared round the via the trace ends on
+/// (brief-dfr32-5 R-dfr32-5-1): the hole is the via's design, not a break in the return path, so it is an Info
+/// line — one of the trace's <see cref="TraceRun.Notes"/>, with <see cref="Text"/> as its sentence — and no
+/// finding. The map draws it hollow and unnumbered (R-dfr32-5-2). Coordinates and lengths in DBU.
+/// </summary>
+/// <param name="Where">"above" or "below".</param>
+/// <param name="HoleRadius">The clearance hole's radius at the via: its centre to the nearest edge of the plane.</param>
+public sealed record TraceViaClearance(
+    long X0, long Y0, long X1, long Y1, double SpanLength, string LayerName, string Where,
+    long ViaX, long ViaY, double HoleRadius, string Text);
+
 /// <summary>One cut along a trace. Coordinates and lengths in DBU.</summary>
 public sealed record TraceStation
 {
@@ -340,6 +352,10 @@ public sealed record TraceRun
     /// via on a stub too short to be a trace (brief-dfr29-2 R-dfr29-2-4) — as the shunt elements they are (brief-dfr26-7
     /// R-dfr26-7-5). Each judged one is also one of <see cref="Issues"/>, each other one of <see cref="Notes"/>.</summary>
     public IReadOnlyList<TracePadShunt> PadShunts { get; init; } = [];
+
+    /// <summary>The stretches at either end where a plane is cleared round the trace's own via (brief-dfr32-5): Info,
+    /// not findings, and left out of the trace's numbers. Each is also one of <see cref="Notes"/>.</summary>
+    public IReadOnlyList<TraceViaClearance> ViaClearances { get; init; } = [];
 
     public TraceVerdict Verdict { get; init; }
 
@@ -658,6 +674,10 @@ public static partial class TraceImpedanceAnalysis
     /// warning band shorter than λ over this is electrically short, and warns.</summary>
     public const double ShortFraction = 20;
 
+    /// <summary>How much further than its clearance hole's radius a plane may be missing at a trace's end, from
+    /// the trace's own via, and still be the hole (brief-dfr32-5): 100 µm. Beyond it the trace runs over a slot.</summary>
+    public const double ViaClearanceSlackMicrons = 100;
+
     /// <summary>
     /// The analysis of a layout file on disk — read, its technology resolved as the editor resolves
     /// it, its placed cells flattened as a DRC run flattens them. What <c>circuitrf impedance</c> calls.
@@ -871,7 +891,7 @@ public static partial class TraceImpedanceAnalysis
                 var padFmt = new TraceImpedanceReport { DbuPerMicron = dbuPerMicron, DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um };
                 foreach (var chain in lw.Chains)
                 {
-                    var run = Assemble(chain, lw, answers, options, dbuPerMicron, ref id);
+                    var run = Assemble(chain, lw, answers, options, ctx.Copper, dbuPerMicron, ref id);
                     // brief-dfr26-7 R-dfr26-7-5: a round pad hanging off either end, reported as the shunt it is.
                     // brief-dfr29-2 R-dfr29-2-1: one that loads the line at MaxFrequencyHz is a finding, not a note.
                     run = WithPadShunts(run, PadShunts(run, padSearch, ctx, padFmt, options));
@@ -2165,7 +2185,7 @@ public static partial class TraceImpedanceAnalysis
     private static TraceRun Assemble(
         ChainWork chain, LayerWork lw,
         System.Collections.Concurrent.ConcurrentDictionary<string, (double C, double C0, string? Refusal)> answers,
-        TraceImpedanceOptions options, int dbuPerMicron, ref int id)
+        TraceImpedanceOptions options, Dictionary<int, TraceCopper> copper, int dbuPerMicron, ref int id)
     {
         var fmt = new TraceImpedanceReport { DbuPerMicron = dbuPerMicron, DisplayUnit = options.DisplayUnit ?? LayoutUnit.Um };
         double lo = options.TargetOhms * (1 - options.TolerancePercent / 100);
@@ -2219,10 +2239,18 @@ public static partial class TraceImpedanceAnalysis
         // runs onto are not checked — no finding starts, runs or steps there, and they are left out of
         // the trace's numbers — and each via so treated is named in a note.
         var nearVia = ViaTransitions(stations, lw.TransitionVias, options.ViaTransitionMicrons * dbuPerMicron, fmt, runNotes);
+        // What no finding reads and the numbers leave out: the via transitions, and below the clearance holes
+        // round the trace's own end vias (brief-dfr32-5). A hole excuses its own side's return findings only —
+        // the other plane missing over the same stretch is still that side's to report — and every other
+        // finding and the numbers wherever either side has one.
+        var excused = (bool[])nearVia.Clone();
+        var excusedBelow = (bool[])nearVia.Clone();
+        var excusedAbove = (bool[])nearVia.Clone();
 
-        void Runs(Func<int, bool> flaggedAnywhere, Action<int, int> emit)
+        void Runs(Func<int, bool> flaggedAnywhere, Action<int, int> emit, bool[]? mask = null)
         {
-            bool flagged(int k) => !nearVia[k] && flaggedAnywhere(k);
+            mask ??= excused;
+            bool flagged(int k) => !mask[k] && flaggedAnywhere(k);
             int i = 0;
             while (i < stations.Count)
             {
@@ -2241,6 +2269,67 @@ public static partial class TraceImpedanceAnalysis
                     (long)Math.Round(b.X + 0.5 * b.Length * b.Uy), (long)Math.Round(b.Y - 0.5 * b.Length * b.Ux));
         }
         double SpanLen(int i, int j) => stations[j].S - stations[i].S + 0.5 * (stations[i].Length + stations[j].Length);
+
+        // ── the clearance holes round the trace's own vias (brief-dfr32-5 R-dfr32-5-1) ─────────────
+        // Every trace that changes layer crosses the hole each plane has round the via it ends on. When the
+        // nearest layer on a side is missing only from the trace's end to the edge of such a hole, that stretch
+        // is an Info line, not a broken return, and is left out of every finding and of the numbers. It stays a
+        // finding when it runs further than the hole's radius plus ViaClearanceSlackMicrons (a slot, not the
+        // hole), when it does not reach the end (a gap mid-trace), or when the via there is not on this trace.
+        var clearances = new List<TraceViaClearance>();
+        void Clearances(Func<TraceCut, List<CrossSectionExtractor.Band>> sideOf,
+                        Func<TraceCut, CrossSectionExtractor.Band?> refOf, string where, bool[] mask)
+        {
+            var cuts = chain.Stations.Select(s => s.Cut).ToList();
+            // The nearest layer as Side below picks it: from the first checked cut.
+            var c0 = cuts.Where((c, i) => c is not null && !nearVia[i]).FirstOrDefault() ?? cuts.FirstOrDefault(c => c is not null);
+            if (c0 is null || sideOf(c0).FirstOrDefault() is not { } nearest) return;
+            if (!copper.TryGetValue(nearest.Index, out var plane)) return;   // a ground taken as implied has no holes
+            bool Covered(int i) => cuts[i] is { } c && ReferenceEquals(refOf(c), nearest);
+            bool Missing(int i) => cuts[i] is { } c ? !ReferenceEquals(refOf(c), nearest) : nearVia[i];
+            // Cleared under the whole trace is the note Side writes, not this.
+            if (!Enumerable.Range(0, cuts.Count).Any(i => !nearVia[i] && Covered(i))) return;
+
+            foreach (bool atStart in (bool[])[true, false])
+            {
+                int step = atStart ? 1 : -1, k = atStart ? 0 : cuts.Count - 1;
+                while (k >= 0 && k < cuts.Count && Missing(k)) k += step;
+                int inner = k - step;                                  // the last station missing the layer
+                if (k < 0 || k >= cuts.Count || !Covered(k)) continue;  // no hole edge, or nothing missing at all
+                int i = Math.Min(inner, atStart ? 0 : cuts.Count - 1), j = Math.Max(inner, atStart ? 0 : cuts.Count - 1);
+                if (inner < 0 || inner >= cuts.Count || Enumerable.Range(i, j - i + 1).All(t => nearVia[t])) continue;
+
+                // The via the trace ends on: one it runs onto, within its land plus the trace's width of the end.
+                var endSt = stations[atStart ? 0 : stations.Count - 1];
+                double endX = atStart ? ends.X0 : ends.X1, endY = atStart ? ends.Y0 : ends.Y1;
+                double Reach(double vx, double vy) => Math.Min(Math.Sqrt(Sq(vx - endX) + Sq(vy - endY)),
+                                                               Math.Sqrt(Sq(vx - endSt.X) + Sq(vy - endSt.Y)));
+                var via = lw.TransitionVias.Where(v => Reach(v.X, v.Y) <= v.R + endSt.Width)
+                                           .OrderBy(v => Reach(v.X, v.Y)).Cast<(double X, double Y, double R)?>().FirstOrDefault();
+                if (via is not { } vv || plane.Contains(vv.X, vv.Y)) continue;   // no via of its own, or the plane is not cleared there
+
+                // The hole's radius: the via centre to the nearest edge of the plane round it.
+                var far = stations[atStart ? j : i];
+                double search = Math.Sqrt(Sq(far.X - vv.X) + Sq(far.Y - vv.Y)) + 1000.0 * dbuPerMicron;
+                int e = plane.NearestEdge(vv.X, vv.Y, search);
+                if (e < 0) continue;
+                double hole = SegmentDistance(vv.X, vv.Y, plane.Ax[e], plane.Ay[e], plane.Bx[e], plane.By[e]);
+                double len = SpanLen(i, j);
+                if (len > hole + ViaClearanceSlackMicrons * dbuPerMicron) continue;   // a slot, not the hole
+
+                for (int t = i; t <= j; t++) excused[t] = mask[t] = true;
+                var (x0, y0, x1, y1) = Span(i, j);
+                long vx = (long)Math.Round(vv.X), vy = (long)Math.Round(vv.Y);
+                string text = $"Info: via clearance at the {(atStart ? "start" : "end")}, {fmt.Len(len)} — '{nearest.Layer.Name}' " +
+                              $"is cleared {where} the trace from the via at {fmt.Pt(vx, vy)} to the edge of the hole round it " +
+                              $"({fmt.Len(hole)} radius). The hole is the via's design, not a break in the return path, so this " +
+                              "stretch is not a finding and is left out of the trace's numbers.";
+                clearances.Add(new TraceViaClearance(x0, y0, x1, y1, len, nearest.Layer.Name, where, vx, vy, hole, text));
+                runNotes.Add(text);
+            }
+        }
+        Clearances(c => c.Below, c => c.LowerRef, "below", excusedBelow);
+        Clearances(c => c.Above, c => c.UpperRef, "above", excusedAbove);
 
         // ── severities ─────────────────────────────────────────────────────────────────────────
         // Every finding kind is a Warning or a Fail, and this is the one place that says which:
@@ -2292,7 +2381,7 @@ public static partial class TraceImpedanceAnalysis
         // The nearest layer on each side, walked along the whole trace.
         void Side(Func<TraceCut, List<CrossSectionExtractor.Band>> sideOf,
                   Func<TraceCut, CrossSectionExtractor.Band?> refOf,
-                  Func<TraceCut, List<(CrossSectionExtractor.Band Band, double Cov)>> skippedOf, string where)
+                  Func<TraceCut, List<(CrossSectionExtractor.Band Band, double Cov)>> skippedOf, string where, bool[] mask)
         {
             var cuts = chain.Stations.Select(s => s.Cut).ToList();
             // The nearest layer as the first CHECKED cut sees it: at a via transition it is often another
@@ -2308,8 +2397,8 @@ public static partial class TraceImpedanceAnalysis
             var status = Enumerable.Range(0, cuts.Count).Select(Status).ToArray();
             // Over the stations checked: copper over a via transition — another layer's trace running into
             // the same via — is not "present elsewhere along it" for the rest of the trace.
-            bool anyCovered = status.Where((_, i) => !nearVia[i]).Any(s => s == 2);
-            bool anyPartial = status.Where((_, i) => !nearVia[i]).Any(s => s == 1);
+            bool anyCovered = status.Where((_, i) => !mask[i]).Any(s => s == 2);
+            bool anyPartial = status.Where((_, i) => !mask[i]).Any(s => s == 1);
 
             if (!anyCovered && !anyPartial)
             {
@@ -2329,7 +2418,7 @@ public static partial class TraceImpedanceAnalysis
                         $"{fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}, but present elsewhere along it — the return path " +
                         $"is broken there ({(refThere is null ? $"no reference {where} there" : $"the reference there is '{refThere}'")}).")
                         { SpanLength = SpanLen(i, j) });
-                });
+                }, mask);
             }
             Runs(i => status[i] == 1, (i, j) =>
             {
@@ -2339,13 +2428,13 @@ public static partial class TraceImpedanceAnalysis
                     $"'{nearest.Layer.Name}' covers only {cov:P0} of the width {where} the trace for " +
                     $"{fmt.Len(SpanLen(i, j))}, from {fmt.Pt(x0, y0)} to {fmt.Pt(x1, y1)}: copper edge under the trace.")
                     { SpanLength = SpanLen(i, j), Coverage = cov });
-            });
+            }, mask);
 
             // The reference stepping between two stations neither of which the nearest layer covers.
             for (int i = 1; i < cuts.Count; i++)
             {
                 if (cuts[i - 1] is not { } a || cuts[i] is not { } b) continue;
-                if (status[i - 1] == 2 || status[i] == 2 || nearVia[i - 1] || nearVia[i]) continue;
+                if (status[i - 1] == 2 || status[i] == 2 || mask[i - 1] || mask[i]) continue;
                 string? ra = refOf(a)?.Layer.Name, rb = refOf(b)?.Layer.Name;
                 if (ra == rb || ra is null || rb is null) continue;
                 var s = stations[i];
@@ -2356,8 +2445,8 @@ public static partial class TraceImpedanceAnalysis
         if (chain.Stations.Select(st => st.Cut?.ImpliedBelow).FirstOrDefault(b => b is not null) is { } implied)
             runNotes.Add($"Nothing is drawn on '{implied.Layer.Name}', which the technology marks as the ground " +
                          "reference, so it was taken as a solid plane under the trace.");
-        Side(c => c.Below, c => c.LowerRef, c => c.SkippedBelow, "below");
-        Side(c => c.Above, c => c.UpperRef, c => c.SkippedAbove, "above");
+        Side(c => c.Below, c => c.LowerRef, c => c.SkippedBelow, "below", excusedBelow);
+        Side(c => c.Above, c => c.UpperRef, c => c.SkippedAbove, "above", excusedAbove);
 
         // No reference at all, and cuts that could not be solved.
         Runs(i => stations[i].Refusal == "no return conductor", (i, j) =>
@@ -2378,7 +2467,7 @@ public static partial class TraceImpedanceAnalysis
 
         // ── the numbers ─────────────────────────────────────────────────────────────────────────
         // Over the stations that were checked; a trace that is all via transition keeps its own.
-        var counted = stations.Where((_, i) => !nearVia[i]).ToList();
+        var counted = stations.Where((_, i) => !excused[i]).ToList();
         if (counted.Count == 0) counted = stations;
         var solved = counted.Where(s => s.Z0 is not null).ToList();
         double solvedLen = solved.Sum(s => s.Length);
@@ -2417,6 +2506,7 @@ public static partial class TraceImpedanceAnalysis
             References = references,
             Issues = issues,
             Notes = runNotes,
+            ViaClearances = clearances,
             Verdict = TraceRun.VerdictOf(solved.Count > 0, issues),
         };
     }

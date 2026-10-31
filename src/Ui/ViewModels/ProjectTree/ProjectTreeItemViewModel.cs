@@ -610,6 +610,14 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
     public IRelayCommand CreateTouchstoneFromPlotCommand { get; }
     /// <summary>Opens this Touchstone file in the S-Parameter Viewer.</summary>
     public IRelayCommand OpenInSParameterViewerCommand { get; }
+    /// <summary>brief-dfr32-3 R-dfr32-3-2 — moves the saved field files of this 3D view's or EM setup's runs to the Trash.</summary>
+    public IRelayCommand DeleteSavedFieldsCommand { get; }
+
+    /// <summary>brief-dfr32-3 — a 3D view or an EM setup whose runs hold saved fields: read when the row's menu opens
+    /// (<see cref="RefreshDynamicMenuState"/>), never while the tree is built.</summary>
+    public bool HasSavedFields => !IsDirectory && (Kind == NodeKind.EmSetupFile ||
+                                  AbsolutePath.EndsWith(CircuitRF.Design.ThreeD.C3dPersistence.Extension, StringComparison.OrdinalIgnoreCase))
+                                  && _actions?.HasSavedFields(this) == true;
     /// <summary>Builds a cell from a SPICE <c>.model</c> card in this file (Known File nodes only).</summary>
     public IAsyncRelayCommand CreateCellFromModelCardCommand { get; }
 
@@ -941,6 +949,8 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
             () => _actions?.OpenInSParameterViewer(this),
             () => _actions is not null && IsTouchstoneFile);
 
+        DeleteSavedFieldsCommand = new RelayCommand(() => _actions?.DeleteSavedFields(this), () => _actions is not null);
+
         CreateCellFromModelCardCommand = new AsyncRelayCommand(
             () => _actions?.CreateCellFromModelCardAsync(this) ?? Task.CompletedTask,
             () => _actions is not null && IsModelCardFile);
@@ -1022,6 +1032,7 @@ public sealed class ProjectTreeNodeViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSaveable));
         OnPropertyChanged(nameof(SaveHeader));
         OnPropertyChanged(nameof(IsWorkspaceDefaultTech));
+        OnPropertyChanged(nameof(HasSavedFields));
     }
 
     // ── Filter ─────────────────────────────────────────────────────────────────

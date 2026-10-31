@@ -444,7 +444,8 @@ public sealed partial class C3dEditorViewModel
     {
         var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         string name = Enumerable.Range(1, 10_000).Select(n => $"S{n}").First(n => !names.Contains(n));
-        var setup = new EmSetup { Name = name, Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, RobustMeshing = true };
+        var setup = new EmSetup { Name = name, Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default, RobustMeshing = true,
+                                  Frequency = EmSetup.NewSetupFrequency() };
         ChangeRecords($"Add setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
         if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
@@ -966,14 +967,20 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The padding a box face has now, in the display unit — the Padding… field's prefill.</summary>
     public string AirBoxPaddingText(string face)
     {
-        if (ShownAirBox is not { } box || Elaboration?.ModelledExtent() is not { } x) return "";   // brief-em3d-93 — padded round what is modelled
-        double m = face switch
+        if (AirBoxPaddingM(face) is not { } m) return "";
+        long dbu = (long)Math.Round(m / C3dLowering.Metres(1, Document.DbuPerMicron));
+        return C3dDimension.Spell(dbu, Document.DisplayUnit, Document.DbuPerMicron);
+    }
+
+    /// <summary>brief-dfr32-1 R-dfr32-1-4 — a box face's distance from the modelled content now, metres; null with no box.</summary>
+    public double? AirBoxPaddingM(string face)
+    {
+        if (ShownAirBox is not { } box || Elaboration?.ModelledExtent() is not { } x) return null;   // brief-em3d-93 — padded round what is modelled
+        return face switch
         {
             "xmin" => x.X0 - box.Min.X, "xmax" => box.Max.X - x.X1, "ymin" => x.Y0 - box.Min.Y,
             "ymax" => box.Max.Y - x.Y1, "zmin" => x.Z0 - box.Min.Z, _ => box.Max.Z - x.Z1,
         };
-        long dbu = (long)Math.Round(m / C3dLowering.Metres(1, Document.DbuPerMicron));
-        return C3dDimension.Spell(dbu, Document.DisplayUnit, Document.DbuPerMicron);
     }
 
     /// <summary>The padding a face has now, whether stated or the default, as a percentage of the modelled extent along its

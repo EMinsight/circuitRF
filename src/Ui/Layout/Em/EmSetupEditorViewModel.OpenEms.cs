@@ -87,6 +87,7 @@ public sealed partial class EmSetupEditorViewModel
         OpenEmsThirdsRule             = o?.ThirdsRule ?? CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default.ThirdsRule;
         OpenEmsCellConstantMaterial   = o?.CellConstantMaterial ?? false;
         OpenEmsSaveFieldsText         = SaveFieldsText(o?.SaveFieldsGHz);         // brief-em3d-83
+        OpenEmsSaveFields             = SavesAny(o?.SaveFieldsGHz);
         OpenEmsGridChoice             = OpenEmsGridChoices.First(c => c.Value == (o?.Grid ?? OpenEmsGridKind.Cartesian));
         OpenEmsAxis                   = o?.Axis ?? OpenEmsGridAxis.Z;
         OpenEmsAxisOriginText         = o?.AxisOriginUm is { } origin ? string.Join(", ", origin.Select(v => G(v))) : "";
@@ -162,7 +163,11 @@ public sealed partial class EmSetupEditorViewModel
                       v => section.MaxTimeSteps = v);
                 break;
             case "OpenEms.SaveFieldsGHz":               // brief-em3d-83 R-em3d83-6 — the frequencies the E (and H) dumps are made at
-                if (TryParseSaveFields(OpenEmsSaveFieldsText, out var saves, out error)) section.SaveFieldsGHz = saves;
+                if (TryParseSaveFields(OpenEmsSaveFieldsText, out var saves, out error))
+                {
+                    section.SaveFieldsGHz = saves;
+                    ShowSaving(() => OpenEmsSaveFields = SavesAny(saves));
+                }
                 break;
             case "OpenEms.Grid":                        // brief-em3d-120 — Cartesian is written as no field at all
                 section.Grid = OpenEmsGridChoice.Value == OpenEmsGridKind.Cartesian ? null : OpenEmsGridChoice.Value;

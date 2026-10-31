@@ -823,8 +823,13 @@
                                    LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                    ToolTip.Tip="The error tolerance of Palace's adaptive frequency sweep, which solves a few frequencies and interpolates the rest. 0 solves every frequency."/>
                         <!-- brief-em3d-83 R-em3d83-6 — the frequencies a run saves fields at, for the 3D view's field plots. -->
-                        <TextBlock Grid.Row="7" Grid.Column="0" Classes="colhdr" Text="Save fields at (GHz)" VerticalAlignment="Center"/>
+                        <CheckBox  Grid.Row="7" Grid.Column="0" VerticalAlignment="Center"
+                                   IsChecked="{Binding ViewModel.PalaceSaveFields}"
+                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.SaveFieldsCheckTip}">
+                            <TextBlock Classes="colhdr" Text="Save fields at (GHz)"/>
+                        </CheckBox>
                         <TextBox   Grid.Row="7" Grid.Column="1" Classes="num" Tag="Palace.SaveFieldsGHz"
+                                   IsEnabled="{Binding ViewModel.PalaceSaveFields}"
                                    Text="{Binding ViewModel.PalaceSaveFieldsText}"
                                    PlaceholderText="{Binding ViewModel.SaveFieldsPlaceholder}"
                                    LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
@@ -891,8 +896,13 @@
                                       IsChecked="{Binding ViewModel.OpenEmsCellConstantMaterial}"
                                       ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.OpenEmsCellConstantTip}"/>
                         </StackPanel>
-                        <TextBlock Grid.Row="7" Grid.Column="0" Classes="colhdr" Text="Save fields at (GHz)" VerticalAlignment="Center"/>
+                        <CheckBox  Grid.Row="7" Grid.Column="0" VerticalAlignment="Center"
+                                   IsChecked="{Binding ViewModel.OpenEmsSaveFields}"
+                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.SaveFieldsCheckTip}">
+                            <TextBlock Classes="colhdr" Text="Save fields at (GHz)"/>
+                        </CheckBox>
                         <TextBox   Grid.Row="7" Grid.Column="1" Classes="num" Tag="OpenEms.SaveFieldsGHz"
+                                   IsEnabled="{Binding ViewModel.OpenEmsSaveFields}"
                                    Text="{Binding ViewModel.OpenEmsSaveFieldsText}"
                                    PlaceholderText="{Binding ViewModel.SaveFieldsPlaceholder}"
                                    LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
@@ -1059,8 +1069,13 @@
                                        IsEnabled="{Binding ViewModel.EmergeAdaptiveSweep}"
                                        ToolTip.Tip="The most frequencies the adaptive sweep solves. A sweep that reaches it above its tolerance is reported as not converged."/>
                             <!-- brief-emi-7 — the frequencies a run saves fields at, Palace's box and rules -->
-                            <TextBlock Grid.Row="7" Grid.Column="0" Classes="colhdr" Text="Save fields at (GHz)" VerticalAlignment="Center"/>
+                            <CheckBox  Grid.Row="7" Grid.Column="0" VerticalAlignment="Center"
+                                       IsChecked="{Binding ViewModel.EmergeSaveFields}"
+                                       ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.SaveFieldsCheckTip}">
+                            <TextBlock Classes="colhdr" Text="Save fields at (GHz)"/>
+                        </CheckBox>
                             <TextBox   Grid.Row="7" Grid.Column="1" Classes="num" Tag="Emerge.SaveFieldsGHz"
+                                       IsEnabled="{Binding ViewModel.EmergeSaveFields}"
                                        Text="{Binding ViewModel.EmergeSaveFieldsText}"
                                        PlaceholderText="{Binding ViewModel.SaveFieldsPlaceholder}"
                                        LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"

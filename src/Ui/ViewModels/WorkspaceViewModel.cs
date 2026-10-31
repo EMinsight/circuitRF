@@ -16742,6 +16742,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         _lastActivatedDocument = activeDockable;
 
+        // Designer round 32 — back on a 3D design after saving its layout: the scene follows even if the watcher missed the save.
+        if (activeDockable is ThreeD.C3dEditorDocument c3dDoc) c3dDoc.ViewModel.RecheckInputs();
+
         // The activated editor view should grab keyboard focus so shortcuts (Select All, nudges, …)
         // work without a preliminary click on the canvas. The view focuses its canvas on the event, or
         // — if it binds after this fires (first open) — by consuming the pending flag on DataContext change.

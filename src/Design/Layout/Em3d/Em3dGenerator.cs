@@ -342,6 +342,7 @@ public static class Em3dGenerator
                 GroundObjects = groundObjects,
                 EigenmodeCount = setup.Eigenmode?.Count ?? EmEigenmode3D.DefaultCount,
                 EigenmodeTargetHz = setup.Eigenmode?.TargetGHz is { } target ? target * 1e9 : fMin,
+                PaddedContent = (new Point3(cx0, cy0, zLow), new Point3(cx1, cy1, zHigh)),
             };
             return new Em3dGenerationResult(problem, null, _notes)
             {
@@ -397,8 +398,10 @@ public static class Em3dGenerator
             _notes.AddRange(extracted.Notes);
             if (!extracted.Ok) return extracted.Refusal;
 
-            foreach (var p in extracted.Ports)
+            for (int portIndex = 0; portIndex < extracted.Ports.Count; portIndex++)
             {
+                var p = extracted.Ports[portIndex];
+                var portLabel = portIndex < extracted.SourceLabels.Count ? extracted.SourceLabels[portIndex] : null;
                 if (p.Kind == PlanarPortKind.Internal && !p.IsConductorReferenced)
                 {
                     if (setup.PortKind3D(p.Number) == Em3dPortKind.Wave)
@@ -423,6 +426,7 @@ public static class Em3dGenerator
                     return $"Port {p.Number} at ({Fmt(p.Location.X * 1e6)}, {Fmt(p.Location.Y * 1e6)}) µm is on " +
                            $"'{band.Layer.Name}' but no conductor end could be found under it.";
                 var (edgeAt, lo, hi) = edge.Value;
+                double faceAt = edgeAt, edgeLo = lo, edgeHi = hi;
 
                 // brief-dfr28-4 R-dfr28-4-1 — the return is found by walking the artwork from the line's end, down
                 // and up, with the pad-to-plane port's walk (ReturnWalk): the nearer side's first plane with metal
@@ -432,44 +436,65 @@ public static class Em3dGenerator
                 bool wave = setup.PortKind3D(p.Number) == Em3dPortKind.Wave;
                 bool sheetAlongX = p.Side is PlanarPortSide.MinY or PlanarPortSide.MaxY;
                 double inward = p.Side is PlanarPortSide.MinX or PlanarPortSide.MinY ? 1 : -1;
-                double mid = (lo + hi) / 2;
-                double probe = edgeAt + inward * 1e-6 * (hi - lo);
-                double tolerance = ReturnGapToleranceOfWidth * (hi - lo);
-                var moves = new Dictionary<int, (double At, double Gap)>();
-                ReturnCover EndCover(PlanarExtractor.StackBand b)
+                // brief-dfr32-2 R-dfr32-2-2 — the sheet's width along the edge (EdgePortSheet, the rule the layout editor
+                // draws the port's bar from). The first pass walks the return over the whole edge to learn H; a bounded or
+                // stated width walks it again over the sheet actually built, so the return is judged where the sheet is.
+                double portAcross = sheetAlongX ? p.Location.X : p.Location.Y;
+                double? statedWidth = !wave && portLabel?.PortWidth is > 0 and var statedDbu
+                    ? statedDbu / (source.DbuPerMicron * 1e6) : null;
+                var sheetSpan = new EdgePortSheetSpan(lo, hi, EdgePortSheetRule.Edge);
+                ReturnSide? landed;
+                Dictionary<int, (double At, double Gap)> moves;
+                double tolerance;
+                for (int pass = 0; ; pass++)
                 {
-                    var on = pieces.TryGetValue(b.Index, out var ps) ? ps : [];
-                    bool touches = Across(on, probe, sheetAlongX, lo, hi).Touches;
-                    // Tested just inside the end and just past it, as before: a plane cut on a cropped board's
-                    // edge ends exactly where the line does, and is found on the inside.
-                    if (PieceContaining(on, p.Side, edgeAt, mid) is { } rp) return new(rp, touches, "metal");
-                    // A plane drawn by hand to the line's end often stops a hair short of it — a vertex a few µm
-                    // off makes its edge lean — and nothing on screen shows the difference. Within a tenth of the
-                    // line's width the sheet moves in to where the plane begins; beyond it the refusal says how
-                    // far short the plane is, which is what the designer has to fix.
-                    double? gap = on.Count == 0 ? null : ReturnGap(on, p.Side, edgeAt, lo, hi);
-                    double moved = edgeAt + inward * (gap ?? 0);
-                    if (gap is { } g && g <= tolerance && !wave &&
-                        PieceContaining(on, p.Side, moved, mid) is { } near &&
-                        MetalAt(piece.Poly, p.Side, moved + inward * 1e-3 * (hi - lo), mid))
+                    double mid = (lo + hi) / 2;
+                    double probe = edgeAt + inward * 1e-6 * (hi - lo);
+                    tolerance = ReturnGapToleranceOfWidth * (hi - lo);
+                    moves = new Dictionary<int, (double At, double Gap)>();
+                    ReturnCover EndCover(PlanarExtractor.StackBand b)
                     {
-                        moves[b.Index] = (moved, g);
-                        return new(near, touches, "metal");
+                        var on = pieces.TryGetValue(b.Index, out var ps) ? ps : [];
+                        bool touches = Across(on, probe, sheetAlongX, lo, hi).Touches;
+                        // Tested just inside the end and just past it, as before: a plane cut on a cropped board's
+                        // edge ends exactly where the line does, and is found on the inside.
+                        if (PieceContaining(on, p.Side, edgeAt, mid) is { } rp) return new(rp, touches, "metal");
+                        // A plane drawn by hand to the line's end often stops a hair short of it — a vertex a few µm
+                        // off makes its edge lean — and nothing on screen shows the difference. Within a tenth of the
+                        // line's width the sheet moves in to where the plane begins; beyond it the refusal says how
+                        // far short the plane is, which is what the designer has to fix.
+                        double? gap = on.Count == 0 ? null : ReturnGap(on, p.Side, edgeAt, lo, hi);
+                        double moved = edgeAt + inward * (gap ?? 0);
+                        if (gap is { } g && g <= tolerance && !wave &&
+                            PieceContaining(on, p.Side, moved, mid) is { } near &&
+                            MetalAt(piece.Poly, p.Side, moved + inward * 1e-3 * (hi - lo), mid))
+                        {
+                            moves[b.Index] = (moved, g);
+                            return new(near, touches, "metal");
+                        }
+                        return new(null, touches,
+                            gap is { } wide
+                                ? $"its metal stops {Length(wide)} short of the port's end of the line" +
+                                  (wave ? ", and a wave port's return has to reach the line's end on the air box's face"
+                                        : $", beyond a tenth of the line's width, {Length(tolerance)}")
+                                : touches ? "metal across part of the line's end" : "no metal under the line's end",
+                            Short: gap is not null);
                     }
-                    return new(null, touches,
-                        gap is { } wide
-                            ? $"its metal stops {Length(wide)} short of the port's end of the line" +
-                              (wave ? ", and a wave port's return has to reach the line's end on the air box's face"
-                                    : $", beyond a tenth of the line's width, {Length(tolerance)}")
-                            : touches ? "metal across part of the line's end" : "no metal under the line's end",
-                        Short: gap is not null);
-                }
-                var walks = new[] { false, true }
-                    .Select(up => ReturnWalk(bands, band, up, stated?.Layer, floorPlane, EndCover)).ToList();
-                var landed = walks.Where(w => w.Band is not null)
+                    var walks = new[] { false, true }
+                        .Select(up => ReturnWalk(bands, band, up, stated?.Layer, floorPlane, EndCover)).ToList();
+                    landed = walks.Where(w => w.Band is not null)
                                   .MinBy(w => w.Above ? w.Band!.BottomM - band.TopM : band.BottomM - w.Band!.TopM);
-                if (landed is null)
-                    return EndReturnRefusal(p.Number, band, stated, walks);
+                    if (landed is null)
+                        return EndReturnRefusal(p.Number, band, stated, walks);
+                    if (pass > 0 || wave) break;
+                    double sigZ = piece.IsSheet ? piece.SheetZ : landed.Above ? piece.ZTop : piece.ZBottom;
+                    double retZ = landed.Piece is not { } rp0 ? floorZ
+                                : rp0.IsSheet ? rp0.SheetZ : landed.Above ? rp0.ZBottom : rp0.ZTop;
+                    var span = EdgePortSheet.Span(lo, hi, portAcross, Math.Abs(retZ - sigZ), statedWidth);
+                    if (span.Rule == EdgePortSheetRule.Edge) break;
+                    sheetSpan = span;
+                    (lo, hi) = (span.Lo, span.Hi);
+                }
 
                 var retBand = landed.Band!;
                 bool above = landed.Above;
@@ -499,6 +524,34 @@ public static class Em3dGenerator
                 if (!(zHi > zLo))
                     return $"Port {p.Number}'s return plane '{retBand.Layer.Name}' is not separated from " +
                            $"'{band.Layer.Name}' by any height, so the port's sheet would be empty.";
+
+                // brief-dfr32-2 R-dfr32-2-2 — say why the sheet is narrower than its edge, and how to change it.
+                if (sheetSpan.Rule == EdgePortSheetRule.Bounded)
+                    _notes.Add($"Port {p.Number} is on an edge {Length(edgeHi - edgeLo)} long, more than " +
+                               $"{Fmt(EdgePortSheet.LongEdgeOverHeight)} × its height to the return ({Length(zHi - zLo)}), so its " +
+                               $"sheet is {Length(hi - lo)} wide, {Fmt(EdgePortSheet.BoundedWidthOverHeight)} × that height " +
+                               $"centred on the port{(sheetSpan.Clipped ? " and clipped to the edge" : "")}. State the port's " +
+                               "Width (its Properties) for another width.");
+                else if (sheetSpan.Rule == EdgePortSheetRule.Stated)
+                    _notes.Add($"Port {p.Number}'s sheet is {Length(hi - lo)} wide, the Width the port states" +
+                               (sheetSpan.Clipped ? $", clipped to its edge ({Length(edgeHi - edgeLo)})." : "."));
+
+                // brief-dfr32-2 R-dfr32-2-3 — a sheet on a curved edge meets a straight face: the metal outside the sheet's
+                // plane, across its width, is cut away. Not for a sheet moved in to where its return begins (the line runs
+                // on past it by design) nor a wave port (its face is the air box's).
+                if (!wave && edgeAt == faceAt &&
+                    EdgePortSheet.FlushTo(piece.Poly, p.Side, edgeAt, lo, hi, out double cut, out double faceLo,
+                                          out double faceHi) is { } flush)
+                {
+                    var onBand = pieces[band.Index];
+                    int k = onBand.IndexOf(piece);
+                    piece = piece with { Poly = flush };
+                    if (k >= 0) onBand[k] = piece;
+                    (lo, hi) = (faceLo, faceHi);   // the sheet ends where the cut face does, exactly
+                    _notes.Add($"Port {p.Number} is on a curved edge of '{piece.Name}': the metal was cut flat across the " +
+                               $"sheet's width ({Length(hi - lo)}), up to {Length(cut)} of it beyond the sheet's plane, so " +
+                               "the sheet meets a straight face.");
+                }
 
                 bool alongX = p.Side is PlanarPortSide.MinX or PlanarPortSide.MaxX;
                 var min = alongX ? new Point3(edgeAt, lo, zLo) : new Point3(lo, edgeAt, zLo);
@@ -1381,6 +1434,7 @@ public static class Em3dGenerator
     /// sheet. The .cem generator's own air solid is built TO the box, so it is not content; a drawn air object in a .c3d is.</summary>
     public static (Point3 Lo, Point3 Hi) ContentBounds(Em3dProblem p)
     {
+        if (p.PaddedContent is { } padded) return padded;      // brief-dfr32-1 — a .cem's slabs reach the box
         var b = p.Solids.Where(s => s.Name != AirSolidName).Select(s => Em3dProblem.Bounds(s.Primitive))
                  .Concat(p.Sheets.Select(s =>
                  {

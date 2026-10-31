@@ -148,6 +148,8 @@ internal sealed class FieldRead((string? Palace, string? OpenEms) dirs)
     public IReadOnlyList<FieldGroup> Groups = [];
     public ThermalResultTable? Table;
     public bool Ran;
+    /// <summary>brief-dfr32-3 — the run's saved fields were deleted since it ran (FieldDiscovery.FieldsDeleted).</summary>
+    public bool FieldsDeleted;
     public string? Why;
     /// <summary>The Palace run directory read (or a thermal run's own).</summary>
     public string? Dir;

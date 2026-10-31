@@ -218,6 +218,16 @@ preferred, and a port can state another in the port table's <strong>Return</stro
 in the line's own field at the air box's face instead, and has no sheet parasitic. Both solvers build
 one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
 terminals. <a href="em-setup.html#wave-ports">Wave ports</a>.</p>
+<p><a id="port-width"></a><strong>How wide a lumped port's sheet is.</strong> On a line's end the sheet is as wide as the line.
+On a longer edge, such as the edge of a ground pour where a part's pad meets it, a sheet as wide as the edge is
+not what anyone means, so when the edge is longer than 4 × H (H, the dielectric height from the port's conductor
+to its return) the sheet is 2 × H wide, centred on the port, and cut short where the edge ends. The run's notes
+say so. To set another width, type it in the port's <strong>Width</strong> in the layout's Properties panel; a blank Width
+is the rule above. The layout draws each port's bar at the width its sheet will have, and a 3D view made from
+the layout gets the same sheet. A planar run's port still spans the whole conductor end.</p>
+<p><strong>A port on a curved edge.</strong> A port on a round pad's arc has a flat sheet against a curved outline, which leaves
+slivers between the two that the mesher has to resolve. The run cuts the pad flat across the sheet's width, at
+the sheet, and its notes say how much metal that removed.</p>
 <p>An <strong>internal</strong> port, placed inside a pad rather than at a line's end, is a <strong>pad-to-plane port</strong>: a
 vertical lumped sheet from the pad to the nearest ground-reference plane, above or below, that has
 metal across the whole sheet. A plane with an opening under the pad is passed through, so a cut-out
@@ -249,7 +259,9 @@ that is less (a quarter of the longest wavelength when a radiation pattern is as
 <code>Pec</code> faces is a shielded enclosure, and it is how the example models a package lid. The Inspector and
 <code>circuitrf explain</code> both give each face's distance and where it came from — <em>default: 18.74 mm, λ/8 at
 2 GHz, the sweep's lowest frequency</em>, or <em>default: 4.014 mm, the structure's largest extent, less than
-λ/8 at 400 MHz</em>. On a guided structure (a launch, a transition) a stated padding of a few substrate
+λ/8 at 400 MHz</em>. In a 3D view's Properties panel, each face's row gives its padding as a length and as a
+share of the content's extent along that axis (<em>54 µm, 20 %</em>). A percentage of a thin board's height is a
+very short distance. On a guided structure (a launch, a transition) a stated padding of a few substrate
 heights is usually cheaper still.</p>
 </li>
 <li><p><strong>Robust meshing</strong> (<code>RobustMeshing</code>): removes outline points that sit within a fraction of a micrometre of
@@ -294,6 +306,12 @@ run cannot stop early and keep a partial result, so the button reads <strong>Can
 <p><strong>When it finishes</strong>, one line states what the run cost: the wall time, the solver's own peak memory,
 the tetrahedra before and after refinement, the unknowns, and the preset. The same line is recorded in
 the result's header.</p>
+<p><strong>A driven Palace run also states the power each port loses</strong>: driving that port with the others matched,
+1 − Σᵢ|Sᵢⱼ|², at the sweep's lowest and highest frequency. This is power that comes out of no port: it went into
+the dielectric and the metal, or out through an absorbing face. A lossless circuit model cannot show it, and |S21|
+hides it behind mismatch. A port that loses more than three times the median port, and more than 1 %, is named.
+If the loss is nearly the same at both ends of the band, it is unlikely to be dielectric loss or radiation, which
+both grow with frequency. Look at what that port's field reaches.</p>
 <p><strong>Where the answer lands.</strong> A result is named after its solver, so a 3D run never replaces a planar one or
 the other solver's:</p>
 <table>

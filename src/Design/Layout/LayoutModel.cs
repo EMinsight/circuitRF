@@ -668,6 +668,20 @@ public sealed class LabelShape : LayoutShape
     public LayoutPortReturn? PortReturn { get; set; }
 
     /// <summary>
+    /// <b>brief-dfr32-2 R-dfr32-2-2 — how wide an edge port's 3D sheet is, when the port states it.</b> DBU, along the
+    /// conductor edge the port sits on, centred on the port's own point and clipped to that edge. Meaningful only with
+    /// <see cref="IsPort"/>.
+    ///
+    /// <para><b>null means the rule</b> (<c>EdgePortSheet.Span</c>): the whole edge, unless the edge is longer than
+    /// 4 × the dielectric height to the port's return, when the sheet is 2 × that height wide. That is what every
+    /// <c>.clay</c> written before this field carries, and a port on a line end resolves exactly as it always did.</para>
+    ///
+    /// <para>Additive: no <c>.clay</c> <c>FormatVersion</c> bump, omitted from the file when null.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? PortWidth { get; set; }
+
+    /// <summary>
     /// <b>brief-dfr26-7 R-dfr26-7-3 — a port a COMPONENT declares, which an EM setup collects from inside the
     /// placed instance.</b> Meaningful only with <see cref="IsPort"/>. Absent (false) means what every port label
     /// meant before: a port of the layout it is drawn in, and — inside a placed cell — that cell's terminal, which

@@ -376,23 +376,34 @@ public static class PalaceConfigWriter
         }
         w.WriteEndObject();
         // R-em3d29-1a/1b — the fields the 3D view shows: the sweep's centre (D7) unless the setup says.
-        // AS A SAMPLE OF THEIR OWN, not in Driven's "Save" list: the pinned Palace REFUSES a Save entry
+        // AS A SAMPLE OF THEIR OWN as well as in Driven's "Save" list: the pinned Palace REFUSES a Save entry
         // that is not an explicitly sampled frequency (MFEM_VERIFY "must be an explicitly sampled
         // frequency!", measured on 0.18.1), and the default — the sweep's centre — is not a sample of any
-        // sweep with an even number of points. A Point sample saving every step is one Palace evaluates
+        // sweep with an even number of points. A Point sample is one Palace evaluates
         // like any other (a duplicate of a sweep point is merged, measured), and PalaceRunService drops
         // the rows it adds to port-S.csv, so the .sNp holds the sweep's frequencies only.
-        if (SaveFrequenciesGHz(problem.Frequency, settings) is { Count: > 0 } save)
+        // Designer round 32: the Point sample carries no SaveStep; Driven's "Save" list names the frequencies
+        // instead. Palace merges samples within 1e-9 GHz of each other and keeps the lower one, then looked a
+        // SaveStep frequency up EXACTLY — so a 0.4-5 GHz, 101-point sweep, whose centre 2.7 is its own sample
+        // 2.6999999999999997, aborted ("Save frequency 2.7 not found in sample frequencies"). A "Save" entry is
+        // snapped to the merged sample within that tolerance (configfile.cpp, FindNearestValue), so it cannot miss.
+        var save = SaveFrequenciesGHz(problem.Frequency, settings);
+        if (save.Count > 0)
         {
             w.WriteStartObject();
             w.WriteString("Type", "Point");
             w.WriteStartArray("Freq");
             foreach (double g in save) w.WriteNumberValue(g);
             w.WriteEndArray();
-            w.WriteNumber("SaveStep", 1);
             w.WriteEndObject();
         }
         w.WriteEndArray();
+        if (save.Count > 0)
+        {
+            w.WriteStartArray("Save");
+            foreach (double g in save) w.WriteNumberValue(g);
+            w.WriteEndArray();
+        }
         w.WriteNumber("AdaptiveTol", settings.SweepAdaptiveTol);
         w.WriteEndObject();
         WriteLinear(w, settings);

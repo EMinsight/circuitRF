@@ -3,6 +3,7 @@ using System.Linq;
 using SkiaSharp;
 using CircuitRF.Design.Layout.Text;
 using CircuitRF.Engine.Mom;
+using CircuitRF.Design.Layout.Em3d;
 
 namespace CircuitRF.Render;
 
@@ -1297,7 +1298,8 @@ public static partial class LayoutRenderer
                 Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
                 Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
                 PortDirection = label.PortDirection, PortLayer = label.PortLayer,
-                PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind, Style = label.Style,
+                PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind,
+                PortWidth = label.PortWidth, Style = label.Style,
                 Font = label.Font, StrokeWidth = label.StrokeWidth,
                 HAlign = label.HAlign, VAlign = label.VAlign,
             };
@@ -1315,11 +1317,15 @@ public static partial class LayoutRenderer
                 // Nothing special for a ghost any more, and that is the point: it draws through the
                 // same call a committed port does, off the same field, so the picture under the
                 // cursor is the picture that lands.
+                int ghostDbuPerMicron = (int)System.Math.Round(1 / ps.DbuToUm);
                 DrawPortMarker(canvas, effective, conductorAt, ps, scaleUm, color, background,
-                               new LayoutFrameCounters());
-                DrawLabelText(canvas, effective, ps,
-                              TintForContrast(color, background, PortMarkerContrastTintAmount),
-                              centred: true, tech: ghostTech);
+                               new LayoutFrameCounters(), dbuPerMicron: ghostDbuPerMicron, tech: ghostTech);
+                // brief-dfr32-2 R-dfr32-2-4 — the name as a committed port's is drawn: fixed size, beside the mark.
+                foreach (var name in PlacePortNames([(0, label)], conductorAt, ps.DbuToUm * scaleUm, ghostTech,
+                                                    ghostDbuPerMicron))
+                    DrawLabelText(canvas, name.Drawn, ps,
+                                  TintForContrast(color, background, PortMarkerContrastTintAmount),
+                                  centred: true, tech: ghostTech);
             }
             else DrawLabelText(canvas, effective, ps, color, tech: ghostTech);
             return;
@@ -1618,7 +1624,8 @@ public static partial class LayoutRenderer
                     Layer = label.Layer, X = label.X, Y = label.Y, Text = label.Text,
                     Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
                     PortDirection = label.PortDirection, PortLayer = label.PortLayer,
-                    PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind, Style = label.Style,
+                    PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind,
+                PortWidth = label.PortWidth, Style = label.Style,
                     Font = label.Font, StrokeWidth = label.StrokeWidth,
                     HAlign = label.HAlign, VAlign = label.VAlign,
                 };
@@ -3475,10 +3482,17 @@ public static partial class LayoutRenderer
         LayoutPortDirection.ConductorLookup? conductorAt, PathSpace ps, double scaleUm,
         LayoutRenderOptions opts, LayoutFrameCounters counters, int dbuPerMicron, Technology? tech = null)
     {
+        // brief-dfr32-2 R-dfr32-2-4/5 — every name at a fixed screen size beside its mark, none over another
+        // (LayoutRenderer.PortNames). The knockout, the names and their leaders are all this one placement.
+        var colorOf = new Dictionary<int, SKColor>();
+        foreach (var (index, _, layerColor) in ports) colorOf[index] = layerColor;
+        var names = PlacePortNames(ports.Select(p => (p.Index, p.Label)), conductorAt, ps.DbuToUm * scaleUm, tech,
+                                   dbuPerMicron);
+
         using var knockout = new SKPath();
-        foreach (var (_, label, _) in ports)
+        foreach (var name in names)
         {
-            if (PortNameKnockout(label, ps, scaleUm, tech) is not { } k) continue;
+            if (PortNameKnockout(name.Drawn, ps, scaleUm, tech) is not { } k) continue;
             knockout.AddPath(k);
             k.Dispose();
         }
@@ -3491,12 +3505,24 @@ public static partial class LayoutRenderer
         }
         foreach (var (_, label, layerColor) in ports)
             DrawPortMarker(canvas, label, conductorAt, ps, scaleUm, layerColor,
-                           opts.Theme.Background, counters, opts.PlanarMesh, dbuPerMicron);
+                           opts.Theme.Background, counters, opts.PlanarMesh, dbuPerMicron, tech);
+        foreach (var name in names)
+        {
+            if (name.Leader is not { } l) continue;
+            using var leader = new SKPaint
+            {
+                IsAntialias = true, Style = SKPaintStyle.Stroke,
+                StrokeWidth = DevicePixelsToPathSpace(scaleUm, PortMarkerStrokeDevicePixels * 0.5f),
+                Color = TintForContrast(colorOf[name.Index], opts.Theme.Background, PortMarkerContrastTintAmount),
+            };
+            canvas.DrawLine(ps.X(l.X0), ps.Y(l.Y0), ps.X(l.X1), ps.Y(l.Y1), leader);
+            counters.DrawCalls++;
+        }
         canvas.Restore();
 
-        foreach (var (_, label, layerColor) in ports)
-            DrawLabelText(canvas, label, ps,
-                          TintForContrast(layerColor, opts.Theme.Background, PortMarkerContrastTintAmount),
+        foreach (var name in names)
+            DrawLabelText(canvas, name.Drawn, ps,
+                          TintForContrast(colorOf[name.Index], opts.Theme.Background, PortMarkerContrastTintAmount),
                           centred: true, tech: tech);
     }
 
@@ -3616,7 +3642,7 @@ public static partial class LayoutRenderer
         LayoutPortDirection.ConductorLookup? conductorAt,
         PathSpace ps, double scaleUm, SKColor layerColor, SKColor background,
         LayoutFrameCounters counters,
-        PlanarMeshReport? mesh = null, int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
+        PlanarMeshReport? mesh = null, int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron, Technology? tech = null)
     {
         if (LayoutPortDirection.Resolve(conductorAt, label) is not { } hint) return;
 
@@ -3648,6 +3674,10 @@ public static partial class LayoutRenderer
 
         var color = TintForContrast(layerColor, background, PortMarkerContrastTintAmount);
 
+        // brief-dfr32-2 R-dfr32-2-1 — the bar is the 3D run's sheet (EdgePortSheet, the generator's own rule): on an
+        // edge longer than 4 × the height to the return, or with a stated Width, it is narrower than the edge.
+        if (!hint.Interior) hint = EdgePortSheet.Bar(hint, label, tech, dbuPerMicron);
+
         var (ux, uy) = LayoutPortDirection.UnitVector(hint.Direction);
         var (px, py) = LayoutPortDirection.PerpendicularVector(hint.Direction);
 
@@ -3659,7 +3689,6 @@ public static partial class LayoutRenderer
         // of hint.PlaneX/Y. See PortHint's own note: with the bar drawn wherever the user happened to
         // click, "where is the reference plane" had no readable answer (owner report, 2026-08-09).
         float bx0 = ps.X(hint.PlaneX), by0 = ps.Y(hint.PlaneY);
-        float ax = ps.X(label.X), ay = ps.Y(label.Y);
 
         // Path space is Y-DOWN while DBU space is Y-up, so every world +y offset is SUBTRACTED here.
         // Lengths themselves are unsigned and go through ps.Len; the flip lives in the call sites'
@@ -3713,28 +3742,9 @@ public static partial class LayoutRenderer
         canvas.DrawPath(path, paint);
         counters.DrawCalls++;
 
-        // A leader from the label's own anchor to the plane, drawn only when the two genuinely differ
-        // — otherwise the text would look unattached to the marker it names.
-        float dx = ax - bx0, dy = ay - by0;
-        if (dx * dx + dy * dy > 1e-6f)
-        {
-            using var leader = new SKPaint
-            {
-                IsAntialias = true, Style = SKPaintStyle.Stroke,
-                StrokeWidth = DevicePixelsToPathSpace(scaleUm, PortMarkerStrokeDevicePixels * 0.5f),
-                // Solid, in the glyph's own tinted colour: a leader thinned by alpha blends toward
-                // whatever it crosses, which is a second colour in a mark that has to read as one.
-                // The half-width dash is already what tells it apart from geometry.
-                Color = color,
-                PathEffect = SKPathEffect.CreateDash([DevicePixelsToPathSpace(scaleUm, 3f),
-                                                      DevicePixelsToPathSpace(scaleUm, 3f)], 0),
-            };
-            using var leaderPath = new SKPath();
-            leaderPath.MoveTo(ax, ay);
-            leaderPath.LineTo(bx0, by0);
-            canvas.DrawPath(leaderPath, leader);
-            counters.DrawCalls++;
-        }
+        // brief-dfr32-2 R-dfr32-2-4 — no leader from the label's stored anchor to the plane any more: the name is drawn
+        // beside the mark (PlacePortNames), so it is attached to the marker it names wherever the anchor is, and the
+        // anchor is not drawn. A name that had to move clear of another gets its own leader there.
     }
 
     /// <summary>

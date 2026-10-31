@@ -231,15 +231,18 @@
                                       GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                       FontSize="11" Padding="4,2"/>
                         </Grid>
-                        <!-- Read-only: PlanarPort D2 — the port cut IS the outermost rooftop row of the
-                             feed, so it spans the whole conductor end by construction. Changing a port's
-                             width in the full-wave solver means changing the width of the metal. -->
+                        <!-- brief-dfr32-2 R-dfr32-2-2: the width of the port's 3D sheet along its edge. Blank is the
+                             rule, which the watermark shows: the whole edge, or 2 × the height to the return on an
+                             edge longer than 4 × that height. The planar kernel's cut still spans the whole end. -->
                         <Grid ColumnDefinitions="56,*" IsVisible="{Binding ShowPortDirection}">
-                            <TextBlock Grid.Column="0" Text="Port width" VerticalAlignment="Center" FontSize="11"
+                            <TextBlock Grid.Column="0" Text="Width" VerticalAlignment="Center" FontSize="11"
+                                       ToolTip.Tip="The width of the port's 3D lumped sheet along the conductor edge, centred on the port. Blank: the whole edge, or twice the height to the return when the edge is longer than four times that height. A planar run's port always spans the whole conductor end."
                                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
-                            <SelectableTextBlock Grid.Column="1" Text="{Binding PortWidthText}" VerticalAlignment="Center"
-                                       FontSize="11" Opacity="0.75"
-                                       ToolTip.Tip="The excitation width — the whole conductor end the port cuts across. Set by the artwork, not here: the full-wave port cut is the outermost row of cells on the feed, so widening a port means widening the metal."/>
+                            <TextBox Grid.Column="1" Text="{Binding PortWidthStatedText}" Tag="PortWidth"
+                                      PlaceholderText="{Binding PortWidthText}"
+                                      Classes.error="{Binding HasPortWidthError}" ToolTip.Tip="{Binding PortWidthError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
                         </Grid>
                         <Grid ColumnDefinitions="56,*">
                             <TextBlock Grid.Column="0" Text="Rotation" VerticalAlignment="Center" FontSize="11"

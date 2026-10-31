@@ -169,6 +169,18 @@ dotnet run --project tools/UiSnapshot --no-build -- --c3d <file.c3d> -o out.png 
 
 A field plot draws from the workspace's `results/` folder beside its `.cws`, as the application reads it.
 
+**A 3D view's setup cards beside its Properties panel** (the real `C3dSetupAnalysesView` and `C3dPropertiesView` on one
+editor view model, results from the workspace's `results/` folder):
+
+```
+dotnet run --project tools/UiSnapshot --no-build -- --c3d-setups <file.c3d> -o out.png [--delete-fields <setup>] \
+    [--c3d-row <tree row>] [--size WxH] [steps]
+```
+
+`--delete-fields` runs that card's Delete Saved Fields, moving the field folders into a `trash` folder beside `-o`
+(never the system Trash), and prints its sentence. `--c3d-row` selects an Object Tree row (a field plot) for the
+Properties panel, and prints why the plot draws nothing. `--rclick` on a card opens its menu.
+
 Every run prints the camera it drew from, so a picture can be reproduced and nudged. The default size is 1200x800.
 
 **Input steps run in the order given**, as real pointer and key events through the window, before the final

@@ -5670,3 +5670,23 @@ Regenerated with `tools/ShaderGen`. The hovered object is then drawn a second ti
 (`Scene3DFramePlan.HoverOverGrid`): it lands on its own depth and passes LessEqual, so its tint covers the grid's lines
 wherever it is the nearest surface; the grid writes no depth, so nothing else changes. The grid moved before the lines
 and overlays in both colour passes so they still draw over it and over the second draw.
+
+## DFR32-2 — port names at a fixed screen size, never on top of each other; the bar is the 3D sheet (2026-10-30)
+
+- **Placement is `LayoutRenderer.PlacePortNames`** (`LayoutRenderer.PortNames.cs`), one pass per frame shared by the
+  knock-out, the names and their leaders, and by a port ghost. Each name is 11 pt (a ruler's default readout), upright,
+  just outside the mark's box (`LayoutPortDirection.MarkerBbox` of the bar actually drawn) on the side current comes
+  from. In document order, a name whose box meets an earlier one steps outward by half its height until clear; past
+  its own height it gets a half-weight leader to the mark. It reads neither the pan nor the tile gather order, so the
+  same layout at the same zoom places the same way, and `render` draws through it. The stored `Height` is not read
+  (GDSII/DXF still write it). With no viewport scale (≤ 0) a name is drawn where and as it was stored.
+- **The dashed leader from the label's stored anchor to the plane is gone**: the name is beside the mark now, so the
+  anchor is not drawn and a line to it pointed at nothing.
+- **Two tests pinned the old position and were updated, not loosened**: `LayoutPortDirectionTests…ARRIVESAtTheReferencePlane`
+  (the metal side past the bar is now empty, where the centred name used to paint) and
+  `LayoutPortGlyphOnTopTests.TheNameIsNeverCrossedByItsOwnMarker` (now the placement's geometry: name box and mark box
+  disjoint, and the name inked there).
+- **Not changed:** the port's pick region and selection box are still the mark (`MarkerBbox`), and `DocumentExtents`
+  still frames on the stored label, so a fit can leave margin a fixed-size name does not need.
+- **The edge bar is `EdgePortSheet.Bar`** (src/Design, DFR32-2): on an edge longer than 4 × the height to the return,
+  or with a stated Width, it is the 3D sheet's width, centred on the port, and the arrow scales with it.

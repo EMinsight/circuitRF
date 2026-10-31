@@ -4169,3 +4169,17 @@ Each one was invisible on the kits circuitRF had been tried against and silent w
   `…ListsTheLowLevelBreakdownCurrent`.
 - Checked and NOT a defect: a section reading itself under another case is already caught as a cycle at
   once — the reader's open-file set compares case-insensitively.
+
+## Designer round 32 — a series-measured S2P gave a passive filter gain at single frequencies (2026-10-30)
+
+- **`SnpModel.Stamp` converted S → Z, and a part measured in SERIES has no Z.** A supplier's capacitor or inductor
+  file is usually a series measurement (S11 + S21 = 1), and I − S is singular for every series element: cond(I − S)
+  was ~1e16 at every sample of the field file, and the converted Z was ~1e17–1e20 Ω of rounding noise. Most
+  frequencies came out solvable by luck. Wherever a sweep point fell EXACTLY on a file sample (100 MHz + k·21 MHz
+  against a 25 MHz sweep: every 525 MHz), a 3.9 pF part read |S11|² + |S21|² = 3.86, and the filter built from it
+  showed +1.09 dB of gain and steps on the plot. That is the "it started adding points" the field report described.
+- **Fix: a block whose converted Z exceeds `IllConditionedZOverZ0` (1e6) × |Z0| is stamped as its S** through
+  `IdealSBlockModel.StampWaveConstraints`, the path brief-emdc-2 already took for a non-finite Z. It is exact for any
+  S, so the threshold only decides which of two correct forms a well-conditioned block keeps, and no golden moved.
+  Gate: `SnpStampTests.SeriesMeasuredFile_OnAndBetweenItsOwnSamples_IsTheSeriesElement`, which fails with the old
+  stamp at the exact sample (S21 0 + 0.566j against 0.701 + 0.458j).
