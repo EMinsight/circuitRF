@@ -755,6 +755,22 @@ public sealed class EditableComponent
     public bool ShowFootprintLabel { get; set; }
 
     /// <summary>
+    /// Whether the <c>File</c> label reads the file NAME alone (<c>File = spiral.s2p</c>) rather
+    /// than the stored path (GitHub issue #31). Display only: the stored path is untouched, and
+    /// hiding the label altogether is the <c>File</c> parameter's own <c>ShowOnSchematic</c>.
+    /// Default false, and persisted only when set, so an untouched <c>.csch</c> stays byte-identical.
+    /// </summary>
+    public bool ShowFileNameOnly { get; set; }
+
+    /// <summary>The last segment of a stored path, whichever separator it was written with — a
+    /// <c>.csch</c> authored on Windows still shows its file name on macOS.</summary>
+    public static string FileNameOf(string path)
+    {
+        int cut = path.LastIndexOfAny(['/', '\\']);
+        return cut >= 0 && cut < path.Length - 1 ? path[(cut + 1)..] : path;
+    }
+
+    /// <summary>
     /// The stored <c>Footprint</c> reference — <c>smt:&lt;case&gt;@&lt;density&gt;</c>, a relative
     /// path, or null for None. Read through the established accessor shape, and NEVER normalised,
     /// rewritten or re-derived (R-fp2-1c): a stored reference the application rewrites is a
@@ -1207,7 +1223,8 @@ public sealed class EditableComponent
         foreach (var p in LabelParameters())
         {
             if (string.IsNullOrEmpty(p.Expression)) continue;
-            string val = string.IsNullOrEmpty(p.Unit) ? p.Expression : $"{p.Expression} {p.Unit}";
+            string expr = ShowFileNameOnly && p.Name == "File" ? FileNameOf(p.Expression) : p.Expression;
+            string val = string.IsNullOrEmpty(p.Unit) ? expr : $"{expr} {p.Unit}";
             labels.Add(string.IsNullOrEmpty(p.Name) ? val : $"{p.Name} = {val}");
         }
         // A vendor part's value (the symbol's caption, from the library's index) on a line of its own
@@ -1340,6 +1357,7 @@ public sealed class EditableComponent
             ShowTypeLabel    = ShowTypeLabel,
             ShowInstanceName = ShowInstanceName,
             ShowFootprintLabel = ShowFootprintLabel,
+            ShowFileNameOnly = ShowFileNameOnly,
             ShowPinNames     = ShowPinNames,
             CellRef          = CellRef,
             // SL3 R-sl3-10: a clone carries the recorded interface hash, and it must. Copy/paste,

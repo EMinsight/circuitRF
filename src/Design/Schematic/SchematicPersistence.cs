@@ -160,6 +160,10 @@ public sealed class CschComponent
     /// </summary>
     public bool? ShowFootprintLabel { get; set; }
 
+    /// <summary>Whether the <c>File</c> label shows the file name without its folder; omitted (null)
+    /// when false, the default, so a file that never sets it stays byte-identical.</summary>
+    public bool? ShowFileNameOnly { get; set; }
+
     /// <summary>
     /// An explicit per-instance override of pin-name visibility, or null — which is BOTH the file's
     /// default and the model's, and means "let the symbol decide" rather than any particular answer.
@@ -617,6 +621,7 @@ public static class SchematicPersistence
             if (!c.ShowInstanceName) cc.ShowInstanceName = false;
             // Omit when false (the default) for the same reason: an untouched file gains nothing.
             if (c.ShowFootprintLabel) cc.ShowFootprintLabel = true;
+            if (c.ShowFileNameOnly)   cc.ShowFileNameOnly   = true;
             // Null is the default AND a meaningful state ("follow the symbol"), so this one is
             // written whenever it is set — either way round.
             if (c.ShowPinNames is bool spn) cc.ShowPinNames = spn;
@@ -720,6 +725,7 @@ public static class SchematicPersistence
             if (cc.ShowTypeLabel    is bool stl) c.ShowTypeLabel    = stl;
             if (cc.ShowInstanceName is bool sin) c.ShowInstanceName = sin;
             if (cc.ShowFootprintLabel is bool sfl) c.ShowFootprintLabel = sfl;
+            if (cc.ShowFileNameOnly   is bool sfn) c.ShowFileNameOnly   = sfn;
             c.ShowPinNames = cc.ShowPinNames;
             if (cc.CellRef is not null) c.CellRef = cc.CellRef;
             if (cc.CellInterfaceHash is not null) c.CellInterfaceHash = cc.CellInterfaceHash;

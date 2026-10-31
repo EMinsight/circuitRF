@@ -547,6 +547,28 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     public bool IsSnp => _target?.Symbol == SymbolKind.Snp;
 
+    /// <summary>Whether the <c>File = …</c> label is drawn — the <c>File</c> parameter's own
+    /// <c>ShowOnSchematic</c>, so it is the same flag a generic row's checkbox would set (issue #31).</summary>
+    [ObservableProperty] private bool _showFileLabel;
+
+    /// <summary>Whether that label reads the file name alone rather than the stored path (issue #31).</summary>
+    [ObservableProperty] private bool _showFileNameOnly;
+
+    partial void OnShowFileLabelChanged(bool oldValue, bool newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        var newParams = _target.Parameters.Select(p => p.Clone()).ToList();
+        if (newParams.FirstOrDefault(p => p.Name == "File") is not { } file) return;
+        file.ShowOnSchematic = newValue;
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
+    }
+
+    partial void OnShowFileNameOnlyChanged(bool oldValue, bool newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null || _target.ShowFileNameOnly == newValue) return;
+        _schematicVm.Execute(new SetFileNameOnlyCommand(_schematicVm.EditModel, _target, newValue));
+    }
+
     /// <summary>Callback set by the view so the VM can open a native file picker.</summary>
     public Func<Task<string?>>? PickSnpFileAsync { get; set; }
 
@@ -732,6 +754,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         SnpInterpModeIndex    = interpModeIdx;
         SnpInterpDomainIndex  = interpDomainIdx;
         SnpPortCountText      = portCount >= 1 ? $"{portCount}-port" : "Unknown";
+        ShowFileLabel         = _target.Parameters.FirstOrDefault(p => p.Name == "File")?.ShowOnSchematic ?? false;
+        ShowFileNameOnly      = _target.ShowFileNameOnly;
         _isRefreshing = false;
     }
 

@@ -94,6 +94,7 @@ using CircuitRF.Design.Layout;
 //   --palette <workspace> [--category <name>] [--search <q>]   the Library palette, a Type entry and a query chosen
 //   --schematic <file.csch> [--select <instance>]             the schematic beside the Parameter Editor on one part;
 //                                                              --type Name=VendorPartBox types into the Part field
+//                                                              --dialog opens the Component Parameters dialog instead
 //   --archive <workspace>                                     the Archive Workspace dialog
 //   --manage-libraries <workspace>                            File ▸ Manage Libraries… (written to <out>.dialog.png)
 //   --add-vendor-library <folder>                             Add Vendor Library's confirm step (<out>.dialog.png)
@@ -132,6 +133,7 @@ bool digitise = false, makeSchematic = false, stripGeometry = false;
 string? imageScalePoints = null;
 int cmcMarkers = 0;
 string? palette = null, paletteCategory = null, paletteSearch = null, schematic = null, select = null;
+bool parameterDialog = false;
 string? archive = null, manageLibraries = null, addVendorLibrary = null;
 string? gdsfactory = null, gdsfactoryPython = null, gdsfactoryKit = null, gdsfactoryCell = null, gdsfactoryWorkspace = null;
 string? csym = null, csymPick = null;
@@ -192,6 +194,7 @@ for (int i = 0; i < args.Length; i++)
         case "--search" when i + 1 < args.Length: paletteSearch = args[++i]; break;
         case "--schematic" when i + 1 < args.Length: schematic = Path.GetFullPath(args[++i]); break;
         case "--select" when i + 1 < args.Length: select = args[++i]; break;
+        case "--dialog": parameterDialog = true; break;
         case "--archive" when i + 1 < args.Length: archive = Path.GetFullPath(args[++i]); break;
         case "--manage-libraries" when i + 1 < args.Length: manageLibraries = Path.GetFullPath(args[++i]); break;
         case "--add-vendor-library" when i + 1 < args.Length: addVendorLibrary = Path.GetFullPath(args[++i]); break;
@@ -936,7 +939,10 @@ Window VendorView()
         parameterEditor = editor;
         var target = select is null ? null : model.Components.FirstOrDefault(c => c.InstanceName == select)
             ?? throw new InvalidOperationException($"--select '{select}': {string.Join(", ", model.Components.Select(c => c.InstanceName))}");
-        if (target is not null) editor.SetTargetDirect(vm, target, showClose: false);
+        if (target is not null) editor.SetTargetDirect(vm, target, showClose: parameterDialog);
+        // The dialog a double-click on the part opens (SchematicView.OpenParameterEditorFor), at its own width.
+        if (parameterDialog)
+            return new CircuitRF.Ui.Views.Dialogs.ParameterEditorDialog { DataContext = editor };
         var doc = new CircuitRF.Ui.Schematic.SchematicDocument(Path.GetFileNameWithoutExtension(schematic), vm, schematic);
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,360") };
         grid.Children.Add(new CircuitRF.Ui.Views.Content.SchematicView { DataContext = doc });

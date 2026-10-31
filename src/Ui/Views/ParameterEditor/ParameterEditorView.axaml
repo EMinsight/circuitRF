@@ -102,14 +102,27 @@
         <StackPanel Grid.Row="1"
                     IsVisible="{Binding IsNotEmptyState}"
                     Margin="6,0,6,4">
-        <StackPanel Orientation="Horizontal"
-                    Spacing="12">
+        <!-- A WrapPanel rather than a horizontal StackPanel: the same view is docked in the Properties
+             panel at whatever width the user gave it, and a row that cannot wrap clips its last box. -->
+        <WrapPanel ItemSpacing="12" LineSpacing="4">
             <CheckBox IsChecked="{Binding ShowTypeLabel}"
                       Content="Type label"
                       FontSize="11"/>
             <CheckBox IsChecked="{Binding ShowInstanceName}"
                       Content="Instance name"
                       FontSize="11"/>
+            <!-- GitHub issue #31: a data file's label shown with its path, its name only, or not at all. -->
+            <CheckBox IsChecked="{Binding ShowFileLabel}"
+                      IsVisible="{Binding IsSnp}"
+                      Content="File label"
+                      FontSize="11"
+                      ToolTip.Tip="Show the File = … label on the schematic"/>
+            <CheckBox IsChecked="{Binding ShowFileNameOnly}"
+                      IsVisible="{Binding IsSnp}"
+                      IsEnabled="{Binding ShowFileLabel}"
+                      Content="Name only"
+                      FontSize="11"
+                      ToolTip.Tip="Show the file name without its folder"/>
             <CheckBox IsChecked="{Binding ModelsExistingArtwork}"
                       IsVisible="{Binding ShowModelsExistingArtwork}"
                       Content="Models existing artwork"
@@ -135,7 +148,7 @@
                     Padding="6,2"
                     ToolTip.Tip="Switch between electrical length (E at F) and physical length (L) — converts at F, so the line does not change"
                     Command="{Binding ToggleTlinEntryCommand}"/>
-        </StackPanel>
+        </WrapPanel>
         <TextBlock Text="{Binding TlinEntryNote}"
                    IsVisible="{Binding HasTlinEntryNote}"
                    FontSize="10"
