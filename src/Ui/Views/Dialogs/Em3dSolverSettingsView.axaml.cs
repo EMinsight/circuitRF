@@ -207,6 +207,7 @@ public partial class Em3dSolverSettingsView : UserControl
         _ = Task.Run(() =>
         {
             string text;
+            Located? located = null;
             try
             {
                 var found = SolverDiscovery.Palace.Find(out _);
@@ -220,6 +221,7 @@ public partial class Em3dSolverSettingsView : UserControl
                     text = path is not null
                         ? $"{path} in the Linux subsystem distribution '{distro}' ({how}). The path above is not used for it."
                         : $"Not found: {how}. Palace will run on one core.";
+                    located = Locate(path, distro, SolverTool.Palace, revealHome: false);
                 }
                 else
                 {
@@ -227,10 +229,15 @@ public partial class Em3dSolverSettingsView : UserControl
                     text = launcher.Path is { } path
                         ? $"{path} ({launcher.How})."
                         : $"Not found: {launcher.How}. Palace will run on one core.";
+                    located = Locate(launcher.Path, null, SolverTool.Palace, revealHome: false);
                 }
             }
             catch (Exception ex) { text = ex.Message; }
-            Dispatcher.UIThread.Post(() => ShowStatus(MpiStatus, text));
+            Dispatcher.UIThread.Post(() =>
+            {
+                ShowStatus(MpiStatus, text);
+                ShowFound("Mpi", MpiBadge, MpiReveal, located);
+            });
         });
     }
 
@@ -329,6 +336,8 @@ public partial class Em3dSolverSettingsView : UserControl
     {
         status.Text = "Checking…";
         install.IsVisible = false;
+        var (badge, reveal) = Chrome(discovery.Tool);
+        string key = discovery.Tool.ToString();
         bool emerge = discovery.Tool == SolverTool.Emerge;
         if (emerge) { EmergeAccelerate.IsVisible = false; EmergeEnableGpu.IsVisible = false; }
         _ = Task.Run(() =>
@@ -338,6 +347,7 @@ public partial class Em3dSolverSettingsView : UserControl
             RecipePrerequisite? accelerate = null;
             (SolverRecipe, InstallRecord, RecipePrerequisite)? enableGpu = null;
             bool found = false;
+            Located? located = null;
             try
             {
                 // brief-emi-3 R-emi3-3 — Settings being shown is one of the two points circuitRF finishes EMerge's faster
@@ -349,6 +359,7 @@ public partial class Em3dSolverSettingsView : UserControl
                 text  = row.GpuLine is { } gpuLine ? row.Summary + Environment.NewLine + gpuLine : row.Summary;
                 offer = row.OfferInstall;
                 found = row.Found is not null;
+                located = Locate(row.Found?.Path, row.Found?.Distribution, discovery.Tool);
                 if (emerge) accelerate = EmergeAccelerator.InstallerFor(row.Found);
                 if (emerge) enableGpu = EmergeAccelerator.GpuEnableFor(row.Found);
             }
@@ -356,6 +367,7 @@ public partial class Em3dSolverSettingsView : UserControl
             Dispatcher.UIThread.Post(() =>
             {
                 ShowStatus(status, text);
+                ShowFound(key, badge, reveal, located);
                 if (emerge) ShowAccelerate(accelerate);
                 if (emerge)
                 {
@@ -592,6 +604,80 @@ public partial class Em3dSolverSettingsView : UserControl
         ShowScratchFolder();
     }
 
+    // ── Whether each program is installed, and the "…" that shows where ─────────────────────────────
+
+    /// <summary>Where a row's program is: the program itself, which Browse… opens beside, and what its "…" shows — the
+    /// home circuitRF installed it in when it did, since that folder is the whole installation, otherwise (and always for
+    /// mpirun, whose home is Palace's) the program selected in its folder. <paramref name="WithPalace"/>: an MPI launcher inside a Palace circuitRF installed.</summary>
+    private sealed record Located(string? Program, string Reveal, bool WithPalace);
+
+    /// <summary>Each row's answer, keyed by its reveal button's Tag ("Palace", "Mpi", "Gmsh", "OpenEms", "Emerge").</summary>
+    private readonly Dictionary<string, Located?> _found = [];
+
+    private (StackPanel Badge, Button Reveal) Chrome(SolverTool tool) => tool switch
+    {
+        SolverTool.Palace  => (PalaceBadge,  PalaceReveal),
+        SolverTool.Gmsh    => (GmshBadge,    GmshReveal),
+        SolverTool.OpenEms => (OpenEmsBadge, OpenEmsReveal),
+        _                  => (EmergeBadge,  EmergeReveal),
+    };
+
+    /// <summary>
+    /// What a found program reveals. Off the UI thread: it reads circuitRF's install records. A program in a Linux
+    /// subsystem distribution is shown through Windows' own share of it, which Explorer opens; it has no folder of this
+    /// computer's to start Browse… in.
+    /// </summary>
+    private static Located? Locate(string? path, string? distribution, SolverTool installedBy, bool revealHome = true)
+    {
+        if (path is null) return null;
+        var home = new SolverUninstaller().Installed(installedBy)
+            .FirstOrDefault(r => string.Equals(r.Distribution, distribution, StringComparison.OrdinalIgnoreCase) &&
+                                 path.StartsWith(r.Home.TrimEnd('/', '\\') + (distribution is null ? Path.DirectorySeparatorChar : '/'),
+                                                 OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase))
+            ?.Home;
+        string reveal = revealHome ? home ?? path : path;
+        if (distribution is not null)
+            return OperatingSystem.IsWindows() ? new(null, $@"\\wsl.localhost\{distribution}{reveal.Replace('/', '\\')}", false) : null;
+        return new(path, reveal, home is not null && installedBy == SolverTool.Palace);
+    }
+
+    /// <summary>
+    /// The badge beside a program's name — a green check and "Installed" when a run would find it, grey "Not Installed"
+    /// when not — and its "…", shown only when there is somewhere to show.
+    /// </summary>
+    private void ShowFound(string key, StackPanel badge, Button reveal, Located? located)
+    {
+        _found[key] = located;
+        bool installed = located is not null;
+        badge.Children.Clear();
+        if (installed)
+        {
+            var icon = new Material.Icons.Avalonia.MaterialIcon { Kind = Material.Icons.MaterialIconKind.CheckCircle, Width = 14, Height = 14 };
+            icon.Bind(ForegroundProperty, icon.GetResourceObservable("CrfSuccessBrush"));
+            badge.Children.Add(icon);
+        }
+        var text = new SelectableTextBlock
+        {
+            Text = !installed ? "Not Installed" : located!.WithPalace && key == "Mpi" ? "Installed with Palace" : "Installed",
+            FontSize = 11, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        if (installed) text.Bind(TextBlock.ForegroundProperty, text.GetResourceObservable("CrfSuccessBrush"));
+        else text.Opacity = 0.5;
+        badge.Children.Add(text);
+        if (key == "Mpi" && installed && located!.WithPalace)
+            ToolTip.SetTip(badge, "Part of the Palace circuitRF installed: Uninstall Palace removes it too.");
+        else ToolTip.SetTip(badge, null);
+
+        reveal.IsVisible = located is not null;
+        ToolTip.SetTip(reveal, located is null ? null : $"{FileReveal.Label}: {FoldSpackPadding(located.Reveal)}");
+    }
+
+    private void OnReveal(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string key } && _found.GetValueOrDefault(key) is { } located)
+            FileReveal.Reveal(located.Reveal);
+    }
+
     private async void OnBrowse(object? sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string boxName } || this.FindControl<TextBox>(boxName) is not { } box) return;
@@ -600,10 +686,17 @@ public partial class Em3dSolverSettingsView : UserControl
 
         try
         {
+            // Opens where the row's program is, when it is on this computer: the folder holding it, which is where a
+            // replacement is most likely to be picked from.
+            IStorageFolder? start = null;
+            if (_found.GetValueOrDefault(boxName[..^"Box".Length]) is { Program: { } program } &&
+                FileReveal.NearestExistingDirectory(Path.GetDirectoryName(program)) is { } folder)
+                start = await topLevel.StorageProvider.TryGetFolderFromPathAsync(folder);
             var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title         = "Choose the program",
-                AllowMultiple = false,
+                Title                  = "Choose the program",
+                AllowMultiple          = false,
+                SuggestedStartLocation = start,
             });
             if (files.Count != 1 || files[0].TryGetLocalPath() is not { Length: > 0 } path) return;
 

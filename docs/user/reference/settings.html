@@ -1728,7 +1728,9 @@ computes and the S-parameters it exports — is in <a href="wbond.html">the wBon
 programs. The tab starts with the <strong>Memory limit</strong>, which holds every solver and mesher alike, and the
 <strong>Scratch folder</strong>, then gives each
 program a panel of its own, and each says what circuitRF found: the version, whether
-it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where the program is, and how it was found.</p>
+it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where the program is, and how it was found.
+Beside each program's name, a green check and <strong>Installed</strong> means a run would find it; a grey <strong>Not Installed</strong>
+means it would not. The MPI launcher is part of Palace, so it sits inside Palace's panel.</p>
 <table>
 <thead>
 <tr>
@@ -1751,7 +1753,7 @@ it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where 
 <tr>
 <td><strong>Path</strong> (one per program)</td>
 <td>blank</td>
-<td>The program to run. <strong>Blank means search</strong>: the environment variable (<code>CIRCUITRF_PALACE</code>, <code>CIRCUITRF_GMSH</code>, <code>CIRCUITRF_OPENEMS</code>), then a copy circuitRF installed, then <code>PATH</code>, then the usual install folders (<code>~/.local/bin</code>, <code>/opt/homebrew/bin</code>, <code>/usr/local/bin</code>, and <code>~/opt/openEMS/bin</code> for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found, then conda environments. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. EMerge's row searches less, below.</td>
+<td>The program to run. <strong>Browse…</strong> opens at the folder of the program the row found. <strong>Blank means search</strong>: the environment variable (<code>CIRCUITRF_PALACE</code>, <code>CIRCUITRF_GMSH</code>, <code>CIRCUITRF_OPENEMS</code>), then a copy circuitRF installed, then <code>PATH</code>, then the usual install folders (<code>~/.local/bin</code>, <code>/opt/homebrew/bin</code>, <code>/usr/local/bin</code>, and <code>~/opt/openEMS/bin</code> for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found, then conda environments. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. EMerge's row searches less, below.</td>
 </tr>
 <tr>
 <td><strong>Location</strong> (Palace, Windows only)</td>
@@ -1774,9 +1776,14 @@ it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where 
 <td>Removes every solver circuitRF installed for you, after one confirmation. Nothing is removed if one of them is in use. On macOS and with a Linux <code>.deb</code>, removing circuitRF leaves the solvers behind, so use this first to get the space back (<a href="em-setup.html#uninstall-circuitrf">Uninstalling circuitRF</a>).</td>
 </tr>
 <tr>
-<td><strong>MPI launcher</strong></td>
+<td><strong>…</strong> (one per program)</td>
+<td>shown when it is found</td>
+<td>Shows where the program is, in Finder, Explorer or your file manager: the whole folder when circuitRF installed it, otherwise the program itself in its folder.</td>
+</tr>
+<tr>
+<td><strong>MPI launcher</strong> (in Palace's panel)</td>
 <td>blank</td>
-<td>The <code>mpirun</code> that lets Palace use more than one core. <strong>Blank means search</strong>: <code>CIRCUITRF_MPIRUN</code>, then an <code>mpirun</code> beside Palace, then — for a Palace built with Spack — the MPI that build was linked against, then <code>PATH</code> and the usual install folders. The row shows which one a run would use. Without one, Palace still runs, on one core. For a Palace in the Linux subsystem, the row shows the <code>mpirun</code> found inside that distribution, and the path box is not used.</td>
+<td>The <code>mpirun</code> that lets Palace use more than one core. A Palace circuitRF installed brings its own, which its badge reads <strong>Installed with Palace</strong>: <strong>Uninstall Palace …</strong> removes it too, so it has no Uninstall of its own. <strong>Blank means search</strong>: <code>CIRCUITRF_MPIRUN</code>, then an <code>mpirun</code> beside Palace, then — for a Palace built with Spack — the MPI that build was linked against, then <code>PATH</code> and the usual install folders. The row shows which one a run would use. Without one, Palace still runs, on one core. For a Palace in the Linux subsystem, the row shows the <code>mpirun</code> found inside that distribution, and the path box is not used.</td>
 </tr>
 </tbody>
 </table>

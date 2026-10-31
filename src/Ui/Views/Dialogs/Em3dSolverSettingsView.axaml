@@ -36,6 +36,20 @@
        glance; the EM setup panel's Border.group, so the two read alike. The memory limit is first, because it holds
        every solver and mesher alike. -->
   <UserControl.Styles>
+    <!-- The "…" at the end of a path line: shows the install folder in Finder / Explorer / the file manager. -->
+    <Style Selector="Button.reveal">
+      <Setter Property="Content" Value="…"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Width" Value="22"/>
+      <Setter Property="Height" Value="22"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="Margin" Value="6,3,0,0"/>
+      <Setter Property="HorizontalAlignment" Value="Right"/>
+      <Setter Property="VerticalAlignment" Value="Top"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="IsVisible" Value="False"/>
+    </Style>
     <Style Selector="Border.group">
       <Setter Property="Background" Value="{DynamicResource SystemChromeMediumLowColor}"/>
       <Setter Property="BorderBrush" Value="{DynamicResource CrfTileBorderBrush}"/>
@@ -93,8 +107,11 @@
     <!-- ── Palace ─────────────────────────────────────────────────────── -->
     <Border Classes="group">
       <StackPanel>
-        <SelectableTextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
-        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+          <SelectableTextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <StackPanel Name="PalaceBadge" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"/>
+        </StackPanel>
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
           <TextBox Grid.Row="0" Grid.Column="0" Name="PalaceBox" FontSize="12"
                    PlaceholderText="Leave blank to search (CIRCUITRF_PALACE, PATH, then Spack)"
                    LostFocus="OnPathCommitted">
@@ -105,7 +122,8 @@
           </TextBox>
           <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
                   Tag="PalaceBox" Click="OnBrowse" ToolTip.Tip="Pick the Palace launcher from disk"/>
-          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="PalaceStatus" FontSize="11" Opacity="0.75"
+          <Button Grid.Row="1" Grid.Column="1" Name="PalaceReveal" Classes="reveal" Tag="Palace" Click="OnReveal"/>
+          <SelectableTextBlock Grid.Row="1" Grid.Column="0" Name="PalaceStatus" FontSize="11" Opacity="0.75"
                      TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
                      Margin="0,4,0,0" Text="Not checked yet.">
             <SelectableTextBlock.ContextMenu>
@@ -140,54 +158,63 @@
             <Button Name="SubsystemMemoryChange" Content="Change…" FontSize="11" Padding="8,3" Click="OnChangeSubsystemMemory"
                     ToolTip.Tip="Set how much of this computer's memory the Linux subsystem may use (memory= in .wslconfig). Shows the change, and what restarting the subsystem stops, before anything is written."/>
           </StackPanel>
-          <Button Grid.Row="5" Grid.ColumnSpan="2" Name="PalaceInstall" Content="Install Palace…" FontSize="11" Padding="8,3"
-                  Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Palace" Click="OnInstall"
-                  ToolTip.Tip="Download Palace from its own upstream and build it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
-          <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Name="PalaceRemovals" Spacing="4"/>
         </Grid>
+        <!-- The MPI launcher is part of Palace, not a program of its own: a Palace circuitRF installed carries its own MPI,
+             which Uninstall Palace removes with it, so it sits inside Palace's panel and above Palace's Uninstall. -->
+        <Border BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,1,0,0" Margin="0,10,0,0" Padding="12,8,0,0">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+              <SelectableTextBlock Text="MPI launcher (runs Palace on several cores)" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <StackPanel Name="MpiBadge" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"/>
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+              <TextBox Grid.Row="0" Grid.Column="0" Name="MpiBox" FontSize="12"
+                       PlaceholderText="Leave blank to search (CIRCUITRF_MPIRUN, Palace's own MPI, then PATH)"
+                       LostFocus="OnPathCommitted">
+                <ToolTip.Tip>
+                  <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                             Text="The mpirun of the MPI Palace was built with. Blank finds it: beside Palace, or, for a Palace built with Spack, the exact MPI that build links. Without one, Palace still runs, on one core."/>
+                </ToolTip.Tip>
+              </TextBox>
+              <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                      Tag="MpiBox" Click="OnBrowse" ToolTip.Tip="Pick mpirun from disk"/>
+              <Button Grid.Row="1" Grid.Column="1" Name="MpiReveal" Classes="reveal" Tag="Mpi" Click="OnReveal"/>
+              <SelectableTextBlock Grid.Row="1" Grid.Column="0" Name="MpiStatus" FontSize="11" Opacity="0.75"
+                         TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                         Margin="0,4,0,0" Text="Not checked yet.">
+                <SelectableTextBlock.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+                    <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+                  </ContextMenu>
+                </SelectableTextBlock.ContextMenu>
+              </SelectableTextBlock>
+            </Grid>
+          </StackPanel>
+        </Border>
+        <Button Name="PalaceInstall" Content="Install Palace…" FontSize="11" Padding="8,3"
+                Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Palace" Click="OnInstall"
+                ToolTip.Tip="Download Palace from its own upstream and build it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
+        <StackPanel Name="PalaceRemovals" Spacing="4"/>
       </StackPanel>
     </Border>
 
-    <!-- ── MPI launcher: how Palace uses more than one core ─────────────── -->
-    <Border Classes="group">
-      <StackPanel>
-        <SelectableTextBlock Text="MPI launcher (runs Palace on several cores)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
-        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-          <TextBox Grid.Row="0" Grid.Column="0" Name="MpiBox" FontSize="12"
-                   PlaceholderText="Leave blank to search (CIRCUITRF_MPIRUN, Palace's own MPI, then PATH)"
-                   LostFocus="OnPathCommitted">
-            <ToolTip.Tip>
-              <TextBlock TextWrapping="Wrap" MaxWidth="360"
-                         Text="The mpirun of the MPI Palace was built with. Blank finds it: beside Palace, or, for a Palace built with Spack, the exact MPI that build links. Without one, Palace still runs, on one core."/>
-            </ToolTip.Tip>
-          </TextBox>
-          <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
-                  Tag="MpiBox" Click="OnBrowse" ToolTip.Tip="Pick mpirun from disk"/>
-          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="MpiStatus" FontSize="11" Opacity="0.75"
-                     TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
-                     Margin="0,4,0,0" Text="Not checked yet.">
-            <SelectableTextBlock.ContextMenu>
-              <ContextMenu>
-                <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
-                <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
-              </ContextMenu>
-            </SelectableTextBlock.ContextMenu>
-          </SelectableTextBlock>
-        </Grid>
-      </StackPanel>
-    </Border>
 
     <!-- ── Gmsh ───────────────────────────────────────────────────────── -->
     <Border Classes="group">
       <StackPanel>
-        <SelectableTextBlock Text="Gmsh (meshes Palace's problems)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+          <SelectableTextBlock Text="Gmsh (meshes Palace's and the thermal solver's problems)" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <StackPanel Name="GmshBadge" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"/>
+        </StackPanel>
         <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
           <TextBox Grid.Row="0" Grid.Column="0" Name="GmshBox" FontSize="12"
                    PlaceholderText="Leave blank to search (CIRCUITRF_GMSH, PATH, then Spack)"
                    LostFocus="OnPathCommitted"/>
           <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
                   Tag="GmshBox" Click="OnBrowse" ToolTip.Tip="Pick the Gmsh executable from disk"/>
-          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="GmshStatus" FontSize="11" Opacity="0.75"
+          <Button Grid.Row="1" Grid.Column="1" Name="GmshReveal" Classes="reveal" Tag="Gmsh" Click="OnReveal"/>
+          <SelectableTextBlock Grid.Row="1" Grid.Column="0" Name="GmshStatus" FontSize="11" Opacity="0.75"
                      TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
                      Margin="0,4,0,0" Text="Not checked yet.">
             <SelectableTextBlock.ContextMenu>
@@ -208,14 +235,18 @@
     <!-- ── openEMS ────────────────────────────────────────────────────── -->
     <Border Classes="group">
       <StackPanel>
-        <SelectableTextBlock Text="openEMS (FDTD)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+          <SelectableTextBlock Text="openEMS (FDTD)" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <StackPanel Name="OpenEmsBadge" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"/>
+        </StackPanel>
         <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
           <TextBox Grid.Row="0" Grid.Column="0" Name="OpenEmsBox" FontSize="12"
                    PlaceholderText="Leave blank to search (CIRCUITRF_OPENEMS, PATH, then Spack)"
                    LostFocus="OnPathCommitted"/>
           <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
                   Tag="OpenEmsBox" Click="OnBrowse" ToolTip.Tip="Pick the openEMS executable from disk"/>
-          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="OpenEmsStatus" FontSize="11" Opacity="0.75"
+          <Button Grid.Row="1" Grid.Column="1" Name="OpenEmsReveal" Classes="reveal" Tag="OpenEms" Click="OnReveal"/>
+          <SelectableTextBlock Grid.Row="1" Grid.Column="0" Name="OpenEmsStatus" FontSize="11" Opacity="0.75"
                      TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
                      Margin="0,4,0,0" Text="Not checked yet.">
             <SelectableTextBlock.ContextMenu>
@@ -239,7 +270,10 @@
          validated, the sparse-solver tier, then where it was found (SolverDiscovery.DescribeForSettings). -->
     <Border Classes="group">
       <StackPanel>
-        <SelectableTextBlock Text="EMerge (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+          <SelectableTextBlock Text="EMerge (FEM)" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <StackPanel Name="EmergeBadge" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"/>
+        </StackPanel>
         <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
           <TextBox Grid.Row="0" Grid.Column="0" Name="EmergeBox" FontSize="12"
                    PlaceholderText="Leave blank to search (CIRCUITRF_EMERGE, then the copy circuitRF installed)"
@@ -251,7 +285,8 @@
           </TextBox>
           <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
                   Tag="EmergeBox" Click="OnBrowse" ToolTip.Tip="Pick the environment's Python from disk"/>
-          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="EmergeStatus" FontSize="11" Opacity="0.75"
+          <Button Grid.Row="1" Grid.Column="1" Name="EmergeReveal" Classes="reveal" Tag="Emerge" Click="OnReveal"/>
+          <SelectableTextBlock Grid.Row="1" Grid.Column="0" Name="EmergeStatus" FontSize="11" Opacity="0.75"
                      TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
                      Margin="0,4,0,0" Text="Not checked yet.">
             <SelectableTextBlock.ContextMenu>

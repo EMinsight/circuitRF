@@ -239,6 +239,38 @@ public sealed class SolverUninstallTests : IDisposable
         Assert.False(Directory.Exists(record.Home));
     }
 
+    // ── removing the Gmsh runs use says what stops working; an older one says nothing ──────────
+
+    [Fact]
+    public void RemovingTheGmshRunsUse_NamesThePalaceStillHere_AndTheThermalSolver_AnOlderGmshWarnsNothing()
+    {
+        FakeHome(SolverTool.Gmsh, "4.13.1");
+        FakeHome(SolverTool.Gmsh, "4.15.2");
+        // A Palace the user installed: found, so it is named; Gmsh's discovery finds the newest home, as a run would.
+        string bin = Path.Combine(_tmp, "own-palace", "bin");
+        Directory.CreateDirectory(bin);
+        string palaceStub = Path.Combine(bin, Windows ? "palace.cmd" : "palace");
+        File.WriteAllText(palaceStub, Windows ? "@echo off\r\necho Palace version: 0dc74cd\r\necho Schema version: 1-7-0\r\n"
+                                              : "#!/bin/sh\necho 'Palace version: 0dc74cd'\necho 'Schema version: 1-7-0'\n");
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(palaceStub, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var palace = SolverDiscovery.Create(SolverTool.Palace);
+        palace.PreferredCommand = () => palaceStub;
+        palace.ReadEnvironment = _ => null;
+        palace.InstallRoots = [Path.Combine(_tmp, "no-installs")];
+        palace.SpackRoots = []; palace.CondaBases = []; palace.SearchDirectories = [];
+        palace.CacheDirectory = Path.Combine(_tmp, "cache");
+        var gmsh = IsolatedDiscovery(path: null);
+        var u = new SolverUninstaller([Root]) { Discovery = t => t == SolverTool.Palace ? palace : gmsh };
+        Assert.Equal("4.15.2", gmsh.Find(out _)?.Version);
+
+        string warning = u.PlanOne(SolverTool.Gmsh, "4.15.2").Confirmation;
+        Assert.StartsWith("The following solvers will no longer function:", warning);
+        Assert.Contains("  • Palace", warning);
+        Assert.Contains("thermal solver", warning);
+
+        Assert.DoesNotContain("no longer function", u.PlanOne(SolverTool.Gmsh, "4.13.1").Confirmation);
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     private SolverUninstaller Uninstaller(SolverDiscovery? discovery = null)

@@ -210,6 +210,7 @@ public sealed class SolverUninstaller
     private string Confirm(IReadOnlyList<PlannedRemoval> planned, IReadOnlyList<(string Path, long Bytes)> leftovers, bool all)
     {
         var sb = new StringBuilder();
+        if (GmshDependents(planned) is { } dependents) { sb.AppendLine(dependents); sb.AppendLine(); }
         if (all && planned.Count > 0) sb.AppendLine("This removes every 3D solver circuitRF installed for this account:");
         foreach (var p in planned)
             sb.AppendLine(p.Missing
@@ -236,6 +237,41 @@ public sealed class SolverUninstaller
             sb.Append($" The Linux subsystem distribution '{d}' stays, and so do any packages you installed in it on circuitRF's " +
                       "advice (the build tools): they are yours, and yours to remove.");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// When the plan removes the Gmsh a run would use: the solvers still here that stop working with it — Palace, which meshes
+    /// with it, and circuitRF's own thermal solver — and those that only lose a sweep's 0 Hz point, which every driven run's
+    /// conduction solve meshes with it. EMerge meshes with the copy in its own environment, so it keeps running. Null when no
+    /// working feature depends on what is removed: an older Gmsh, or one a run does not find.
+    /// </summary>
+    private string? GmshDependents(IReadOnlyList<PlannedRemoval> planned)
+    {
+        if (!planned.Any(p => p.Record.Tool == SolverTool.Gmsh && !p.Missing && p.Record.Distribution is null)) return null;
+        bool Removed(SolverInstallation found) => found.Distribution is null && planned.Any(p => p.Record.Distribution is null && Inside(found.Path, p.Record.Home));
+        bool Kept(SolverTool tool) => TryFind(tool) is { } found && !Removed(found);
+        if (TryFind(SolverTool.Gmsh) is not { } gmsh || !Removed(gmsh)) return null;
+
+        var sb = new StringBuilder("The following solvers will no longer function:");
+        if (Kept(SolverTool.Palace)) sb.Append($"{Environment.NewLine}  • {Discovery(SolverTool.Palace).Name}");
+        sb.Append($"{Environment.NewLine}  • circuitRF's thermal solver (built in)");
+        var dc = new[] { SolverTool.Emerge, SolverTool.OpenEms }.Where(Kept).Select(t => Discovery(t).Name).ToList();
+        if (dc.Count > 0)
+            sb.Append($"{Environment.NewLine}{string.Join(" and ", dc)} still {(dc.Count > 1 ? "run" : "runs")}, but a sweep that includes " +
+                      "0 Hz will no longer get its DC point, which Gmsh meshes.");
+        return sb.ToString();
+    }
+
+    private SolverInstallation? TryFind(SolverTool tool)
+    {
+        try { return Discovery(tool).Find(out _); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException) { return null; }
+    }
+
+    private static bool Inside(string path, string home)
+    {
+        string full = Path.GetFullPath(path), root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(home)) + Path.DirectorySeparatorChar;
+        return full.StartsWith(root, OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>The install's own measured time on this computer, or the recipe's measurement when the

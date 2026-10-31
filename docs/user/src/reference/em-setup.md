@@ -1551,6 +1551,11 @@ There are three ways, and they all do the same thing:
 permanent, and how long the install took on your computer, because getting a solver back means
 installing it again.
 
+**Removing the Gmsh that runs use says what stops working.** The confirmation starts with *The following
+solvers will no longer function:* and lists the ones still installed that need it: Palace, and circuitRF's own
+thermal solver. EMerge meshes with its own copy of Gmsh, so it keeps running; it and openEMS only lose the 0 Hz
+point of a sweep that includes one. Removing an older Gmsh that runs do not use says nothing of the kind.
+
 **Your documents are never touched.** Setups, meshes, results and run folders live in your workspaces,
 and every one of them stays. After a removal, a 3D run offers **Install …** again.
 
